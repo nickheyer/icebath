@@ -15,7 +15,7 @@ func TestInstallProceedsWhenHermesSatisfiesTheSpecOrItsVersionIsUnknown(t *testi
 			if problem := RequiresVersionError(tc.spec); problem != "" {
 				t.Fatalf("spec refused %q", problem)
 			}
-			result, err := DashboardInstallPlugin(w.ctx, DashboardInstallOptions{CatalogName: "cat-plugin"})
+			result, err := UnattendedInstallPlugin(w.ctx, UnattendedInstallOptions{CatalogName: "cat-plugin"})
 			if err != nil || result["ok"] != true {
 				t.Fatalf("install %v %v", result, err)
 			}
@@ -42,16 +42,16 @@ func TestPortableCatalogEntryGetsItsHermesFloorFromTheCatalog(t *testing.T) {
 	}
 	w.repo, w.pin, w.requires = repo, shas[0], ">=0.31"
 	target := filepath.Join(w.pluginsDir, "cat-plugin")
-	refused, err := DashboardInstallPlugin(w.ctx, DashboardInstallOptions{CatalogName: "cat-plugin"})
+	refused, err := UnattendedInstallPlugin(w.ctx, UnattendedInstallOptions{CatalogName: "cat-plugin"})
 	if err != nil || refused["ok"] != false || !strings.Contains(refused["error"].(string), refusal) || pathExists(target) {
 		t.Fatalf("install below the catalog floor %v %v", refused, err)
 	}
 	w.requires = ""
-	if installed, err := DashboardInstallPlugin(w.ctx, DashboardInstallOptions{CatalogName: "cat-plugin"}); err != nil || installed["ok"] != true {
+	if installed, err := UnattendedInstallPlugin(w.ctx, UnattendedInstallOptions{CatalogName: "cat-plugin"}); err != nil || installed["ok"] != true {
 		t.Fatalf("install %v %v", installed, err)
 	}
 	w.pin, w.requires = shas[1], ">=0.31"
-	held, err := DashboardUpdateUserPlugin(w.ctx, "cat-plugin", false, false)
+	held, err := UnattendedUpdateUserPlugin(w.ctx, "cat-plugin", false, false)
 	if err != nil || held["ok"] != false || !strings.Contains(held["error"].(string), refusal) {
 		t.Fatalf("update below the catalog floor %v %v", held, err)
 	}
@@ -68,7 +68,7 @@ func TestInstallSummaryShowsKnownIssues(t *testing.T) {
 		return []*PluginCatalogEntry{{Name: "cat-plugin", Repo: "file://" + filepath.ToSlash(repo), Sha: w.sha1, Description: "d",
 			Maintainer: "t", Tier: "community", Category: "memory", KnownIssues: []string{issue}}}
 	}
-	result, err := DashboardInstallPlugin(w.ctx, DashboardInstallOptions{CatalogName: "cat-plugin"})
+	result, err := UnattendedInstallPlugin(w.ctx, UnattendedInstallOptions{CatalogName: "cat-plugin"})
 	if err != nil || result["ok"] != true {
 		t.Fatalf("install %v %v", result, err)
 	}

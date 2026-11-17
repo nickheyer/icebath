@@ -23,14 +23,14 @@ func HasLiveListener(host string, port int) bool {
 }
 
 // Starts the app on host and port, exclusive on macOS with one reuse retry past a dead TIME_WAIT socket
-func StartTCPSite(ctx context.Context, app *WebApplication, host *string, port int, logTag string, accessLog AccessLog) (*WebAppRunner, error) {
+func StartTCPSite(ctx context.Context, app *HTTPApp, host *string, port int, logTag string, accessLog AccessLog) (*HTTPAppRunner, error) {
 	exclusive := runtime.GOOS == "darwin"
 	opts := ListenOptions{AccessLog: accessLog}
 	if exclusive {
 		reuse := false
 		opts.ReuseAddress = &reuse
 	}
-	runner, err := StartWebApp(ctx, app, host, port, opts)
+	runner, err := StartHTTPApp(ctx, app, host, port, opts)
 	if err == nil {
 		return runner, nil
 	}
@@ -45,5 +45,5 @@ func StartTCPSite(ctx context.Context, app *WebApplication, host *string, port i
 		logTag, *host, port))
 	reuse := true
 	opts.ReuseAddress = &reuse
-	return StartWebApp(ctx, app, host, port, opts)
+	return StartHTTPApp(ctx, app, host, port, opts)
 }

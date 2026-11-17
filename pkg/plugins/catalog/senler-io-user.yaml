@@ -11,10 +11,9 @@ docs_url: https://github.com/SenlerBot/senler-io-user-hermes-plugin/blob/2294619
 image: https://raw.githubusercontent.com/SenlerBot/senler-io-user-hermes-plugin/2294619a45f313f7c4d7c6b75bfa8e3781659253/assets/catalog-banner.png
 readme: true
 known_issues:
-  - "After updating, restart the backend used by Desktop and the gateway; a new chat alone may still use older loaded plugin code."
-  - "Preview: Windows Desktop sign-in was previously confirmed; automatic MCP appearance still needs a Desktop UI check, and a real Senler Relay workflow needs end-to-end verification."
+  - "After updating, restart the gateway; a new chat alone may still use older loaded plugin code."
   - "Requires current Hermes with native MCP OAuth and Relay transport; gateway proxy mode and multiplexed profiles are unsupported."
-  - "Monitoring notifications require a connected messaging channel; arbitrary Desktop/TUI chats are unsupported."
+  - "Monitoring notifications require a connected messaging channel; arbitrary TUI chats are unsupported."
 capabilities:
   provides_tools:
     - senler_connect

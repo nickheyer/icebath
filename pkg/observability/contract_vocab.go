@@ -382,20 +382,6 @@ const (
 	ToolEnabledUnusedMetric    = ToolEnabledUnusedMark
 	CacheBreakMark             = "icebath.cache_break.count"
 	CacheBreakMetric           = CacheBreakMark
-	DesktopFeatureUseMark      = "icebath.desktop.feature_use"
-	DesktopFeatureUseMetric    = DesktopFeatureUseMark
-	DesktopFrictionMark        = "icebath.desktop.friction"
-	DesktopFrictionMetric      = DesktopFrictionMark
-	DesktopOnboardingMark      = "icebath.desktop.onboarding"
-	DesktopOnboardingMetric    = DesktopOnboardingMark
-	DesktopModeUseMark         = "icebath.desktop.mode_use"
-	DesktopModeUseMetric       = DesktopModeUseMark
-	DesktopActionUseMark       = "icebath.desktop.action_use"
-	DesktopActionUseMetric     = DesktopActionUseMark
-	DesktopDislikeMark         = "icebath.desktop.dislike"
-	DesktopDislikeMetric       = DesktopDislikeMark
-
-	DesktopSettingKeyMaxLength = 96
 )
 
 var (
@@ -425,95 +411,7 @@ var (
 	ToolsetNames           = setOfKeys(tools.BuiltinToolsetNames).Union(RetiredToolsetNames, Set("custom"))
 	CacheBreakCauses       = Set("cache_expired", "compression", "model_switch", "provider_reported_miss",
 		"system_prompt_rebuild", "toolset_change")
-
-	DesktopSettingsAreas = Set("settings_about", "settings_billing", "settings_config_advanced",
-		"settings_config_appearance", "settings_config_browser", "settings_config_chat", "settings_config_memory",
-		"settings_config_model", "settings_config_safety", "settings_config_voice", "settings_config_workspace",
-		"settings_gateway", "settings_keybinds", "settings_keys", "settings_notifications", "settings_other",
-		"settings_providers", "settings_sessions", "settings_vault")
-	DesktopFeatureAreas = DesktopSettingsAreas.Union(Set("browser_pane", "file_pane", "review_pane", "terminal_pane",
-		"command_palette", "find_in_page", "model_picker", "session_picker", "session_switcher",
-		"bot_mode", "projects", "session_search", "skins", "voice_conversation", "voice_dictation",
-		"agents", "artifacts", "capabilities", "command_center", "cron", "extension_page", "kanban", "messaging",
-		"profiles", "session_import", "starmap", "webhooks", "other"))
-	DesktopNoticeIDs = Set("artifacts_partial_load", "background_queue_stuck", "backend_skew", "billing_banner",
-		"billing_block", "build_discontinued", "client_behind", "composer_queue_stuck", "credits",
-		"free_tier_notice", "gateway_error", "gui_skew", "install_method", "mcp_health", "model_warning",
-		"onboarding_handoff", "restored_draft", "runtime_not_ready", "session_compress", "terminal_backend", "tip",
-		"update_available", "voice_live_unavailable", "voice_stop_hint", "other")
-	DesktopErrorToastCategories = Set("api_key_missing", "api_key_rejected", "disk_full", "gateway_auth_failed",
-		"method_not_allowed", "microphone_permission", "pool_slot_timeout", "restart_required", "rpc_out_of_sync",
-		"storage_failure", "timeout", "unclassified", "other")
-	DesktopSlowFrameBuckets = Set("100ms_to_250ms", "250ms_to_1s", "1s_to_5s", "gte_5s")
-	DesktopFrictionDetails  = map[string]ValueSet{
-		"backend_disconnect": Set("backend_exit", "network", "timeout", "other"),
-		"error_toast":        DesktopErrorToastCategories,
-		"notice_dismissed":   DesktopNoticeIDs,
-		"renderer_crash":     Set("crash", "killed", "oom", "other"),
-		"slow_frame":         DesktopSlowFrameBuckets,
-	}
-	DesktopFrictionKinds        = keysOf(DesktopFrictionDetails)
-	DesktopFrictionDetailValues = unionOf(DesktopFrictionDetails)
-	DesktopOnboardingSteps      = Set("choose_later", "consent", "first_message", "free_tier_ready", "guide",
-		"guide_skip", "model_pick", "provider_api_key", "provider_local", "provider_oauth", "provider_setup", "sign_in")
-	DesktopOnboardingEvents     = Set("abandoned", "completed", "reached")
-	DesktopModes                = Set("bots", "sessions")
-	DesktopActiveMinutesBuckets = Set("0", "lt_5m", "5m_to_30m", "30m_to_2h", "2h_to_6h", "gte_6h")
-	desktopActiveThresholds     = []threshold{{300_000, "lt_5m"}, {1_800_000, "5m_to_30m"}, {7_200_000, "30m_to_2h"}, {21_600_000, "2h_to_6h"}}
-	DesktopKeybindActionIDs     = Set("appearance.toggleMode", "composer.cancel", "composer.dictate", "composer.focus",
-		"composer.help", "composer.history", "composer.mention", "composer.modelPicker", "composer.newline",
-		"composer.queue", "composer.reasoningDown", "composer.reasoningUp", "composer.send", "composer.sendQueued",
-		"composer.slash", "composer.steer", "composer.voice", "conversation.scrollPageDown",
-		"conversation.scrollPageUp", "hud.snapToPointer", "keybinds.openPanel", "nav.agents", "nav.artifacts",
-		"nav.capabilities", "nav.commandCenter", "nav.commandPalette", "nav.cron", "nav.messaging", "nav.profiles",
-		"nav.settings", "profile.create", "profile.default", "profile.next", "profile.prev", "profile.toggleAll",
-		"session.archive", "session.focusSearch", "session.new", "session.newTab", "session.newWindow",
-		"session.next", "session.prev", "session.togglePin", "view.closeTab", "view.closeTerminal",
-		"view.cycleSidebarGrouping", "view.findInPage", "view.findNext", "view.findPrevious", "view.flipPanes",
-		"view.newTerminal", "view.nextTerminal", "view.prevTerminal", "view.reopenTab", "view.selectionToComposer",
-		"view.showBrowser", "view.showFiles", "view.showTerminal", "view.terminalCopy", "view.terminalPaste",
-		"view.toggleHud", "view.toggleProfileRail", "view.toggleReview", "view.toggleRightSidebar",
-		"view.toggleSidebar", "view.toggleSimpleMode", "view.toggleStatusbar", "view.toggleTabStrip",
-		"workspace.newWorktree", "workspace.openFolder")
-	DesktopButtonActionIDs = Set("composer.attach", "message.copy", "message.retry")
-	DesktopActionIDs       = DesktopKeybindActionIDs.Union(DesktopButtonActionIDs, Set("other"))
-	DesktopActionVias      = Set("click", "menu", "palette", "shortcut")
-	DesktopFlowIDs         = Set("command_palette", "free_tier_sign_in", "keybind_capture", "model_picker",
-		"project_create", "provider_oauth", "session_picker", "session_switcher", "other")
-	DesktopFeatureToggles = Set("backdrop", "bot_activity_toasts", "composer_popout_gestures", "intro_splash",
-		"native_notifications", "notification_kind", "reactions", "thread_timeline", "tips", "tours", "vibe_hearts",
-		"other")
-	DesktopUndoTargets    = Set("closed_tab", "restored_draft", "other")
-	DesktopDislikeTargets = map[string]ValueSet{
-		"cancelled":           DesktopFlowIDs,
-		"feature_disabled":    DesktopFeatureToggles,
-		"quick_close":         DesktopFeatureAreas,
-		"rage_click":          DesktopActionIDs,
-		"setting_off_default": Set("setting"),
-		"undo":                DesktopUndoTargets,
-	}
-	DesktopDislikeSignals      = keysOf(DesktopDislikeTargets)
-	DesktopDislikeTargetValues = unionOf(DesktopDislikeTargets)
-	DesktopDislikeDirections   = Set("away_from_default", "none", "to_default")
 )
-
-// Union of every set in a map
-func unionOf(m map[string]ValueSet) ValueSet {
-	out := ValueSet{}
-	for _, s := range m {
-		out = out.Union(s)
-	}
-	return out
-}
-
-// Bucket of a day's active time in one Desktop mode, nothing measurable reading 0
-func DesktopActiveMinutesBucket(activeMS any) string {
-	value, _ := nonNegativeNumber(activeMS)
-	if value <= 0 {
-		return "0"
-	}
-	return bucket(value, desktopActiveThresholds, "gte_6h")
-}
 
 // Names of the patch tool's own strategy chain, so a new strategy is a new bucket
 func fuzzyMatchStrategies() ValueSet { return Set(tools.FuzzyStrategyNames()...) }

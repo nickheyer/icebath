@@ -1,9 +1,7 @@
 package selfupdate
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -610,133 +608,6 @@ func checkNodeAndBrowser(ctx context.Context, d *Doctor, shouldFix bool) (*Findi
 	})
 }
 
-// Singular or plural of vulnerability for a count
-func doctorPlural(n any) string {
-	if v, ok := n.(int64); ok && v == 1 {
-		return "vulnerability"
-	}
-	if v, ok := n.(float64); ok && v == 1 {
-		return "vulnerability"
-	}
-	return "vulnerabilities"
-}
-
-// One npm audit count as a Python number, zero for a missing key and false for a non number
-func doctorAuditCount(counts map[string]any, key string) (any, bool) {
-	v, present := counts[key]
-	if !present {
-		return int64(0), true
-	}
-	switch x := v.(type) {
-	case bool:
-		if x {
-			return int64(1), true
-		}
-		return int64(0), true
-	case json.Number:
-		if n, err := x.Int64(); err == nil {
-			return n, true
-		}
-		if f, err := x.Float64(); err == nil {
-			return f, true
-		}
-	}
-	return nil, false
-}
-
-// Sum of two Python numbers, an integer when both are integers
-func doctorNumberAdd(a, b any) any {
-	ai, aInt := a.(int64)
-	bi, bInt := b.(int64)
-	if aInt && bInt {
-		return ai + bi
-	}
-	return doctorNumberFloat(a) + doctorNumberFloat(b)
-}
-
-// Float value of a Python number
-func doctorNumberFloat(n any) float64 {
-	if i, ok := n.(int64); ok {
-		return float64(i)
-	}
-	return n.(float64)
-}
-
-// Environment map as the KEY=VALUE list a child process takes, sorted by name
-func doctorEnvList(env map[string]string) []string {
-	out := make([]string, 0, len(env))
-	for k, v := range env {
-		out = append(out, k+"="+v)
-	}
-	sort.Strings(out)
-	return out
-}
-
-// Runs one npm audit and reports its counts, any failure leaving the row unprinted
-func doctorAuditOne(ctx context.Context, w io.Writer, npmBin, npmDir, label string, auditExtra []string, manualIssues *[]string) {
-	defer func() { _ = recover() }()
-	argv := append([]string{npmBin, "audit", "--json"}, auditExtra...)
-	done, err := doctorSubprocessRun(ctx, argv, pysubprocess.Options{Dir: npmDir, Env: doctorEnvList(pm.WithIcebathNodePath(nil)), Timeout: 30 * time.Second})
-	if err != nil {
-		return
-	}
-	var auditData any = map[string]any{}
-	if stdout := strings.ToValidUTF8(string(done.Stdout), "�"); pystr.Strip(stdout) != "" {
-		dec := json.NewDecoder(bytes.NewReader([]byte(stdout)))
-		dec.UseNumber()
-		if err := dec.Decode(&auditData); err != nil || dec.More() {
-			return
-		}
-	}
-	root, ok := auditData.(map[string]any)
-	if !ok {
-		return
-	}
-	var metadata any = map[string]any{}
-	if v, present := root["metadata"]; present {
-		metadata = v
-	}
-	meta, ok := metadata.(map[string]any)
-	if !ok {
-		return
-	}
-	var vulnerabilities any = map[string]any{}
-	if v, present := meta["vulnerabilities"]; present {
-		vulnerabilities = v
-	}
-	counts, ok := vulnerabilities.(map[string]any)
-	if !ok {
-		return
-	}
-	critical, okC := doctorAuditCount(counts, "critical")
-	high, okH := doctorAuditCount(counts, "high")
-	moderate, okM := doctorAuditCount(counts, "moderate")
-	if !okC || !okH || !okM {
-		return
-	}
-	total := doctorNumberAdd(doctorNumberAdd(critical, high), moderate)
-	workspaceScoped := len(auditExtra) > 0 && auditExtra[0] == "--workspace"
-	switch {
-	case doctorNumberFloat(total) == 0:
-		doctorCheckOK(w, label+" deps", "(no known vulnerabilities)")
-	case doctorNumberFloat(critical) > 0 || doctorNumberFloat(high) > 0:
-		remedy := "fix is an upstream lockfile bump — a local manual fix does not persist" +
-			" (the next `icebath update` reinstalls from the committed lockfile)"
-		doctorCheckWarn(w, label+" deps", fmt.Sprintf("(%s critical, %s high, %s moderate — %s)", pyrepr.Str(critical), pyrepr.Str(high), pyrepr.Str(moderate), remedy))
-		if workspaceScoped {
-			doctorCheckInfo(w, "  ^ workspace audit includes runtime and build dependencies; if manual npm remediation "+
-				"errors with an arborist crash it's a known npm bug — clears via a lockfile bump")
-		} else {
-			doctorCheckInfo(w, "  ^ runtime dependency tree; report/pin the fix in package-lock.json — see #116774")
-		}
-		*manualIssues = append(*manualIssues, fmt.Sprintf("%s has %s npm %s; wait for an upstream lockfile fix, then update "+
-			"your installation (Docker: pull a rebuilt image; recreating the same image restores the same dependencies)",
-			label, pyrepr.Str(total), doctorPlural(total)))
-	default:
-		doctorCheckOK(w, label+" deps", fmt.Sprintf("(%s moderate %s)", pyrepr.Str(moderate), doctorPlural(moderate)))
-	}
-}
-
 // Session directory, store presence and pairing of the in process WhatsApp adapter for the configured session path
 var doctorWhatsAppSession = func(ctx context.Context) (string, bool, bool, error) {
 	var extra map[string]any
@@ -765,30 +636,9 @@ func doctorCheckWhatsAppSession(ctx context.Context, d *Doctor, f *Finding) {
 	}
 }
 
-// Runs npm audit for the root package and the web workspace, then reports the WhatsApp session
-func checkNpmAudit(ctx context.Context, d *Doctor, shouldFix bool) (*Finding, error) {
+// Reports the WhatsApp session and the Termux compatibility fallbacks
+func checkWhatsAppSessionAndTermux(ctx context.Context, d *Doctor, shouldFix bool) (*Finding, error) {
 	return doctorCheck(func(f *Finding) error {
-		npmBin := doctorPMToolPath(ctx, "npm")
-		if npmBin == "" && doctorIsTermux() {
-			npmBin = safeWhich("npm")
-		}
-		if npmBin != "" {
-			for _, tree := range []struct {
-				dir, label string
-				extra      []string
-			}{
-				{d.ProjectRoot, "Root npm package", []string{"--workspaces=false"}},
-				{d.ProjectRoot, "web workspace", []string{"--workspace", "web"}},
-			} {
-				modulesRoot := tree.dir
-				if len(tree.extra) > 0 {
-					modulesRoot = d.ProjectRoot
-				}
-				if _, err := os.Stat(filepath.Join(modulesRoot, "node_modules")); err == nil {
-					doctorAuditOne(ctx, d.W, npmBin, tree.dir, tree.label, tree.extra, &f.ManualIssues)
-				}
-			}
-		}
 		doctorCheckWhatsAppSession(ctx, d, f)
 		if doctorIsTermux() {
 			doctorCheckInfo(d.W, "Termux compatibility fallbacks:")

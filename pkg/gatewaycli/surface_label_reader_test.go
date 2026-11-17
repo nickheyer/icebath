@@ -67,7 +67,7 @@ func populateSurfaces(t *testing.T, db *state.SessionDB, rows []surfaceRow) {
 func newerLocals(count int, start float64, prefix string) []surfaceRow {
 	rows := make([]surfaceRow, count)
 	for index := range rows {
-		rows[index] = surfaceRow{fmt.Sprintf("%s-%03d", prefix, index), "local", []string{"desktop", "tui"}[index%2], start + float64(index)}
+		rows[index] = surfaceRow{fmt.Sprintf("%s-%03d", prefix, index), "local", []string{"acp", "tui"}[index%2], start + float64(index)}
 	}
 	return rows
 }
@@ -109,7 +109,7 @@ func TestSurfacePagesAreExactAcrossNewerLocalRows(t *testing.T) {
 	db := openStore(t, filepath.Join(t.TempDir(), "state.db"), false)
 	rows := []surfaceRow{{"telegram-new", "telegram", "telegram", 2_100_000}, {"unknown-new", "local", "unknown", 2_000_000}}
 	rows = append(rows, newerLocals(60, 1_900_000, "top")...)
-	rows = append(rows, surfaceRow{"legacy-cli", "cli", "desktop", 1_800_000})
+	rows = append(rows, surfaceRow{"legacy-cli", "cli", "acp", 1_800_000})
 	rows = append(rows, newerLocals(10, 1_700_000, "gap-a")...)
 	rows = append(rows, surfaceRow{"cli-a", "local", "cli", 1_600_000})
 	rows = append(rows, newerLocals(10, 1_500_000, "gap-b")...)

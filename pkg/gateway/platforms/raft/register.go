@@ -66,13 +66,11 @@ func (raftPlatformPlugin) Register(ctx *plugins.Context) error {
 		RequiredEnv: []string{"RAFT_PROFILE"},
 		InstallHint: "Install the Raft CLI from https://raft.build",
 		Extra: map[string]any{
-			"dashboard_description": "Join a Raft workspace as an external agent.",
-			"docs_url":              "https://hermes-agent.nousresearch.com/docs/user-guide/messaging/raft",
-			"is_connected":          isConnected,
-			"setup_fn":              InteractiveSetup,
-			"env_enablement_fn":     envEnablement,
-			"emoji":                 "🔔",
-			"platform_hint":         strings.ReplaceAll(platformHintTemplate, "{profile}", profile),
+			"is_connected":      isConnected,
+			"setup_fn":          InteractiveSetup,
+			"env_enablement_fn": envEnablement,
+			"emoji":             "🔔",
+			"platform_hint":     strings.ReplaceAll(platformHintTemplate, "{profile}", profile),
 		},
 	}); err != nil {
 		return err

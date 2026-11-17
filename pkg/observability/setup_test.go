@@ -27,59 +27,6 @@ func setupRows(rows []Mark) [][2]string {
 	return out
 }
 
-func TestOAuthSessionEndings(t *testing.T) {
-	cases := []struct {
-		sess   map[string]any
-		ending [2]string
-	}{
-		{map[string]any{"status": "approved"}, [2]string{"completed", "none"}},
-		{map[string]any{"status": "expired"}, [2]string{"abandoned", "none"}},
-		{map[string]any{"status": "error", "reason": "timeout"}, [2]string{"abandoned", "none"}},
-		{map[string]any{"status": "denied"}, [2]string{"failed", "auth"}},
-		{map[string]any{"status": "denied", "reason": "user_declined"}, [2]string{"abandoned", "none"}},
-		{map[string]any{"status": "pending", "cancelled": true}, [2]string{"abandoned", "none"}},
-		{map[string]any{"status": "error", "reason": "anon_unreachable"}, [2]string{"failed", "network"}},
-	}
-	for i, c := range cases {
-		t.Run(fmt.Sprint(i), func(t *testing.T) {
-			m := captureMarks(t)
-			withProviderNames(t, "nous")
-			saved := webSetupSurface
-			webSetupSurface = func() string { return "desktop" }
-			t.Cleanup(func() { webSetupSurface = saved })
-			ctx := context.Background()
-			flow := BeginOAuthSetup(ctx, "nous", "")
-			AttachOAuthSetup(c.sess, flow)
-			SettleOAuthSetup(ctx, c.sess, false)
-			SettleOAuthSetup(ctx, c.sess, false)
-			got := setupRows(m.snapshot())
-			if len(got) != 2 || got[0] != [2]string{"started", "none"} || got[1] != c.ending {
-				t.Fatalf("rows %v want started then %v", got, c.ending)
-			}
-			for _, r := range m.snapshot() {
-				if r.Data["provider"] != "nous" || r.Data["surface"] != "desktop" {
-					t.Fatalf("row %v", r.Data)
-				}
-			}
-		})
-	}
-}
-
-func TestPendingOAuthSessionDoesNotSettle(t *testing.T) {
-	m := captureMarks(t)
-	withProviderNames(t, "xai")
-	saved := webSetupSurface
-	webSetupSurface = func() string { return "dashboard" }
-	t.Cleanup(func() { webSetupSurface = saved })
-	sess := map[string]any{"status": "pending"}
-	AttachOAuthSetup(sess, BeginOAuthSetup(context.Background(), "xai", ""))
-	SettleOAuthSetup(context.Background(), sess, false)
-	got := setupRows(m.snapshot())
-	if len(got) != 1 || got[0][0] != "started" {
-		t.Fatalf("rows %v", got)
-	}
-}
-
 func TestAPIKeyEnvMapsToProviderOnly(t *testing.T) {
 	savedTool, savedReg := ToolProviderEnvKeysHook, ProviderForAPIKeyEnvHook
 	t.Cleanup(func() { ToolProviderEnvKeysHook, ProviderForAPIKeyEnvHook = savedTool, savedReg })

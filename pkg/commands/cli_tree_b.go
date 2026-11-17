@@ -205,8 +205,8 @@ func (c *CLI) addKanban(root *cobra.Command) {
 	c.pos(bCreate, p("slug"))
 	sf(bCreate, "name", "", "", "Human-readable display name (defaults to Title Case of slug)")
 	sf(bCreate, "description", "", "", "Optional description")
-	sf(bCreate, "icon", "", "", "Optional emoji or single-character icon for the dashboard")
-	sf(bCreate, "color", "", "", "Optional hex color (e.g. '#8b5cf6') for the dashboard")
+	sf(bCreate, "icon", "", "", "Optional emoji or single-character icon for the board")
+	sf(bCreate, "color", "", "", "Optional hex color (e.g. '#8b5cf6') for the board")
 	bf(bCreate, "switch", "", "Switch to the new board after creating it")
 	sf(bCreate, "default-workdir", "", "", "Default workspace path for tasks created on this board")
 	bRm := c.newCmd(boards, "rm", "Archive (default) or delete a board", "", "remove", "delete")
@@ -493,7 +493,7 @@ func (c *CLI) addKanban(root *cobra.Command) {
 
 func (c *CLI) addProject(root *cobra.Command) {
 	project := c.newCmd(root, "project", "Manage projects (named, multi-folder workspaces)",
-		"Projects are human-named workspaces that can span multiple folders / repos. They anchor desktop session grouping and, when bound to a kanban board, give tasks a deterministic worktree + branch convention. State is per-profile.")
+		"Projects are human-named workspaces that can span multiple folders / repos. They group sessions and, when bound to a kanban board, give tasks a deterministic worktree + branch convention. State is per-profile.")
 	create := c.newCmd(project, "create", "Create a new project", "")
 	c.pos(create, p("name"), pAny("folders"))
 	sf(create, "slug", "", "", "Explicit slug override")

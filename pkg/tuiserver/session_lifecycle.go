@@ -78,36 +78,8 @@ func notifySessionBoundary(ctx context.Context, eventType string, sessionID *str
 	return []string{}
 }
 
-// Adopts the parent slot as an inert token on a compute host child whose frame vouches for this id
-func installBorrowedLease(sid string, session *tuigateway.Session, frame map[string]any) {
-	vouch, isDict := frame["active_session_lease"].(map[string]any)
-	if !isDict || session.Get("active_session_lease") != nil {
-		return
-	}
-	key := strOr(session.Get("session_key"))
-	if key == "" || strOr(vouch["session_id"]) != key {
-		return
-	}
-	leaseID := strOr(vouch["lease_id"])
-	if leaseID == "" {
-		leaseID = sid
-	}
-	surface := strOr(frame["source"])
-	if surface == "" {
-		surface = "desktop"
-	}
-	session.Set("active_session_lease", activesessions.NewBorrowedLease(fmt.Sprintf("borrowed:%s", leaseID), key, surface))
-}
-
 // Session source of a hosted room member, whose slot is held only while a turn is in flight
 const roomSessionSource = "bot_room"
-
-// Live leases deferred past a close until the isolated turn of their session settles, with their ages
-var deferredActiveSessionLeases = struct {
-	sync.Mutex
-	leases map[string]*activesessions.Lease
-	ages   map[string]float64
-}{leases: map[string]*activesessions.Lease{}, ages: map[string]float64{}}
 
 // Stores the lease on the session, which owns its row again
 func attachLease(session *tuigateway.Session, lease *activesessions.Lease) {
@@ -181,7 +153,7 @@ func releaseHostedRoomTurnSlot(session *tuigateway.Session) {
 	}
 }
 
-// Lease ids still backed by live records of this process plus the deferred ones, sparing exclude
+// Lease ids still backed by live records of this process, sparing exclude
 func ownLiveLeaseIDs(exclude *activesessions.Lease) map[string]bool {
 	ids := map[string]bool{}
 	for _, live := range tuigateway.LiveSessions() {
@@ -189,62 +161,7 @@ func ownLiveLeaseIDs(exclude *activesessions.Lease) map[string]bool {
 			ids[lease.LeaseID] = true
 		}
 	}
-	deferredActiveSessionLeases.Lock()
-	defer deferredActiveSessionLeases.Unlock()
-	for id := range deferredActiveSessionLeases.leases {
-		ids[id] = true
-	}
 	return ids
-}
-
-// Ceiling past which a deferred lease whose settlement never arrived is force released
-var deferredActiveSessionLeaseTTLSeconds = 1800.0
-
-// Force releases deferred leases whose compute host settlement never arrived and returns how many
-func reapStaleDeferredLeases(now float64) int {
-	deferredActiveSessionLeases.Lock()
-	stale := []string{}
-	for leaseID, deferredAt := range deferredActiveSessionLeases.ages {
-		if now-deferredAt > deferredActiveSessionLeaseTTLSeconds {
-			stale = append(stale, leaseID)
-		}
-	}
-	deferredActiveSessionLeases.Unlock()
-	reaped := 0
-	for _, leaseID := range stale {
-		deferredActiveSessionLeases.Lock()
-		delete(deferredActiveSessionLeases.ages, leaseID)
-		lease := deferredActiveSessionLeases.leases[leaseID]
-		delete(deferredActiveSessionLeases.leases, leaseID)
-		deferredActiveSessionLeases.Unlock()
-		if lease == nil {
-			continue
-		}
-		if err := leaseRetry(3, lease.Release); err != nil {
-			logger().Warn(fmt.Sprintf("Failed to force-release stale deferred active session lease %s: %s", leaseID, err))
-			continue
-		}
-		logger().Warn(fmt.Sprintf("Force-released deferred active session lease %s held past %.0fs without a "+
-			"compute-host settlement (zombie concurrency slot, #62823)", leaseID, deferredActiveSessionLeaseTTLSeconds))
-		reaped++
-	}
-	return reaped
-}
-
-// Releases the lease a closing session deferred for its isolated turn, nothing when it deferred none
-func releaseDeferredActiveSessionLease(session *tuigateway.Session) {
-	value, _ := session.Pop("_deferred_active_session_lease")
-	lease, _ := value.(*activesessions.Lease)
-	if lease == nil {
-		return
-	}
-	deferredActiveSessionLeases.Lock()
-	delete(deferredActiveSessionLeases.leases, lease.LeaseID)
-	delete(deferredActiveSessionLeases.ages, lease.LeaseID)
-	deferredActiveSessionLeases.Unlock()
-	if err := leaseRetry(3, lease.Release); err != nil {
-		logger().Warn(fmt.Sprintf("Failed to release deferred active session slot: %s", err))
-	}
 }
 
 // Live UI sid of a session, the hint, else its stamped sid, else a registry scan

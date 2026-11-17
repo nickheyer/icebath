@@ -57,8 +57,8 @@ var storageFailures = map[string]storageFailureCopy{
 		"storage_replaced",
 		"another icebath process still holds an old copy of the session database's write-ahead log, " +
 			"so icebath stopped writing to keep the file safe",
-		"Nothing is lost. Quit every icebath process on this profile (Desktop app, " +
-			"`icebath {profile_arg}gateway stop`, dashboard, cron), run `icebath {profile_arg}doctor` — it names " +
+		"Nothing is lost. Quit every icebath process on this profile (TUI, " +
+			"`icebath {profile_arg}gateway stop`, cron), run `icebath {profile_arg}doctor` — it names " +
 			"any process still holding the log — then start icebath again. Do not run `doctor --fix` or delete " +
 			"any state.db files while they run. Guide: " + StorageRecoveryDocsURL,
 	},

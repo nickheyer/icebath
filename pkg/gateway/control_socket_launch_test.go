@@ -18,7 +18,7 @@ func TestLaunchSupervisorPrefersTheLaunchValueAndNeverAnswersNone(t *testing.T) 
 		identity *pyjson.Object
 		want     string
 	}{
-		{identity("launch_supervisor", "desktop", "supervisor", "none"), "desktop"},
+		{identity("launch_supervisor", "external", "supervisor", "none"), "external"},
 		{identity("launch_supervisor", "none", "supervisor", "systemd"), "systemd"},
 		{identity("supervisor", "none"), ""},
 		{identity("launch_supervisor", "", "supervisor", "launchd"), "launchd"},

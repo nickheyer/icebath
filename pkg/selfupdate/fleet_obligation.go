@@ -198,8 +198,8 @@ func receiptReportsStaleRuntime(ctx context.Context, receipt any, expectedSHA st
 	return false
 }
 
-// Gateway identities the receipt owes after manual retention, not ok when any row leaves coverage unverified
-func receiptOwedGateways(receipt any, pendingManual []any) (map[gatewayIdentity]bool, bool, error) {
+// Gateway identities the receipt owes, not ok when any row leaves coverage unverified
+func receiptOwedGateways(receipt any) (map[gatewayIdentity]bool, bool, error) {
 	type entry struct {
 		row         any
 		defaultKind any
@@ -212,13 +212,13 @@ func receiptOwedGateways(receipt any, pendingManual []any) (map[gatewayIdentity]
 		plan = p
 	}
 	var entries []entry
-	for i, source := range []any{rowValue(plan, "runtimes"), rowValue(receipt, "pending_manual_serves"), rowValue(receipt, "carried_manual_serves"), rowValue(receipt, "fleet")} {
+	for i, source := range []any{rowValue(plan, "runtimes"), rowValue(receipt, "fleet")} {
 		rows, err := rowsOf(source)
 		if err != nil {
 			return nil, false, err
 		}
 		for _, row := range rows {
-			if i == 3 {
+			if i == 1 {
 				entries = append(entries, entry{row, "gateway"})
 			} else {
 				entries = append(entries, entry{row, nil})
@@ -234,14 +234,6 @@ func receiptOwedGateways(receipt any, pendingManual []any) (map[gatewayIdentity]
 		}
 		kind := rowValueOr(e.row, "kind", e.defaultKind)
 		profile := rowValue(e.row, "profile")
-		supervisor, _ := rowValue(e.row, "supervisor").(string)
-		pending := false
-		for _, row := range pendingManual {
-			pending = pending || pyrepr.Equal(row, e.row)
-		}
-		if (kind == "serve" || kind == "dashboard") && supervisedServeBackends[supervisor] && !pending {
-			continue
-		}
 		if kind != "gateway" || !pyrepr.Truthy(profile) || profile == "unknown" {
 			unverified = true
 			continue
@@ -362,9 +354,6 @@ func markerOwedGateways(ctx context.Context, inventory any) (owed map[gatewayIde
 	for _, runtime := range runtimes {
 		if !isRowDict(runtime) {
 			return nil, false, &inventoryValueError{"fleet-restart inventory row is not an object"}
-		}
-		if runtimeOutsideGatewayEvidence(ctx, runtime) {
-			continue
 		}
 		if rowValue(runtime, "kind") == "gateway" && pyrepr.Truthy(rowValue(runtime, "stopped_unmapped")) {
 			owed[unmappedGateway] = true
@@ -544,34 +533,25 @@ func receiptRestartPhaseCompleted(receipt any) string {
 	return ""
 }
 
-// Receipt and its retained manual transfers, read from the stores when the caller holds neither
-func receiptAndPending(ctx context.Context, receipt any, pendingManual []any, havePending bool) (any, []any, error) {
-	if receipt == nil {
-		receipt = map[string]any{}
-		if latest := fleetLatestReceipt(ctx); len(latest) > 0 {
-			receipt = latest
-		}
+// Receipt the caller holds, the latest stored one when it holds none
+func receiptOrLatest(ctx context.Context, receipt any) any {
+	if receipt != nil {
+		return receipt
 	}
-	if !havePending {
-		var err error
-		if pendingManual, err = RetainReceiptManualServes(ctx, receipt); err != nil {
-			return nil, nil, err
-		}
+	if latest := fleetLatestReceipt(ctx); len(latest) > 0 {
+		return latest
 	}
-	return receipt, pendingManual, nil
+	return map[string]any{}
 }
 
 // True when update catch up still needs identity matched gateways at checkout HEAD
-func pendingFleetRestartNeeded(ctx context.Context, receipt any, pendingManual []any, havePending bool) (bool, error) {
-	receipt, pendingManual, err := receiptAndPending(ctx, receipt, pendingManual, havePending)
-	if err != nil {
-		return false, err
-	}
+func pendingFleetRestartNeeded(ctx context.Context, receipt any) (bool, error) {
+	receipt = receiptOrLatest(ctx, receipt)
 	if fleetRestartObligationArmed(ctx) {
 		obsolete, err := markerOnlyRestartObsolete(ctx)
 		return !obsolete, err
 	}
-	owed, owedKnown, err := receiptOwedGateways(receipt, pendingManual)
+	owed, owedKnown, err := receiptOwedGateways(receipt)
 	if err != nil {
 		return false, err
 	}
@@ -582,16 +562,13 @@ func pendingFleetRestartNeeded(ctx context.Context, receipt any, pendingManual [
 }
 
 // True when an update still owes a fleet restart, a completed restart held to the code it pulled
-func updateOwesFleetRestart(ctx context.Context, receipt any, pendingManual []any, havePending bool) (bool, error) {
-	receipt, pendingManual, err := receiptAndPending(ctx, receipt, pendingManual, havePending)
-	if err != nil {
-		return false, err
-	}
+func updateOwesFleetRestart(ctx context.Context, receipt any) (bool, error) {
+	receipt = receiptOrLatest(ctx, receipt)
 	if fleetRestartObligationArmed(ctx) {
 		obsolete, err := markerOnlyRestartObsolete(ctx)
 		return !obsolete, err
 	}
-	owed, owedKnown, err := receiptOwedGateways(receipt, pendingManual)
+	owed, owedKnown, err := receiptOwedGateways(receipt)
 	if err != nil {
 		return false, err
 	}
@@ -619,7 +596,7 @@ func suppressed(fn func() error) {
 	_ = fn()
 }
 
-// Startup hint about a fleet restart or serve restart a previous update still owes, never restarting and never failing
+// Startup hint about a fleet restart a previous update still owes, never restarting and never failing
 func WarnPendingFleetRestartOnStartup(ctx context.Context, h string, w io.Writer) {
 	if h != "" && h != home.Dir(ctx) {
 		ctx = home.WithOverride(ctx, h)
@@ -628,21 +605,11 @@ func WarnPendingFleetRestartOnStartup(ctx context.Context, h string, w io.Writer
 	if latest := fleetLatestReceipt(ctx); len(latest) > 0 {
 		receipt = latest
 	}
-	var pendingManual []any
-	havePending := false
 	suppressed(func() error {
-		pending, err := RetainReceiptManualServes(ctx, receipt)
-		if err == nil {
-			pendingManual, havePending = pending, true
-		}
-		return err
-	})
-	suppressed(func() error {
-		owes, err := updateOwesFleetRestart(ctx, receipt, pendingManual, havePending)
+		owes, err := updateOwesFleetRestart(ctx, receipt)
 		if err == nil && owes {
 			warnPendingFleetRestart(w, true)
 		}
 		return err
 	})
-	suppressed(func() error { return warnPendingManualServesTo(ctx, w, pendingManual, havePending) })
 }

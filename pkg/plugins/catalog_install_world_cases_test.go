@@ -36,10 +36,10 @@ func TestCustomInstallRecordsAnAnonymousExtensionInstallAndReinstallNone(t *test
 	recordExtensionInstall = func(_ context.Context, kind, source string, name any, outcome string, _, _ any, _ error) {
 		calls = append(calls, map[string]any{"kind": kind, "source": source, "name": name, "outcome": outcome})
 	}
-	if res, err := DashboardInstallPlugin(w.ctx, DashboardInstallOptions{Identifier: refURI(w.repo)}); err != nil || res["ok"] != true {
+	if res, err := UnattendedInstallPlugin(w.ctx, UnattendedInstallOptions{Identifier: refURI(w.repo)}); err != nil || res["ok"] != true {
 		t.Fatalf("url install %v %v", res, err)
 	}
-	if res, err := DashboardInstallPlugin(w.ctx, DashboardInstallOptions{Force: true, CatalogName: "cat-plugin"}); err != nil || res["ok"] != true {
+	if res, err := UnattendedInstallPlugin(w.ctx, UnattendedInstallOptions{Force: true, CatalogName: "cat-plugin"}); err != nil || res["ok"] != true {
 		t.Fatalf("catalog reinstall %v %v", res, err)
 	}
 	want := []map[string]any{{"kind": "plugin", "source": "local", "name": nil, "outcome": "success"}}
@@ -55,7 +55,7 @@ func TestKillListCoversUpdateEnableAndLoadOfAnInstalledPlugin(t *testing.T) {
 	dir := t.TempDir()
 	c6Write(t, filepath.Join(dir, "removed.yaml"), "removed:\n- name: killed\n  reason: backdoor\n")
 	t.Cleanup(SwapCatalogDir(dir))
-	if res, err := DashboardUpdateUserPlugin(w.ctx, "killed", false, false); err != nil || !strings.Contains(pyStrOr(res["error"]), "backdoor") {
+	if res, err := UnattendedUpdateUserPlugin(w.ctx, "killed", false, false); err != nil || !strings.Contains(pyStrOr(res["error"]), "backdoor") {
 		t.Fatalf("update of a killed plugin %v %v", res, err)
 	}
 	var exit *CommandExit

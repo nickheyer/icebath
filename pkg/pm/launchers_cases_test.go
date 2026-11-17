@@ -60,8 +60,7 @@ func mustRead(t *testing.T, path string) string {
 	return string(data)
 }
 
-// test_post_update_expose_cli.py TestExposeCli test_unstamped_tree_with_sibling_bin_is_not_a_bundle
-func TestExposeCliUnstampedTreeWithSiblingBinIsNotABundle(t *testing.T) {
+func TestExposeCliUnstampedTreeWithSiblingBinHasNoInstallBinary(t *testing.T) {
 	userHome, _ := lnFakeInstall(t)
 	parent := filepath.Join(userHome, "icebath-home")
 	mustWrite(t, filepath.Join(parent, "bin", "icebath"), "#!/bin/sh\n# installer launcher\n", 0o755)
@@ -72,9 +71,6 @@ func TestExposeCliUnstampedTreeWithSiblingBinIsNotABundle(t *testing.T) {
 	t.Setenv(EnvInstallRoot, checkout)
 	if got := lnExpose(t, true); !reflect.DeepEqual(got, ExposeResult{OK: true, Skipped: "no-install-binary"}) {
 		t.Fatalf("result %+v", got)
-	}
-	if IsBundledPayload(checkout) {
-		t.Fatal("a sibling bin made the checkout a bundle")
 	}
 }
 
@@ -98,88 +94,10 @@ func TestExposeCliReplacesADanglingSymlinkFromOldInstalls(t *testing.T) {
 	}
 }
 
-// Sealed bundle payload bin holding the three fake shims, with the user home isolated
-func sealedPayload(t *testing.T) (string, string) {
-	t.Helper()
-	userHome, _ := lnFakeInstall(t)
-	payloadBin := filepath.Join(userHome, "Icebath.app", "Contents", "Resources", "agent-payload", "bin")
-	for _, name := range []string{"icebath", "icebath-agent", "icebath-acp"} {
-		mustWrite(t, filepath.Join(payloadBin, name), "fake mach-o shim\n", 0o755)
-	}
-	return userHome, payloadBin
-}
-
 func sortedWritten(result ExposeResult) []string {
 	written := append([]string{}, result.Written...)
 	slices.Sort(written)
 	return written
-}
-
-func readLink(t *testing.T, path string) string {
-	t.Helper()
-	target, err := os.Readlink(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return target
-}
-
-// test_post_update_expose_cli.py TestSymlinkSealedLaunchers test_links_all_three_fresh
-func TestSymlinkSealedLaunchersLinksAllThreeFresh(t *testing.T) {
-	userHome, payloadBin := sealedPayload(t)
-	result := symlinkSealedLaunchers(payloadBin)
-	if !result.OK || !reflect.DeepEqual(sortedWritten(result), []string{"icebath", "icebath-acp", "icebath-agent"}) {
-		t.Fatalf("result %+v", result)
-	}
-	for _, name := range []string{"icebath", "icebath-agent", "icebath-acp"} {
-		if link := filepath.Join(userHome, ".local", "bin", name); readLink(t, link) != filepath.Join(payloadBin, name) {
-			t.Fatalf("%s links %s", name, readLink(t, link))
-		}
-	}
-}
-
-// test_post_update_expose_cli.py TestSymlinkSealedLaunchers test_second_run_is_a_no_op
-func TestSymlinkSealedLaunchersSecondRunIsANoOp(t *testing.T) {
-	_, payloadBin := sealedPayload(t)
-	symlinkSealedLaunchers(payloadBin)
-	if result := symlinkSealedLaunchers(payloadBin); len(result.Written) != 0 {
-		t.Fatalf("second run wrote %v", result.Written)
-	}
-}
-
-// test_post_update_expose_cli.py TestSymlinkSealedLaunchers test_retargets_own_link_after_app_moved
-func TestSymlinkSealedLaunchersRetargetsOwnLinkAfterAppMoved(t *testing.T) {
-	userHome, payloadBin := sealedPayload(t)
-	linkDir := filepath.Join(userHome, ".local", "bin")
-	if err := os.MkdirAll(linkDir, 0o777); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Symlink(filepath.Join(filepath.Dir(payloadBin), "bin-old", "icebath"), filepath.Join(linkDir, "icebath")); err != nil {
-		t.Fatal(err)
-	}
-	result := symlinkSealedLaunchers(payloadBin)
-	if !slices.Contains(result.Written, "icebath") || readLink(t, filepath.Join(linkDir, "icebath")) != filepath.Join(payloadBin, "icebath") {
-		t.Fatalf("result %+v link %s", result, readLink(t, filepath.Join(linkDir, "icebath")))
-	}
-}
-
-// test_post_update_expose_cli.py TestSymlinkSealedLaunchers test_never_touches_a_live_foreign_entry
-func TestSymlinkSealedLaunchersNeverTouchesALiveForeignEntry(t *testing.T) {
-	userHome, payloadBin := sealedPayload(t)
-	linkDir := filepath.Join(userHome, ".local", "bin")
-	mustWrite(t, filepath.Join(linkDir, "icebath"), "#!/bin/sh\n# pipx launcher\n", 0o755)
-	other := filepath.Join(userHome, "other-tool")
-	mustWrite(t, other, "other\n", 0o755)
-	if err := os.Symlink(other, filepath.Join(linkDir, "icebath-agent")); err != nil {
-		t.Fatal(err)
-	}
-	result := symlinkSealedLaunchers(payloadBin)
-	if mustRead(t, filepath.Join(linkDir, "icebath")) != "#!/bin/sh\n# pipx launcher\n" || readLink(t, filepath.Join(linkDir, "icebath-agent")) != other {
-		t.Fatal("a live foreign entry was touched")
-	}
-	if !reflect.DeepEqual(sortedWritten(result), []string{"icebath-acp"}) {
-		t.Fatalf("written %v", result.Written)
-	}
 }
 
 // test_post_update_expose_cli.py test_environment_block_reader_counts_utf16_units

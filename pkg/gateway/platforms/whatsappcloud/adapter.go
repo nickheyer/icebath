@@ -264,7 +264,7 @@ type WhatsAppCloudAdapter struct {
 
 	mu                     sync.Mutex
 	httpClient             *http.Client
-	runner                 *gateway.WebAppRunner
+	runner                 *gateway.HTTPAppRunner
 	seenWamids             *pydict.Dict[string, bool]
 	duplicateCount         int
 	acceptedCount          int
@@ -443,7 +443,7 @@ func (a *WhatsAppCloudAdapter) Connect(ctx context.Context, isReconnect bool) (b
 	a.mu.Lock()
 	a.httpClient = gateway.LimitedHTTPClient(gateway.PlatformHTTPXLimits(), false)
 	a.mu.Unlock()
-	app := gateway.NewWebApplication(webhookMaxBodyBytes)
+	app := gateway.NewHTTPApp(webhookMaxBodyBytes)
 	if err := app.AddGet(a.healthPath, a.handleHealth); err != nil {
 		return false, err
 	}

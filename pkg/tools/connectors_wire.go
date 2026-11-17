@@ -8,14 +8,9 @@ import (
 // Shared config of the gateway wire models, unknown keys ignored and every field accepted by name or alias
 var wireModelConfig = pydantic.Config{Extra: pydantic.ExtraIgnore, PopulateByName: true}
 
-// Surfaces a connect or execute call may ask the vendor done page to return to
-var connectorReturnTarget = pydantic.Literal("hermes-desktop", "hermes-desktop-dev", "portal")
-
 // Who asked for a connect so the gateway can attribute each minted link
-var connectorInitiator = pydantic.Literal("agent_tool", "desktop_page", "card_retry")
+var connectorInitiator = pydantic.Literal("agent_tool", "card_retry")
 
-// Operation id a caller sends, one to 128 characters
-var connectorOp = pydantic.Nullable(pydantic.ConStr(pydantic.MinLen(1), pydantic.MaxLen(128)))
 
 // One use case query of a connector search
 var ConnectorSearchQuery = pydantic.NewModel("ConnectorSearchQuery", wireModelConfig,
@@ -127,15 +122,11 @@ var ConnectorExecuteCall = pydantic.NewModel("ConnectorExecuteCall", wireModelCo
 // Array form execute body an older gateway accepts
 var ConnectorExecuteRequest = pydantic.NewModel("ConnectorExecuteRequest", wireModelConfig,
 	pydantic.Req("tools", pydantic.List(ConnectorExecuteCall)),
-	pydantic.Def("return_to", pydantic.Nullable(connectorReturnTarget), nil).Alias("returnTo"),
-	pydantic.Def("op", connectorOp, nil),
 )
 
 // Single call execute body
 var ConnectorExecuteSingleRequest = pydantic.NewModel("ConnectorExecuteSingleRequest", wireModelConfig,
 	pydantic.Req("call", ConnectorExecuteCall),
-	pydantic.Def("return_to", pydantic.Nullable(connectorReturnTarget), nil).Alias("returnTo"),
-	pydantic.Def("op", connectorOp, nil),
 )
 
 // Guarantees a model receiving a result must give, no training or zero retention
@@ -182,8 +173,6 @@ var ConnectorConnectionsRequest = pydantic.NewModel("ConnectorConnectionsRequest
 	pydantic.Def("reinitiate", pydantic.Bool, false),
 	pydantic.Def("alias", pydantic.Nullable(pydantic.Str), nil),
 	pydantic.Def("connection_id", pydantic.Nullable(pydantic.Str), nil).Alias("connectionId"),
-	pydantic.Def("return_to", pydantic.Nullable(connectorReturnTarget), nil).Alias("returnTo"),
-	pydantic.Def("op", connectorOp, nil),
 	pydantic.Def("initiator", pydantic.Nullable(connectorInitiator), nil),
 )
 

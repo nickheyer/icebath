@@ -36,7 +36,7 @@ func envelopeResult(t *testing.T, envelope map[string]any) map[string]any {
 // test_session_archive_rpc.py test_archive_resolves_stored_id_without_live_session
 func TestArchiveResolvesStoredIDWithoutLiveSession(t *testing.T) {
 	db := listingDB(t)
-	seedCounted(t, db, "stored-chat", "desktop", 1)
+	seedCounted(t, db, "stored-chat", "tui", 1)
 	if sid, _, found := findLiveSessionByKey("stored-chat", "", false); found {
 		t.Fatalf("live %s", sid)
 	}
@@ -53,7 +53,7 @@ func TestArchiveResolvesStoredIDWithoutLiveSession(t *testing.T) {
 // test_session_archive_rpc.py test_archive_accepts_session_key_alias
 func TestArchiveAcceptsSessionKeyAlias(t *testing.T) {
 	db := listingDB(t)
-	seedCounted(t, db, "keyed-chat", "desktop", 1)
+	seedCounted(t, db, "keyed-chat", "tui", 1)
 	envelopeResult(t, sessionCall("session.archive", map[string]any{"session_key": "keyed-chat", "archived": true}))
 	if storedColumn(t, db, "keyed-chat", "archived") != int64(1) {
 		t.Fatalf("not archived")
@@ -107,7 +107,7 @@ func TestArchiveLiveRuntimeSessionDefersUntilRowExists(t *testing.T) {
 // test_session_hidden_rpc.py test_set_hidden_resolves_stored_id_without_live_session
 func TestSetHiddenResolvesStoredIDWithoutLiveSession(t *testing.T) {
 	db := listingDB(t)
-	seedCounted(t, db, "stored-chat", "desktop", 1)
+	seedCounted(t, db, "stored-chat", "tui", 1)
 	if sid, _, found := findLiveSessionByKey("stored-chat", "", false); found {
 		t.Fatalf("live %s", sid)
 	}
@@ -132,7 +132,7 @@ func TestSetHiddenUnknownIDStillErrors(t *testing.T) {
 // test_session_hidden_rpc.py test_set_hidden_without_flag_leaves_visible_session_alone
 func TestSetHiddenWithoutFlagLeavesVisibleSessionAlone(t *testing.T) {
 	db := listingDB(t)
-	seedCounted(t, db, "plain-chat", "desktop", 1)
+	seedCounted(t, db, "plain-chat", "tui", 1)
 	if storedColumn(t, db, "plain-chat", "hidden") != int64(0) {
 		t.Fatalf("seeded hidden")
 	}

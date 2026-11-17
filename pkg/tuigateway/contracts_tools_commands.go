@@ -81,7 +81,7 @@ var ProcessListResult = pydantic.NewModel("ProcessListResult", ClosedConfig,
 	pydantic.Fac("processes", pydantic.List(ProcessEntry), pydantic.NewList),
 )
 
-var _ = Method("process.list", ProcessListParams, ProcessListResult, "Background processes owned by the caller's session (desktop status stack poll).")
+var _ = Method("process.list", ProcessListParams, ProcessListResult, "Background processes owned by the caller's session.")
 
 var ProcessKillParams = pydantic.NewModel("ProcessKillParams", ParamsConfig,
 	pydantic.Req("session_id", pydantic.Str),
@@ -145,14 +145,6 @@ var CommandsCatalogParams = pydantic.NewModel("CommandsCatalogParams", ParamsCon
 	pydantic.Def("profile", pydantic.Nullable(pydantic.Str), nil),
 )
 
-var ArgumentMode = pydantic.Enum("ArgumentMode", "options", "options", "text", "text", "mixed", "mixed")
-
-var CommandCatalogMeta = pydantic.NewModel("CommandCatalogMeta", ClosedConfig,
-	pydantic.Def("argument_mode", pydantic.Nullable(ArgumentMode), nil),
-	pydantic.Def("desktop", pydantic.Nullable(pydantic.Str), nil),
-	pydantic.Def("desktop_subcommands", pydantic.Nullable(pydantic.List(pydantic.Str)), nil),
-)
-
 var CommandCategory = pydantic.NewModel("CommandCategory", ClosedConfig,
 	pydantic.Req("name", pydantic.Str),
 	pydantic.Fac("pairs", pydantic.List(pydantic.List(pydantic.Str)), pydantic.NewList),
@@ -167,7 +159,6 @@ var CommandsCatalogResult = pydantic.NewModel("CommandsCatalogResult", ClosedCon
 	pydantic.Fac("pairs", pydantic.List(pydantic.List(pydantic.Str)), pydantic.NewList),
 	pydantic.Fac("sub", pydantic.Dict(pydantic.List(pydantic.Str)), pydantic.NewDict),
 	pydantic.Fac("canon", pydantic.Dict(pydantic.Str), pydantic.NewDict),
-	pydantic.Fac("commands", pydantic.Dict(CommandCatalogMeta), pydantic.NewDict),
 	pydantic.Fac("categories", pydantic.List(CommandCategory), pydantic.NewList),
 	pydantic.Fac("skills", pydantic.Dict(SkillCatalogEntry), pydantic.NewDict),
 	pydantic.Def("skill_count", pydantic.Int, 0),

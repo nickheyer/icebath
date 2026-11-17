@@ -14,8 +14,6 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
@@ -103,7 +101,6 @@ func historicalContext() *OrderedObject {
 	}
 	request := NewOrderedObject()
 	request.Set("restart_update", false)
-	request.Set("desktop", nil)
 	request.Set("pre_update_snapshot_id", nil)
 	request.Set("pre_update_version", nil)
 	request.Set("gateway_mode", containsString(os.Args, "--gateway"))
@@ -355,29 +352,6 @@ func stopForRelaunch(ctx context.Context, incomplete bool) error {
 	takeoverMemo.code = code
 	takeoverMemo.Unlock()
 	return &SystemExit{Code: code}
-}
-
-// Relaunches the serves a historical atexit token left stopped, clearing pending once the child handled them
-func RelaunchStoppedServes(ctx context.Context, token *OrderedObject) error {
-	if pending, _ := token.Get("pending"); !pyrepr.Truthy(pending) {
-		return nil
-	}
-	request := NewOrderedObject()
-	request.Set("stopped_serves", token)
-	code, completed, err := runChild(ctx, request)
-	if err != nil {
-		if !takeoverCaught(err) {
-			return err
-		}
-		code = 1
-		fmt.Fprintf(cliStderr(ctx), "Stopped serve recovery failed: %s\n", takeoverErrorText(err))
-	} else if handled, _ := completed.Get("serves_handled"); handled == true {
-		token.Set("pending", false)
-	}
-	if pending, _ := token.Get("pending"); code != 0 || pyrepr.Truthy(pending) {
-		fmt.Fprintln(cliStderr(ctx), "Stopped serve recovery did not complete; restart the affected serve/dashboard backends manually.")
-	}
-	return nil
 }
 
 // Hands the update to a fresh takeover child the way stop_for_relaunch() does from tools_config

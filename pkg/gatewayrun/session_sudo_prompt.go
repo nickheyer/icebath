@@ -17,7 +17,7 @@ func askSudo(events *gateway.SessionEvents, sessionID, command string, cancelled
 	if cancelled == nil {
 		cancelled = func() bool { return false }
 	}
-	return gateway.AskViewer(events, sessionID, "sudo", pyjson.ObjectOf("command", command), cancelled, &timeout, true)
+	return gateway.AskViewer(events, sessionID, "sudo", pyjson.ObjectOf("command", command), cancelled, &timeout)
 }
 
 // Installs the viewer sudo prompt on this thread for a local viewer turn and returns its restore

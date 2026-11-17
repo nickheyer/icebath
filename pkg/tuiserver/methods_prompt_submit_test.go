@@ -2,7 +2,6 @@ package tuiserver
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -231,6 +230,17 @@ func TestUnconfirmedDeepTruncationIsWarnOnlyThisRelease(t *testing.T) {
 	}
 }
 
+// test_relay_live_author.py test_prompt_submit_refuses_a_client_supplied_author
+func TestPromptSubmitRefusesAClientSuppliedAuthor(t *testing.T) {
+	submitCaseDB(t, "gw-session-key")
+	parkedSubmitSession(t, "sid", map[string]any{"session_key": "gw-session-key", "inflight_turn": nil, "transport": nil})
+	author := map[string]any{"id": "bot:coder", "name": "coder", "is_bot": true}
+	resp := lookupMethod("prompt.submit")(context.Background(), "r", map[string]any{"session_id": "sid", "text": "hi", "_turn_author": author})
+	if failure := rpcErrorOf(t, resp); failure["code"] != 4124 {
+		t.Fatalf("resp %v", resp)
+	}
+}
+
 // Parked bot room record titled for a group, the session every fence case submits to
 func fenceSession(t *testing.T, title string, profileHome any) *tuigateway.Session {
 	t.Helper()
@@ -248,6 +258,7 @@ func reachedAdmission(result map[string]any) bool {
 	return accepted["status"] == "streaming"
 }
 
+// Hosted room of the given members whose authority is this gateway
 func createFenceRoom(t *testing.T, roomID string, members []any) {
 	t.Helper()
 	ctx := context.Background()
@@ -269,7 +280,7 @@ func TestDirectPromptToHostedGroupSessionIsRejected(t *testing.T) {
 		map[string]any{"member_id": "two", "profile": "two", "handle": "two"}})
 	fenceSession(t, "Group: room-hosted", nil)
 	if failure := rpcErrorOf(t, fenceSubmit("request-1")); failure["code"] != 4122 {
-		t.Fatalf("result %v", failure)
+		t.Fatalf("failure %v", failure)
 	}
 }
 
@@ -307,84 +318,62 @@ func TestDirectPromptToPeerReservedGroupIsRejectedUntilRevoke(t *testing.T) {
 		t.Fatal(err)
 	}
 	now := float64(time.Now().UnixNano()) / 1e9
-	claims := pyjson.NewObject()
-	for _, kv := range [][2]any{{"room_id", "room-peer"}, {"home_install_id", "install-home"}, {"authority_gateway_id", "install-home"},
-		{"authority_epoch", int64(1)}, {"member_id", "member-reviewer"}, {"target_install_id", "install-target"},
-		{"target_profile", "reviewer"}, {"issued_at", now}} {
-		claims.Set(kv[0].(string), kv[1])
-	}
+	claims := pyjson.ObjectOf("room_id", "room-peer", "home_install_id", "install-home", "authority_gateway_id", "install-home",
+		"authority_epoch", 1, "member_id", "member-reviewer", "target_install_id", "install-target", "target_profile", "reviewer",
+		"issued_at", now)
 	dbPath := gateway.HostedRoomsDefaultDBPath(ctx)
 	if err := gateway.ReservePeerRoom(ctx, dbPath, claims, now+300.0, &now); err != nil {
 		t.Fatal(err)
 	}
 	fenceSession(t, "Group: room-peer", profileHome)
 	if failure := rpcErrorOf(t, fenceSubmit("request-peer")); failure["code"] != 4122 {
-		t.Fatalf("rejected %v", failure)
+		t.Fatalf("failure %v", failure)
 	}
 	later := now + 150.0
 	if err := gateway.RevokeRoomGrantScope(ctx, dbPath, claims, now+300.0, &later); err != nil {
 		t.Fatal(err)
 	}
-	if admitted := fenceSubmit("request-peer-after-revoke"); !reachedAdmission(admitted) {
-		t.Fatalf("admitted %v", admitted)
+	if result := fenceSubmit("request-peer-after-revoke"); !reachedAdmission(result) {
+		t.Fatalf("result %v", result)
 	}
 }
 
 // test_hosted_room_prompt_fence.py test_direct_prompt_is_refused_when_room_authority_cannot_be_verified
 func TestDirectPromptIsRefusedWhenRoomAuthorityCannotBeVerified(t *testing.T) {
 	submitCaseDB(t, "unused-key")
-	dbPath := gateway.HostedRoomsDefaultDBPath(context.Background())
-	if err := os.MkdirAll(filepath.Dir(dbPath), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(dbPath, []byte("disk busy: this file is not a database, so every probe read fails"), 0o644); err != nil {
+	if err := os.WriteFile(gateway.HostedRoomsDefaultDBPath(context.Background()), []byte("not a database"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	fenceSession(t, "Group: room-unknown", nil)
 	if failure := rpcErrorOf(t, fenceSubmit("request-3")); failure["code"] != 5122 {
-		t.Fatalf("result %v", failure)
+		t.Fatalf("failure %v", failure)
 	}
 }
 
 // test_hosted_room_prompt_fence.py test_contended_ownership_probe_fails_quickly_without_blocking_socket
 func TestContendedOwnershipProbeFailsQuicklyWithoutBlockingSocket(t *testing.T) {
 	submitCaseDB(t, "unused-key")
+	ctx := context.Background()
 	createFenceRoom(t, "room-busy", []any{})
 	fenceSession(t, "Group: room-busy", nil)
-	ctx := context.Background()
-	blocker, err := sql.Open("sqlite", gateway.HostedRoomsDefaultDBPath(ctx))
+	blocker, err := state.ConnectSQLite(gateway.HostedRoomsDefaultDBPath(ctx), state.SQLiteConfig{Timeout: 5})
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer blocker.Close()
-	conn, err := blocker.Conn(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer conn.Close()
-	for _, statement := range []string{"PRAGMA journal_mode=DELETE", "BEGIN EXCLUSIVE"} {
-		if _, err := conn.ExecContext(ctx, statement); err != nil {
+	for _, q := range []string{"PRAGMA journal_mode=DELETE", "BEGIN EXCLUSIVE"} {
+		if _, err := blocker.ExecContext(ctx, q); err != nil {
 			t.Fatal(err)
 		}
 	}
 	started := time.Now()
 	result := fenceSubmit("request-busy")
-	_, _ = conn.ExecContext(ctx, "ROLLBACK")
-	if elapsed := time.Since(started); elapsed >= 500*time.Millisecond {
-		t.Fatalf("probe blocked for %v", elapsed)
+	elapsed := time.Since(started)
+	_, _ = blocker.ExecContext(ctx, "ROLLBACK")
+	_ = blocker.Close()
+	if elapsed >= 500*time.Millisecond {
+		t.Fatalf("probe took %s", elapsed)
 	}
 	if failure := rpcErrorOf(t, result); failure["code"] != 5122 {
-		t.Fatalf("result %v", failure)
-	}
-}
-
-// test_relay_live_author.py test_prompt_submit_refuses_a_client_supplied_author
-func TestPromptSubmitRefusesAClientSuppliedAuthor(t *testing.T) {
-	submitCaseDB(t, "gw-session-key")
-	parkedSubmitSession(t, "sid", map[string]any{"session_key": "gw-session-key", "inflight_turn": nil, "transport": nil})
-	author := map[string]any{"id": "bot:coder", "name": "coder", "is_bot": true}
-	resp := lookupMethod("prompt.submit")(context.Background(), "r", map[string]any{"session_id": "sid", "text": "hi", "_turn_author": author})
-	if failure := rpcErrorOf(t, resp); failure["code"] != 4124 {
-		t.Fatalf("resp %v", resp)
+		t.Fatalf("failure %v", failure)
 	}
 }

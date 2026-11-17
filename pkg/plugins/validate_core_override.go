@@ -24,6 +24,17 @@ type parsedSource struct {
 	tree *pyast.Node
 }
 
+// Lexicographic order of slash separated paths compared component by component
+func lessByParts(a, b string) bool {
+	pa, pb := strings.Split(a, "/"), strings.Split(b, "/")
+	for i := 0; i < len(pa) && i < len(pb); i++ {
+		if pa[i] != pb[i] {
+			return pa[i] < pb[i]
+		}
+	}
+	return len(pa) < len(pb)
+}
+
 func coreIsTestFile(name string) bool {
 	return strings.HasPrefix(name, "test_") || strings.HasSuffix(name, "_test.py") || name == "conftest.py"
 }
@@ -94,7 +105,7 @@ func modulePartsOf(rel string) []string {
 	return parts
 }
 
-// Import closure of __init__.py and dashboard modules, the files that run inside Icebath
+// Import closure of __init__.py, the files that run inside Icebath
 func coreRuntimeFiles(files []parsedSource, local map[string]bool) map[string]bool {
 	byModule := map[string]map[string]bool{}
 	trees := map[string]*pyast.Node{}
@@ -157,8 +168,7 @@ func coreRuntimeFiles(files []parsedSource, local map[string]bool) map[string]bo
 	seen := map[string]bool{}
 	stack := []string{}
 	for _, f := range files {
-		parts := strings.Split(f.rel, "/")
-		if f.rel == "__init__.py" || (len(parts) == 2 && parts[0] == "dashboard") {
+		if f.rel == "__init__.py" {
 			stack = append(stack, f.rel)
 		}
 	}

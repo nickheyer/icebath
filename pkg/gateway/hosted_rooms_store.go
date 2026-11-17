@@ -856,7 +856,7 @@ func hostedReservationSuperseded(rowGateway any, rowEpoch any, gatewayID string,
 	return stored > epoch || (stored == epoch && pyrepr.Str(rowGateway) != gatewayID), nil
 }
 
-// Fences direct Desktop prompts for a room before the first peer run is admitted
+// Fences direct local prompts for a room before the first peer run is admitted
 func ReservePeerRoom(ctx context.Context, dbPath string, claims *pyjson.Object, expiresAt float64, now *float64) error {
 	timestamp := hostedClock(now)
 	if expiresAt <= timestamp {

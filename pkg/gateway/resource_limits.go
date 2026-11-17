@@ -196,14 +196,11 @@ func ApplyMallocArenaMax(cfg map[string]any) bool {
 	return libc.Mallopt(mArenaMax, target) != 0
 }
 
-// Reports whether argv launches a long lived server, serve, dashboard or a foreground gateway
+// Reports whether argv launches a foreground gateway, the one long lived server
 func ServerProcessArgv(argv []string) (bool, error) {
 	args, err := pm.CommandArgv(argv)
 	if err != nil || len(args) == 0 {
 		return false, err
-	}
-	if args[0] == "serve" || args[0] == "dashboard" {
-		return true, nil
 	}
 	return args[0] == "gateway" && (len(args) == 1 || args[1] == "run" || strings.HasPrefix(args[1], "-")), nil
 }

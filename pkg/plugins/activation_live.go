@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
@@ -141,41 +139,6 @@ func pluginSkills(ctx context.Context, pluginKey string) []any {
 		}
 	}
 	return out
-}
-
-// Registered name of a catalog plugin skill written catalog name colon skill, false when not installed here
-func CatalogPluginSkill(ctx context.Context, written string) (string, bool, error) {
-	catalogName, bare, _ := strings.Cut(written, ":")
-	target, err := catalogInstalledDir(home.Dir(ctx), catalogName)
-	if target == "" {
-		return "", false, err
-	}
-	resolvedTarget, err := pypath.Resolve(target)
-	if err != nil {
-		return "", false, err
-	}
-	m := GetPluginManager(ctx)
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-	keys := map[string]bool{}
-	for key, loaded := range m.plugins {
-		if loaded.Manifest == nil || loaded.Manifest.Path == "" {
-			continue
-		}
-		resolved, err := pypath.Resolve(loaded.Manifest.Path)
-		if err != nil {
-			return "", false, err
-		}
-		if resolved == resolvedTarget {
-			keys[key] = true
-		}
-	}
-	for _, qualified := range sortedKeys(m.pluginSkills) {
-		if entry := m.pluginSkills[qualified]; keys[entry.PluginKey] && entry.BareName == bare {
-			return qualified, true, nil
-		}
-	}
-	return "", false, nil
 }
 
 // Note an open chat receives naming the live skills and MCP servers, empty when nothing is live

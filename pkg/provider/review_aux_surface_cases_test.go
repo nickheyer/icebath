@@ -23,6 +23,6 @@ func TestReviewRegisteredInEveryAuxSurface(t *testing.T) {
 		inSlots = inSlots || slot == "review"
 	}
 	if !inSlots {
-		t.Fatal("review missing from the dashboard aux task slots")
+		t.Fatal("review missing from the built in aux task slots")
 	}
 }

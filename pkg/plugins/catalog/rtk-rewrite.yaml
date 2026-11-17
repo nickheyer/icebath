@@ -6,7 +6,7 @@ description: >-
   RTK (rtk-ai/rtk, Apache-2.0) before execution, so the model sees compact output
   instead of raw command spam — cutting tokens on common dev commands. Adds a
   fail-open pre_tool_call hook (2s timeout, unexpected exits leave the command
-  untouched), an optional desktop pane, and update scripts. Disclosure — every
+  untouched) and update scripts. Disclosure — every
   terminal tool command is passed to the rtk binary found on PATH (rtk-ai/rtk,
   installed separately) and replaced with rtk's rewrite before approval and
   execution; fail-open when rtk is missing or errors. Community mirror of

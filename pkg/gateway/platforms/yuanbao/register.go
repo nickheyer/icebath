@@ -127,9 +127,6 @@ func (yuanbaoPlatformPlugin) Register(ctx *plugins.Context) error {
 	extra := map[string]any{
 		"target_ref_syntax_fn":   parseSendTarget,
 		"standalone_send":        &gateway.StandaloneSendPolicy{Label: "Yuanbao", Media: true, TextDirect: true},
-		"dashboard_label":        "Yuanbao (元宝)",
-		"dashboard_description":  "Connect Icebath to Tencent Yuanbao.",
-		"dashboard_required_env": []string{},
 		"is_connected":           isConnected,
 		"config_connected_fn":    gateway.ConfigConnectedExtra("app_id", "app_secret"),
 		"setup_fn":               interactiveSetup,

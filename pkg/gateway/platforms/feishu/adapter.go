@@ -338,7 +338,7 @@ type FeishuAdapter struct {
 	wsSupervisor     context.CancelFunc
 	wsRestartBackoff float64
 	loop             *adapterLoop
-	webhookRunner    *gateway.WebAppRunner
+	webhookRunner    *gateway.HTTPAppRunner
 	eventHandler     *dispatcher.EventDispatcher
 
 	seenMessageIDs   map[string]float64
@@ -895,7 +895,7 @@ func (a *FeishuAdapter) connectWebhook(ctx context.Context) error {
 		return err
 	}
 	a.hydrateBotIdentity(ctx)
-	app := gateway.NewWebApplication(feishuWebhookMaxBodyBytes)
+	app := gateway.NewHTTPApp(feishuWebhookMaxBodyBytes)
 	if err := app.AddPost(a.settings.WebhookPath, a.handleWebhookRequest); err != nil {
 		return err
 	}

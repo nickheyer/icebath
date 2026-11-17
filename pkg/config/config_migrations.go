@@ -1301,7 +1301,25 @@ func migrationSteps() []migrationStep {
 			added: "removed display.interface",
 			message: "  \u2713 Removed display.interface \u2014 the terminal has one interface and bare icebath opens it.",
 			extraGuard: func(raw map[string]any) bool { _, has := raw["interface"]; return has }})},
+		{54, migrateTo54},
 	}
+}
+
+// Drops the dashboard, webapp and desktop sections, the terminal UI being the one interface
+func migrateTo54(r *migrationRun) error {
+	cfg := r.read()
+	var removed []string
+	for _, section := range []string{"dashboard", "webapp", "desktop"} {
+		if _, has := cfg[section]; has {
+			delete(cfg, section)
+			removed = append(removed, section)
+		}
+	}
+	if len(removed) == 0 {
+		return nil
+	}
+	return r.commit(cfg, "removed "+strings.Join(removed, ", "),
+		"  \u2713 Removed "+strings.Join(removed, ", ")+" \u2014 the terminal UI is the one interface.")
 }
 
 // Ladder a pass runs, replaced in tests to inject a failing step

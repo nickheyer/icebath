@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 func TestVertexHasCuratedModelList(t *testing.T) {
@@ -62,7 +61,7 @@ func TestVertexHiddenWithoutCredentials(t *testing.T) {
 	}
 }
 
-// Guest that claimed the welcome trial as the only Nous state, served on the local Desktop backend, offline
+// Guest whose free tier is the only Nous state, offline
 func guestPickerHome(t *testing.T) (context.Context, string) {
 	t.Helper()
 	pickerTestHome(t, nil)
@@ -82,7 +81,7 @@ func guestPickerHome(t *testing.T) (context.Context, string) {
 		return nil
 	}
 	t.Cleanup(func() { pickerNousModelIDsFn = saved })
-	return tools.WithServingLocalDesktop(context.Background(), true), h
+	return context.Background(), h
 }
 
 func nousRows(rows []map[string]any) []map[string]any {
@@ -139,7 +138,7 @@ func TestGuestIdentityWithGuestOffHidesTheNousRow(t *testing.T) {
 	}
 }
 
-func TestDesktopPickerPayloadNeverLocksTheFreeTierRow(t *testing.T) {
+func TestPickerPayloadNeverLocksTheFreeTierRow(t *testing.T) {
 	ctx, _ := guestPickerHome(t)
 	saved := inventoryPrewarmFn
 	inventoryPrewarmFn = func(context.Context, []map[string]any, string, string) <-chan struct{} { return nil }

@@ -1,17 +1,11 @@
 #!/usr/bin/env bash
-# Developer setup of a source checkout: builds the dashboard bundle and the
-# icebath binary with it embedded, then hands the binary to its own
-# install-self verb to publish the command, seed the home and sync skills.
-#   --runtime-only        build only, publish nothing
-#   --test-environment    also prepare every workspace the test suites need (default)
+# Builds icebath from this checkout and installs it, or only builds it with --runtime-only
 set -e
 
 runtime_only=false
-test_environment="--test-environment"
 for option in "$@"; do
     case "$option" in
         --runtime-only) runtime_only=true ;;
-        --test-environment|--test-environment=*) test_environment="$option" ;;
         *) printf 'Unknown setup option: %s\n' "$option" >&2; exit 2 ;;
     esac
 done
@@ -29,27 +23,13 @@ echo -e "${CYAN}Icebath Setup${NC}"
 echo ""
 command -v go >/dev/null 2>&1 || { echo -e "${RED}✗${NC} Go is required (see go.mod for the version)" >&2; exit 1; }
 
-echo -e "${CYAN}→${NC} Building the dashboard bundle..."
-go run ./cmd/icebath-build web
 echo -e "${CYAN}→${NC} Building icebath..."
-CGO_ENABLED=0 go build -tags webdist,goolm -trimpath -o icebath ./cmd/icebath
+CGO_ENABLED=0 go build -tags goolm -trimpath -o icebath ./cmd/icebath
 echo -e "${GREEN}✓${NC} Built $SCRIPT_DIR/icebath"
 
-if [ "$test_environment" != "" ]; then
-    echo -e "${CYAN}→${NC} Preparing the test environment..."
-    go mod download
-    workspaces="${test_environment#--test-environment}"
-    workspaces="${workspaces#=}"
-    if [ -n "$workspaces" ]; then
-        args=()
-        IFS=',' read -r -a selected <<< "$workspaces"
-        for w in "${selected[@]}"; do args+=(--workspace "$w"); done
-        npm ci --no-audit --no-fund --include-workspace-root=true "${args[@]}"
-    else
-        npm ci --no-audit --no-fund
-    fi
-    echo -e "${GREEN}✓${NC} Test environment ready"
-fi
+echo -e "${CYAN}→${NC} Preparing the test environment..."
+go mod download
+echo -e "${GREEN}✓${NC} Test environment ready"
 
 if [ "$runtime_only" = true ]; then
     exit 0

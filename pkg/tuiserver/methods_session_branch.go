@@ -86,9 +86,8 @@ func buildBranchAgent(ctx context.Context, session *tuigateway.Session, newSID, 
 	}()
 	if failure := catchPanic(func() {
 		scoped := profileBuildScope(ctx, parentHome)
-		launch := contextCwdIsLaunchArtifact(session)
 		built, err = makeAgentInContext(scoped, newSID, newKey, makeAgentOptions{sessionDB: branchDB, platformOverride: source,
-			cwdOverride: sessionCwd(scoped, session), contextCwdIsLaunchArtifact: &launch, authUserID: parentUserID})
+			cwdOverride: sessionCwd(scoped, session), authUserID: parentUserID})
 		if err != nil {
 			return
 		}

@@ -95,7 +95,6 @@ func TestConfigSetRuntimeReadKeyIsSilent(t *testing.T) {
 	for _, tc := range [][2]string{
 		{"browser.cloud_provider", "browserbase"},
 		{"web.use_gateway", "true"},
-		{"dashboard.kanban.default_tenant", "t1"},
 	} {
 		h, out, errOut := runtimeKeysHome(t)
 		if runtimeKeyNotice(t, h, tc[0], tc[1], out, errOut) {

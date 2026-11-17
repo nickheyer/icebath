@@ -146,14 +146,6 @@ func repairMissingWSOrphanReaps(ctx context.Context) {
 
 // Hands the lease registry the ids this process still owns so it drops the rest
 func reclaimOrphanedLeases() {
-	func() {
-		defer func() {
-			if failure := recover(); failure != nil {
-				logger().Debug("stale deferred lease sweep failed", "exc_info", failureText(failure))
-			}
-		}()
-		reapStaleDeferredLeases(nowSeconds())
-	}()
 	defer func() {
 		if failure := recover(); failure != nil {
 			logger().Debug("orphaned lease reclaim failed", "exc_info", failureText(failure))

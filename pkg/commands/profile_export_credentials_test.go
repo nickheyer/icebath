@@ -32,7 +32,6 @@ var exportExtraStores = []string{
 	"browser-profiles/live/Default/Cookies", "browser_profiles/default/Default/Login Data",
 	"mcp-tokens/srv.json", "vault/vault.key", "platforms/pairing/approved.json", "slack_tokens.json",
 	"webhook_subscriptions.json", ".ssh/id_rsa", ".aws/credentials", ".gnupg/x", ".kube/config", ".envrc",
-	"webapp/session-token", "webapp/native-sign-in-tokens.json", "webapp/sign-in-registration.json",
 }
 
 // Dot named stores seeded as directories, the HOME_CREDENTIAL_DIRS of file_safety
@@ -53,7 +52,7 @@ func seedExportStores(t *testing.T, root string) map[string]bool {
 	writeTestFile(t, filepath.Join(root, "platforms", "keep.json"), []byte("{}"))
 	for rel := range stores {
 		last := rel[strings.LastIndex(rel, "/")+1:]
-		isDir := exportDotDirs[rel] || (!strings.Contains(last, ".") && rel != "npmrc" && rel != "webapp/session-token")
+		isDir := exportDotDirs[rel] || (!strings.Contains(last, ".") && rel != "npmrc")
 		target := filepath.Join(root, filepath.FromSlash(rel))
 		if isDir {
 			target = filepath.Join(target, "store")

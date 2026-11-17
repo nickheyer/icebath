@@ -33,24 +33,22 @@ func TestZipSwapKeepsEveryNestedBuildOutputAndTheGuardAdmitsThem(t *testing.T) {
 	tmp := t.TempDir()
 	root := filepath.Join(tmp, "install")
 	outputs := map[string]string{
-		"apps/desktop/release/win-unpacked/Hermes.exe": "MZbuilt",
-		"apps/desktop/node_modules/electron/index.js":  "electron",
-		"apps/desktop/dist/index.html":                 "live renderer",
-		"cmd/icebath/web_dist/index.html":              "<dashboard>",
+		"scripts/whatsapp-bridge/node_modules/baileys/index.js": "bridge dependency",
 	}
 	for rel, data := range outputs {
 		ugWrite(t, filepath.Join(root, filepath.FromSlash(rel)), data)
 	}
-	if err := os.Mkdir(filepath.Join(root, "cmd", "icebath", "__pycache__"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(root, "cmd", "icebath", "__pycache__"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	ugWrite(t, filepath.Join(root, "cmd", "icebath", "x.py"), "old")
+	ugWrite(t, filepath.Join(root, "scripts", "whatsapp-bridge", "bridge.js"), "old bridge")
 
 	extracted := filepath.Join(tmp, "extracted")
-	ugWrite(t, filepath.Join(extracted, "apps", "desktop", "dist", "index.html"), "shipped renderer")
+	ugWrite(t, filepath.Join(extracted, "scripts", "whatsapp-bridge", "bridge.js"), "shipped bridge")
 	ugWrite(t, filepath.Join(extracted, "cmd", "icebath", "x.py"), "new")
 
-	staged, err := stageEntries(&bytes.Buffer{}, extracted, []string{"apps", "cmd"}, root, nil)
+	staged, err := stageEntries(&bytes.Buffer{}, extracted, []string{"scripts", "cmd"}, root, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -62,30 +60,25 @@ func TestZipSwapKeepsEveryNestedBuildOutputAndTheGuardAdmitsThem(t *testing.T) {
 		t.Fatalf("x.py = %q", got)
 	}
 	for rel, data := range outputs {
-		if strings.HasPrefix(rel, "apps/desktop/dist/") {
-			continue
-		}
 		if got := ugRead(t, filepath.Join(root, filepath.FromSlash(rel))); got != data {
 			t.Fatalf("%s = %q, want %q", rel, got, data)
 		}
 	}
-	if got := ugRead(t, filepath.Join(root, "apps", "desktop", "dist", "index.html")); got != "shipped renderer" {
-		t.Fatalf("dist/index.html = %q", got)
+	if got := ugRead(t, filepath.Join(root, "scripts", "whatsapp-bridge", "bridge.js")); got != "shipped bridge" {
+		t.Fatalf("bridge.js = %q", got)
 	}
 	if statExists(filepath.Join(root, "cmd", "icebath", "__pycache__")) {
 		t.Fatal("__pycache__ survived the swap")
 	}
 
-	for _, line := range []string{"!! apps/desktop/release/", "!! apps/desktop/dist/", "!! apps/desktop/node_modules/",
-		"!! apps/desktop/build/", "!! cmd/icebath/web_dist/", "!! cmd/icebath/__pycache__/",
-		"!! __pycache__/",
-		"!! scripts/whatsapp-bridge/node_modules/", "!! web/node_modules/", "!! tests-js/node_modules/"} {
+	for _, line := range []string{"!! cmd/icebath/__pycache__/", "!! __pycache__/",
+		"!! scripts/whatsapp-bridge/node_modules/", "!! tests-js/node_modules/"} {
 		if !isZipPreservedEntryStatusLine(line, nil) {
 			t.Fatalf("not admitted: %s", line)
 		}
 	}
-	for _, line := range []string{"!! apps/desktop/notes.local", "?? apps/desktop/release/", "!! cmd/icebath/web_dist_backup/",
-		"R  src/x -> apps/desktop/release/x"} {
+	for _, line := range []string{"!! scripts/whatsapp-bridge/notes.local", "?? scripts/whatsapp-bridge/node_modules/",
+		"!! scripts/whatsapp-bridge/node_modules_backup/", "R  src/x -> scripts/whatsapp-bridge/node_modules/x"} {
 		if isZipPreservedEntryStatusLine(line, nil) {
 			t.Fatalf("admitted: %s", line)
 		}
@@ -156,7 +149,7 @@ func TestUpdateViaZipRejectsSymlinkMember(t *testing.T) {
 	downloadedTo := ""
 	uzServeArchive(t, zipPath, &downloadedTo)
 
-	_, err := updateViaZip(context.Background(), &bytes.Buffer{}, map[string]any{}, false, "", "", map[string]any{})
+	_, err := updateViaZip(context.Background(), &bytes.Buffer{}, map[string]any{}, "", "", map[string]any{})
 	var exit *pm.SystemExit
 	if !errors.As(err, &exit) || exit.Code != 1 {
 		t.Fatalf("err = %v, want exit status 1", err)
@@ -181,7 +174,7 @@ func TestUpdateViaZipAcceptsNormalMember(t *testing.T) {
 	uzServeArchive(t, zipPath, nil)
 
 	var out bytes.Buffer
-	if _, err := updateViaZip(context.Background(), &out, map[string]any{}, false, "", "", map[string]any{}); err != nil && !isUpdateExit(err) {
+	if _, err := updateViaZip(context.Background(), &out, map[string]any{}, "", "", map[string]any{}); err != nil && !isUpdateExit(err) {
 		t.Fatalf("err = %v\n%s", err, out.String())
 	}
 	if strings.Contains(out.String(), "symlink member") {

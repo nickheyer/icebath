@@ -287,9 +287,5 @@ func sessionToolsets(ctx context.Context, a *SessionAuthority, ref SessionRef) (
 	if err != nil {
 		return nil, nil, err
 	}
-	platform := "cli"
-	if policy != nil {
-		platform = policy.Platform
-	}
-	return enabled, tools.SessionDisabledToolsets(tools.ParseConfigStringList(raw), platform, policy != nil && policy.Source == "oneshot"), nil
+	return enabled, tools.SessionDisabledToolsets(tools.ParseConfigStringList(raw), policy != nil && policy.Source == "oneshot"), nil
 }

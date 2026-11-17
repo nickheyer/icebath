@@ -185,17 +185,6 @@ func TestLoadEnabledToolsetsHonorsDisabledProjectOnConfiguredFallback(t *testing
 	}
 }
 
-func TestWithSessionToolsetsKeepsDesktopUiWhenProjectDisabled(t *testing.T) {
-	fakeDisabled(t, []string{"project"})
-	if got := withSessionToolsets(context.Background(), []string{"memory"}, "desktop"); !reflect.DeepEqual(got, []string{"memory", "catalog", "desktop_ui"}) {
-		t.Fatalf("disabled project = %v", got)
-	}
-	loadDisabledToolsets = func(context.Context) []string { return nil }
-	if got := withSessionToolsets(context.Background(), []string{"memory"}, "desktop"); !reflect.DeepEqual(got, []string{"memory", "catalog", "desktop_ui", "project"}) {
-		t.Fatalf("nothing disabled = %v", got)
-	}
-}
-
 func TestLoadEnabledToolsetsRejectsDisabledMcpEnv(t *testing.T) {
 	toolsetHome(t, "mcp_servers:\n  mcp-off:\n    enabled: false\nplatform_toolsets:\n  cli: [memory]\n")
 	t.Setenv("ICEBATH_TUI_TOOLSETS", "mcp-off")

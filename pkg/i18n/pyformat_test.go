@@ -195,14 +195,14 @@ func TestLanguageIDHelpers(t *testing.T) {
 		}
 	}
 	dir := t.TempDir()
-	for _, name := range []string{"pl.yaml", "pl.tui.yaml", "pl.tiu.yaml", "README.md", "de.desktop.yml"} {
+	for _, name := range []string{"pl.yaml", "pl.tui.yaml", "pl.tiu.yaml", "README.md", "de.tui.yml"} {
 		writeFile(t, dir+"/"+name, "a: b\n")
 	}
 	var got [][2]string
 	for _, f := range ScanLocaleDir(dir) {
 		got = append(got, [2]string{f.Lang, f.Surface})
 	}
-	if !reflect.DeepEqual(got, [][2]string{{"de", "desktop"}, {"pl", "tui"}, {"pl", "core"}}) {
+	if !reflect.DeepEqual(got, [][2]string{{"de", "tui"}, {"pl", "tui"}, {"pl", "core"}}) {
 		t.Fatalf("scan %v", got)
 	}
 	if len(ScanLocaleDir(dir+"/missing")) != 0 {

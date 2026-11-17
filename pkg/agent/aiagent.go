@@ -201,14 +201,7 @@ type AIAgent struct {
 	thinkingCallback                   any
 	reasoningCallback                  any
 	clarifyCallback                    any
-	readTerminalCallback               any
-	readPreviewCallback                any
-	drivePreviewCallback               any
-	readWindowBelowCallback            any
 	connectionCallback                 any
-	tourCallback                       any
-	themeCallback                      any
-	setupBeatCallback                  any
 	stepCallback                       any
 	streamDeltaCallback                any
 	interimAssistantCallback           any
@@ -442,14 +435,7 @@ type AIAgentOptions struct {
 	ThinkingCallback                   any
 	ReasoningCallback                  any
 	ClarifyCallback                    any
-	ReadTerminalCallback               any
-	ReadPreviewCallback                any
-	DrivePreviewCallback               any
-	ReadWindowBelowCallback            any
 	ConnectionCallback                 any
-	TourCallback                       any
-	ThemeCallback                      any
-	SetupBeatCallback                  any
 	StepCallback                       any
 	StreamDeltaCallback                any
 	InterimAssistantCallback           any
@@ -594,13 +580,6 @@ func (a *AIAgent) SessionDB() *state.DB { return canonicalSessionDB(a.sessionDB)
 // Store the agent persists its session through, nil before one is attached
 func (a *AIAgent) SessionStore() SessionStore { return a.sessionDB }
 
-// Store the onboarding record reads and writes through, the agent's own session store
-func (a *AIAgent) OnboardingStore() tools.OnboardingStore {
-	if a.sessionDB == nil {
-		return nil
-	}
-	return a.sessionDB
-}
 func (a *AIAgent) DisabledToolsets() []string { return a.disabledToolsets }
 func (a *AIAgent) DelegationBackend() string  { return a.delegationBackend }
 func (a *AIAgent) IsOneshot() bool            { return a.agentIsOneshot(context.Background()) }
@@ -717,13 +696,10 @@ func sideAgentToolDrops(a *AIAgent) map[string]bool {
 	return map[string]bool{}
 }
 
-// Tool names the agent never carries, the side agent drops and the platform toolset drops
+// Tool names the agent never carries, the side agent drops
 func (a *AIAgent) ToolDrops() map[string]bool {
 	out := map[string]bool{}
 	for n := range sideAgentToolDrops(a) {
-		out[n] = true
-	}
-	for n := range tools.SessionPlatformToolDrops(a.platform) {
 		out[n] = true
 	}
 	return out

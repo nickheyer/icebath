@@ -12,36 +12,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
-// Scripted onboarding opening handed to run_conversation one step at a time
-type stepsPrelude struct {
-	steps []tools.OnboardingPreludeStep
-	next  int
-}
-
-func (p *stepsPrelude) Next(result *string) (agent.PreludeStep, bool) {
-	if p.next >= len(p.steps) {
-		return agent.PreludeStep{}, false
-	}
-	step := p.steps[p.next]
-	p.next++
-	return agent.PreludeStep{Content: step.Text, ToolName: step.Tool, Args: step.Args}, true
-}
-
-func (p *stepsPrelude) Close() {}
-
-// Appends the onboarding turn note and returns the scripted opening for a chat built with setup_beat
-func armOnboardingTurn(a *agent.AIAgent, owner *turnApprovalOwner, history []map[string]any) []tools.OnboardingPreludeStep {
-	if owner == nil || !tools.BuildsOnboarding(a) {
-		return nil
-	}
-	cardWaiting := false
-	if live, ok := owner.authority.Live(owner.sessionID); ok && live != nil {
-		cardWaiting = gateway.ServerRequestWaiting(live.EventStream, owner.sessionID, "setup_beat")
-	}
-	tools.AppendTurnNote(a, tools.OnboardingSessionTurnNote(a, len(history) == 0, cardWaiting))
-	return tools.OnboardingPrelude(a, history)
-}
-
 // Receipt binding the streamed reply to its stored row, nil for a result that is not a dict
 func persistedTurn(a *agent.AIAgent, agentHistory []map[string]any, result map[string]any, compressions *int) map[string]any {
 	if result == nil {
@@ -277,9 +247,6 @@ func (t *TurnRunner) runConversationWithApproval(ctx context.Context, a *agent.A
 	}
 	if tc.moaConfig != nil {
 		opts.MoaConfig = tc.moaConfig
-	}
-	if steps := armOnboardingTurn(a, t.approvalOwner, agentHistory); steps != nil {
-		opts.Prelude = &stepsPrelude{steps: steps}
 	}
 	if persistTimestamp != nil {
 		opts.PersistUserTimestamp = persistTimestamp

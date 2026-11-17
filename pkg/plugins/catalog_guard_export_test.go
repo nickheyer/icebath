@@ -19,7 +19,7 @@ func TestCatalogGuardExportsRefuseRemovedAndIncompatibleEntries(t *testing.T) {
 	var opErr *PluginOperationError
 	err := RaiseIfRemoved(ctx, "fresh-plugin", "or-picker")
 	if !errors.As(err, &opErr) || opErr.FailureClass != "removed_from_catalog" ||
-		!strings.HasPrefix(opErr.Msg, "Plugin 'or-picker' was removed from the Icebath plugin catalog and is blocked from installation: Folded into openrouter-picker.") ||
+		!strings.HasPrefix(opErr.Msg, "Plugin 'or-picker' was removed from the Icebath plugin catalog and is blocked from installation: Folded into openrouter-picker, which is no longer in the catalog.") ||
 		!strings.HasSuffix(opErr.Msg, "(removed 2026-09-28)") {
 		t.Fatalf("kill listed candidate answered %v", err)
 	}

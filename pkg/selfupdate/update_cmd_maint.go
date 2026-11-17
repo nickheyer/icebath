@@ -16,7 +16,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/backup"
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
@@ -55,7 +54,6 @@ var backupModeAliases = map[string]string{
 var (
 	maintCreateQuickSnapshot  = backup.CreateQuickSnapshot
 	maintSqliteRuntimeStatus  = postUpdateSqliteRuntimeStatus
-	maintKillStaleDashboards  = killStaleDashboardsGuarded
 	maintSyncSkills           = skills.SyncSkills
 	maintConfigMigration      = checkAndApplyConfigMigration
 	maintCheckoutVersion      = checkoutVersion
@@ -65,7 +63,7 @@ var (
 )
 
 // Historical updater hook that never completes inside the pre swap process
-func prepareUpdatedCheckout(ctx context.Context, projectRoot string, desktop bool) error {
+func prepareUpdatedCheckout(ctx context.Context, projectRoot string) error {
 	return pm.StopForRelaunchIncomplete(ctx)
 }
 
@@ -280,64 +278,9 @@ func formatTimeAgo(isoTS any) string {
 // Historical updater hook, scans run only in a fresh completion process
 func reloadProcessScanModules(ctx context.Context) error { return pm.StopForRelaunchIncomplete(ctx) }
 
-// Historical updater hook that never continues a pre PM update after the swap
-func finishDashboardUpdateCleanup(ctx context.Context, nodeFailures []string, alreadyRestartedUnits map[string]bool) error {
-	return pm.StopForRelaunch(ctx)
-}
-
-// Runs the dashboard stop and restart, a panic of the stop returned as its failure
-func killStaleDashboardsGuarded(ctx context.Context, w io.Writer, alreadyRestartedUnits map[string]bool, scopeHome string) (result gateway.DashboardKillResult, err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			if failure, ok := r.(error); ok {
-				err = failure
-			} else {
-				err = fmt.Errorf("%v", r)
-			}
-		}
-	}()
-	return gateway.KillStaleDashboardProcesses(ctx, w, "the running backend no longer matches the updated frontend", true, alreadyRestartedUnits, scopeHome), nil
-}
-
-// Refreshes managed dashboards or stops stale manual ones, the pids it stopped and could not bring back
-func refreshDashboardAfterUpdate(ctx context.Context, w io.Writer, alreadyRestartedUnits map[string]bool) map[int]bool {
-	unrecovered := map[int]bool{}
-	result, err := maintKillStaleDashboards(ctx, w, alreadyRestartedUnits, home.Dir(ctx))
-	if err != nil {
-		updateLog.WarnContext(ctx, fmt.Sprintf("Post-update dashboard cleanup failed: %s", launchErrorText(err)))
-		recordUpdateStep(ctx, "dashboard_cleanup", false, pm.ErrorClass(err)+": "+launchErrorText(err))
-		fmt.Fprintln(w)
-		fmt.Fprintf(w, "⚠ Could not refresh running dashboard/serve process(es): %s\n", launchErrorText(err))
-		fmt.Fprintln(w, "  If one is still running, restart it so it serves the updated code:")
-		fmt.Fprintln(w, "    icebath dashboard --port <port>   (or: systemctl --user restart icebath-dashboard)")
-		return unrecovered
-	}
-	for _, pid := range result.Unrecovered {
-		unrecovered[pid] = true
-	}
-	if len(unrecovered) == 0 {
-		return unrecovered
-	}
-	fmt.Fprintln(w)
-	fmt.Fprintln(w, "⚠ A web dashboard/serve process was stopped during update and could not be auto-restarted.")
-	fmt.Fprintln(w, "  Re-launch it when you want the web UI back:")
-	fmt.Fprintln(w, "    icebath dashboard --port <port>")
-	return unrecovered
-}
-
-// Exported form of the post update dashboard refresh for the dashboard cases outside this package
-func RefreshDashboardAfterUpdate(ctx context.Context, w io.Writer, alreadyRestartedUnits map[string]bool) map[int]bool {
-	return refreshDashboardAfterUpdate(ctx, w, alreadyRestartedUnits)
-}
-
-// Prints the outcome with branch and sha plus the receipt line a dashboard action id asks for
+// Prints the outcome with branch and sha
 func printUpdateCompletion(ctx context.Context, w io.Writer, message string) {
 	fmt.Fprintf(w, "%s%s\n", message, branchHeadSuffix(ctx, nil, ""))
-	actionID := os.Getenv("ICEBATH_ACTION_ID")
-	if len(actionID) != 32 || strings.Trim(actionID, "0123456789abcdef") != "" {
-		return
-	}
-	fmt.Fprintf(w, "=== icebath-update completed %s ===\n", actionID)
 }
 
 // Version field of the checkout's pyproject.toml, nil on any failure
@@ -419,11 +362,6 @@ func printVerifiedUpdateCompletion(ctx context.Context, w io.Writer, message str
 		fmt.Fprintln(w, line)
 	}
 	return false
-}
-
-// Historical updater hook, old soft build results cannot establish completion
-func printUpdateSummary(ctx context.Context, nodeFailures []any, desktopBuildOk bool, preUpdateVersion *string) (bool, error) {
-	return false, pm.StopForRelaunch(ctx)
 }
 
 // Integrity check and auto restore of one home's state.db from its newest valid snapshot, never failing
@@ -1015,14 +953,6 @@ func RunPostUpdateMaintenance(ctx context.Context, o PostUpdateMaintenance) (boo
 	}
 	root := fleetProjectRoot()
 	owedStep("windows_home_acl", func() error { return maintRepairWindowsHomeACL(ctx, nil) })
-	if sysPlatform() == "darwin" && o.HadDesktopAppBeforeUpdate {
-		fmt.Fprintln(w)
-		fmt.Fprintln(w, "  ℹ macOS: if Icebath re-prompts for permissions you already "+
-			"granted (toggle shows ON), the stored grant is stale — run "+
-			"`tccutil reset ScreenCapture ai.icebath` (repeat "+
-			"per affected service), toggle it ON in System Settings, then "+
-			"fully quit & relaunch once.")
-	}
 	if _, err := ensureMacosTCCAnchor(ctx, root); err != nil {
 		updateLog.DebugContext(ctx, "macOS TCC anchor refresh skipped", "error", launchErrorText(err))
 	}

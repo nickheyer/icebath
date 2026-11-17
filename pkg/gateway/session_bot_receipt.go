@@ -741,7 +741,7 @@ func keptLocalHistory(db *state.SessionDB, row *pyjson.Object, subject any) (boo
 		}
 		_, authenticated := ParseAuthenticatedSubject(userID)
 		if !labelled && !SameOwner(userID, owner) && !(pyTruthy(subject) && SameOwner(userID, subject)) && !authenticated {
-			return source == "desktop", nil
+			return source == state.ClientHistorySource, nil
 		}
 	}
 	first := subject

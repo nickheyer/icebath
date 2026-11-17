@@ -250,42 +250,6 @@ func TestSmallCategoryShowsAllSkills(t *testing.T) {
 	}
 }
 
-// Writes a desktop app install stamp into a fresh tree and makes it the tree of the running binary
-func desktopStamp(t *testing.T, payload, updateMechanism string) {
-	t.Helper()
-	t.Setenv("ICEBATH_HOME", t.TempDir())
-	root := filepath.Join(t.TempDir(), "app-"+payload+"-"+updateMechanism)
-	if err := os.MkdirAll(root, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	stamp, _ := json.Marshal(map[string]any{"source": "local", "distribution": "desktop-app", "payload": payload, "updateMechanism": updateMechanism,
-		"commit": strings.Repeat("a", 40), "displayVersion": "0.17.6", "baseVersion": "0.17.6", "tag": nil})
-	if err := os.WriteFile(filepath.Join(root, "install-stamp.json"), stamp, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(pm.PatchRepoRoot(root))
-	t.Setenv("ICEBATH_INSTALL_ROOT", "")
-	os.Unsetenv("ICEBATH_INSTALL_ROOT")
-	updaterecord.ResetVersionInfoCache()
-	t.Cleanup(updaterecord.ResetVersionInfoCache)
-	resetBannerState(t)
-}
-
-func TestBootstrapShellBannerSaysInstaller(t *testing.T) {
-	desktopStamp(t, "bootstrap", "self")
-	label := formatBannerVersionLabel()
-	if !strings.Contains(label, "0.17.6") || !strings.Contains(label, "installer") {
-		t.Fatalf("label %q", label)
-	}
-}
-
-func TestBundledReleaseBannerDoesNotSayInstaller(t *testing.T) {
-	desktopStamp(t, "bundled", "electron-updater")
-	if label := formatBannerVersionLabel(); strings.Contains(label, "installer") {
-		t.Fatalf("label %q", label)
-	}
-}
-
 func TestBannerUpdateCheckNonBlockingBannerDoesNotBlockOnPendingUpdateCheck(t *testing.T) {
 	t.Setenv("ICEBATH_HOME", t.TempDir())
 	resetBannerState(t)

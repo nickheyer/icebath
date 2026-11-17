@@ -11,7 +11,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/backup"
 	"github.com/nickheyer/icebath/pkg/browser"
 	"github.com/nickheyer/icebath/pkg/commands"
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/gateway/platforms/slack"
 	"github.com/nickheyer/icebath/pkg/gateway/platforms/whatsapp"
@@ -19,7 +18,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/gatewaycli"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/kanban"
-	"github.com/nickheyer/icebath/pkg/logging"
 	"github.com/nickheyer/icebath/pkg/mcp"
 	"github.com/nickheyer/icebath/pkg/memory"
 	"github.com/nickheyer/icebath/pkg/monitoring"
@@ -49,9 +47,7 @@ func bindHostCommands(cli *commands.CLI) {
 		"connectors":              connectorsGroup,
 		"console":                 consoleGroup,
 		"curator":                 curatorGroup,
-		"dashboard":               dashboardGroup,
 		"debug":                   debugGroup,
-		"desktop":                 desktopGroup,
 		"doctor":                  doctorGroup,
 		"dump":                    dumpGroup,
 		"egress":                  egressGroup,
@@ -78,7 +74,6 @@ func bindHostCommands(cli *commands.CLI) {
 		"secrets":                 secretsGroup,
 		"security":                securityGroup,
 		"send":                    sendGroup,
-		"serve":                   dashboardGroup,
 		"sessions":                sessionsGroup,
 		"setup":                   setupGroup,
 		"slack":                   slackGroup,
@@ -87,7 +82,6 @@ func bindHostCommands(cli *commands.CLI) {
 		"uninstall":               uninstallGroup,
 		"update":                  updateGroup,
 		"update-takeover":         updateTakeoverGroup,
-		"update-serve-resume":     updateServeResumeGroup,
 		"update-finish":           updateFinishGroup,
 		"update-restart-recovery": updateRestartRecoveryGroup,
 		"update-completion":       updateCompletionGroup,
@@ -97,7 +91,6 @@ func bindHostCommands(cli *commands.CLI) {
 		"usage":                   usageGroup,
 		"vault":                   vaultGroup,
 		"verify":                  verifyGroup,
-		"webapp":                  webappGroup,
 		"whatsapp":                whatsappGroup,
 		"whatsapp-cloud":          whatsappCloudGroup,
 		"worktree":                worktreeGroup,
@@ -217,51 +210,8 @@ func curatorGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, pa
 	return memory.CuratorCommand(ctx, processToolsEnv(ctx), ns, cmd.OutOrStdout())
 }
 
-func dashboardGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path string, args []string) (int, error) {
-	return cmdDashboard(cli, cmd, args)
-}
-
-// Starts the web UI server or manages running ones, hermes_cli/main.py cmd_dashboard
-func cmdDashboard(cli *commands.CLI, cmd *cobra.Command, args []string) (int, error) {
-	ctx := cmdCtx(cmd)
-	ns := namespace(cli, cmd, cmd.CommandPath(), args)
-	if strings.HasSuffix(cmd.CommandPath(), " dashboard register") {
-		return gateway.CmdDashboardRegister(ctx, ns, cmd.OutOrStdout())
-	}
-	return gateway.CmdDashboard(ctx, gateway.DashboardLaunch{Namespace: ns, HeadlessBackend: cmd.Name() == "serve", Stdout: cmd.OutOrStdout(), Stderr: cmd.ErrOrStderr(),
-		PrepareRuntime: dashboardPrepareRuntime})
-}
-
-// Skills seed, terminal env bridge, web dist step, plugins and MCP discovery before the server binds
-func dashboardPrepareRuntime(ctx context.Context, headlessBackend bool, resolveWebDist func() error) (bool, error) {
-	setupLoggingMode("gui")
-	syncBundledSkillsQuietly()
-	if err := config.ApplyTerminalConfigToEnv(ctx, home.Dir(ctx), config.TerminalEnvOptions{}); err != nil {
-		slogDebug("terminal config → env bridge failed for dashboard/serve: " + err.Error())
-	}
-	if err := resolveWebDist(); err != nil {
-		return false, err
-	}
-	plugins.DiscoverPlugins(ctx, false)
-	desktop := tools.IsDesktopOwnedBackend(nil)
-	if headlessBackend && desktop {
-		return true, nil
-	}
-	env := processToolsEnv(ctx)
-	if desktop {
-		mcp.StartBackgroundDiscovery(ctx, env, nil, "dashboard-mcp-discovery")
-	} else {
-		mcp.DeferBackgroundDiscovery(ctx, env, nil, "dashboard-mcp-discovery", nil)
-	}
-	return false, nil
-}
-
 func debugGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path string, args []string) (int, error) {
 	return selfupdate.RunDebug(ctx, home.Dir(ctx), namespace(cli, cmd, path, args), cmd.OutOrStdout())
-}
-
-func desktopGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path string, args []string) (int, error) {
-	return app.CmdGUI(ctx, namespace(cli, cmd, path, args), explicitCLIProfile, cmd.OutOrStdout())
 }
 
 func doctorGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path string, args []string) (int, error) {
@@ -490,12 +440,6 @@ func updateTakeoverGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Comm
 	return selfupdate.CmdUpdateTakeover(ctx, namespace(cli, cmd, path, args), cmd.OutOrStdout())
 }
 
-// Relaunches the manual backends a historical updater paused from a request file
-func updateServeResumeGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path string, args []string) (int, error) {
-	ns := namespace(cli, cmd, path, args)
-	return selfupdate.UpdateServeResumeMain(ctx, nsString(ns, "context"), nsString(ns, "result"), cmd.OutOrStdout(), cmd.ErrOrStderr()), nil
-}
-
 // Finishes an update in the selected checkout from a request file
 func updateFinishGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path string, args []string) (int, error) {
 	ns := namespace(cli, cmd, path, args)
@@ -550,10 +494,6 @@ func verifyGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, pat
 	return plugins.RunVerifyCommand(ctx, namespace(cli, cmd, path, args), cmd.OutOrStdout(), cmd.ErrOrStderr()), nil
 }
 
-func webappGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path string, args []string) (int, error) {
-	return gateway.CmdWebapp(ctx, home.Dir(ctx), namespace(cli, cmd, path, args), explicitCLIProfile, cmd.OutOrStdout(), cmd.ErrOrStderr())
-}
-
 func whatsappGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path string, args []string) (int, error) {
 	return whatsapp.CmdWhatsApp(ctx, home.Dir(ctx), namespace(cli, cmd, path, args), cmd.OutOrStdout(), requireTTY)
 }
@@ -579,9 +519,4 @@ func requireTTY(commandName string) {
 			"Run it directly in your terminal instead.")
 		exit(1)
 	}
-}
-
-// Switches file logging to another mode for the dashboard entry points
-func setupLoggingMode(mode string) {
-	_, _ = logging.SetupLogging(context.Background(), logging.Options{Mode: mode})
 }

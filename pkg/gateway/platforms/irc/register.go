@@ -112,8 +112,6 @@ func (ircPlatformPlugin) Register(ctx *plugins.Context) error {
 		RequiredEnv: []string{"IRC_SERVER", "IRC_CHANNEL", "IRC_NICKNAME"},
 		InstallHint: "No extra packages needed (stdlib only)",
 		Extra: map[string]any{
-			"dashboard_description":  "Relay messages between an IRC channel (or DMs) and Icebath.",
-			"docs_url":               "https://hermes-agent.nousresearch.com/docs/user-guide/messaging/irc",
 			"scoped_check_fn":        checkRequirements,
 			"scoped_validate_config": validateConfig,
 			"is_connected":           isConnected,

@@ -109,7 +109,7 @@ func TestAgentOnlyPackageIsReadWithoutRunningItsCode(t *testing.T) {
 	repo := inspectRepo(t, tmp, files, "source")
 	result := mustInspect(t, ctx, fileURI(repo), "")
 	warnings := result["warnings"].([]string)
-	want := map[string]any{"ok": true, "agent": true, "desktop": false, "agent_name": "demo-agent", "desktop_name": nil,
+	want := map[string]any{"ok": true, "agent": true, "agent_name": "demo-agent",
 		"sha": c6Git(t, repo, "rev-parse", "HEAD"), "warnings": warnings, "insecure": true}
 	if !reflect.DeepEqual(result, want) || len(warnings) != 1 || !strings.Contains(warnings[0], "insecure or local scheme") {
 		t.Fatalf("%#v", result)
@@ -119,15 +119,15 @@ func TestAgentOnlyPackageIsReadWithoutRunningItsCode(t *testing.T) {
 	}
 }
 
-func TestMixedPackageInASubdirectoryReportsBothHalves(t *testing.T) {
+func TestPackageInASubdirectoryReportsTheAgentPlugin(t *testing.T) {
 	ctx, tmp, files, sentinel := inspectWorld(t)
-	nested := map[string]string{"pkgs/demo/desktop/plugin.js": "export default {}\n", "other/huge.txt": "x"}
+	nested := map[string]string{"other/huge.txt": "x"}
 	for k, v := range files {
 		nested["pkgs/demo/"+k] = v
 	}
 	repo := inspectRepo(t, tmp, nested, "source")
 	result := mustInspect(t, ctx, fileURI(repo)+"#pkgs/demo", "")
-	if result["ok"] != true || result["agent"] != true || result["desktop"] != true || result["agent_name"] != "demo-agent" || result["desktop_name"] != "demo" {
+	if result["ok"] != true || result["agent"] != true || result["agent_name"] != "demo-agent" {
 		t.Fatalf("%#v", result)
 	}
 	if _, err := os.Stat(sentinel); err == nil {
@@ -135,17 +135,9 @@ func TestMixedPackageInASubdirectoryReportsBothHalves(t *testing.T) {
 	}
 }
 
-func TestDesktopOnlyAndPortablePackages(t *testing.T) {
+func TestPortablePackageNamesItsAgentPlugin(t *testing.T) {
 	ctx, tmp, _, _ := inspectWorld(t)
-	desktop := inspectRepo(t, tmp, map[string]string{"plugin.js": "export default {}\n"}, "ui-plugin")
 	portable := inspectRepo(t, tmp, map[string]string{"plugin.json": `{"name": "portable-one"}`}, "portable")
-	result := mustInspect(t, ctx, fileURI(desktop), "")
-	result["warnings"] = []string{}
-	want := map[string]any{"ok": true, "agent": false, "desktop": true, "agent_name": nil, "desktop_name": "ui-plugin",
-		"sha": c6Git(t, desktop, "rev-parse", "HEAD"), "warnings": []string{}, "insecure": true}
-	if !reflect.DeepEqual(result, want) {
-		t.Fatalf("%#v", result)
-	}
 	if got := mustInspect(t, ctx, fileURI(portable), "")["agent_name"]; got != "portable-one" {
 		t.Fatalf("%v", got)
 	}
@@ -155,7 +147,7 @@ func TestRepositoryWithoutPluginArtifactsIsAFailedRead(t *testing.T) {
 	ctx, tmp, _, _ := inspectWorld(t)
 	repo := inspectRepo(t, tmp, map[string]string{"README.md": "nothing here\n"}, "source")
 	result := mustInspect(t, ctx, fileURI(repo), "")
-	if result["ok"] != false || result["error"] != "No agent or desktop plugin artifacts found in this repository." {
+	if result["ok"] != false || result["error"] != "No agent plugin artifacts found in this repository." {
 		t.Fatalf("%#v", result)
 	}
 }
@@ -192,7 +184,7 @@ func TestKillListedSourceIsRefusedBeforeCloning(t *testing.T) {
 	}
 	t.Cleanup(func() { inspectRaiseIfRemoved, inspectClone = savedRemoved, savedClone })
 	result := mustInspect(t, ctx, fileURI(repo), "")
-	want := map[string]any{"ok": false, "agent": false, "desktop": false, "warnings": result["warnings"], "insecure": true, "error": "removed from the catalog"}
+	want := map[string]any{"ok": false, "agent": false, "warnings": result["warnings"], "insecure": true, "error": "removed from the catalog"}
 	if !reflect.DeepEqual(result, want) || len(seen) == 0 {
 		t.Fatalf("%#v %v", result, seen)
 	}
@@ -202,7 +194,7 @@ func TestCatalogEntryIsInspectedAtItsReviewedPin(t *testing.T) {
 	ctx, tmp, files, _ := inspectWorld(t)
 	repo := inspectRepo(t, tmp, files, "source")
 	pin := c6Git(t, repo, "rev-parse", "HEAD")
-	inspectCommit(t, repo, map[string]string{"desktop/plugin.js": "export default {}\n"})
+	inspectCommit(t, repo, map[string]string{"later.txt": "after the pin\n"})
 	saved := inspectCatalogEntry
 	inspectCatalogEntry = func(_ context.Context, name string) *PluginCatalogEntry {
 		if name == "demo" {
@@ -213,10 +205,10 @@ func TestCatalogEntryIsInspectedAtItsReviewedPin(t *testing.T) {
 	t.Cleanup(func() { inspectCatalogEntry = saved })
 	pinned := mustInspect(t, ctx, "ignored/identifier", "demo")
 	unknown := mustInspect(t, ctx, "", "missing")
-	if pinned["ok"] != true || pinned["agent"] != true || pinned["desktop"] != false || pinned["sha"] != pin {
+	if pinned["ok"] != true || pinned["agent"] != true || pinned["sha"] != pin {
 		t.Fatalf("%#v", pinned)
 	}
-	want := map[string]any{"ok": false, "agent": false, "desktop": false, "warnings": []string{}, "insecure": false,
+	want := map[string]any{"ok": false, "agent": false, "warnings": []string{}, "insecure": false,
 		"error": "'missing' is not in the Icebath plugin catalog."}
 	if !reflect.DeepEqual(unknown, want) {
 		t.Fatalf("%#v", unknown)
@@ -230,7 +222,7 @@ func TestTheReportedShaIsTheCommitReadEvenAfterTheSourceMoves(t *testing.T) {
 	if got := mustInspect(t, ctx, fileURI(repo), "")["sha"]; got != reviewed {
 		t.Fatalf("%v", got)
 	}
-	moved := inspectCommit(t, repo, map[string]string{"desktop/plugin.js": "export default {}\n"})
+	moved := inspectCommit(t, repo, map[string]string{"later.txt": "after the review\n"})
 	if got := mustInspect(t, ctx, fileURI(repo), "")["sha"]; got != reviewed {
 		t.Fatalf("repeat %v", got)
 	}

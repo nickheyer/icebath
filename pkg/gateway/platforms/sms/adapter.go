@@ -115,7 +115,7 @@ type SmsAdapter struct {
 	webhookURL  string
 
 	mu          sync.Mutex
-	runner      *gateway.WebAppRunner
+	runner      *gateway.HTTPAppRunner
 	httpSession *http.Client
 }
 
@@ -196,7 +196,7 @@ func (a *SmsAdapter) Connect(ctx context.Context, isReconnect bool) (bool, error
 			"is DISABLED. Any client that can reach port %d can inject messages. "+
 			"Do NOT use this in production.", a.webhookPort))
 	}
-	app := gateway.NewWebApplication(twilioWebhookMaxBodyBytes)
+	app := gateway.NewHTTPApp(twilioWebhookMaxBodyBytes)
 	if err := app.AddPost(webhookRoute, a.handleWebhook); err != nil {
 		return false, err
 	}

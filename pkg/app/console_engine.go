@@ -248,8 +248,8 @@ func (e *ConsoleEngine) capOutput(output string) string {
 var consoleBlockedTop = map[string]bool{}
 
 func init() {
-	for _, name := range strings.Fields("acp chat claw completion dashboard desktop fallback gateway gui login logout model moa " +
-		"oneshot proxy serve setup uninstall update whatsapp whatsapp-cloud") {
+	for _, name := range strings.Fields("acp chat claw completion fallback gateway login logout model moa " +
+		"oneshot proxy setup uninstall update whatsapp whatsapp-cloud") {
 		consoleBlockedTop[name] = true
 	}
 }

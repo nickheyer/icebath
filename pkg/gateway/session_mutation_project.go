@@ -7,7 +7,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -64,33 +63,6 @@ func dropSessionTerminal(ctx context.Context, a *SessionAuthority, ref SessionRe
 		tools.CleanupVM(outer, key, false)
 	}
 	return nil
-}
-
-// Commit that ends the onboarding run its delete removed and tells every window, returning the receipt
-func endingRunOnDelete(ctx context.Context, db *state.SessionDB, sessionID string, commit func() (*pyjson.Object, error)) (*pyjson.Object, error) {
-	var receipt *pyjson.Object
-	var commitErr error
-	_, err := tools.DeleteOnboardingChat(ctx, db, sessionID, func() bool {
-		receipt, commitErr = commit()
-		if commitErr != nil {
-			return false
-		}
-		deleted, _ := receipt.Get("deleted_ids")
-		ids, _ := deleted.([]any)
-		for _, id := range ids {
-			if id == sessionID {
-				return true
-			}
-		}
-		return false
-	})
-	if commitErr != nil {
-		return nil, commitErr
-	}
-	if err != nil {
-		return nil, err
-	}
-	return receipt, nil
 }
 
 // Runtime projections of a committed receipt, idempotent reads repeated by an exact retry

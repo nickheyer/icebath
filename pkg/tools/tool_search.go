@@ -226,14 +226,8 @@ func toolSearchCoreToolNames() map[string]bool {
 	return out
 }
 
-// Session gated GUI toolsets stay direct once enabled unless the deferral list names them
-func toolSearchDirectSurfaceToolset(toolset string) bool {
-	if ClientSurfaceToolsets[toolset] {
-		return true
-	}
-	_, gated := ToolsetSessionPlatforms[toolset]
-	return gated
-}
+// Client surface toolsets stay direct once enabled unless the deferral list names them
+func toolSearchDirectSurfaceToolset(toolset string) bool { return ClientSurfaceToolsets[toolset] }
 
 // IsDeferrableToolName reports whether a tool is eligible for deferral under the given defer set
 func IsDeferrableToolName(ctx context.Context, env *Env, name string, deferTools map[string]bool) bool {
@@ -766,11 +760,11 @@ func ScopedDeferrableNames(ctx context.Context, env *Env, toolDefs []map[string]
 	return out
 }
 
-// OutOfScopeReason names the missing GUI surface for a session gated tool outside this session
+// OutOfScopeReason names the TUI as the only surface of a client surface tool outside this session
 func OutOfScopeReason(ctx context.Context, env *Env, name string) string {
 	if toolset, ok := newSearchScope(ctx, env).toolset(name); ok && toolSearchDirectSurfaceToolset(toolset) {
-		return fmt.Sprintf("'%s' needs a desktop-app session with a GUI surface (preview/terminal panes). ", name) +
-			"This session has none: use it only from the icebath desktop app, not via tool_search."
+		return fmt.Sprintf("'%s' needs an icebath TUI session. ", name) +
+			"This session is not one: use it only from the icebath TUI, not via tool_search."
 	}
 	return ""
 }

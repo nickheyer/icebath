@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"reflect"
 	"sort"
@@ -211,105 +210,6 @@ func TestProfileAliasStatusFollowsTheWrapperTheProfileReallyHas(t *testing.T) {
 		if p.Name == "old" && p.AliasPath != filepath.Join(bin, "old") {
 			t.Fatalf("old alias path = %q", p.AliasPath)
 		}
-	}
-}
-
-// Runs git in a directory and fails the test unless it exits zero
-func checkoutGit(t *testing.T, cwd string, args ...string) string {
-	t.Helper()
-	cmd := exec.Command("git", append([]string{"-C", cwd}, args...)...)
-	cmd.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL="+os.DevNull, "GIT_CONFIG_SYSTEM="+os.DevNull)
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("git %q failed: %v\n%s", args, err, out)
-	}
-	return strings.TrimSpace(string(out))
-}
-
-// Sealed desktop bundle as the running tree with a committed legacy checkout under the home
-func embeddedContext(t *testing.T) (*Doctor, *bytes.Buffer, string) {
-	t.Helper()
-	root := t.TempDir()
-	bundle := filepath.Join(root, "bundle", "repo")
-	stamp, _ := json.Marshal(map[string]any{"commit": strings.Repeat("a", 40), "distribution": "desktop-app", "updateMechanism": "electron-updater"})
-	writeTestFile(t, filepath.Join(bundle, "install-stamp.json"), string(stamp), 0o644)
-	icebathHome := filepath.Join(root, ".icebath")
-	checkout := filepath.Join(icebathHome, "icebath-agent")
-	if err := os.MkdirAll(checkout, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("GIT_CONFIG_GLOBAL", os.DevNull)
-	t.Setenv("GIT_CONFIG_SYSTEM", os.DevNull)
-	checkoutGit(t, checkout, "init", "-b", "main")
-	checkoutGit(t, checkout, "config", "user.email", "test@example.com")
-	checkoutGit(t, checkout, "config", "user.name", "test")
-	writeTestFile(t, filepath.Join(checkout, "f.txt"), "x\n", 0o644)
-	checkoutGit(t, checkout, "add", ".")
-	checkoutGit(t, checkout, "commit", "-m", "initial")
-	out := &bytes.Buffer{}
-	return &Doctor{W: out, Home: icebathHome, ProjectRoot: bundle, DisplayHome: icebathHome}, out, checkout
-}
-
-func TestLegacyDesktopCheckoutPristineCheckoutGetsReportWithoutDeletionCommand(t *testing.T) {
-	d, out, _ := embeddedContext(t)
-	doctorCheckLegacyDesktopCheckout(context.Background(), d)
-	text := out.String()
-	if !strings.Contains(text, "Unused checkout") || strings.Contains(text, "rm -rf") {
-		t.Fatalf("output:\n%s", text)
-	}
-	if lower := strings.ToLower(text); strings.Contains(lower, "delete") && !strings.Contains(lower, "does not delete") {
-		t.Fatalf("output:\n%s", text)
-	}
-}
-
-func TestLegacyDesktopCheckoutDirtyCheckoutWarnsAndSuggestsNothing(t *testing.T) {
-	d, out, checkout := embeddedContext(t)
-	writeTestFile(t, filepath.Join(checkout, "f.txt"), "local work\n", 0o644)
-	doctorCheckLegacyDesktopCheckout(context.Background(), d)
-	if text := out.String(); !strings.Contains(text, "holds local work") || strings.Contains(text, "rm -rf") {
-		t.Fatalf("output:\n%s", text)
-	}
-	if raw, _ := os.ReadFile(filepath.Join(checkout, "f.txt")); string(raw) != "local work\n" {
-		t.Fatalf("tree changed: %q", raw)
-	}
-}
-
-func TestLegacyDesktopCheckoutBranchedCheckoutCountsAsLocalWork(t *testing.T) {
-	d, out, checkout := embeddedContext(t)
-	checkoutGit(t, checkout, "checkout", "-b", "feature/y")
-	doctorCheckLegacyDesktopCheckout(context.Background(), d)
-	if text := out.String(); !strings.Contains(text, "holds local work") || strings.Contains(text, "rm -rf") {
-		t.Fatalf("output:\n%s", text)
-	}
-}
-
-func TestLegacyDesktopCheckoutStashedCheckoutCountsAsLocalWork(t *testing.T) {
-	d, out, checkout := embeddedContext(t)
-	writeTestFile(t, filepath.Join(checkout, "f.txt"), "stash me\n", 0o644)
-	checkoutGit(t, checkout, "stash")
-	doctorCheckLegacyDesktopCheckout(context.Background(), d)
-	if text := out.String(); !strings.Contains(text, "holds local work") || strings.Contains(text, "rm -rf") {
-		t.Fatalf("output:\n%s", text)
-	}
-}
-
-func TestLegacyDesktopCheckoutSilentWithoutACheckout(t *testing.T) {
-	d, out, checkout := embeddedContext(t)
-	if err := os.RemoveAll(checkout); err != nil {
-		t.Fatal(err)
-	}
-	doctorCheckLegacyDesktopCheckout(context.Background(), d)
-	if out.String() != "" {
-		t.Fatalf("output:\n%s", out.String())
-	}
-}
-
-func TestLegacyDesktopCheckoutSilentWhenRunningFromAGitCheckout(t *testing.T) {
-	d, out, checkout := embeddedContext(t)
-	d.ProjectRoot = checkout
-	doctorCheckLegacyDesktopCheckout(context.Background(), d)
-	if out.String() != "" {
-		t.Fatalf("output:\n%s", out.String())
 	}
 }
 

@@ -806,7 +806,7 @@ func importDBMemberExclusive(ctx context.Context, zr *pyzip.ZipReader, member, t
 			return &osError{"the archived database failed its integrity check; the existing database was left untouched."}
 		}
 		return &osError{"live-safe restore refused or failed; the existing database was left untouched. " +
-			"Stop the gateway/dashboard processes holding it open and re-run the import."}
+			"Stop the gateway and TUI processes holding it open and re-run the import."}
 	}
 	restoreFileOwner(target, owner)
 	pyfs.RestoreFileMode(target, mode, modeOK)

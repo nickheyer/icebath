@@ -196,8 +196,7 @@ func BeginProcess(ctx context.Context, kind string) {
 	h := home.Dir(ctx)
 	if !collectionOn(ctx) {
 		PurgePendingReceipts(ctx, h)
-		latches := filepath.Join(h, "telemetry", "shared_metrics", OnboardingLatchDirname)
-		for _, dir := range []string{processMarkersDir(h), setupMarkersDir(h), latches} {
+		for _, dir := range []string{processMarkersDir(h), setupMarkersDir(h)} {
 			_ = os.RemoveAll(dir)
 		}
 		return

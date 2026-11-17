@@ -23,16 +23,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
 )
 
-const (
-	manualGatewaySkipReason = "manual gateway has no supervisor relaunch authority; left running for explicit operator restart"
-	desktopServeSkipReason  = "desktop app owns and respawns this serve backend;" +
-		" the recovery pass must not restart it out from under its supervisor"
-	serveSkipReason = "no per-profile relaunch command reaches a serve/dashboard runtime; recovered by the fresh" +
-		" systemd unit pass when a hermes-serve*/hermes-dashboard* unit owns it, else left running for explicit" +
-		" operator restart"
-	launchdServeSkipReason = "launchd job owns this backend; the post-update dashboard cleanup kickstarts the job through" +
-		" launchd, never a detached argv respawn that would fight its KeepAlive"
-)
+const manualGatewaySkipReason = "manual gateway has no supervisor relaunch authority; left running for explicit operator restart"
 
 // Gateway calls of the restart phase the hermes tests replace
 var (
@@ -72,11 +63,8 @@ var (
 	fleetRestartIdentitySHA  = restartIdentitySHA
 	fleetClearMarker         = clearFleetRestartPendingMarker
 
-	fleetSurvivingServeRuntimes = survivingPreUpdateServeRuntimes
-	fleetRecoverGatewayRestart  = recoverGatewayRestartAfterAbort
-	fleetWarnStaleServes        = warnStaleServeRuntimes
-	fleetOwedStaleServeRows     = owedStaleServeRows
-	fleetAbortRecoveryComplete  = abortRecoveryIsComplete
+	fleetRecoverGatewayRestart = recoverGatewayRestartAfterAbort
+	fleetAbortRecoveryComplete = abortRecoveryIsComplete
 )
 
 // Restart phase bookkeeping, a nil PreRestartGatewayPIDs meaning the snapshot could not be read
@@ -285,36 +273,17 @@ func gatewayRecoveryPartition(plan *UpdatePlan, skipProfiles map[string]bool) (g
 		return candidates, skipped
 	}
 	for _, runtime := range plan.Runtimes {
-		if runtime == nil || runtime.Profile == "" {
+		if runtime == nil || runtime.Profile == "" || runtime.Kind != "gateway" || skipProfiles[runtime.Profile] {
 			continue
 		}
-		reason := ""
-		switch runtime.Kind {
-		case "gateway":
-			if skipProfiles[runtime.Profile] {
-				continue
+		if freshRestartSupervisors[runtime.Supervisor] {
+			if _, seen := candidates.Supervisors[runtime.Profile]; !seen {
+				candidates.Profiles = append(candidates.Profiles, runtime.Profile)
+				candidates.Supervisors[runtime.Profile] = runtime.Supervisor
 			}
-			if freshRestartSupervisors[runtime.Supervisor] {
-				if _, seen := candidates.Supervisors[runtime.Profile]; !seen {
-					candidates.Profiles = append(candidates.Profiles, runtime.Profile)
-					candidates.Supervisors[runtime.Profile] = runtime.Supervisor
-				}
-				continue
-			}
-			reason = manualGatewaySkipReason
-		case "serve", "dashboard":
-			switch {
-			case ClientOwnedServeSupervisors[runtime.Supervisor]:
-				reason = desktopServeSkipReason
-			case runtime.Supervisor == "launchd":
-				reason = launchdServeSkipReason
-			default:
-				reason = serveSkipReason
-			}
-		default:
 			continue
 		}
-		skipped = append(skipped, pyjson.ObjectOf("profile", runtime.Profile, "kind", runtime.Kind, "supervisor", runtime.Supervisor, "reason", reason))
+		skipped = append(skipped, pyjson.ObjectOf("profile", runtime.Profile, "kind", runtime.Kind, "supervisor", runtime.Supervisor, "reason", manualGatewaySkipReason))
 	}
 	return candidates, skipped
 }
@@ -528,7 +497,7 @@ func forceKillStuckGateways(ctx context.Context, w io.Writer, killedPIDs map[int
 }
 
 // Runs the fresh process recovery of an aborted restart phase and settles the fail closed verdict
-func recoverAfterRestartPhaseAbort(ctx context.Context, w io.Writer, phaseErr error, plan *UpdatePlan, out *gatewayRestartOutcome, gatewayMode bool, restartedScopedUnits map[string]bool) error {
+func recoverAfterRestartPhaseAbort(ctx context.Context, w io.Writer, phaseErr error, plan *UpdatePlan, out *gatewayRestartOutcome, gatewayMode bool) error {
 	updateLog.Debug(fmt.Sprintf("Gateway restart during update failed: %s", launchErrorText(phaseErr)))
 	out.PhaseErrors = append(out.PhaseErrors, launchErrorText(phaseErr))
 	surviving, survivorsKnown := survivingGatewayPidsAfterFailedRestart(ctx)
@@ -557,23 +526,10 @@ func recoverAfterRestartPhaseAbort(ctx context.Context, w io.Writer, phaseErr er
 			}
 		}
 	}
-	skipUnits := map[string]bool{}
-	for unit := range restartedScopedUnits {
-		skipUnits[unit] = true
-	}
-	recoveryResult, err := fleetRecoverGatewayRestart(ctx, w, plan, gatewayMode, alreadyRestartedProfiles, skipUnits)
+	recoveryResult, err := fleetRecoverGatewayRestart(ctx, w, plan, gatewayMode, alreadyRestartedProfiles)
 	if err != nil {
 		return err
 	}
-	serveUnitsFailed := false
-	if serveUnits := rowValue(recoveryResult["serve_units"], "failed"); pyrepr.Truthy(serveUnits) {
-		serveUnitsFailed = true
-	}
-	staleRuntimeRows, err := fleetSurvivingServeRuntimes(ctx, plan)
-	if err != nil {
-		return err
-	}
-	recoveryResult["stale_runtimes"] = staleRuntimeRows
 	verified := map[string]bool{}
 	if rows, ok := recoveryResult["verified"].([]any); ok {
 		for _, row := range rows {
@@ -607,22 +563,15 @@ func recoverAfterRestartPhaseAbort(ctx context.Context, w io.Writer, phaseErr er
 	for profile := range verified {
 		covered[profile] = true
 	}
-	if fleetAbortRecoveryComplete(planned, covered, recoveryResult, staleRuntimeRows) {
+	if fleetAbortRecoveryComplete(planned, covered, recoveryResult) {
 		out.Incomplete = false
-		if err := fleetWarnStaleServes(w, staleRuntimeRows); err != nil {
-			return err
-		}
-	} else if restartPhaseFailureIsIncomplete(surviving, survivorsKnown, out.PreRestartGatewayPIDs) ||
-		len(fleetOwedStaleServeRows(staleRuntimeRows)) > 0 || serveUnitsFailed {
+	} else if restartPhaseFailureIsIncomplete(surviving, survivorsKnown, out.PreRestartGatewayPIDs) {
 		out.Incomplete = true
 		var listed []int
 		if survivorsKnown {
 			listed = surviving
 		}
 		warnGatewayRestartPhaseAborted(w, phaseErr, listed)
-		if err := fleetWarnStaleServes(w, staleRuntimeRows); err != nil {
-			return err
-		}
 	}
 	out.recordReceipt(ctx, launchErrorText(phaseErr), recoveryResult)
 	return nil
@@ -639,7 +588,6 @@ func gatewayDrainBudget(ctx context.Context) (budget float64) {
 
 // Restarts every running gateway of this update onto the pulled code and returns the phase bookkeeping
 func restartGatewayFleetAfterUpdate(ctx context.Context, w io.Writer, plan *UpdatePlan, gatewayMode bool) (*gatewayRestartOutcome, error) {
-	PublishStage("Restarting Hermes services")
 	out := newGatewayRestartOutcome()
 	restartedScopedUnits := map[string]bool{}
 
@@ -673,7 +621,7 @@ func restartGatewayFleetAfterUpdate(ctx context.Context, w io.Writer, plan *Upda
 		if isUpdateExit(err) || isKeyboardInterrupt(err) {
 			return out, err
 		}
-		if recoverErr := fleetRecoverAfterAbort(ctx, w, err, plan, out, gatewayMode, restartedScopedUnits); recoverErr != nil {
+		if recoverErr := fleetRecoverAfterAbort(ctx, w, err, plan, out, gatewayMode); recoverErr != nil {
 			return out, recoverErr
 		}
 	}

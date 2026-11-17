@@ -9,16 +9,11 @@ import (
 	"log/slog"
 	"math"
 	"os"
-	"os/signal"
 	"path/filepath"
-	"sort"
-	"strings"
-	"syscall"
 	"time"
 
 	sqlite3 "modernc.org/sqlite/lib"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pysqlite"
@@ -31,7 +26,6 @@ const (
 	rollbackBusySleep       = 10 * time.Millisecond
 	rollbackMaxRestarts     = 20
 	rollbackLockHoldSeconds = 0.25
-	abandonedStagingSeconds = 2 * 3600
 	emergencyPrefix         = "state.db.pre-update-emergency-"
 )
 
@@ -120,47 +114,6 @@ func excText(err error) string {
 		return pypath.OSErrorText(err)
 	}
 	return state.ErrText(err)
-}
-
-// Final traceback line of an uncaught exception, its class then its text
-func excLine(err error) string {
-	class := "Exception"
-	var re *runtimeError
-	var pe *pysqlite.Error
-	switch {
-	case errors.As(err, &re):
-		class = "RuntimeError"
-	case errors.As(err, &pe):
-		class = "sqlite3." + pe.PyTypeName()
-	case pypath.IsOSError(err):
-		class = pypath.OSErrorClass(err)
-	default:
-		if c, ok := state.SQLiteClassOf(err); ok {
-			class = "sqlite3." + sqliteClassName(c)
-		}
-	}
-	return class + ": " + excText(err)
-}
-
-// Python class name of a state sqlite3 exception class
-func sqliteClassName(c state.SQLiteClass) string {
-	switch c {
-	case state.SQLiteOperationalError:
-		return "OperationalError"
-	case state.SQLiteIntegrityError:
-		return "IntegrityError"
-	case state.SQLiteInterfaceError:
-		return "InterfaceError"
-	case state.SQLiteInternalError:
-		return "InternalError"
-	case state.SQLiteDataError:
-		return "DataError"
-	case state.SQLiteProgrammingError:
-		return "ProgrammingError"
-	case state.SQLiteNotSupportedError:
-		return "NotSupportedError"
-	}
-	return "DatabaseError"
 }
 
 // Reports whether the header write version byte marks a WAL database, reading without any lock
@@ -379,167 +332,10 @@ func safeCopyDB(ctx context.Context, src, dst string, timeoutSeconds float64) (b
 	return false, nil
 }
 
-// Removes staging copies of a prefix older than any live pre-flight could be
-func reclaimAbandonedStaging(h, prefix string) {
-	horizon := time.Now().Add(-abandonedStagingSeconds * time.Second)
-	staged, err := pypath.Glob(h, prefix+"*.partial*")
-	if err != nil {
-		return
-	}
-	for _, p := range staged {
-		if info, err := os.Stat(p); err == nil && info.ModTime().Before(horizon) {
-			os.Remove(p)
-		}
-	}
-}
-
 // Removes a path, a missing one counting as removed
 func unlinkMissingOK(p string) error {
 	if err := os.Remove(p); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
 	return nil
-}
-
-// Rows of a quick_check as Python prints the list of one string tuples
-func quickCheckRepr(rows []string) string {
-	parts := make([]string, len(rows))
-	for i, r := range rows {
-		parts[i] = "(" + pyrepr.StrRepr(r) + ",)"
-	}
-	return "[" + strings.Join(parts, ", ") + "]"
-}
-
-// Runs PRAGMA quick_check on a database file and returns its rows
-func quickCheck(ctx context.Context, path string) ([]string, error) {
-	c, err := connectPath(ctx, path)
-	if err != nil {
-		return nil, err
-	}
-	defer closeQuietly(c)
-	rows, err := c.c.QueryContext(ctx, "PRAGMA quick_check")
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var out []string
-	for rows.Next() {
-		var s string
-		if err := rows.Scan(&s); err != nil {
-			return nil, err
-		}
-		out = append(out, s)
-	}
-	return out, rows.Err()
-}
-
-// Timestamp of the emergency snapshot names, UTC with microseconds
-func emergencyStamp(t time.Time) string {
-	t = t.UTC()
-	return t.Format("2006-01-02T15-04-05-") + fmt.Sprintf("%06d", t.Nanosecond()/1000) + "Z"
-}
-
-// Publishes a verified emergency snapshot of state.db, keeping the previous ones when it fails
-func PreflightStateDB(ctx context.Context, h string) (*pyjson.Object, error) {
-	result := pyjson.NewObject()
-	source := filepath.Join(h, "state.db")
-	if _, err := os.Stat(source); err != nil {
-		result.Set("path", nil)
-		result.Set("message", "state.db not found (fresh install?)")
-		return result, nil
-	}
-	reclaimAbandonedStaging(h, emergencyPrefix)
-	base := fmt.Sprintf("%s%s-%d", emergencyPrefix, emergencyStamp(time.Now()), os.Getpid())
-	destination := filepath.Join(h, base+".bak")
-	staged := filepath.Join(h, base+".partial")
-	var size int64
-	err := func() error {
-		copied, err := safeCopyDB(ctx, source, staged, 10.0)
-		if err != nil {
-			return err
-		}
-		if !copied {
-			return &runtimeError{"SQLite safe copy failed; previous emergency snapshots were retained"}
-		}
-		if ctx.Err() != nil {
-			return &Interrupted{context.Cause(ctx)}
-		}
-		rows, err := quickCheck(ctx, staged)
-		if err != nil {
-			return err
-		}
-		if len(rows) != 1 || rows[0] != "ok" {
-			return &runtimeError{"SQLite snapshot integrity check failed: " + quickCheckRepr(rows)}
-		}
-		info, err := os.Stat(staged)
-		if err != nil {
-			return err
-		}
-		size = info.Size()
-		return os.Rename(staged, destination)
-	}()
-	if cleanErr := unlinkMissingOK(staged); cleanErr != nil {
-		err = cleanErr
-	} else if cleanErr := unlinkMissingOK(staged + "-journal"); cleanErr != nil {
-		err = cleanErr
-	}
-	if err != nil {
-		return nil, err
-	}
-	snapshots, err := pypath.Glob(h, emergencyPrefix+"*.bak")
-	if err != nil {
-		return nil, err
-	}
-	sort.Sort(sort.Reverse(sort.StringSlice(snapshots)))
-	for i, old := range snapshots {
-		if i < 2 {
-			continue
-		}
-		if ctx.Err() != nil {
-			return nil, &Interrupted{context.Cause(ctx)}
-		}
-		if err := os.Remove(old); err != nil {
-			slog.Warn(fmt.Sprintf("Could not prune emergency snapshot %s: %s", old, excText(err)))
-		}
-	}
-	result.Set("path", destination)
-	result.Set("bytes", size)
-	return result, nil
-}
-
-var errSIGTERM = errors.New("SIGTERM")
-
-// Pre-flight entry the Desktop runs with the home as its only argument, exiting 143 through cleanup on SIGTERM
-func PreflightStateDBMain(ctx context.Context, args []string, stdout, stderr io.Writer) int {
-	ctx, cancel := context.WithCancelCause(ctx)
-	defer cancel(nil)
-	terms := make(chan os.Signal, 1)
-	signal.Notify(terms, syscall.SIGTERM)
-	defer signal.Stop(terms)
-	go func() {
-		select {
-		case <-terms:
-			cancel(errSIGTERM)
-		case <-ctx.Done():
-		}
-	}()
-	if len(args) < 1 {
-		fmt.Fprintln(stderr, "IndexError: list index out of range")
-		return 1
-	}
-	result, err := PreflightStateDB(ctx, args[0])
-	if errors.Is(context.Cause(ctx), errSIGTERM) {
-		return 128 + int(syscall.SIGTERM)
-	}
-	if err != nil {
-		fmt.Fprintln(stderr, excLine(err))
-		return 1
-	}
-	text, err := pyjson.Dumps(result)
-	if err != nil {
-		fmt.Fprintln(stderr, excLine(err))
-		return 1
-	}
-	fmt.Fprintln(stdout, text)
-	return 0
 }

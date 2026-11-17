@@ -361,13 +361,7 @@ func readOrAwake[T any](label string, fn func() T, busy T) (out T) {
 func (r *GatewayRunner) scaleToZeroIsIdle(ctx context.Context) bool {
 	cronCount := readOrAwake("cron work count", runningCronJobCount, 1)
 	apiCount := readOrAwake("api work count", r.apiServerActiveAgentWorkCount, 1)
-	lastInbound := r.lastInboundAt
-	now := wallClock()
-	seen := readOrAwake("dashboard heartbeat", func() *float64 { return gateway.DashboardClientLastSeen("", nil) }, &now)
-	if seen != nil && *seen > lastInbound {
-		lastInbound = *seen
-	}
-	return gateway.IsIdle(r.runningAgentCount()+cronCount+apiCount, wallClock()-lastInbound,
+	return gateway.IsIdle(r.runningAgentCount()+cronCount+apiCount, wallClock()-r.lastInboundAt,
 		r.scaleToZeroIdleTimeoutSeconds(ctx), r.scaleToZeroHasLiveBackgroundWork())
 }
 

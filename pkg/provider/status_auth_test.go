@@ -12,8 +12,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 // ---- tests/hermes_cli/test_anon_surfaces.py (icebath status surface) ----
@@ -65,7 +63,7 @@ func (s *statusTestSink) EffectiveProviderLabel() string { return s.provider }
 
 var anonSurfaceForbidden = regexp.MustCompile(`(?i)guest|anonymous|user id|org id|nas_user|nas_organisation`)
 
-// Temp home on the local desktop backend with no network account lookup and no ambient provider keys
+// Temp home with no network account lookup and no ambient provider keys
 func anonSurfaceStore(t *testing.T) (string, context.Context) {
 	t.Helper()
 	h := t.TempDir()
@@ -87,7 +85,7 @@ func anonSurfaceStore(t *testing.T) (string, context.Context) {
 		ResetNousPortalAccountInfoCache()
 		InvalidateNousAuthStatusCache()
 	})
-	return h, tools.WithServingLocalDesktop(context.Background(), true)
+	return h, context.Background()
 }
 
 func anonSurfaceWriteAuth(t *testing.T, h string, state map[string]any) {

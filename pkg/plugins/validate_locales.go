@@ -14,7 +14,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
-var localeKeyExports = map[string]string{"tui": "_keys.tui.json", "desktop": "_keys.desktop.json"}
+var localeKeyExports = map[string]string{"tui": "_keys.tui.json"}
 
 // English key set of a surface, nil when the bundled reference is unavailable
 func ReferenceKeys(surface string) map[string]bool {

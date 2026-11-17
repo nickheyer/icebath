@@ -42,8 +42,6 @@ var (
 	NamedCustomProviderHook func(ctx context.Context, name string) any
 	// ResolveUpdateChannelHook returns the update channel an install follows, set by pkg/selfupdate
 	ResolveUpdateChannelHook func(cfg map[string]any, projectRoot string) (string, error)
-	// PackageChannelHook returns the channel a packaged build's install stamp bakes in, empty for a source install, set by pkg/selfupdate
-	PackageChannelHook func(projectRoot string) (string, error)
 )
 
 var errHookUnavailable = errors.New("owning module unavailable")
@@ -64,23 +62,16 @@ func DetectClientInstallMethod(ctx context.Context) (string, error) {
 	return config.DetectInstallMethod(ctx, home.Dir(ctx), root)
 }
 
-// Channel this install follows from its packaged channel, channel record or checkout branch
+// Channel this install follows from its channel record or checkout branch
 func ReleaseChannel(cfg map[string]any) (string, error) {
-	if ResolveUpdateChannelHook == nil || PackageChannelHook == nil {
+	if ResolveUpdateChannelHook == nil {
 		return "", errHookUnavailable
 	}
-	root := installProjectRoot()
-	resolved, err := ResolveUpdateChannelHook(cfg, root)
+	resolved, err := ResolveUpdateChannelHook(cfg, installProjectRoot())
 	if err != nil {
 		return "", err
 	}
-	packaged := ""
-	if resolved == "main" {
-		if packaged, err = PackageChannelHook(root); err != nil {
-			return "", err
-		}
-	}
-	if resolved != "main" || packaged != "" {
+	if resolved != "main" {
 		if channel, ok := releaseChannels[resolved]; ok {
 			return channel, nil
 		}

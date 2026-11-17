@@ -21,7 +21,7 @@ func standaloneLaunchScope(ctx context.Context) context.Context {
 	return provider.WithLaunchProfileScopeIfMultiplexed(ctx)
 }
 
-// Turn scope of the source's profile, its credentials and home bound, marked local Desktop work for a declared local chat
+// Turn scope of the source's profile, its credentials and home bound
 func (r *GatewayRunner) profileScopeForSource(ctx context.Context, source *gateway.SessionSource) (context.Context, error) {
 	h, keyed, err := r.profileScopeKeyForSource(ctx, source)
 	if err != nil {
@@ -31,5 +31,5 @@ func (r *GatewayRunner) profileScopeForSource(ctx context.Context, source *gatew
 	if keyed {
 		scope = gateway.ProfileRuntimeScope(ctx, h, true)
 	}
-	return gateway.LocalDesktopTurn(ctx, r, source, scope)
+	return scope, nil
 }

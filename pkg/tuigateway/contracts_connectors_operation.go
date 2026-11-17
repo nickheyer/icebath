@@ -24,7 +24,7 @@ var ConnectionTargetEnvField = pydantic.NewModel("ConnectionTargetEnvField", Clo
 
 var CatalogTier = pydantic.Enum("CatalogTier", "official", "official", "verified", "verified", "community", "community")
 
-var CatalogAppState = pydantic.Enum("CatalogAppState", "present", "present", "missing_app", "missing_app", "app_not_running", "app_not_running", "unknown", "unknown").Described("The desktop app a catalog plugin drives, from its ``hermes_platform`` declaration.")
+var CatalogAppState = pydantic.Enum("CatalogAppState", "present", "present", "missing_app", "missing_app", "app_not_running", "app_not_running", "unknown", "unknown").Described("The native app a catalog plugin drives, from its ``hermes_platform`` declaration.")
 
 var CatalogScanStatus = pydantic.Enum("CatalogScanStatus", "passed", "passed", "warnings", "warnings", "failed", "failed")
 
@@ -69,7 +69,6 @@ var ConnectionOperationTarget = pydantic.NewModel("ConnectionOperationTarget", C
 	pydantic.Def("subdir", pydantic.Nullable(pydantic.Str), nil),
 	pydantic.Def("scan", pydantic.Nullable(CatalogScan), nil),
 	pydantic.Def("requires_hermes", pydantic.Nullable(pydantic.Str), nil),
-	pydantic.Def("has_desktop_half", pydantic.Nullable(pydantic.Bool), nil),
 	pydantic.Def("target_profile", pydantic.Nullable(pydantic.Str), nil),
 	pydantic.Def("app_state", pydantic.Nullable(CatalogAppState), nil),
 	pydantic.Def("skill", pydantic.Nullable(pydantic.Str), nil),
@@ -95,7 +94,7 @@ var ConnectionRequestPayload = pydantic.NewModel("ConnectionRequestPayload", Clo
 	pydantic.Def("display", pydantic.Nullable(ConnectionDisplay), nil),
 ).Described("``ConnectionOperation.request_payload``: opens the card; also the ``pending_connection`` resume\nsnapshot so a client that missed the event restores the card with the server's deadline.")
 
-var _ = Event("connection.request", ConnectionRequestPayload, "A connection operation opened on this session; the desktop renders its card.")
+var _ = Event("connection.request", ConnectionRequestPayload, "A connection operation opened on this session; the client renders its card.")
 
 var ConnectionOperationStatus = pydantic.NewModel("ConnectionOperationStatus", ClosedConfig,
 	pydantic.Req("op_id", pydantic.Str),
@@ -130,7 +129,7 @@ var ConnectionOperationParams = pydantic.Extend(ProfileParams, "ConnectionOperat
 	pydantic.Req("op_id", pydantic.Str),
 )
 
-var _ = Method("connectors.operation.status", ConnectionOperationParams, ConnectionOperationStatus, "The current snapshot of one open session or account operation.")
+var _ = Method("connectors.operation.status", ConnectionOperationParams, ConnectionOperationStatus, "The current snapshot of one open session operation.")
 
 var ConnectionWakeResult = pydantic.NewModel("ConnectionWakeResult", ClosedConfig,
 	pydantic.Req("status", pydantic.Literal("ok")),
@@ -164,4 +163,4 @@ var ConnectionRespondResult = pydantic.NewModel("ConnectionRespondResult", Close
 
 var _ = Method("connection.respond", ConnectionRespondParams, ConnectionRespondResult, "Per-target outcomes from the card, and an optional Continue.")
 
-var InstallPhase = pydantic.Enum("InstallPhase", "downloading", "downloading", "python_packages", "python_packages", "loading_tools", "loading_tools").Described("The slow steps of an install, as ids; the desktop catalog card words them in its own language.")
+var InstallPhase = pydantic.Enum("InstallPhase", "downloading", "downloading", "python_packages", "python_packages", "loading_tools", "loading_tools").Described("The slow steps of an install, as ids; the catalog card words them in its own language.")

@@ -278,7 +278,7 @@ func TestSubmitDuringManualCompressIsQueuedAndReplyPersists(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("compaction never entered")
 	}
-	interruptSessionTurn(ctx, "sid", session, "", false)
+	interruptSessionTurn(ctx, "sid", session, false)
 	if session.Get("running") != true {
 		t.Fatal("stop mid compaction released the busy claim")
 	}

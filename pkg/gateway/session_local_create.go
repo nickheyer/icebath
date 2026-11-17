@@ -23,7 +23,6 @@ type localCreateOptions struct {
 	TrustedSecrets *RecoveredSecrets
 	SkillsPrompt   *string
 	ClientLocal    bool
-	DesktopLocal   bool
 }
 
 // Frozen snapshot of a bypass launch, code defaults plus the explicit launch options and never the profile
@@ -84,7 +83,6 @@ func projectPluginsWarning(policy *LocalSessionPolicy) *string {
 
 // Stages, commits and publishes a local session inline, an exact retry answering with the existing session
 func createLocalSession(ctx context.Context, a *SessionAuthority, actor Principal, params map[string]any, opts localCreateOptions) (SessionRef, error) {
-	opts.DesktopLocal = false
 	ref, staged, err := stageLocalSession(ctx, a, actor, params, opts)
 	if err != nil {
 		return SessionRef{}, err
@@ -235,9 +233,6 @@ func stageLocalSession(ctx context.Context, a *SessionAuthority, actor Principal
 			policy = &replaced
 		}
 		marks := pyjson.NewObject()
-		if opts.DesktopLocal && policy.Source == "gui" {
-			marks.Set(LocalDesktopChat, true)
-		}
 		if policy.Model == nil {
 			effective, err := policy.config(ctx, nil, true)
 			if err != nil {

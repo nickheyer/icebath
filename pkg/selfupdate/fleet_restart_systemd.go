@@ -39,7 +39,7 @@ type systemdUnitListing struct {
 var (
 	freshRestartSupervisors = map[string]bool{"systemd": true, "launchd": true, "service": true, "s6": true}
 	systemdScopes           = []systemdScope{{"user", []string{"systemctl", "--user"}}, {"system", []string{"systemctl"}}}
-	listGatewayUnits        = []string{"list-units", "icebath-gateway*", "icebath-serve*", "icebath-dashboard*", "--plain", "--no-legend", "--no-pager"}
+	listGatewayUnits        = []string{"list-units", "icebath-gateway*", "--plain", "--no-legend", "--no-pager"}
 	fatalExitParkRe         = pyre.MustCompile(fmt.Sprintf(`(?m)^RestartPreventExitStatus=.*\b%d\b`, gateway.GatewayFatalConfigExitCode))
 
 	fleetRepairUnit        = repairUnitWithoutFatalExitPark
@@ -224,7 +224,7 @@ func (t *systemdRestartTargets) collapse(ctx context.Context, w io.Writer) []str
 	return keys
 }
 
-// Restarts every gateway and serve unit once per live host process, appending each failure to failed
+// Restarts every gateway unit once per live host process, appending each failure to failed
 func restartSystemdGatewayUnitsBestEffort(ctx context.Context, w io.Writer, failed *[]string, listings []systemdUnitListing) error {
 	answered := map[string]bool{}
 	targets := &systemdRestartTargets{}
@@ -326,18 +326,12 @@ func scopedManualGatewayPids(ctx context.Context, w io.Writer, pids []int, keep 
 	return out, nil
 }
 
-// True for a serve or dashboard service unit by the exact or hyphenated name shape
-func isServeOrDashboardUnit(unit string) bool {
-	return unit == "icebath-serve.service" || strings.HasPrefix(unit, "icebath-serve-") ||
-		unit == "icebath-dashboard.service" || strings.HasPrefix(unit, "icebath-dashboard-")
-}
-
-// True for the base gateway unit, its hyphenated profile family and the serve and dashboard units
+// True for the base gateway unit and its hyphenated profile family
 func isHermesGatewayUnit(unit string) bool {
-	return unit == "icebath-gateway.service" || strings.HasPrefix(unit, "icebath-gateway-") || isServeOrDashboardUnit(unit)
+	return unit == "icebath-gateway.service" || strings.HasPrefix(unit, "icebath-gateway-")
 }
 
-// Runs processUnit per gateway and serve unit of a list-units output, a per unit timeout handed to onUnitTimeout
+// Runs processUnit per gateway unit of a list-units output, a per unit timeout handed to onUnitTimeout
 func forEachSystemdGatewayUnit(listUnitsStdout string, processUnit func(name string) error, onUnitTimeout func(name string, err error)) error {
 	for _, line := range pystr.Splitlines(pystr.Strip(listUnitsStdout), false) {
 		parts := pystr.SplitWhitespace(line, -1)
@@ -357,11 +351,6 @@ func forEachSystemdGatewayUnit(listUnitsStdout string, processUnit func(name str
 		}
 	}
 	return nil
-}
-
-// True for the gateway units, the only ones whose process drains then restarts on SIGUSR1
-func serviceUnitSupportsGracefulSigusr1Restart(svcName string) bool {
-	return svcName == "icebath-gateway" || strings.HasPrefix(svcName, "icebath-gateway-")
 }
 
 // True when this user elevates without a prompt, by the blanket probe then the targeted one
@@ -456,16 +445,14 @@ func restartOneSystemdGatewayUnit(ctx context.Context, w io.Writer, svcName, sco
 	manageCmd := resolveManageCmd(ctx, manageCmdCache, scope, scopeCmd, svcName)
 
 	mainPID := 0
-	if serviceUnitSupportsGracefulSigusr1Restart(svcName) {
-		show, err := systemctl(ctx, fleetArgv(scopeCmd, "show", svcName, "--property=MainPID", "--value"), 5)
-		if err != nil {
-			if asCommandTimeout(err) == nil && !isCommandMissing(err) {
-				return err
-			}
-		} else if text := pystr.Strip(completedStdout(show)); text != "" {
-			if pid, ok := pyint.Parse(text); ok && pid.IsInt64() {
-				mainPID = int(pid.Int64())
-			}
+	show, err := systemctl(ctx, fleetArgv(scopeCmd, "show", svcName, "--property=MainPID", "--value"), 5)
+	if err != nil {
+		if asCommandTimeout(err) == nil && !isCommandMissing(err) {
+			return err
+		}
+	} else if text := pystr.Strip(completedStdout(show)); text != "" {
+		if pid, ok := pyint.Parse(text); ok && pid.IsInt64() {
+			mainPID = int(pid.Int64())
 		}
 	}
 
@@ -562,7 +549,7 @@ func restartOneSystemdGatewayUnit(ctx context.Context, w io.Writer, svcName, sco
 	return nil
 }
 
-// Restarts every active gateway and serve unit of both scopes, a timeout isolated to its unit
+// Restarts every active gateway unit of both scopes, a timeout isolated to its unit
 func restartSystemdGatewayUnits(ctx context.Context, w io.Writer, restartedServices, failedOrStaleUnits *[]string,
 	restartedScopedUnits map[string]bool, drainBudget float64, selfRestartPending map[int]bool) error {
 	if !fleetSupportsSystemd(ctx) {

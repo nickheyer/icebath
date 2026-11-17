@@ -34,13 +34,6 @@ var (
 	methods   = map[string]Handler{}
 )
 
-// Defaults of the dashboard process isolation keys the REST editor shares
-const (
-	dashboardTurnIsolationDefault            = false
-	dashboardComputeHostHeartbeatSecsDefault = 15
-	dashboardComputeHostRespawnMaxDefault    = 3
-)
-
 // Successful JSON RPC response
 func ok(rid any, result any) map[string]any {
 	return map[string]any{"jsonrpc": "2.0", "id": rid, "result": result}
@@ -115,25 +108,14 @@ func approvalRequestPayload(ctx context.Context, data map[string]any) map[string
 	return payload
 }
 
-// Server to client requests still waiting on a session's renderer, else the compute host mirrored one
+// Server to client requests still waiting on a session's renderer
 func openRequests(sid string) []any {
-	if reqs := tuigateway.OpenRequests(sid); len(reqs) > 0 {
-		out := make([]any, len(reqs))
-		for i, req := range reqs {
-			out[i] = req
-		}
-		return out
+	reqs := tuigateway.OpenRequests(sid)
+	out := make([]any, len(reqs))
+	for i, req := range reqs {
+		out[i] = req
 	}
-	session := tuigateway.SessionRecord(sid)
-	if session == nil {
-		return []any{}
-	}
-	unlock := lockHistory(session)
-	defer unlock()
-	if mirrored, isDict := session.Get("_compute_host_open_request").(map[string]any); isDict {
-		return []any{copyDict(mirrored)}
-	}
-	return []any{}
+	return out
 }
 
 // Oldest unresolved approval of a session as its client payload, nil when none
@@ -231,24 +213,6 @@ func coerceIntConfigValue(value any, def, minValue int) int {
 	return def
 }
 
-// Dashboard process isolation config with read site defaults
-func loadDashboardProcessIsolationConfig(ctx context.Context, cfg map[string]any) map[string]any {
-	root := cfg
-	if root == nil {
-		root = loadCfg(ctx)
-	}
-	dash, _ := root["dashboard"].(map[string]any)
-	turnIsolation := dashboardTurnIsolationDefault
-	if raw, present := dash["turn_isolation"]; present && raw != nil {
-		turnIsolation = isTruthyValue(raw)
-	}
-	return map[string]any{
-		"turn_isolation":              turnIsolation,
-		"compute_host_heartbeat_secs": coerceIntConfigValue(dash["compute_host_heartbeat_secs"], dashboardComputeHostHeartbeatSecsDefault, 1),
-		"compute_host_respawn_max":    coerceIntConfigValue(dash["compute_host_respawn_max"], dashboardComputeHostRespawnMaxDefault, 0),
-	}
-}
-
 // First live record holding the session key
 func sessionForKey(sessionKey string) *tuigateway.Session {
 	for _, live := range tuigateway.LiveSessions() {
@@ -264,7 +228,7 @@ func sessionSource(session *tuigateway.Session) string {
 	if source := strings.TrimSpace(strOr(session.Get("source"))); source != "" {
 		return source
 	}
-	return resolveSessionPlatform()
+	return sessionPlatform
 }
 
 // Context carrying a fresh tool env with the session variables of a live session bound, and that env
@@ -286,7 +250,7 @@ func setSessionContext(ctx context.Context, sessionKey string, cwd *string, uiSe
 		} else if sess != nil {
 			resolved = strOr(sess.Get("cwd"))
 		}
-		source, profile, sessionID := resolveSessionPlatform(), currentProfileName(ctx), sessionKey
+		source, profile, sessionID := sessionPlatform, currentProfileName(ctx), sessionKey
 		if sess != nil {
 			source = sessionSource(sess)
 			if name := home.ProfileNameFor(strOr(sess.Get("profile_home"))); name != "" {

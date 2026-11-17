@@ -15,7 +15,7 @@ import (
 )
 
 func TestRepeatedSetupRoutesRecordsOnce(t *testing.T) {
-	modes := []struct{ mode, component string }{{"cli", ""}, {"gateway", "gateway.log"}, {"gui", "gui.log"}}
+	modes := []struct{ mode, component string }{{"cli", ""}, {"gateway", "gateway.log"}}
 	levels := []struct {
 		configured, explicit string
 		minimum              int
@@ -36,7 +36,7 @@ func TestRepeatedSetupRoutesRecordsOnce(t *testing.T) {
 				}
 				SetSessionContext("routing-session")
 				sources := []string{"tools.terminal_tool", "agent.context_compressor", "gateway.run",
-					"plugins.platforms.telegram.adapter", "hermes_cli.web_server", "tui_gateway.ws"}
+					"plugins.platforms.telegram.adapter", "tui_gateway.ws"}
 				slogLevels := map[int]slog.Level{LevelDebug: slog.LevelDebug, LevelInfo: slog.LevelInfo, LevelWarning: slog.LevelWarn}
 				for i, src := range sources {
 					for _, level := range []int{LevelDebug, LevelInfo, LevelWarning} {
@@ -65,8 +65,7 @@ func TestRepeatedSetupRoutesRecordsOnce(t *testing.T) {
 							accepted := map[string]bool{
 								"agent.log":   level >= lv.minimum,
 								"errors.log":  level >= LevelWarning,
-								"gateway.log": (i == 2 || i == 3) && level >= max(LevelInfo, lv.minimum),
-								"gui.log":     (i == 4 || i == 5) && level >= max(LevelInfo, lv.minimum),
+								"gateway.log": (i == 2 || i == 3 || i == 4) && level >= max(LevelInfo, lv.minimum),
 							}[name]
 							w := fmt.Sprintf("routing-witness-%d-%d", i, level)
 							n := 0

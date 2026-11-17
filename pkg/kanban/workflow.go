@@ -5,7 +5,6 @@ import (
 	"iter"
 	"slices"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
@@ -128,33 +127,6 @@ func (w Workflow) CanMove(src, dst string) (bool, error) {
 	return w.Manual.dsts[src][dst], nil
 }
 
-// JSON shape the dashboard GET workflow route serves with sorted manual destinations
-func (w Workflow) ToDict() *pyjson.Object {
-	cols := make([]any, len(w.Columns))
-	for i, c := range w.Columns {
-		o := pyjson.NewObject()
-		o.Set("key", c.Key)
-		o.Set("label", c.Label)
-		o.Set("icon", c.Icon)
-		o.Set("drag_target", c.DragTarget)
-		cols[i] = o
-	}
-	manual := pyjson.NewObject()
-	for _, src := range w.Manual.srcs {
-		dsts := w.Manual.Get(src)
-		vals := make([]any, len(dsts))
-		for i, d := range dsts {
-			vals[i] = d
-		}
-		manual.Set(src, vals)
-	}
-	out := pyjson.NewObject()
-	out.Set("columns", cols)
-	out.Set("manual", manual)
-	out.Set("archived", Archived)
-	return out
-}
-
 // ValueError for duplicate keys, a reserved archived column or moves naming unknown columns
 func (w Workflow) Validate() error {
 	keys := w.Keys()
@@ -184,7 +156,7 @@ func (w Workflow) Validate() error {
 	return nil
 }
 
-// Today's board in dashboard order, locked columns mirror the desktop and moves are the measured PATCH matrix
+// Today's board in column order with its locked columns and its manual move matrix
 var DefaultWorkflow = Workflow{
 	Columns: []Column{
 		{"triage", "Triage", "◇", true},

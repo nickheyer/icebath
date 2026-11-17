@@ -9,7 +9,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
-// Subject native Desktop's ticket carries on this host, the owner's own OS identity
+// Subject a native ticket carries on this host, the owner's own OS identity
 func HostOwnerSubject() string {
 	return ownerWorkerSubject()
 }
@@ -55,7 +55,7 @@ func ownerLogin(provider, user string) bool {
 	return loginProvider(provider)
 }
 
-// True for a dashboard sign in provider and user label naming the owner, never a nous account label
+// True for a sign in provider and user label naming the owner, never a nous account label
 func ownerLoginLabel(value string) bool {
 	provider, user, sep := strings.Cut(value, ":")
 	return sep && pystr.Strip(user) != "" && provider != "nous" && ownerLogin(provider, user)

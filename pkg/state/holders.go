@@ -579,7 +579,7 @@ func HeldStoreRefusal(ctx context.Context, dbPath, command, forceHint string) (s
 	lines = append(lines,
 		"Rewriting the database under a live writer is how every agent ends up refusing turns with the "+
 			"retired state.db-wal error. Nothing is lost.",
-		fmt.Sprintf("Stop them first (`icebath %sgateway stop`, quit the Desktop app, pause cron), then re-run.", profileArg))
+		fmt.Sprintf("Stop them first (`icebath %sgateway stop`, quit the TUI, pause cron), then re-run.", profileArg))
 	if forceHint != "" {
 		lines = append(lines, fmt.Sprintf("Override with %s if you accept the risk.", forceHint))
 	}

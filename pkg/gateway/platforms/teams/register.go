@@ -213,8 +213,6 @@ func (teamsPlatformPlugin) Register(ctx *plugins.Context) error {
 		RequiredEnv: []string{"TEAMS_CLIENT_ID", "TEAMS_CLIENT_SECRET", "TEAMS_TENANT_ID"},
 		InstallHint: installHint(),
 		Extra: map[string]any{
-			"dashboard_description":  "Connect Icebath to Microsoft Teams chats via the Bot Framework.",
-			"docs_url":               "https://hermes-agent.nousresearch.com/docs/user-guide/messaging/teams",
 			"ensure_deps_fn":         checkTeamsRequirements,
 			"scoped_validate_config": validateConfig,
 			"is_connected":           validateConfig,

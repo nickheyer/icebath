@@ -25,7 +25,6 @@ import (
 func TestMain(m *testing.M) {
 	runEntryTestChild()
 	runTestChild()
-	DispatchComputeHostEntry(context.Background(), func(code int) { AtExit(); os.Exit(code) })
 	home.DispatchScratchPruneEntry(context.Background())
 	hermetic.BlockExternalHTTP()
 	hermetic.BlockExternalDNS()
@@ -57,8 +56,7 @@ func TestMain(m *testing.M) {
 		if d == nil {
 			return ResolvedCommand{}, false
 		}
-		return ResolvedCommand{Name: d.Name, Category: d.Category, Describe: d.Describe,
-			DesktopSubcommands: commands.MetaOf(d.Name).DesktopSubcommands}, true
+		return ResolvedCommand{Name: d.Name, Category: d.Category, Describe: d.Describe}, true
 	}
 	CommandsByCategory = func() []HelpCategory {
 		var out []HelpCategory
@@ -127,7 +125,6 @@ func serverState(t *testing.T) func() {
 		home.PinProcess("", true)
 		provider.ResetLaunchEnvSnapshotForTests()
 		tools.ResetForegroundExitFenceForTests()
-		tools.OnboardingDueResetForTests()
 		logging.ResetQueuedHandlers()
 	}
 }

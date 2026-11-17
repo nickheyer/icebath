@@ -92,32 +92,12 @@ type agentCallbackSet struct {
 	Notice             func(notice provider.AgentNotice)
 	NoticeClear        func(key string)
 	Clarify            tools.ClarifyCallback
-	ReadTerminal       func(start, count *int) string
-	ReadPreview        func(start, count *int) string
-	DrivePreview       func(payload map[string]any) string
-	ReadWindowBelow    func() string
 	Connection         func(payload map[string]any)
-	Tour               func(payload map[string]any) string
-	Theme              func(payload map[string]any) any
-	SetupBeat          func(payload map[string]any) any
 	InterimAssistant   func(text any, alreadyStreamed bool)
 }
 
 // Callbacks of one session's agent, interim commentary only when display.interim_assistant_messages is on
 func agentCbs(ctx context.Context, sid string) agentCallbackSet {
-	readBlock := func(method string, timeout float64) func(start, count *int) string {
-		return func(start, count *int) string {
-			params := map[string]any{}
-			if start != nil {
-				params["start"] = *start
-			}
-			if count != nil {
-				params["count"] = *count
-			}
-			return askRequest(ctx, method, sid, params, &timeout)
-		}
-	}
-	windowTimeout := 30.0
 	cbs := agentCallbackSet{
 		ToolStart: func(toolCallID, name string, args map[string]any) { onToolStart(ctx, sid, toolCallID, name, args) },
 		ToolComplete: func(toolCallID, name string, args map[string]any, result string) {
@@ -149,14 +129,7 @@ func agentCbs(ctx context.Context, sid string) agentCallbackSet {
 			}
 			return clarifyBlock(callCtx, sid, rows), nil
 		},
-		ReadTerminal:    readBlock("terminal.read", 30),
-		ReadPreview:     readBlock("preview.read", 45),
-		DrivePreview:    func(payload map[string]any) string { return previewActionRequest(ctx, sid, copyDict(payload)) },
-		ReadWindowBelow: func() string { return askRequest(ctx, "window.read", sid, map[string]any{}, &windowTimeout) },
-		Connection:      func(payload map[string]any) { emitEvent(ctx, "connection.request", sid, copyDict(payload)) },
-		Tour:            func(payload map[string]any) string { return tourRequest(ctx, sid, payload) },
-		Theme:           func(payload map[string]any) any { return themeRequest(ctx, sid, payload) },
-		SetupBeat:       func(payload map[string]any) any { return setupBeatRequest(ctx, sid, payload) },
+		Connection: func(payload map[string]any) { emitEvent(ctx, "connection.request", sid, copyDict(payload)) },
 	}
 	if loadInterimAssistantMessages(ctx) {
 		cbs.InterimAssistant = func(text any, alreadyStreamed bool) {
@@ -171,9 +144,7 @@ func (c agentCallbackSet) applyTo(o *agent.AIAgentOptions) {
 	o.ToolStartCallback, o.ToolCompleteCallback, o.ToolResultMetadataCallback = c.ToolStart, c.ToolComplete, c.ToolResultMetadata
 	o.ToolProgressCallback, o.ToolGenCallback, o.ThinkingCallback, o.ReactionCallback = c.ToolProgress, c.ToolGen, c.Thinking, c.Reaction
 	o.ReasoningCallback, o.StatusCallback, o.NoticeCallback, o.NoticeClearCallback = c.Reasoning, c.Status, c.Notice, c.NoticeClear
-	o.ClarifyCallback, o.ReadTerminalCallback, o.ReadPreviewCallback, o.DrivePreviewCallback = c.Clarify, c.ReadTerminal, c.ReadPreview, c.DrivePreview
-	o.ReadWindowBelowCallback, o.ConnectionCallback, o.TourCallback = c.ReadWindowBelow, c.Connection, c.Tour
-	o.ThemeCallback, o.SetupBeatCallback = c.Theme, c.SetupBeat
+	o.ClarifyCallback, o.ConnectionCallback = c.Clarify, c.Connection
 	if c.InterimAssistant != nil {
 		o.InterimAssistantCallback = c.InterimAssistant
 	}

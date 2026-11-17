@@ -98,19 +98,19 @@ func sweepScope(t *testing.T, db *state.DB, ttl float64, records map[string]*tui
 	swapSessions(t, records)
 }
 
-func TestEndsStaleTuiDesktopAndSubagent(t *testing.T) {
+func TestEndsStaleTuiAndSubagent(t *testing.T) {
 	db := reaperTestDB(t)
 	stale := nowSeconds() - 8*3600
-	for _, row := range [][2]string{{"stale-tui", "tui"}, {"stale-desktop", "desktop"}, {"stale-sub", "subagent"}} {
+	for _, row := range [][2]string{{"stale-tui", "tui"}, {"stale-sub", "subagent"}} {
 		seedReaperSession(t, db, row[0], row[1], stale, nil)
 	}
 	sweepScope(t, db, reaperIdleS, nil)
 	swept := sweepOrphanedSessionRows(context.Background())
 	sort.Strings(swept)
-	if !reflect.DeepEqual(swept, []string{"stale-desktop", "stale-sub", "stale-tui"}) {
+	if !reflect.DeepEqual(swept, []string{"stale-sub", "stale-tui"}) {
 		t.Fatalf("swept %v", swept)
 	}
-	for _, sid := range []string{"stale-tui", "stale-desktop", "stale-sub"} {
+	for _, sid := range []string{"stale-tui", "stale-sub"} {
 		row := reaperRow(t, db, sid)
 		if row["ended_at"] == nil || row["end_reason"] != "startup_orphan_reap" {
 			t.Fatalf("%s not ended: %v", sid, row)
@@ -231,10 +231,10 @@ func TestOncePerProcessAndConfigAndTTLGates(t *testing.T) {
 	}
 }
 
-func TestConfigFlagReadsDashboardStartupOrphanSweep(t *testing.T) {
+func TestConfigFlagReadsSessionsStartupOrphanSweep(t *testing.T) {
 	ctx := context.Background()
 	swapVar(t, &reaperLoadCfg, func(context.Context) map[string]any {
-		return map[string]any{"dashboard": map[string]any{"startup_orphan_sweep": false}}
+		return map[string]any{"sessions": map[string]any{"startup_orphan_sweep": false}}
 	})
 	if orphanReaperEnabled(ctx) {
 		t.Fatal("flag false read as enabled")

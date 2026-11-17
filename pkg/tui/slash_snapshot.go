@@ -26,7 +26,6 @@ func (c *gatewayClient) releaseForMaintenance() func() {
 		c.lifecycleLocked("[lifecycle] gateway released for snapshot maintenance")
 		c.resetStartupStateLocked()
 		c.closeGatewaySocketLocked()
-		c.closeSidecarLocked()
 		c.attachURL = ""
 	})
 	return func() {

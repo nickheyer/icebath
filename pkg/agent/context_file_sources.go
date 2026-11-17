@@ -124,7 +124,7 @@ func ContextFileSourcesForAgent(ctx context.Context, a *AIAgent) ([]ContextFileS
 	if a.skipContextFiles {
 		return []ContextFileSource{}, nil
 	}
-	cwd, err := tools.ResolveContextCwd(a.env, !a.contextCwdIsLaunchArtifact)
+	cwd, err := tools.ResolveContextCwd(a.env, true)
 	if err != nil {
 		return nil, err
 	}

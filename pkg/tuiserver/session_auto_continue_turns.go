@@ -110,7 +110,7 @@ func maybeScheduleAutoContinue(ctx context.Context, sid string, session *tuigate
 // Interrupts a busy turn on its own goroutine, never under the history lock, at most one per session
 func interruptBusySession(ctx context.Context, sid string, session *tuigateway.Session, a any) {
 	interrupter, useAgent := a.(interface{ Interrupt(string) })
-	if !useAgent && !sessionUsesComputeHost(ctx, session, loadCfg(ctx)) {
+	if !useAgent {
 		return
 	}
 	unlock := lockHistory(session)
@@ -127,23 +127,12 @@ func interruptBusySession(ctx context.Context, sid string, session *tuigateway.S
 			session.Set("_busy_interrupt_pending", false)
 			unlock()
 		}()
-		suppress(func() {
-			if useAgent {
-				interrupter.Interrupt("")
-				return
-			}
-			supervisor, err := getComputeHostSupervisor(ctx, loadCfg(ctx))
-			panicIf(err)
-			panicIf(supervisor.Interrupt(sid, ""))
-		})
+		suppress(func() { interrupter.Interrupt("") })
 	}()
 }
 
 // Makes a queued prompt durable at accept, the row staged on its envelope and merged text synced in place
 func persistQueuedUserRow(ctx context.Context, session *tuigateway.Session, envelope map[string]any, displayKind string) {
-	if sessionUsesComputeHost(ctx, session, loadCfg(ctx)) {
-		return
-	}
 	ensureSessionDBRow(ctx, session)
 	staged, _ := envelope["_submit_user_row"].(map[string]any)
 	if rowID, ok := staged["_row_id"].(int64); ok {
@@ -321,7 +310,6 @@ func drainQueuedPrompt(ctx context.Context, rid any, sid string, session *tuigat
 	if !claimed {
 		return false
 	}
-	useComputeHost := sessionUsesComputeHost(ctx, session, loadCfg(ctx))
 	unlock := lockHistory(session)
 	if intOr(session.Get("_queued_prompt_generation")) != generation {
 		entries := []any{queued}
@@ -363,23 +351,7 @@ func drainQueuedPrompt(ctx context.Context, rid any, sid string, session *tuigat
 	}
 	dispatchFailed := false
 	if failure := catchPanic(func() {
-		if !useComputeHost {
-			runPromptSubmit(ctx, rid, sid, session, queued["text"], o)
-			return
-		}
-		resp := submitPromptToComputeHost(ctx, rid, sid, session, queued["text"], o.queuedPromptGeneration, o.imagePaths, "", nil)
-		if errObj, failed := resp["error"]; failed && truthy(errObj) {
-			unlock := lockHistory(session)
-			session.Set("running", false)
-			clearInflightTurn(session)
-			unlock()
-			message := "queued prompt failed"
-			if e, isMap := errObj.(map[string]any); isMap && truthy(e["message"]) {
-				message = pyrepr.Str(e["message"])
-			}
-			tuigateway.Emit(ctx, "error", sid, map[string]any{"message": message})
-			dispatchFailed = true
-		}
+		runPromptSubmit(ctx, rid, sid, session, queued["text"], o)
 	}); failure != nil {
 		notifLogFailure("queued prompt dispatch failed", failure)
 		notifReleaseTurn(session)

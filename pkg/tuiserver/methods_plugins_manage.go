@@ -176,7 +176,7 @@ func pluginsToggle(ctx context.Context, rid any, params map[string]any) (map[str
 	if err := ensurePluginActivationListener(ctx); err != nil {
 		return nil, err
 	}
-	result, err := plugins.DashboardSetAgentPluginEnabled(ctx, ident, pyrepr.Truthy(params["enable"]))
+	result, err := plugins.SetAgentPluginEnabled(ctx, ident, pyrepr.Truthy(params["enable"]))
 	if err != nil {
 		return nil, err
 	}
@@ -235,7 +235,7 @@ func pluginsInstall(ctx context.Context, rid any, params map[string]any) (map[st
 	if v, present := params["enable"]; present {
 		enable = pyrepr.Truthy(v)
 	}
-	result, err := plugins.DashboardInstallPlugin(ctx, plugins.DashboardInstallOptions{
+	result, err := plugins.UnattendedInstallPlugin(ctx, plugins.UnattendedInstallOptions{
 		Identifier: ident, Force: pyrepr.Truthy(params["force"]), Enable: enable, CatalogName: catalogName,
 		Ref: strArg(params, "ref"), InspectedSha: strArg(params, "inspected_sha")})
 	if err != nil {
@@ -273,7 +273,7 @@ func pluginsUpdate(ctx context.Context, rid any, params map[string]any) (map[str
 	if err := ensurePluginActivationListener(ctx); err != nil {
 		return nil, err
 	}
-	result, err := plugins.DashboardUpdateUserPlugin(ctx, name, pyrepr.Truthy(params["accept_capabilities"]), pyrepr.Truthy(params["force"]))
+	result, err := plugins.UnattendedUpdateUserPlugin(ctx, name, pyrepr.Truthy(params["accept_capabilities"]), pyrepr.Truthy(params["force"]))
 	if err != nil {
 		return nil, err
 	}
@@ -314,13 +314,13 @@ func pluginsUpdate(ctx context.Context, rid any, params map[string]any) (map[str
 	return ok(rid, withActivation(payload, resultName)), nil
 }
 
-// Uninstalls a user install by name through the same core as the CLI and the dashboard
+// Uninstalls a user install by name through the same core as the CLI
 func pluginsRemove(ctx context.Context, rid any, params map[string]any) (map[string]any, error) {
 	name := firstParam(params, "name")
 	if name == "" {
 		return rpcErr(rid, 4019, "plugins.remove requires a 'name'", nil), nil
 	}
-	result, err := plugins.DashboardRemoveUserPlugin(ctx, name)
+	result, err := plugins.UnattendedRemoveUserPlugin(ctx, name)
 	if err != nil {
 		return nil, err
 	}
@@ -330,7 +330,7 @@ func pluginsRemove(ctx context.Context, rid any, params map[string]any) (map[str
 	return ok(rid, result), nil
 }
 
-// Writes manifest declared settings, tells the desktop half and reconnects package MCP servers whose inputs changed
+// Writes manifest declared settings, broadcasts settings.changed and reconnects package MCP servers whose inputs changed
 func pluginsSettings(ctx context.Context, rid any, params map[string]any) (map[string]any, error) {
 	key := firstParam(params, "key", "name")
 	values, isMap := params["values"].(map[string]any)
@@ -418,18 +418,6 @@ func portableServerNames(pluginDir string) ([]string, error) {
 	return names, nil
 }
 
-// Catalog plugins curated for the onboarding card that this OS runs, each with its app state
-func pluginsOnboarding(ctx context.Context, rid any, _ map[string]any) (map[string]any, error) {
-	entries, err := plugins.OnboardingEntries(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if entries == nil {
-		entries = []plugins.OnboardingEntry{}
-	}
-	return ok(rid, map[string]any{"onboarding": entries}), nil
-}
-
 // Named catalog plugins this OS runs in the order asked, each with its app state and disclosure
 func pluginsPresence(ctx context.Context, rid any, params map[string]any) (map[string]any, error) {
 	var names []string
@@ -466,7 +454,7 @@ func pluginsPresence(ctx context.Context, rid any, params map[string]any) (map[s
 
 // Action table of plugins.manage
 var pluginsActions = map[string]pluginsAction{
-	"list": pluginsListRows, "onboarding": pluginsOnboarding, "presence": pluginsPresence,
+	"list": pluginsListRows, "presence": pluginsPresence,
 	"toggle": pluginsToggle, "install": pluginsInstall, "inspect": pluginsInspect,
 	"update": pluginsUpdate, "remove": pluginsRemove, "settings": pluginsSettings,
 }

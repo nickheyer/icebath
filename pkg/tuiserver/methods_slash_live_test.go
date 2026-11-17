@@ -2,7 +2,6 @@ package tuiserver
 
 import (
 	"context"
-	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -44,23 +43,6 @@ func TestContextLocalSessionAgentless(t *testing.T) {
 	t.Setenv("ICEBATH_HOME", t.TempDir())
 	out, ok := liveSlashCommandOutput(context.Background(), "sid-1", liveSlashSession(nil), "context", "")
 	if !ok || strings.Contains(out, "No active agent") || !strings.Contains(out, "Conversation:") {
-		t.Fatalf("out = %q ok = %v", out, ok)
-	}
-}
-
-func TestContextComputeHostRouteUnchanged(t *testing.T) {
-	h := t.TempDir()
-	t.Setenv("ICEBATH_HOME", h)
-	if err := os.WriteFile(filepath.Join(h, "config.yaml"), []byte("dashboard:\n  turn_isolation: true\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	session := liveSlashSession(liveSlashAgent(t))
-	session.Set("_compute_host_active", true)
-	if !sessionUsesComputeHost(context.Background(), session, nil) {
-		t.Fatal("session does not route to the compute host")
-	}
-	out, ok := liveSlashCommandOutput(context.Background(), "sid-1", session, "context", "")
-	if !ok || !strings.Contains(out, "Conversation:") {
 		t.Fatalf("out = %q ok = %v", out, ok)
 	}
 }
@@ -137,7 +119,7 @@ func (a *refineRecordingAgent) SpawnExplicitBackgroundReview(ctx context.Context
 // Session record of the refine cases holding the recording agent
 func refineSession(a *refineRecordingAgent, key string, history []any) *tuigateway.Session {
 	return tuigateway.NewSession(map[string]any{"agent": a, "session_key": key, "history": history, "history_lock": &sync.Mutex{},
-		"running": false, "cwd": "", "source": "desktop"})
+		"running": false, "cwd": "", "source": "tui"})
 }
 
 // Spawned review of the recording agent with only role and content kept on each snapshot row
@@ -166,7 +148,7 @@ func TestRefineSpawnsReviewFromPersistedTranscript(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := db.CreateSession(state.NewSession{ID: "refine-key", Source: "desktop"}); err != nil {
+	if err := db.CreateSession(state.NewSession{ID: "refine-key", Source: "tui"}); err != nil {
 		t.Fatal(err)
 	}
 	for _, m := range []map[string]any{{"role": "user", "content": "persisted question"}, {"role": "assistant", "content": "persisted answer"}} {

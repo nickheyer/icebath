@@ -158,60 +158,6 @@ func TestContextFileCwd(t *testing.T) {
 			t.Fatalf("cwd %v", got)
 		}
 	})
-	t.Run("test_desktop_launch_artifact_does_not_load_bundled_agents_md", func(t *testing.T) {
-		t.Setenv("ICEBATH_HOME", t.TempDir())
-		dir, _ := filepath.EvalSymlinks(t.TempDir())
-		t.Setenv("TERMINAL_CWD", "")
-		os.Unsetenv("TERMINAL_CWD")
-		withPackageRoot(t, dir)
-		t.Chdir(dir)
-		if err := os.WriteFile(filepath.Join(dir, "AGENTS.md"), []byte("bundled contributor instructions"), 0o600); err != nil {
-			t.Fatal(err)
-		}
-		a := spAgent(t)
-		a.platform, a.contextCwdIsLaunchArtifact = "desktop", true
-		soulAndHintsOnly(t)
-		if ctx := promptParts(t, a, nil).Context; strings.Contains(ctx, "bundled contributor instructions") {
-			t.Fatalf("context %q", ctx)
-		}
-	})
-	t.Run("test_desktop_launch_artifact_uses_profile_configured_cwd", func(t *testing.T) {
-		t.Setenv("ICEBATH_HOME", t.TempDir())
-		root, _ := filepath.EvalSymlinks(t.TempDir())
-		launch, workspace := filepath.Join(root, "launch"), filepath.Join(root, "workspace")
-		for _, d := range []string{launch, workspace} {
-			if err := os.MkdirAll(d, 0o700); err != nil {
-				t.Fatal(err)
-			}
-		}
-		withPackageRoot(t, launch)
-		t.Chdir(launch)
-		t.Setenv("TERMINAL_CWD", workspace)
-		_ = os.WriteFile(filepath.Join(launch, "AGENTS.md"), []byte("bundled contributor instructions"), 0o600)
-		_ = os.WriteFile(filepath.Join(workspace, "AGENTS.md"), []byte("operator workspace rules"), 0o600)
-		a := spAgent(t)
-		a.platform, a.contextCwdIsLaunchArtifact = "desktop", true
-		tools.SetLogicalSessionCwd(a.env, launch)
-		soulAndHintsOnly(t)
-		ctx := promptParts(t, a, nil).Context
-		if !strings.Contains(ctx, "operator workspace rules") || strings.Contains(ctx, "bundled contributor instructions") {
-			t.Fatalf("context %q", ctx)
-		}
-	})
-	t.Run("test_desktop_explicit_install_tree_workspace_still_loads_agents_md", func(t *testing.T) {
-		t.Setenv("ICEBATH_HOME", t.TempDir())
-		dir, _ := filepath.EvalSymlinks(t.TempDir())
-		withPackageRoot(t, dir)
-		t.Chdir(dir)
-		t.Setenv("TERMINAL_CWD", dir)
-		_ = os.WriteFile(filepath.Join(dir, "AGENTS.md"), []byte("chosen workspace instructions"), 0o600)
-		a := spAgent(t)
-		a.platform, a.contextCwdIsLaunchArtifact = "desktop", false
-		soulAndHintsOnly(t)
-		if ctx := promptParts(t, a, nil).Context; !strings.Contains(ctx, "chosen workspace instructions") {
-			t.Fatalf("context %q", ctx)
-		}
-	})
 }
 
 // Replaces only the soul and environment builders, the context files built for real

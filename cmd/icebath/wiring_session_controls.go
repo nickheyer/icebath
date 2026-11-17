@@ -38,8 +38,7 @@ func catalogRegistry(ctx context.Context) ([]tuiserver.CatalogCommand, map[strin
 			desc = i18n.T(ctx, "slash.shared.usage_suffix", "", map[string]any{"description": desc, "name": d.Name, "args_hint": d.ArgsHint})
 		}
 		rows = append(rows, tuiserver.CatalogCommand{Name: d.Name, Category: d.Category, Description: desc,
-			Aliases: append([]string(nil), d.Aliases...), GatewayOnly: commands.MetaOf(d.Name).GatewayOnly,
-			DesktopMeta: commands.DesktopMeta(d)})
+			Aliases: append([]string(nil), d.Aliases...), GatewayOnly: commands.MetaOf(d.Name).GatewayOnly})
 	}
 	return rows, commands.Subcommands(builtins)
 }

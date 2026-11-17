@@ -83,10 +83,10 @@ const debugNousPrivacyNotice = `⚠️  --nous: This uploads your debug bundle t
     NOT a public paste service. The following is included:
   • System info (OS, Python/Icebath version, provider, which API keys are
     configured — NOT the actual keys)
-  • Full agent.log, gateway.log, and desktop.log (up to 512 KB each — likely
+  • Full agent.log and gateway.log (up to 512 KB each — likely
     contains conversation content, tool outputs, and file paths), plus
-    update.log and desktop-update-handoff.log when present (update/hand-off
-    output — the root cause of update failures)
+    update.log when present (update output — the root cause of update
+    failures)
 
   • The bundle is viewable only by Nous staff (and allowlisted Discord mods)
     via a Google-login-gated viewer.
@@ -421,25 +421,6 @@ func debugPrimaryLogPath(ctx context.Context, name string) string {
 	return path
 }
 
-var debugClientSideLogs = map[string]string{
-	"desktop": "written by Icebath Desktop on the machine running the app, not by this " +
-		"backend. If the desktop connects to a remote/docker/SSH backend, collect " +
-		"it on that client machine",
-}
-
-// Explanation of a missing log instead of a bare absence
-func debugMissingLogNote(ctx context.Context, name string) string {
-	reason, ok := debugClientSideLogs[name]
-	if !ok {
-		return "(file not found)"
-	}
-	where := ""
-	if primary := debugPrimaryLogPath(ctx, name); primary != "" {
-		where = " — expected at " + primary
-	}
-	return "(not on this host: " + reason + where + ")"
-}
-
 // First nonempty candidate of a log, the primary then its first rotation
 var debugResolveLogPath = func(ctx context.Context, name string) string {
 	primary := debugPrimaryLogPath(ctx, name)
@@ -520,7 +501,7 @@ func debugCaptureLogSnapshot(ctx context.Context, name string, tailLines int, ma
 	logPath := debugResolveLogPath(ctx, name)
 	if logPath == "" {
 		primary := debugPrimaryLogPath(ctx, name)
-		tail := debugMissingLogNote(ctx, name)
+		tail := "(file not found)"
 		if primary != "" {
 			if _, err := os.Stat(primary); err == nil {
 				tail = "(file empty)"
@@ -588,8 +569,8 @@ func debugErrText(err error) string {
 }
 
 var (
-	debugReportLogs = []string{"agent", "errors", "gateway", "gui", "desktop", "update", "handoff"}
-	debugFullLogs   = []string{"agent", "gateway", "gui", "desktop", "update", "handoff"}
+	debugReportLogs = []string{"agent", "errors", "gateway", "update"}
+	debugFullLogs   = []string{"agent", "gateway", "update"}
 )
 
 // Tail line budget of a log, the full lines budget for agent and at most 100 for the rest
@@ -763,7 +744,7 @@ func BuildDebugShare(ctx context.Context, logLines, expiry int, redact bool) (*D
 		return nil, err
 	}
 	res.URLKeys, res.URLs["Report"] = append(res.URLKeys, "Report"), reportURL
-	for _, label := range []string{"agent.log", "gateway.log", "gui.log", "desktop.log", "update.log", "desktop-update-handoff.log"} {
+	for _, label := range []string{"agent.log", "gateway.log", "update.log"} {
 		content := bundle.vals[label]
 		if content == "" {
 			continue
@@ -841,7 +822,7 @@ func runDebugShare(ctx context.Context, ns map[string]any, w io.Writer) (int, er
 			return 1, err
 		}
 		fmt.Fprintln(w, bundle.vals["report"])
-		for _, label := range []string{"agent.log", "gateway.log", "gui.log", "desktop.log", "update.log", "desktop-update-handoff.log"} {
+		for _, label := range []string{"agent.log", "gateway.log", "update.log"} {
 			if body := bundle.vals[label]; body != "" {
 				rule := strings.Repeat("=", 60)
 				fmt.Fprintf(w, "\n\n%s\nFULL %s\n%s\n\n%s\n", rule, label, rule, body)

@@ -19,7 +19,7 @@ const (
 )
 
 var (
-	stderrNoiseRe       = regexp.MustCompile(`^\[(?:lifecycle|startup|protocol|sidecar|spawn)\]`)
+	stderrNoiseRe       = regexp.MustCompile(`^\[(?:lifecycle|startup|protocol|spawn)\]`)
 	stderrProblemRe     = regexp.MustCompile(`Traceback|\b[A-Z][A-Za-z]*(?:Error|Exception)\b:|CRITICAL|\[gateway-turn\]|\[gateway-exit\]|^gateway (?:absent|conflict|draining|inaccessible|incompatible|starting|unavailable): `)
 	stderrExceptionRe   = regexp.MustCompile(`([A-Z][A-Za-z]*(?:Error|Exception)):`)
 	versionSkewRe       = regexp.MustCompile(`Extra inputs are not permitted|^unknown method:`)

@@ -317,8 +317,7 @@ func TestPackRegistersLanguageAndDisplayLanguageResolves(t *testing.T) {
 	}
 	src := "plugin:icebath-lang-pl"
 	for surface, msgs := range map[string]map[string]any{
-		"core": {"approval": map[string]any{"denied": "Zatwierdzenie"}}, "tui": {"status": map[string]any{"ready": "Gotowy"}},
-		"desktop": {"settings": map[string]any{"title": "Ustawienia"}}} {
+		"core": {"approval": map[string]any{"denied": "Zatwierdzenie"}}, "tui": {"status": map[string]any{"ready": "Gotowy"}}} {
 		flat, err := LoadLocaleSource(msgs)
 		if err != nil {
 			t.Fatal(err)
@@ -334,7 +333,7 @@ func TestPackRegistersLanguageAndDisplayLanguageResolves(t *testing.T) {
 	if got := T(ctx, other, "pl", nil); got != en(other) {
 		t.Fatalf("partial pack fallback got %q", got)
 	}
-	for surface, want := range map[string]map[string]string{"tui": {"status.ready": "Gotowy"}, "desktop": {"settings.title": "Ustawienia"}, "core": {"approval.denied": "Zatwierdzenie"}} {
+	for surface, want := range map[string]map[string]string{"tui": {"status.ready": "Gotowy"}, "core": {"approval.denied": "Zatwierdzenie"}} {
 		if got := SurfaceCatalog(ctx, "pl", surface); !reflect.DeepEqual(got, want) {
 			t.Fatalf("%s surface got %v", surface, got)
 		}
@@ -347,7 +346,7 @@ func TestPackRegistersLanguageAndDisplayLanguageResolves(t *testing.T) {
 	if got := GetLanguage(ctx); got != "pl" || T(ctx, approvalKey, "", nil) != "Zatwierdzenie" {
 		t.Fatalf("language after config got %q", got)
 	}
-	want := LanguageOption{ID: "pl", Endonym: "pl", RTL: false, Source: src, Surfaces: []string{"core", "tui", "desktop"}}
+	want := LanguageOption{ID: "pl", Endonym: "pl", RTL: false, Source: src, Surfaces: []string{"core", "tui"}}
 	if got := optionFor(ctx, "pl"); !reflect.DeepEqual(got, want) {
 		t.Fatalf("option got %+v", got)
 	}
@@ -480,8 +479,8 @@ func TestLanguageOptionsAreEnFirstSortedAndSourced(t *testing.T) {
 
 func TestDescribeLanguagePrecedence(t *testing.T) {
 	pack := &PackInfo{Endonym: "Polski", RTL: false, Source: "plugin:icebath-lang-pl"}
-	got := DescribeLanguage("pl", pack, false, []string{"core", "desktop"})
-	if !reflect.DeepEqual(got, LanguageOption{ID: "pl", Endonym: "Polski", Source: "plugin:icebath-lang-pl", Surfaces: []string{"core", "desktop"}}) {
+	got := DescribeLanguage("pl", pack, false, []string{"core", "tui"})
+	if !reflect.DeepEqual(got, LanguageOption{ID: "pl", Endonym: "Polski", Source: "plugin:icebath-lang-pl", Surfaces: []string{"core", "tui"}}) {
 		t.Fatalf("pl got %+v", got)
 	}
 	if DescribeLanguage("ar", &PackInfo{Endonym: "Other", Source: pack.Source}, false, nil).Endonym != "العربية" {
@@ -505,24 +504,24 @@ func TestLanguageSurfacesReportEachLayer(t *testing.T) {
 	if !reflect.DeepEqual(s["ko"], []string{"core", "tui"}) || !reflect.DeepEqual(s["en"], []string{"core"}) {
 		t.Fatalf("bundled surfaces ko %v en %v", s["ko"], s["en"])
 	}
-	writeFile(t, filepath.Join(h, "locales", "ko.desktop.yaml"), "settings:\n  title: 설정\n")
-	RegisterPack("pl", "desktop", map[string]string{"settings.title": "Ustawienia"}, "plugin:icebath-lang-pl", "", false)
+	writeFile(t, filepath.Join(h, "locales", "en.tui.yaml"), "status:\n  ready: Ready now\n")
+	RegisterPack("pl", "tui", map[string]string{"status.ready": "Gotowy"}, "plugin:icebath-lang-pl", "", false)
 	ResetLanguageCache()
 	s = LanguageSurfaces(ctx, "")
-	if !reflect.DeepEqual(s["ko"], []string{"core", "tui", "desktop"}) || !reflect.DeepEqual(s["pl"], []string{"desktop"}) {
-		t.Fatalf("layered surfaces ko %v pl %v", s["ko"], s["pl"])
+	if !reflect.DeepEqual(s["en"], []string{"core", "tui"}) || !reflect.DeepEqual(s["pl"], []string{"tui"}) {
+		t.Fatalf("layered surfaces en %v pl %v", s["en"], s["pl"])
 	}
-	if optionFor(ctx, "ko").Surfaces[2] != "desktop" || !reflect.DeepEqual(optionFor(ctx, "ja").Surfaces, []string{"core", "tui"}) {
+	if optionFor(ctx, "en").Surfaces[1] != "tui" || !reflect.DeepEqual(optionFor(ctx, "ja").Surfaces, []string{"core", "tui"}) {
 		t.Fatal("option surfaces")
 	}
-	writeFile(t, filepath.Join(h, "locales", "ja.desktop.yaml"), "# nothing translated yet\n")
-	writeFile(t, filepath.Join(h, "locales", "de.desktop.yaml"), "settings: [unclosed\n")
-	RegisterPack("uk", "desktop", map[string]string{}, "plugin:icebath-lang-uk", "", false)
+	writeFile(t, filepath.Join(h, "locales", "eo.tui.yaml"), "# nothing translated yet\n")
+	writeFile(t, filepath.Join(h, "locales", "sv.tui.yaml"), "status: [unclosed\n")
+	RegisterPack("cy", "tui", map[string]string{}, "plugin:icebath-lang-cy", "", false)
 	ResetLanguageCache()
 	s = LanguageSurfaces(ctx, "")
-	for _, lang := range []string{"ja", "de", "uk"} {
-		if contains(s[lang], "desktop") {
-			t.Fatalf("%s advertises desktop", lang)
+	for _, lang := range []string{"eo", "sv", "cy"} {
+		if contains(s[lang], "tui") {
+			t.Fatalf("%s advertises tui", lang)
 		}
 	}
 }

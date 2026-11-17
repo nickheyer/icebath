@@ -133,7 +133,7 @@ func gatewayCommandSubcommand(command string) (string, bool) {
 		return "run", true
 	}
 	for _, b := range basenames {
-		if b == "desktop-gateway.py" || b == "icebath-gateway" || b == "icebath-gateway.exe" {
+		if b == "icebath-gateway" || b == "icebath-gateway.exe" {
 			return "run", true
 		}
 	}

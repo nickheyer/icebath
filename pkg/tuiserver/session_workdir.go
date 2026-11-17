@@ -413,9 +413,6 @@ func persistSessionCwdAndScheduleGitMeta(ctx context.Context, session *tuigatewa
 	return generation
 }
 
-// Sources whose launch directory is an artifact of how the app started, not a picked workspace
-var launchCwdNotAWorkspace = map[string]bool{"desktop": true}
-
 // Cwd the terminal tool uses for a session, not host validated, empty when the backend default applies
 func terminalTaskCwd(ctx context.Context, session *tuigateway.Session) string {
 	cwd, _ := terminalTaskCwdWithSource(ctx, session)
@@ -467,13 +464,8 @@ func terminalTaskCwdWithSource(ctx context.Context, session *tuigateway.Session)
 	return cwd, "process"
 }
 
-// Whether the session cwd came from the app launch rather than user intent
-func contextCwdIsLaunchArtifact(session *tuigateway.Session) bool {
-	return session != nil && !truthy(session.Get("explicit_cwd")) && launchCwdNotAWorkspace[sessionSource(session)]
-}
-
 // Explicit flag, session cwd and remote flag of a freshly created session
-func resolveCreateCwd(ctx context.Context, params map[string]any, source, profileHome string) (bool, string, bool, error) {
+func resolveCreateCwd(ctx context.Context, params map[string]any, profileHome string) (bool, string, bool, error) {
 	rawCwd := strings.TrimSpace(strOr(params["cwd"]))
 	remoteCwd := rawCwd != "" && isRemoteCwdShape(rawCwd) && cwdIsRemote(ctx, profileHome)
 	explicitCwd := false
@@ -492,13 +484,6 @@ func resolveCreateCwd(ctx context.Context, params map[string]any, source, profil
 	if err != nil {
 		return false, "", false, err
 	}
-	if rawCwd != "" && !explicitCwd && source == "desktop" {
-		if truthy(params["cwd_explicit"]) {
-			explicitCwd, sessionCwd = true, rawCwd
-		} else if resolved, err := pypath.Abspath(pypath.Expanduser(rawCwd)); sessionCwd != "" && err == nil && sessionCwd == resolved {
-			explicitCwd = true
-		}
-	}
 	return explicitCwd, sessionCwd, remoteCwd, nil
 }
 
@@ -507,7 +492,7 @@ func persistedSessionCwd(ctx context.Context, session *tuigateway.Session) strin
 	if truthy(session.Get("explicit_cwd")) {
 		return sessionCwd(ctx, session)
 	}
-	if launchCwdNotAWorkspace[sessionSource(session)] || isRemoteLaunchCwd(ctx, session) {
+	if isRemoteLaunchCwd(ctx, session) {
 		return ""
 	}
 	return strOr(session.Get("cwd"))

@@ -95,19 +95,6 @@
       },
       "version": "0.21.0"
     },
-    "dmgbuild": {
-      "artifacts": {
-        "darwin-arm64": {
-          "sha256": "793404d0c96687e27d5ee40a668d498c92e36a64d6c2906df511031adb33cbeb",
-          "url": "https://github.com/electron-userland/electron-builder-binaries/releases/download/dmg-builder@1.2.5/dmgbuild-bundle-arm64-75c8a6c.tar.gz"
-        },
-        "darwin-x64": {
-          "sha256": "1664972f9cc2d6e8fce3b63e42cd30078aff602669c5856939c4519921200433",
-          "url": "https://github.com/electron-userland/electron-builder-binaries/releases/download/dmg-builder@1.2.5/dmgbuild-bundle-x86_64-75c8a6c.tar.gz"
-        }
-      },
-      "version": "1.2.5+75c8a6c"
-    },
     "ffmpeg": {
       "artifacts": {
         "darwin-arm64": {

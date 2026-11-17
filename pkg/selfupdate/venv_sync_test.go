@@ -327,7 +327,7 @@ func TestSealedTreesASealedTreeIsACleanNoop(t *testing.T) {
 	tmp := t.TempDir()
 	vsHome(t, tmp)
 	root := filepath.Join(tmp, "sealed")
-	vsWrite(t, filepath.Join(root, "install-stamp.json"), `{"commit": "abc123", "payload": "full", "updateMechanism": "electron-updater"}`)
+	vsWrite(t, filepath.Join(root, "install-stamp.json"), `{"commit": "abc123", "payload": "full", "updateMechanism": "external"}`)
 	calls := vsWirePM(t, false, "")
 	out, err := SyncTree(context.Background(), root, false)
 	if err != nil || out != (VenvSyncResult{State: "sealed", OK: true}) {
@@ -342,7 +342,7 @@ func TestSealedTreesADevTreeWithBothStampAndGitIsACheckout(t *testing.T) {
 	tmp := t.TempDir()
 	vsHome(t, tmp)
 	root := vsCheckout(t, tmp, "co")
-	vsWrite(t, filepath.Join(root, "install-stamp.json"), `{"commit": "abc", "updateMechanism": "electron-updater"}`)
+	vsWrite(t, filepath.Join(root, "install-stamp.json"), `{"commit": "abc", "updateMechanism": "external"}`)
 	vsWirePM(t, false, "")
 	if out, err := SyncTree(context.Background(), root, false); err != nil || out.State != "synced" {
 		t.Fatalf("dev tree %+v %v", out, err)
@@ -381,7 +381,7 @@ func TestCliContractJSONOutputAndExitCodes(t *testing.T) {
 	tmp := t.TempDir()
 	vsHome(t, tmp)
 	root := filepath.Join(tmp, "sealed")
-	vsWrite(t, filepath.Join(root, "install-stamp.json"), `{"commit": "x", "updateMechanism": "electron-updater"}`)
+	vsWrite(t, filepath.Join(root, "install-stamp.json"), `{"commit": "x", "updateMechanism": "external"}`)
 	code, stdout, stderr := vsRunMain(t, "--project-root", root, "--json")
 	if code != 0 {
 		t.Fatalf("exit %d: %s", code, stderr)

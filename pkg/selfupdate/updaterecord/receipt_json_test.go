@@ -30,7 +30,7 @@ func TestReceiptArchiveBytesFollowDumpsIndentTwoInsertionOrder(t *testing.T) {
 	}
 	doc := v.(*pyjson.Object)
 	want := []string{"schema", "started_at", "finished_at", "argv", "pid", "outcome", "pre_update", "post_update",
-		"steps", "skips", "gateway_restart", "fleet", "update_id", "correlation_id", "action_id", "pid_create_time",
+		"steps", "skips", "gateway_restart", "fleet", "update_id", "pid_create_time",
 		"stages", "stop_reason"}
 	if !reflect.DeepEqual(doc.Keys, want) {
 		t.Fatalf("keys %v", doc.Keys)

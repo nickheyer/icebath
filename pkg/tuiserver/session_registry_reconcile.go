@@ -130,6 +130,5 @@ func fallbackSessionInfo(ctx context.Context, session *tuigateway.Session) map[s
 	}
 	info["skills"] = map[string]any{}
 	info["tools"] = map[string]any{}
-	info["desktop_contract"] = desktopBackendContract
 	return info
 }

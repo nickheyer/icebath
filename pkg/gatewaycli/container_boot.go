@@ -258,12 +258,6 @@ func isLegacyGatewayRunRequest(argv []string) bool {
 	return len(args) >= 2 && args[0] == "gateway" && args[1] == "run"
 }
 
-// True when the container command is the dashboard
-func IsDashboardContainer(argv []string) bool {
-	args := StripContainerArgvPrefix(argv)
-	return len(args) > 0 && args[0] == "dashboard"
-}
-
 // Desired state a slot recorded, transient running states counting as running, nil for none or an unreadable file
 func readDesiredState(profileDir string) *string {
 	stateFile := filepath.Join(profileDir, "gateway_state.json")
@@ -396,12 +390,8 @@ func writeReconcileLog(home string, actions []ReconcileAction) error {
 	return f.Close()
 }
 
-// Boot reconcile entry, skipped in a dashboard container, printing the notice and one line per slot
+// Boot reconcile entry, printing the notice and one line per slot
 func ContainerBootMain(ctx context.Context, out io.Writer) int {
-	if IsDashboardContainer(readContainerArgv()) {
-		fmt.Fprintln(out, "reconcile: skipping (dashboard container — does not need per-profile gateways)")
-		return 0
-	}
 	home := os.Getenv("ICEBATH_HOME")
 	if home == "" {
 		home = "/opt/data"

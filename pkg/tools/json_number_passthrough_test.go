@@ -45,18 +45,6 @@ func TestGuardrailCanonicalArgsAndResultHashKeepIntsAndFloats(t *testing.T) {
 	}
 }
 
-func TestReadPanePassesDesktopJSONThroughAsPythonDoes(t *testing.T) {
-	answer := `{"total_lines": 3, "start": 0, "ratio": 1.0, "text": "a\u00e9"}`
-	pane := func(window map[string]int) (string, error) { return answer, nil }
-	if got := readPane(pane, nil, [4]string{}); got != `{"total_lines": 3, "start": 0, "ratio": 1.0, "text": "aé"}` {
-		t.Fatalf("passthrough %s", got)
-	}
-	answer = "not json"
-	if got := readPane(pane, nil, [4]string{}); got != `{"text": "not json"}` {
-		t.Fatalf("wrapped %s", got)
-	}
-}
-
 func TestPromotedNoteKeepsTheSpawnResultNumbers(t *testing.T) {
 	spawn := `{"output": "", "session_id": "proc_1", "pid": 1234, "ratio": 1.0, "notify_on_complete": false}`
 	note := strings.ReplaceAll(strings.ReplaceAll(promotedNotePollOnly, "{requested}", "900"), "{cap}", strconv.Itoa(foregroundMaxTimeout()))

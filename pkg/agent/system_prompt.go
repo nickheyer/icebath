@@ -29,26 +29,25 @@ import (
 
 // Prompt configuration the agent resolves at init and the per session prompt bookkeeping the builders write
 type systemPromptState struct {
-	platformHintOverrides      map[string]any
-	taskCompletionGuidance     bool
-	parallelToolCallGuidance   bool
-	toolUseEnforcement         any
-	executionGuidance          any
-	environmentProbe           bool
-	botModeProtocol            bool
-	kanbanWorkerGuidance       *string
-	contextCwdIsLaunchArtifact bool
-	sessionTitleHint           string
-	cachedSystemPrompt         string
-	cachedSystemPromptStatic   string
-	staticRebuildFailedFor     string
-	pluginSectionsSnapshot     []plugins.RenderedSystemPromptSection
-	pluginSectionsFrozen       bool
-	pluginSectionsPrevious     []plugins.RenderedSystemPromptSection
-	autoLoadSkillsResolved     bool
-	autoLoadSkillsResult       autoLoadSkillsResult
-	botChatTimelessPrompt      bool
-	frozenWorkspaceSnapshot    *workspacePin
+	platformHintOverrides    map[string]any
+	taskCompletionGuidance   bool
+	parallelToolCallGuidance bool
+	toolUseEnforcement       any
+	executionGuidance        any
+	environmentProbe         bool
+	botModeProtocol          bool
+	kanbanWorkerGuidance     *string
+	sessionTitleHint         string
+	cachedSystemPrompt       string
+	cachedSystemPromptStatic string
+	staticRebuildFailedFor   string
+	pluginSectionsSnapshot   []plugins.RenderedSystemPromptSection
+	pluginSectionsFrozen     bool
+	pluginSectionsPrevious   []plugins.RenderedSystemPromptSection
+	autoLoadSkillsResolved   bool
+	autoLoadSkillsResult     autoLoadSkillsResult
+	botChatTimelessPrompt    bool
+	frozenWorkspaceSnapshot  *workspacePin
 }
 
 // The skills.auto_load prompt with the loaded and missing skill names
@@ -947,7 +946,7 @@ func contextFilesPart(ctx context.Context, a *AIAgent, ctxLen *int, soulLoaded b
 	if a.skipContextFiles {
 		return nil, nil
 	}
-	cwd, err := tools.ResolveContextCwd(a.env, !a.contextCwdIsLaunchArtifact)
+	cwd, err := tools.ResolveContextCwd(a.env, true)
 	if err != nil {
 		return nil, err
 	}

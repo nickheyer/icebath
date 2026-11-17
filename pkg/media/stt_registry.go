@@ -92,11 +92,6 @@ func RegisterTranscriptionProvider(p TranscriptionProvider, scope string) error 
 	return transcriptionRegistry.Register(p, scope)
 }
 
-// Registered transcription providers sorted by name
-func ListTranscriptionProviders(ctx context.Context, scope string) []TranscriptionProvider {
-	return transcriptionRegistry.ListProviders(ctx, scope)
-}
-
 // Provider registered under a name, scoped registration first, nil when absent
 func GetTranscriptionProvider(ctx context.Context, name, scope string) TranscriptionProvider {
 	return transcriptionRegistry.GetProvider(ctx, name, scope)

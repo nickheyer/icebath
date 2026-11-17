@@ -13,7 +13,6 @@ import (
 
 // Keys hermes _discover_all_plugins lists as bundled from its shipped plugins tree
 var shippedBundledListingKeys = []string{"browser/browser_use", "browser/browserbase", "browser/firecrawl", "cron_providers/chronos",
-	"dashboard_auth/basic", "dashboard_auth/drain", "dashboard_auth/nous", "dashboard_auth/self_hosted", "dashboard_auth/session_token",
 	"delegation/default", "disk-cleanup", "google_meet", "image_gen/deepinfra", "image_gen/fal", "image_gen/krea", "image_gen/meta-ai",
 	"image_gen/openai", "image_gen/openai-codex", "image_gen/openrouter", "image_gen/xai", "platforms/a2a", "platforms/bluebubbles",
 	"platforms/buzz", "platforms/dingtalk", "platforms/discord", "platforms/email", "platforms/feishu", "platforms/google_chat",
@@ -75,7 +74,7 @@ func TestDiscoverAllPluginsListsTheShippedBundledTreeWithoutOverride(t *testing.
 		t.Fatalf("tavily row %+v", tavily)
 	}
 	none := map[string]bool{}
-	for key, want := range map[string]string{"platforms/telegram": "enabled", "web/tavily": "enabled", "dashboard_auth/basic": "enabled",
+	for key, want := range map[string]string{"platforms/telegram": "enabled", "web/tavily": "enabled",
 		"disk-cleanup": "not enabled", "google_meet": "not enabled"} {
 		got, err := pluginStatus(h, byKey[key], none, none, none, true)
 		if err != nil || got != want {

@@ -3,12 +3,13 @@ package main
 import (
 	"context"
 	"fmt"
-	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
+
+	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
 
 	"github.com/nickheyer/icebath/pkg/acp"
 	"github.com/nickheyer/icebath/pkg/app"
@@ -51,8 +52,6 @@ func startProcess(ctx context.Context) {
 // Hidden child modes a re-executed binary dispatches once the hooks their Python imports install are wired
 func dispatchChildEntries(ctx context.Context) {
 	selfupdate.DispatchCustodyLauncher()
-	selfupdate.DispatchDesktopUpdateVerifyEntry(ctx, exit)
-	selfupdate.DispatchWindowsAppInstallerUpdateEntry(exit)
 	home.DispatchScratchPruneEntry(ctx)
 	relayhost.DispatchRelayHostEntry(ctx)
 	googlemeet.DispatchMeetBotEntry(ctx)
@@ -66,17 +65,13 @@ func dispatchChildEntries(ctx context.Context) {
 	stage.DispatchStageEntry(ctx)
 	gateway.DispatchCgroupCleanupEntry()
 	gateway.DispatchKanbanWorkerClientEntry(ctx)
-	gateway.DispatchWindowsSSHRuntimeEntry(ctx, exit)
 	tools.DispatchDDGSWorkerEntry()
 	tools.DispatchCommitGraphRefreshEntry(ctx)
 	provider.DispatchCodexToolsMCPServerEntry()
 	cron.DispatchExternalWorkerEntry(exit)
 	agent.DispatchManagedWorkerEntry(exit)
-	app.DispatchUninstallModuleEntry(ctx)
-	app.DispatchWindowsStoreUpdateEntry()
 	app.DispatchSlashWorkerEntry(ctx, exit)
 	app.DispatchCLIModuleEntry(ctx, exit)
-	tuiserver.DispatchComputeHostEntry(ctx, exit)
 	tuiserver.DispatchTUIGatewayEntry(ctx, exit)
 	gatewayrun.DispatchGatewayRunModuleEntry(ctx, exit)
 	acp.DispatchModuleEntry(ctx, exit)
@@ -204,26 +199,18 @@ func applyMallocArenaMax() {
 	gateway.ApplyMallocArenaMax(nil)
 }
 
-// Centralized file logging for every subcommand, gui mode for the dashboard entry points
-func setupLogging(argv []string) {
-	mode := "cli"
-	for _, a := range argv {
-		if strings.HasPrefix(a, "-") {
-			continue
-		}
-		switch a {
-		case "dashboard", "serve", "gui", "desktop":
-			mode = "gui"
-		}
-		break
-	}
-	if _, err := logging.SetupLogging(context.Background(), logging.Options{Mode: mode}); err != nil {
+// Centralized file logging for every subcommand
+func setupLogging() {
+	if _, err := logging.SetupLogging(context.Background(), logging.Options{Mode: "cli"}); err != nil {
 		slog.Debug(fmt.Sprintf("logging setup failed: %v", err))
 	}
 }
 
 // Termux check safe for cold start sensitive paths
-func isTermuxStartupEnvironment() bool { return selfupdate.IsTermuxEnv(nil) }
+func isTermuxStartupEnvironment() bool {
+	prefix := os.Getenv("PREFIX")
+	return os.Getenv("TERMUX_VERSION") != "" || strings.Contains(prefix, "com.termux/files/usr") || strings.HasPrefix(prefix, "/data/data/com.termux/")
+}
 
 // Container mode metadata when the NixOS activation routes every invocation into the managed container
 func containerExecInfo() *config.ContainerExecInfo {

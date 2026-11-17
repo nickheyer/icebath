@@ -498,20 +498,6 @@ func TestStandaloneProfileIsListedLeftAloneAndNotAFoldTarget(t *testing.T) {
 	if !reflect.DeepEqual(standaloneNames(plan), []string{"coder"}) || !reflect.DeepEqual(plan.StandaloneByConfig, []string{"ops"}) {
 		t.Fatalf("standalone %v by config %v", standaloneNames(plan), plan.StandaloneByConfig)
 	}
-	text, err := pyjson.Dumps(plan.ToDict())
-	if err != nil {
-		t.Fatal(err)
-	}
-	v, _ := pyjson.Loads(text)
-	payload := v.(*pyjson.Object)
-	if !pyjson.Equal(payload.GetOr("standalone_by_config", nil), []any{"ops"}) {
-		t.Fatalf("payload %v", payload.GetOr("standalone_by_config", nil))
-	}
-	for _, p := range payload.GetOr("profiles", nil).([]any) {
-		if p.(*pyjson.Object).GetOr("profile", nil) == "ops" {
-			t.Fatal("standalone profile in the payload")
-		}
-	}
 	if !anyContains(FormatPlan(plan, true), "ops") {
 		t.Fatal("plan does not name the standalone profile")
 	}

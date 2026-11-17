@@ -11,11 +11,11 @@ import (
 	"github.com/nickheyer/icebath/pkg/tuigateway"
 )
 
-// Desktop session created through the RPC over the shared store, its live id and stored key
-func submitRowDesktopSession(t *testing.T, db *state.SessionDB) (string, string) {
+// TUI session created through the RPC over the shared store, its live id and stored key
+func submitRowSession(t *testing.T, db *state.SessionDB) (string, string) {
 	t.Helper()
 	useSharedDB(t, db)
-	resp := lookupMethod("session.create")(context.Background(), "c", map[string]any{"cols": 96, "source": "desktop"})
+	resp := lookupMethod("session.create")(context.Background(), "c", map[string]any{"cols": 96, "source": "tui"})
 	result, ok := resp["result"].(map[string]any)
 	if !ok {
 		t.Fatalf("create %v", resp)
@@ -46,7 +46,7 @@ func TestSubmitTimeUserRow(t *testing.T) {
 			t.Fatal(err)
 		}
 		t.Cleanup(func() { _ = db.Close() })
-		sid, key := submitRowDesktopSession(t, db)
+		sid, key := submitRowSession(t, db)
 		session := tuigateway.SessionRecord(sid)
 		if session == nil {
 			t.Fatalf("no live session %s", sid)

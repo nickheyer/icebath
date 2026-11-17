@@ -426,13 +426,9 @@ func UpdateReceiptFields(receipt any) (fields *UpdateFields, err error) {
 	} else if outcome == "failed" || outcome == "refused" || outcome == "partial" {
 		failed = failedStage(stages)
 	}
-	kind := "cli"
-	if rec["initiator"] == "desktop" {
-		kind = "desktop"
-	}
 	run := map[string]string{
 		"apply_mode": applyMode(rec, stages), "duration_bucket": UpdateDurationBucket(elapsedMs(rec["started_at"], rec["finished_at"])),
-		"failed_stage": failed, "from_version_age_bucket": VersionAgeBucket(ageMS), "kind": kind, "outcome": outcome,
+		"failed_stage": failed, "from_version_age_bucket": VersionAgeBucket(ageMS), "kind": "cli", "outcome": outcome,
 		"failure_class": failureClass,
 	}
 	if outcome == "refused" && len(stages) == 0 {

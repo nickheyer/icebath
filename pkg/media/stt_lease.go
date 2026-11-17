@@ -84,28 +84,6 @@ func WarmSTTProvider(ctx context.Context, sttConfig map[string]any, provider str
 	return result, nil
 }
 
-// Registers a lease and warms the engine, a repeat acquire still rewarming
-func AcquireSTTLease(ctx context.Context, lease string, sttConfig map[string]any) (*pyjson.Object, error) {
-	sttLeaseMu.Lock()
-	sttLeases[lease] = true
-	holders := len(sttLeases)
-	sttLeaseMu.Unlock()
-	result, err := WarmSTTProvider(ctx, sttConfig, "")
-	if err != nil {
-		return nil, err
-	}
-	result.Set("leases", int64(holders))
-	return result, nil
-}
-
-// Drops a lease and reports the holder count, never unloading the shared model
-func ReleaseSTTLease(lease string) *pyjson.Object {
-	sttLeaseMu.Lock()
-	defer sttLeaseMu.Unlock()
-	delete(sttLeases, lease)
-	return pyjson.ObjectOf("leases", int64(len(sttLeases)))
-}
-
 // Sorted names of the live STT leases
 func STTLeaseHolders() []string {
 	sttLeaseMu.Lock()

@@ -11,7 +11,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
-// Local desktop session created over a real runner's own authority, with its owner connection
+// Local session created over a real runner's own authority, with its owner connection
 type contractLocalSession struct {
 	ctx       context.Context
 	runner    *GatewayRunner
@@ -76,7 +76,7 @@ func newContractLocalSession(t *testing.T, configYAML string) *contractLocalSess
 		runner.sessionStore.CloseAllDBHandles()
 	})
 	created, err := owner.Dispatch(ctx, pyjson.ObjectOf("id", "c", "method", "session.create", "params", pyjson.ObjectOf(
-		"request_id", "desk", "source", "gui", "cwd", dir, "toolsets", []any{}, "model", "m")))
+		"request_id", "local", "source", "tui", "cwd", dir, "toolsets", []any{}, "model", "m")))
 	if err != nil {
 		t.Fatal(err)
 	}

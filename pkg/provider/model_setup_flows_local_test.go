@@ -28,7 +28,7 @@ func TestPickedModelRunsTheQuickstartJobAndReportsHowItEnded(t *testing.T) {
 				return map[string]any{"models": []any{row}}, nil
 			}
 			var started []string
-			localFlowDeps.quickstart = func(ctx context.Context, modelID, profile string) (map[string]any, error) {
+			localFlowDeps.quickstart = func(ctx context.Context, modelID string) (map[string]any, error) {
 				started = append(started, modelID)
 				job := lmNewJob("quickstart", "Tiny", modelID)
 				jobID := lmJobID(job)
@@ -41,7 +41,7 @@ func TestPickedModelRunsTheQuickstartJobAndReportsHowItEnded(t *testing.T) {
 					}
 					return lmFinish(job, "Tiny is ready — new chats use it")
 				}
-				lmSpawnJob(ctx, job, "test-quickstart", run, lmSpawnOptions{resumable: true})
+				lmSpawnJob(ctx, job, "test-quickstart", run, lmSpawnOptions{pausable: true})
 				return map[string]any{"job_id": jobID}, nil
 			}
 			localFlowDeps.promptChoice = func(out io.Writer, labels []string, def int, title string) (int, bool) { return def, true }

@@ -34,17 +34,6 @@ type ServerLiveness struct {
 	PIDField   string
 }
 
-// OnboardingEntry is one onboarding card row with its app state
-type OnboardingEntry struct {
-	Name        string   `json:"name"`
-	Title       string   `json:"title"`
-	Description string   `json:"description"`
-	Tier        string   `json:"tier"`
-	Platforms   []string `json:"platforms"`
-	AppState    string   `json:"app_state"`
-	Sentence    string   `json:"sentence"`
-}
-
 // NamedPresence is one questionnaire row with the app state and the description disclosure
 type NamedPresence struct {
 	Name       string `json:"name"`
@@ -326,48 +315,6 @@ func CatalogPresence(ctx context.Context, entry *PluginCatalogEntry) (Presence, 
 // Whether the catalog entry names no platform or names this host os family
 func runsHere(entry *PluginCatalogEntry, here string) bool {
 	return len(entry.Platforms) == 0 || normalizedPlatforms(entry.Platforms)[here]
-}
-
-// Onboarding curated catalog entries this os family runs
-func onboardingCatalog(ctx context.Context) []*PluginCatalogEntry {
-	here := hostinfo.OSFamily()
-	var out []*PluginCatalogEntry
-	for _, entry := range presenceCatalog(ctx) {
-		if entry.Onboarding && runsHere(entry, here) {
-			out = append(out, entry)
-		}
-	}
-	return out
-}
-
-// Exported onboarding names for the connectors catalog above pkg/plugins
-func OnboardingNames(ctx context.Context) []string { return onboardingNames(ctx) }
-
-// Catalog names of the onboarding plugins this os family runs, with no presence probe
-func onboardingNames(ctx context.Context) []string {
-	var out []string
-	for _, entry := range onboardingCatalog(ctx) {
-		out = append(out, entry.Name)
-	}
-	return out
-}
-
-// Onboarding card rows this os family runs, each with its app state
-func OnboardingEntries(ctx context.Context) ([]OnboardingEntry, error) {
-	var rows []OnboardingEntry
-	for _, entry := range onboardingCatalog(ctx) {
-		found, err := CatalogPresence(ctx, entry)
-		if err != nil {
-			return nil, err
-		}
-		title := entry.Title
-		if title == "" {
-			title = entry.Name
-		}
-		rows = append(rows, OnboardingEntry{Name: entry.Name, Title: title, Description: firstSentence(entry.Description),
-			Tier: entry.Tier, Platforms: append([]string{}, entry.Platforms...), AppState: found.State, Sentence: found.Sentence})
-	}
-	return rows, nil
 }
 
 // Named catalog plugins this os family runs in the order asked, manifests read in parallel, unknown names dropped

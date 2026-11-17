@@ -114,15 +114,11 @@ func (feishuPlatformPlugin) Manifest() plugins.Manifest {
 			{Name: "FEISHU_APP_SECRET", Description: "Feishu/Lark app secret", URL: "https://open.feishu.cn/", Secret: true}}}
 }
 
-// Registers the Feishu platform entry with its factory, setup, YAML bridge, standalone sender and card
+// Registers the Feishu platform entry with its factory, setup, YAML bridge and standalone sender
 func (feishuPlatformPlugin) Register(ctx *plugins.Context) error {
-	var card gateway.PlatformEntry
-	applyDashboardCard(&card)
 	extra := map[string]any{
-		"target_ref_syntax_fn":  parseSendTarget,
-		"standalone_send":       &gateway.StandaloneSendPolicy{Label: "Feishu", Media: true, TextDirect: true},
-		"dashboard_description": card.DashboardDescription, "docs_url": card.DocsURL,
-		"dashboard_env_vars": card.DashboardEnvVars, "env_value_rules": card.EnvValueRules,
+		"target_ref_syntax_fn":   parseSendTarget,
+		"standalone_send":        &gateway.StandaloneSendPolicy{Label: "Feishu", Media: true, TextDirect: true},
 		"ensure_deps_fn":         checkFeishuRequirements,
 		"is_connected":           isConnected,
 		"validate_config":        isConnected,

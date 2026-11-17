@@ -36,10 +36,9 @@ var PromptSubmitResult = pydantic.NewModel("PromptSubmitResult", ClosedConfig,
 	pydantic.Def("user_row_id", pydantic.Nullable(pydantic.Int), nil),
 	pydantic.Def("survivor_user_row_ids", pydantic.Nullable(pydantic.List(pydantic.Nullable(pydantic.Int))), nil),
 	pydantic.Def("survivor_row_id_map", pydantic.Nullable(pydantic.Dict(pydantic.Nullable(pydantic.Int))), nil),
-	pydantic.Def("turn_isolation", pydantic.Nullable(pydantic.Bool), nil),
 	pydantic.Def("admission_id", pydantic.Nullable(pydantic.Str), nil),
 	pydantic.Def("forwarded", pydantic.Nullable(pydantic.Bool), nil),
-).Described("``status`` is absent only on the typed-stop-phrase reply (``voice_stopped``). After a\ntruncation the survivor row ids let the client rebind its cached ``rowId``s (``None`` map\nentries: drop the cached id). ``turn_isolation`` marks a compute-host dispatch.")
+).Described("``status`` is absent only on the typed-stop-phrase reply (``voice_stopped``). After a\ntruncation the survivor row ids let the client rebind its cached ``rowId``s (``None`` map\nentries: drop the cached id).")
 
 var _ = Method("prompt.submit", PromptSubmitParams, PromptSubmitResult, "Send a user turn to a live session; busy sessions queue / steer / redirect instead of refusing.")
 
@@ -104,30 +103,6 @@ var PdfAttachResult = pydantic.NewModel("PdfAttachResult", ClosedConfig,
 
 var _ = Method("pdf.attach", PdfAttachParams, PdfAttachResult, "Render a PDF's pages to PNG and queue them as images for the next turn.")
 
-var StagedFileUpload = pydantic.NewModel("StagedFileUpload", ParamsConfig,
-	pydantic.Req("install_id", pydantic.Str),
-	pydantic.Req("path", pydantic.Str),
-	pydantic.Req("profile_home", pydantic.Str),
-).Described("Source identity returned by the browser upload route, checked against the live profile.")
-
-var FileAttachParams = pydantic.Extend(SessionParams, "FileAttachParams", ParamsConfig,
-	pydantic.Def("path", pydantic.Nullable(pydantic.Str), nil),
-	pydantic.Def("data_url", pydantic.Nullable(pydantic.Str), nil),
-	pydantic.Def("name", pydantic.Nullable(pydantic.Str), nil),
-	pydantic.Def("staged_upload", pydantic.Nullable(StagedFileUpload), nil),
-).Described("``path`` when the file is gateway-visible, else ``data_url`` carries the bytes; ``name`` labels\nan uploaded file.")
-
-var FileAttachResult = pydantic.NewModel("FileAttachResult", ClosedConfig,
-	pydantic.Req("attached", pydantic.Bool),
-	pydantic.Req("name", pydantic.Str),
-	pydantic.Req("path", pydantic.Str),
-	pydantic.Req("ref_path", pydantic.Str),
-	pydantic.Req("ref_text", pydantic.Str),
-	pydantic.Req("uploaded", pydantic.Bool),
-)
-
-var _ = Method("file.attach", FileAttachParams, FileAttachResult, "Stage a non-image file into the session workspace and hand back its @file: ref.")
-
 var ImageDetachParams = pydantic.Extend(SessionParams, "ImageDetachParams", ParamsConfig,
 	pydantic.Req("path", pydantic.Str),
 )
@@ -165,14 +140,6 @@ var _ = Method("prompt.background", SideAgentParams, TaskIdResult, "Run a task o
 
 var _ = Method("prompt.btw", SideAgentParams, TaskIdResult, "Side question over a snapshot of the live conversation; the answer arrives as btw.complete.")
 
-var PreviewRestartParams = pydantic.Extend(SessionParams, "PreviewRestartParams", ParamsConfig,
-	pydantic.Req("url", pydantic.Str),
-	pydantic.Def("cwd", pydantic.Nullable(pydantic.Str), nil),
-	pydantic.Def("context", pydantic.Nullable(pydantic.Str), nil),
-)
-
-var _ = Method("preview.restart", PreviewRestartParams, TaskIdResult, "Spawn a hidden agent that brings the desktop preview's dev server back up.")
-
 var ClarifyLockParams = pydantic.NewModel("ClarifyLockParams", ParamsConfig,
 	pydantic.Req("request_id", pydantic.Str),
 	pydantic.Req("question_id", pydantic.Str),
@@ -200,24 +167,6 @@ var RequestAnswerResult = pydantic.NewModel("RequestAnswerResult", ClosedConfig,
 )
 
 var _ = Method("request.answer", RequestAnswerParams, RequestAnswerResult, "Answer an open server→client request from a client that never received the frame.")
-
-var ApprovalPendingParams = pydantic.Extend(SessionParams, "ApprovalPendingParams", ParamsConfig)
-
-var ApprovalPendingResult = pydantic.NewModel("ApprovalPendingResult", ClosedConfig,
-	pydantic.Req("approvals", pydantic.List(PendingApproval)),
-)
-
-var _ = Method("approval.pending", ApprovalPendingParams, ApprovalPendingResult, "Replay the approvals still waiting on this session (reconnect / polling).")
-
-var ApprovalReceivedParams = pydantic.Extend(SessionParams, "ApprovalReceivedParams", ParamsConfig,
-	pydantic.Req("request_id", pydantic.Str),
-)
-
-var ApprovalReceivedResult = pydantic.NewModel("ApprovalReceivedResult", ClosedConfig,
-	pydantic.Req("acknowledged", pydantic.Bool),
-)
-
-var _ = Method("approval.received", ApprovalReceivedParams, ApprovalReceivedResult, "Tell the backend the card is on screen, so its timeout clock starts.")
 
 var ApprovalRespondParams = pydantic.Extend(SessionParams, "ApprovalRespondParams", ParamsConfig,
 	pydantic.Def("choice", pydantic.Nullable(pydantic.Str), nil),
@@ -285,7 +234,7 @@ var WakeStartParams = pydantic.NewModel("WakeStartParams", ParamsConfig,
 	pydantic.Def("client_capture", pydantic.Nullable(pydantic.Bool), nil),
 	pydantic.Def("session_id", pydantic.Nullable(pydantic.Str), nil),
 	pydantic.Def("profile", pydantic.Nullable(pydantic.Str), nil),
-).Described("``surface`` names the caller (\"tui\" | \"gui\"); ``persist`` is the explicit gesture that also\nflips ``wake_word.enabled`` on; ``client_capture`` asks for PCM streamed via wake.feed.")
+).Described("``surface`` names the caller (\"tui\"); ``persist`` is the explicit gesture that also\nflips ``wake_word.enabled`` on; ``client_capture`` asks for PCM streamed via wake.feed.")
 
 var WakeStartResult = pydantic.NewModel("WakeStartResult", ClosedConfig,
 	pydantic.Req("started", pydantic.Bool),
@@ -321,12 +270,6 @@ var _ = Method("wake.stop", WakeStopParams, WakeStopResult, "Stop this surface's
 var WakeControlParams = pydantic.NewModel("WakeControlParams", ParamsConfig,
 	pydantic.Def("profile", pydantic.Nullable(pydantic.Str), nil),
 )
-
-var WakePauseResult = pydantic.Extend(WakeOwnerResult, "WakePauseResult", ClosedConfig,
-	pydantic.Req("paused", pydantic.Bool),
-)
-
-var _ = Method("wake.pause", WakeControlParams, WakePauseResult, "Release the mic (e.g. while the desktop's browser captures audio).")
 
 var WakeResumeResult = pydantic.Extend(WakeOwnerResult, "WakeResumeResult", ClosedConfig,
 	pydantic.Req("resumed", pydantic.Bool),

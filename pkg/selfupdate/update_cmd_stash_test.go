@@ -195,7 +195,6 @@ var usFlatInstallRuntimeState = []string{
 	"profiles/work/config.yaml",
 	"credentials/github_token",
 	"mcp-tokens/server.json",
-	"webapp/session-token",
 	"pairing/telegram.json",
 	"platforms/pairing/x.json",
 	"backups/2026-09-14T06-00-00-pre-update/state.db",

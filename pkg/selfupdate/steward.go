@@ -14,7 +14,6 @@ import (
 )
 
 const (
-	StewardDesktop   = "desktop-app"
 	StewardDocker    = "docker"
 	StewardNix       = "nix"
 	StewardAptTermux = "apt-termux"
@@ -30,11 +29,6 @@ const (
 )
 
 var StewardUpdateMessages = map[string]string{
-	StewardDesktop: "✗ This icebath runs from inside the desktop app bundle.\n" +
-		"\n" +
-		"Manage updates from within the desktop app.\n" +
-		"Prefer a self-managed source install? See:\n" +
-		"  https://hermes-agent.nousresearch.com/docs/user-guide/switching-to-source",
 	StewardNix: "✗ This icebath runs from the Nix store.\n" +
 		"\n" +
 		"The store path is immutable. Update through your flake:\n" +
@@ -97,8 +91,6 @@ const stewardUpdateFallback = "✗ This icebath install is managed by {steward}.
 const (
 	stewardDeleteDataPreamble = "To delete your icebath data (chats, configuration, etc),\n"
 	stewardDeleteDataCLI      = "run:\n$ icebath uninstall --data\n"
-	stewardDeleteDataDesktop  = "Open icebath Desktop, go to Settings -> About, and delete your data from there.\n"
-	stewardManagedByDesktop   = "✗ icebath is managed by the desktop app.\n"
 )
 
 var stewardUninstallMessages = map[string]string{
@@ -125,26 +117,6 @@ var stewardUninstallMessages = map[string]string{
 		stewardDeleteDataPreamble +
 		stewardDeleteDataCLI,
 }
-
-var stewardDesktopUninstallByPlatform = map[string]string{
-	"win32": stewardManagedByDesktop +
-		"\n" +
-		"Remove the app from Windows Settings → Apps → Installed apps.\n" +
-		stewardDeleteDataPreamble +
-		stewardDeleteDataDesktop,
-	"darwin": stewardManagedByDesktop +
-		"\n" +
-		"Quit the app and drag icebath.app from Applications to the Trash.\n" +
-		stewardDeleteDataPreamble +
-		stewardDeleteDataDesktop,
-}
-
-const stewardDesktopUninstallDefault = stewardManagedByDesktop +
-	"\n" +
-	"Delete the icebath AppImage (or app directory) from wherever you\n" +
-	"saved it.\n" +
-	stewardDeleteDataPreamble +
-	stewardDeleteDataDesktop
 
 const stewardUninstallFallback = "✗ icebath is managed by {steward}.\n" +
 	"\n" +
@@ -173,18 +145,8 @@ func sysPlatform() string {
 	return runtime.GOOS
 }
 
-// The uninstall refusal text for a sealed tree, platform nil meaning the running one
-func StewardUninstallMessage(steward string, platform *string) string {
-	if steward == StewardDesktop {
-		key := sysPlatform()
-		if platform != nil {
-			key = *platform
-		}
-		if message, ok := stewardDesktopUninstallByPlatform[key]; ok {
-			return message
-		}
-		return stewardDesktopUninstallDefault
-	}
+// The uninstall refusal text for a sealed tree
+func StewardUninstallMessage(steward string) string {
 	if message, ok := stewardUninstallMessages[steward]; ok {
 		return message
 	}

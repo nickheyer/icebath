@@ -11,8 +11,6 @@ import (
 	"strings"
 	"sync"
 	"testing"
-
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 // Process facts from a table of pid to birth, with denied and zombie pids
@@ -114,12 +112,12 @@ func approx(a, b, tol float64) bool { return math.Abs(a-b) <= tol }
 
 func TestSpawnTagRoundtrip(t *testing.T) {
 	identityFixture(t, map[int]float64{999: 1234.5}, 999)
-	raw := BuildSpawnTag("serve", "/x/install")
+	raw := BuildSpawnTag("gateway", "/x/install")
 	tag := ParseSpawnTag(raw)
 	if tag == nil {
 		t.Fatal("tag did not parse")
 	}
-	if tag.Purpose != "serve" || tag.SpawnerPid != 999 {
+	if tag.Purpose != "gateway" || tag.SpawnerPid != 999 {
 		t.Fatalf("unexpected tag %+v", tag)
 	}
 	if tag.SpawnerCreate == nil || !approx(*tag.SpawnerCreate, 1234.5, 0.01) {
@@ -131,8 +129,8 @@ func TestSpawnTagRoundtrip(t *testing.T) {
 }
 
 func TestParseSpawnTagRejectsMalformed(t *testing.T) {
-	for _, raw := range []any{nil, "", "v0:abc:serve:1:2.0", "v1:abc:serve:notanint:2.0", "v1:abc:serve:-4:2.0",
-		"v1::serve:10:2.0", "v1:abc::10:2.0", "v1:abc:serve:10", "v1:abc:serve:10:zzz"} {
+	for _, raw := range []any{nil, "", "v0:abc:gateway:1:2.0", "v1:abc:gateway:notanint:2.0", "v1:abc:gateway:-4:2.0",
+		"v1::gateway:10:2.0", "v1:abc::10:2.0", "v1:abc:gateway:10", "v1:abc:gateway:10:zzz"} {
 		if ParseSpawnTag(raw) != nil {
 			t.Errorf("%v parsed", raw)
 		}
@@ -140,15 +138,8 @@ func TestParseSpawnTagRejectsMalformed(t *testing.T) {
 }
 
 func TestParseSpawnTagDashCreateIsNil(t *testing.T) {
-	tag := ParseSpawnTag("v1:abcdef:serve:42:-")
+	tag := ParseSpawnTag("v1:abcdef:gateway:42:-")
 	if tag == nil || tag.SpawnerCreate != nil {
-		t.Fatalf("tag %+v", tag)
-	}
-}
-
-func TestDesktopStyleTagParses(t *testing.T) {
-	tag := ParseSpawnTag("v1:-:serve:5100:1755689000.123")
-	if tag == nil || tag.SpawnerPid != 5100 {
 		t.Fatalf("tag %+v", tag)
 	}
 }
@@ -188,8 +179,8 @@ func floatp(v float64) *float64 { return &v }
 
 func TestRegisterSelfWritesAndPrunesDead(t *testing.T) {
 	_, ledger := identityFixture(t, map[int]float64{400: 2.0, 999: 50.0}, 999)
-	writeLedgerFile(t, ledger, []map[string]any{ledgerEntry(300, 1.0, "serve", "", nil, nil), ledgerEntry(400, 2.0, "serve", "", nil, nil)})
-	if !RegisterSelf(context.Background(), "serve", "/x/install", nil) {
+	writeLedgerFile(t, ledger, []map[string]any{ledgerEntry(300, 1.0, "gateway", "", nil, nil), ledgerEntry(400, 2.0, "gateway", "", nil, nil)})
+	if !RegisterSelf(context.Background(), "gateway", "/x/install") {
 		t.Fatal("register_self failed")
 	}
 	entries := readLedgerFile(t, ledger)
@@ -199,7 +190,7 @@ func TestRegisterSelfWritesAndPrunesDead(t *testing.T) {
 	}
 	for _, e := range entries {
 		if e["pid"].(float64) == 999 {
-			if e["purpose"] != "serve" || !approx(e["create_time"].(float64), 50.0, 0.01) {
+			if e["purpose"] != "gateway" || !approx(e["create_time"].(float64), 50.0, 0.01) {
 				t.Fatalf("entry %v", e)
 			}
 		}
@@ -209,13 +200,13 @@ func TestRegisterSelfWritesAndPrunesDead(t *testing.T) {
 func TestRegisterSelfSurvivesNonUTF8Argv(t *testing.T) {
 	_, ledger := identityFixture(t, map[int]float64{999: 50.0}, 999)
 	prev := os.Args
-	os.Args = []string{"icebath", "serve", "/tmp/project-\xff"}
+	os.Args = []string{"icebath", "gateway", "/tmp/project-\xff"}
 	t.Cleanup(func() { os.Args = prev })
-	if !RegisterSelf(context.Background(), "serve", "/x/install", nil) {
+	if !RegisterSelf(context.Background(), "gateway", "/x/install") {
 		t.Fatal("register_self failed")
 	}
 	raw, _ := os.ReadFile(ledger)
-	if !strings.Contains(string(raw), `icebath serve /tmp/project-\udcff`) {
+	if !strings.Contains(string(raw), `icebath gateway /tmp/project-\udcff`) {
 		t.Fatalf("argv not surrogate escaped: %s", raw)
 	}
 	if len(readLedgerFile(t, ledger)) != 1 {
@@ -225,45 +216,18 @@ func TestRegisterSelfSurvivesNonUTF8Argv(t *testing.T) {
 
 func TestRegisterSelfInheritsSpawnTagLineage(t *testing.T) {
 	_, ledger := identityFixture(t, map[int]float64{999: 50.0}, 999)
-	t.Setenv(SpawnEnvVar, "v1:-:serve:777:123.000")
-	RegisterSelf(context.Background(), "serve", "/x/install", nil)
+	t.Setenv(SpawnEnvVar, "v1:-:gateway:777:123.000")
+	RegisterSelf(context.Background(), "gateway", "/x/install")
 	me := readLedgerFile(t, ledger)[0]
 	if me["spawner_pid"].(float64) != 777 || !approx(me["spawner_create"].(float64), 123.0, 0.01) {
 		t.Fatalf("entry %v", me)
 	}
 }
 
-func TestRegisterSelfFallsBackToDesktopParentEnv(t *testing.T) {
-	_, ledger := identityFixture(t, map[int]float64{999: 50.0}, 999)
-	t.Setenv(SpawnEnvVar, "")
-	os.Unsetenv(SpawnEnvVar)
-	t.Setenv("ICEBATH_PARENT_PID", "888")
-	t.Setenv("ICEBATH_PARENT_START_MARKER", "winms:1755689000123")
-	RegisterSelf(context.Background(), "serve", "/x/install", nil)
-	me := readLedgerFile(t, ledger)[0]
-	if me["spawner_pid"].(float64) != 888 || !approx(me["spawner_create"].(float64), 1755689000.123, 0.01) {
-		t.Fatalf("entry %v", me)
-	}
-}
-
-func TestRegisterSelfRecordsIsolatedServeMarker(t *testing.T) {
-	_, ledger := identityFixture(t, map[int]float64{999: 50.0}, 999)
-	RegisterSelf(context.Background(), "serve", "/x/install", map[string]any{"host": "127.0.0.1", "port": 4321, "isolated": true})
-	rows := readLedgerFile(t, ledger)
-	if rows[0]["isolated"] != true || rows[0]["port"].(float64) != 4321 || rows[0]["host"] != "127.0.0.1" {
-		t.Fatalf("isolated row %v", rows[0])
-	}
-	RegisterSelf(context.Background(), "serve", "/x/install", map[string]any{"host": "127.0.0.1", "port": 4322})
-	rows = readLedgerFile(t, ledger)
-	if rows[len(rows)-1]["isolated"] != false {
-		t.Fatalf("ordinary row %v", rows[len(rows)-1])
-	}
-}
-
 func TestCorruptLedgerQuarantinedNotRewrittenBlind(t *testing.T) {
 	_, ledger := identityFixture(t, map[int]float64{999: 50.0}, 999)
 	os.WriteFile(ledger, []byte("{ not json"), 0o600)
-	if !RegisterSelf(context.Background(), "serve", "/x/install", nil) {
+	if !RegisterSelf(context.Background(), "gateway", "/x/install") {
 		t.Fatal("register_self failed")
 	}
 	parked, err := os.ReadFile(ledger + ".corrupt")
@@ -279,10 +243,10 @@ func TestCorruptLedgerQuarantinedNotRewrittenBlind(t *testing.T) {
 func TestLedgerEntriesFiltersDeadReusedAndForeign(t *testing.T) {
 	_, ledger := identityFixture(t, map[int]float64{100: 10.0, 200: 9999.0, 400: 40.0}, 0)
 	writeLedgerFile(t, ledger, []map[string]any{
-		ledgerEntry(100, 10.0, "serve", "", nil, nil),
-		ledgerEntry(200, 20.0, "serve", "", nil, nil),
-		ledgerEntry(300, 30.0, "serve", "", nil, nil),
-		ledgerEntry(400, 40.0, "serve", "ffffffffffff", nil, nil),
+		ledgerEntry(100, 10.0, "gateway", "", nil, nil),
+		ledgerEntry(200, 20.0, "gateway", "", nil, nil),
+		ledgerEntry(300, 30.0, "gateway", "", nil, nil),
+		ledgerEntry(400, 40.0, "gateway", "ffffffffffff", nil, nil),
 	})
 	live := LedgerEntries(LedgerOptions{ProjectRoot: "/x/install"})
 	if len(live) != 1 {
@@ -302,156 +266,23 @@ func TestSpawnerIsDeadTristate(t *testing.T) {
 			t.Fatalf("entry %v: dead=%v known=%v", entry, dead, known)
 		}
 	}
-	check(ledgerEntry(1, 1.0, "serve", "", intp(500), floatp(5.0)), false, true)
-	check(ledgerEntry(1, 1.0, "serve", "", intp(600), floatp(6.0)), true, true)
-	check(ledgerEntry(1, 1.0, "serve", "", intp(500), floatp(999.0)), true, true)
-	check(ledgerEntry(1, 1.0, "serve", "", nil, nil), false, false)
-}
-
-func TestDesktopSSHBackendSpawnShapeIsDesktopOwned(t *testing.T) {
-	t.Setenv("ICEBATH_DESKTOP", "1")
-	t.Setenv("ICEBATH_DASHBOARD_SESSION_TOKEN", "")
-	os.Unsetenv("ICEBATH_DASHBOARD_SESSION_TOKEN")
-	sshArgv := []string{"serve", "--isolated", "--host", "127.0.0.1", "--port", "0", "--ssh-session-token-file", "/home/u/.icebath/desktop-ssh/abc.token"}
-	if !IsDesktopOwnedBackend(sshArgv) {
-		t.Fatal("ssh spawn shape not desktop owned")
-	}
-	prev := os.Args
-	os.Args = append([]string{"icebath"}, sshArgv...)
-	t.Cleanup(func() { os.Args = prev })
-	if !IsDesktopOwnedBackend(nil) {
-		t.Fatal("own argv not desktop owned")
-	}
-	if IsDesktopOwnedBackend([]string{"serve", "--host", "127.0.0.1", "--port", "0"}) {
-		t.Fatal("bare inherited flag counted as ownership")
-	}
-}
-
-// Runs the reclaim predicate against a faked process world
-func reapFixture(t *testing.T, fake *fakeProber, entry map[string]any, pid int, create float64) (int, bool, []int) {
-	t.Helper()
-	prevLedger := ledgerEntriesFn
-	ledgerEntriesFn = func(LedgerOptions) []map[string]any { return []map[string]any{entry} }
-	t.Cleanup(func() { ledgerEntriesFn = prevLedger })
-	kills := []int{}
-	reaped, ok := ReapOrphanedBackendOwner(pid, floatp(create), func(p int) error { kills = append(kills, p); return nil })
-	return reaped, ok, kills
-}
-
-func TestReclaimReapsDeadSpawnerOwner(t *testing.T) {
-	fake, _ := identityFixture(t, map[int]float64{555: 55.0}, 0)
-	reaped, ok, kills := reapFixture(t, fake, ledgerEntry(555, 55.0, "serve", "", intp(700), floatp(7.0)), 555, 55.0)
-	if !ok || reaped != 555 || len(kills) != 1 || kills[0] != 555 {
-		t.Fatalf("reaped=%d ok=%v kills=%v", reaped, ok, kills)
-	}
-}
-
-func TestReclaimSparesLiveSpawnerOwner(t *testing.T) {
-	fake, _ := identityFixture(t, map[int]float64{555: 55.0, 500: 5.0}, 0)
-	_, ok, kills := reapFixture(t, fake, ledgerEntry(555, 55.0, "serve", "", intp(500), floatp(5.0)), 555, 55.0)
-	if ok || len(kills) != 0 {
-		t.Fatalf("ok=%v kills=%v", ok, kills)
-	}
-}
-
-func TestReclaimSparesUnprovableSpawner(t *testing.T) {
-	fake, _ := identityFixture(t, map[int]float64{555: 55.0}, 0)
-	fake.denied[500] = true
-	_, ok, kills := reapFixture(t, fake, ledgerEntry(555, 55.0, "serve", "", intp(500), floatp(5.0)), 555, 55.0)
-	if ok || len(kills) != 0 {
-		t.Fatalf("ok=%v kills=%v", ok, kills)
-	}
-}
-
-func TestReclaimReapsNullSpawnerOrphanToInit(t *testing.T) {
-	fake, _ := identityFixture(t, map[int]float64{555: 1000.0}, 0)
-	fake.ppid[555] = 1
-	prev := lockOwnedServePidsFn
-	lockOwnedServePidsFn = func() map[int]bool { return map[int]bool{} }
-	t.Cleanup(func() { lockOwnedServePidsFn = prev })
-	reaped, ok, kills := reapFixture(t, fake, ledgerEntry(555, 1000.0, "serve", "", nil, nil), 555, 1000.0)
-	if !ok || reaped != 555 || len(kills) != 1 {
-		t.Fatalf("reaped=%d ok=%v kills=%v", reaped, ok, kills)
-	}
-}
-
-func TestReclaimSparesNullSpawnerWithLiveParent(t *testing.T) {
-	fake, _ := identityFixture(t, map[int]float64{555: 55.0}, 0)
-	fake.ppid[555] = 1234
-	_, ok, kills := reapFixture(t, fake, ledgerEntry(555, 55.0, "serve", "", nil, nil), 555, 55.0)
-	if ok || len(kills) != 0 {
-		t.Fatalf("ok=%v kills=%v", ok, kills)
-	}
-}
-
-func TestReclaimSparesLockClaimedOrphan(t *testing.T) {
-	fake, _ := identityFixture(t, map[int]float64{555: 1000.0}, 0)
-	fake.ppid[555] = 1
-	prev := lockOwnedServePidsFn
-	lockOwnedServePidsFn = func() map[int]bool { return map[int]bool{555: true} }
-	t.Cleanup(func() { lockOwnedServePidsFn = prev })
-	_, ok, kills := reapFixture(t, fake, ledgerEntry(555, 1000.0, "serve", "", nil, nil), 555, 1000.0)
-	if ok || len(kills) != 0 {
-		t.Fatalf("ok=%v kills=%v", ok, kills)
-	}
-}
-
-func TestReclaimSparesInteractivePurposesAndSelf(t *testing.T) {
-	fake, _ := identityFixture(t, map[int]float64{555: 55.0}, 0)
-	_, ok, kills := reapFixture(t, fake, ledgerEntry(555, 55.0, "chat", "", intp(700), floatp(7.0)), 555, 55.0)
-	if ok || len(kills) != 0 {
-		t.Fatalf("chat purpose: ok=%v kills=%v", ok, kills)
-	}
-	prev := currentPid
-	currentPid = func() int { return 555 }
-	t.Cleanup(func() { currentPid = prev })
-	_, ok, kills = reapFixture(t, fake, ledgerEntry(555, 55.0, "serve", "", intp(700), floatp(7.0)), 555, 55.0)
-	if ok || len(kills) != 0 {
-		t.Fatalf("self: ok=%v kills=%v", ok, kills)
-	}
-}
-
-func TestReclaimIgnoresUnknownPidAndNeverRaises(t *testing.T) {
-	fake, _ := identityFixture(t, map[int]float64{555: 55.0}, 0)
-	if _, ok, _ := reapFixture(t, fake, ledgerEntry(555, 55.0, "serve", "", nil, nil), 999, 9.0); ok {
-		t.Fatal("unknown pid reaped")
-	}
-	prev := ledgerEntriesFn
-	ledgerEntriesFn = func(LedgerOptions) []map[string]any { panic("boom") }
-	t.Cleanup(func() { ledgerEntriesFn = prev })
-	if _, ok := ReapOrphanedBackendOwner(555, floatp(55.0), func(int) error { return nil }); ok {
-		t.Fatal("ledger failure reaped")
-	}
-}
-
-func TestLocalDesktopClientNeedsDeclarationAndNativeTicket(t *testing.T) {
-	native := map[string]any{"provider": "local", "native_bootstrap": true}
-	if !LocalDesktopClient(native, true) {
-		t.Fatal("declared native client refused")
-	}
-	if LocalDesktopClient(native, false) || LocalDesktopClient(map[string]any{"provider": "local"}, true) || LocalDesktopClient(nil, true) {
-		t.Fatal("undeclared or non native client accepted")
-	}
-	ctx := WithServingLocalDesktop(context.Background(), true)
-	if !ServesLocalDesktopNow(ctx) || ServesLocalDesktopNow(context.Background()) {
-		t.Fatal("serving marker not carried by the context")
-	}
-	if !ServesLocalDesktopNow(WithServingLocalDesktop(ctx, false)) {
-		t.Fatal("an inner false cleared an outer true")
-	}
+	check(ledgerEntry(1, 1.0, "gateway", "", intp(500), floatp(5.0)), false, true)
+	check(ledgerEntry(1, 1.0, "gateway", "", intp(600), floatp(6.0)), true, true)
+	check(ledgerEntry(1, 1.0, "gateway", "", intp(500), floatp(999.0)), true, true)
+	check(ledgerEntry(1, 1.0, "gateway", "", nil, nil), false, false)
 }
 
 func TestSpawnedByThisProcessChecksTagAndBirth(t *testing.T) {
 	fake, _ := identityFixture(t, map[int]float64{999: 50.0, 1000: 60.0}, 999)
-	fake.environ[1000] = map[string]string{SpawnEnvVar: "v1:abc:serve:999:50.000"}
+	fake.environ[1000] = map[string]string{SpawnEnvVar: "v1:abc:gateway:999:50.000"}
 	if !SpawnedByThisProcess(1000) {
 		t.Fatal("tagged child not recognised")
 	}
-	fake.environ[1000][SpawnEnvVar] = "v1:abc:serve:999:9999.000"
+	fake.environ[1000][SpawnEnvVar] = "v1:abc:gateway:999:9999.000"
 	if SpawnedByThisProcess(1000) {
 		t.Fatal("stale spawner birth accepted")
 	}
-	fake.environ[1000][SpawnEnvVar] = "v1:abc:serve:998:50.000"
+	fake.environ[1000][SpawnEnvVar] = "v1:abc:gateway:998:50.000"
 	if SpawnedByThisProcess(1000) || SpawnedByThisProcess(2000) {
 		t.Fatal("foreign or unreadable child accepted")
 	}
@@ -505,18 +336,18 @@ func TestProcessCreateTimeAndPidAliveMatchesWrappers(t *testing.T) {
 
 func TestLedgerRewriteKeepsRowOrderAndNumberTypes(t *testing.T) {
 	_, ledger := identityFixture(t, map[int]float64{400: 2.0, 999: 50.0}, 999)
-	onDisk := `[{"zeta": 1, "pid": 400, "create_time": 2.0, "purpose": "serve", "extra": 1e2, "argv": "a<b é"}, 7]`
+	onDisk := `[{"zeta": 1, "pid": 400, "create_time": 2.0, "purpose": "gateway", "extra": 1e2, "argv": "a<b é"}, 7]`
 	if err := os.WriteFile(ledger, []byte(onDisk), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if !RegisterSelf(context.Background(), "serve", "/x/install", nil) {
+	if !RegisterSelf(context.Background(), "gateway", "/x/install") {
 		t.Fatal("register_self failed")
 	}
 	raw, err := os.ReadFile(ledger)
 	if err != nil {
 		t.Fatal(err)
 	}
-	kept := "[\n  {\n    \"zeta\": 1,\n    \"pid\": 400,\n    \"create_time\": 2.0,\n    \"purpose\": \"serve\",\n    \"extra\": 100.0,\n    \"argv\": \"a<b \\u00e9\"\n  },\n  {\n    \"pid\": 999,\n"
+	kept := "[\n  {\n    \"zeta\": 1,\n    \"pid\": 400,\n    \"create_time\": 2.0,\n    \"purpose\": \"gateway\",\n    \"extra\": 100.0,\n    \"argv\": \"a<b \\u00e9\"\n  },\n  {\n    \"pid\": 999,\n"
 	if !strings.HasPrefix(string(raw), kept) {
 		t.Fatalf("kept row rewritten as\n%s", raw)
 	}
@@ -529,37 +360,5 @@ func TestLedgerRewriteKeepsRowOrderAndNumberTypes(t *testing.T) {
 	want := "pid create_time purpose install spawner_pid spawner_create registered_at argv host port profile hermes_home isolated boot_start spawner_boot boot_id"
 	if got := strings.Join(order, " "); got != want {
 		t.Fatalf("new row key order %q, want %q", got, want)
-	}
-}
-
-func TestValidLockfilePayloadComparesNumbersAsPythonDoes(t *testing.T) {
-	own := strings.Repeat("a", 32)
-	body := func(schema, protocol, pid, port, profile string) any {
-		v, err := pyjson.Loads(`{"schemaVersion": ` + schema + `, "protocolVersion": ` + protocol + `, "ownershipId": "` + own +
-			`", "spawnNonce": "0123456789abcdef", "tokenFingerprint": "` + strings.Repeat("b", 32) + `", "pid": ` + pid + `, "port": ` + port +
-			`, "profile": ` + profile + `, "hermesPath": "p", "hermesHome": "h", "logPath": "/x/` + own + `/0123456789abcdef.log", "startedAt": "t"}`)
-		if err != nil {
-			t.Fatal(err)
-		}
-		return v
-	}
-	for _, c := range []struct {
-		schema, protocol, pid, port, profile string
-		want                                 bool
-	}{
-		{"2", "1", "7", "80", `"p"`, true},
-		{"2.0", "true", "7", "80", `"p"`, true},
-		{"2", "1", "7.0", "80", `"p"`, false},
-		{"2", "1", "true", "80", `"p"`, true},
-		{"2", "1", "7", "80.0", `"p"`, false},
-		{"3", "1", "7", "80", `"p"`, false},
-		{"2", "1", "7", "false", `"p"`, true},
-		{"2", "1", "7", "80", `"` + strings.Repeat("é", 600) + `"`, true},
-		{"2", "1", "7", "80", `"` + strings.Repeat("a", 1025) + `"`, false},
-		{"2e0", "1.0", "7", "80", `"p"`, true},
-	} {
-		if got := validLockfilePayload(body(c.schema, c.protocol, c.pid, c.port, c.profile), own); got != c.want {
-			t.Errorf("schema %s protocol %s pid %s port %s profile of %d bytes: %v, want %v", c.schema, c.protocol, c.pid, c.port, len(c.profile), got, c.want)
-		}
 	}
 }

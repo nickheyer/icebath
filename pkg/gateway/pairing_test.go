@@ -447,7 +447,7 @@ func TestRevokeRevokeFromOtherStoreIsNotUndoneByInflightApproval(t *testing.T) {
 		t.Fatal(err)
 	}
 	code := mustGenerate(t, ctx, seed, "telegram", "alice", "Alice")
-	dashboard, err := newPairingStoreAt(ctx, dir, home.Dir(ctx), "")
+	approver, err := newPairingStoreAt(ctx, dir, home.Dir(ctx), "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -455,11 +455,11 @@ func TestRevokeRevokeFromOtherStoreIsNotUndoneByInflightApproval(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	approvedPath := dashboard.approvedPath("telegram")
+	approvedPath := approver.approvedPath("telegram")
 	revokeDone := make(chan bool, 1)
 	started := false
-	realLoad := dashboard.loadJSON
-	dashboard.loadJSON = func(path string) (*pyjson.Object, error) {
+	realLoad := approver.loadJSON
+	approver.loadJSON = func(path string) (*pyjson.Object, error) {
 		data, err := realLoad(path)
 		if path == approvedPath && !started {
 			started = true
@@ -478,7 +478,7 @@ func TestRevokeRevokeFromOtherStoreIsNotUndoneByInflightApproval(t *testing.T) {
 	}
 	approval := make(chan error, 1)
 	go func() {
-		_, err := dashboard.ApproveCode(ctx, "telegram", code)
+		_, err := approver.ApproveCode(ctx, "telegram", code)
 		approval <- err
 	}()
 	select {

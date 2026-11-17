@@ -156,10 +156,10 @@ func TestGatewayLoopSigtermLeavesTheHostRecordOfItsHardExit(t *testing.T) {
 	}
 }
 
-func TestSigtermRemovesTheRecordAndItsLiveSessionToken(t *testing.T) {
+func TestSigtermCleanupRemovesTheRecordAndReleasesTheLock(t *testing.T) {
 	hostDir(t)
-	child := startHostChild(t, "sigterm-serve")
-	if child.readLine(t) != "published" || !exists(HostRecordPath(RoleServe)) || !exists(HostTokenPath(RoleServe)) {
+	child := startHostChild(t, "sigterm-cleanup")
+	if child.readLine(t) != "published" || !exists(HostRecordPath(RoleGateway)) {
 		t.Fatal("child did not publish")
 	}
 	child.cmd.Process.Signal(syscall.SIGTERM)
@@ -170,13 +170,10 @@ func TestSigtermRemovesTheRecordAndItsLiveSessionToken(t *testing.T) {
 	case <-time.After(30 * time.Second):
 		t.Fatal("child outlived SIGTERM")
 	}
-	if exists(HostRecordPath(RoleServe)) {
+	if exists(HostRecordPath(RoleGateway)) {
 		t.Fatal("record outlived its process")
 	}
-	if exists(HostTokenPath(RoleServe)) {
-		t.Fatal("live session token outlived its process")
-	}
-	if o, _ := ClaimHostLock(context.Background(), RoleServe); o != HostLockAcquired {
+	if o, _ := ClaimHostLock(context.Background(), RoleGateway); o != HostLockAcquired {
 		t.Fatal("host lock not released")
 	}
 }
@@ -233,8 +230,8 @@ func TestRestartCleanupNeverDeletesAGatewayThatClaimedTheLockMidCleanup(t *testi
 		t.Fatal("the cleanup must release the host lock it took")
 	}
 	current := ReadHostRecord(RoleGateway, true)
-	if current == nil || current.PID != claimer.pid() || !exists(HostTokenPath(RoleGateway)) {
-		t.Fatalf("new owner's record or token deleted: %+v", current)
+	if current == nil || current.PID != claimer.pid() {
+		t.Fatalf("new owner's record deleted: %+v", current)
 	}
 }
 

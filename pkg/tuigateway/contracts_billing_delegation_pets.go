@@ -344,20 +344,6 @@ var _ = Method("handoff.fail", HandoffFailParams, HandoffFailResult, "Fail a not
 
 var ReactionAuthor = pydantic.Enum("ReactionAuthor", "user", "user", "agent", "agent")
 
-var MessageReactParams = pydantic.Extend(SessionParams, "MessageReactParams", ParamsConfig,
-	pydantic.Def("row_id", pydantic.Nullable(pydantic.Int), nil),
-	pydantic.Def("newest_role", pydantic.Nullable(pydantic.Str), nil),
-	pydantic.Def("emoji", pydantic.Nullable(pydantic.Str), nil),
-	pydantic.Def("author", pydantic.Nullable(ReactionAuthor), nil),
-).Described("``row_id`` is ``messages.id``; a not-yet-persisted live message names ``newest_role`` instead.\n``emoji`` null clears; the same emoji again retracts.")
-
-var MessageReactResult = pydantic.NewModel("MessageReactResult", ClosedConfig,
-	pydantic.Req("row_id", pydantic.Int),
-	pydantic.Req("reactions", pydantic.List(MessageReaction)),
-)
-
-var _ = Method("message.react", MessageReactParams, MessageReactResult, "Set/clear one author's emoji reaction on a message; returns the row's full reaction list.")
-
 var PetCancelParams = pydantic.Extend(ProfileParams, "PetCancelParams", ParamsConfig,
 	pydantic.Def("token", pydantic.Nullable(pydantic.Str), nil),
 )

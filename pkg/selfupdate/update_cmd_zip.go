@@ -38,13 +38,10 @@ var zipIcebathRootArtifacts = map[string]bool{
 
 var zipJournalTemp = regexp.MustCompile(`^\.icebath-update-zip-swap\.[0-9a-f]{12}\.tmp$`)
 
-var zipPreservedTopLevel = map[string]bool{"venv": true, ".venv": true, "node_modules": true, ".git": true, ".env": true}
+var zipPreservedTopLevel = map[string]bool{"venv": true, ".venv": true, ".git": true, ".env": true}
 
 var zipPreservedNested = map[string][]string{
-	"apps":    {"desktop/release", "desktop/dist", "desktop/dist-webapp", "desktop/node_modules", "desktop/build"},
-	"cmd":     {"icebath/web_dist"},
 	"scripts": {"whatsapp-bridge/node_modules"},
-	"web":     {"node_modules"},
 }
 
 const stashHint = "  Stash or commit your changes, then rerun `icebath update`."
@@ -893,7 +890,7 @@ func downloadAndSwapZip(ctx context.Context, w io.Writer, branch, zipURL, target
 }
 
 // Updates through the source ZIP when git file I/O fails, dependency and build failures returned
-func updateViaZip(ctx context.Context, w io.Writer, args map[string]any, _ bool, targetSHA, targetRepository string, completionRequest map[string]any) (bool, error) {
+func updateViaZip(ctx context.Context, w io.Writer, args map[string]any, targetSHA, targetRepository string, completionRequest map[string]any) (bool, error) {
 	branch := resolveUpdateBranch(args)
 	if branch != "main" {
 		fmt.Fprintf(w, "✗ --branch=%s is not supported on the Windows ZIP-fallback update path.\n", branch)

@@ -10,7 +10,7 @@ var CanonicalSessionParams = pydantic.Extend(ProfileParams, "CanonicalSessionPar
 
 var CanonicalCreateParams = pydantic.Extend(ProfileParams, "CanonicalCreateParams", ParamsConfig,
 	pydantic.Def("request_id", pydantic.Nullable(pydantic.Str), nil),
-	pydantic.Def("source", pydantic.Literal("cli", "tui", "gui", "acp", "tool", "oneshot"), "cli"),
+	pydantic.Def("source", pydantic.Literal("cli", "tui", "acp", "tool", "oneshot"), "cli"),
 	pydantic.Def("cwd", pydantic.Nullable(pydantic.Str), nil),
 	pydantic.Def("row_cwd", pydantic.Nullable(pydantic.Str), nil),
 	pydantic.Def("model", pydantic.Nullable(pydantic.Str), nil),
@@ -83,7 +83,7 @@ var CanonicalPendingPrompt = pydantic.NewModel("CanonicalPendingPrompt", ClosedC
 )
 
 var CanonicalSnapshotInfo = pydantic.Extend(SessionInventoryFields, "CanonicalSnapshotInfo", ClosedConfig,
-	pydantic.Req("desktop_protocol", pydantic.Literal("icebath-gateway-v1")),
+	pydantic.Req("gateway_protocol", pydantic.Literal("icebath-gateway-v1")),
 	pydantic.Def("source", pydantic.Nullable(pydantic.Str), nil),
 	pydantic.Def("model", pydantic.Nullable(pydantic.Str), nil),
 	pydantic.Def("lazy", pydantic.Nullable(pydantic.Bool), nil),

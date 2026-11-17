@@ -163,9 +163,6 @@ func (qqbotPlatformPlugin) Manifest() plugins.Manifest {
 func (qqbotPlatformPlugin) Register(ctx *plugins.Context) error {
 	extra := map[string]any{
 		"standalone_send":        &gateway.StandaloneSendPolicy{Label: "QQ Bot", Media: true, Captionable: true, TextDirect: true},
-		"dashboard_description":  "Connect Icebath to a QQ Bot from the QQ Open Platform.",
-		"docs_url":               "https://q.qq.com",
-		"dashboard_env_vars":     []string{"QQ_APP_ID", "QQ_CLIENT_SECRET", "QQ_ALLOWED_USERS"},
 		"is_connected":           isConnected,
 		"config_connected_fn":    gateway.ConfigConnectedExtra("app_id", "client_secret"),
 		"setup_fn":               setupQQBot,

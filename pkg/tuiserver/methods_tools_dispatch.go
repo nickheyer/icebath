@@ -16,11 +16,10 @@ import (
 	"github.com/nickheyer/icebath/pkg/tuigateway"
 )
 
-// Registry command a typed name resolves to with its localized description, category and desktop subcommands
+// Registry command a typed name resolves to with its localized description and category
 type ResolvedCommand struct {
-	Name, Category     string
-	Describe           func(ctx context.Context) string
-	DesktopSubcommands []string
+	Name, Category string
+	Describe       func(ctx context.Context) string
 }
 
 // Registry resolver of pkg/commands assigned at startup, false for a name no command or alias carries
@@ -280,7 +279,7 @@ func dispatchBundle(ctx context.Context, rid any, params map[string]any, session
 	}
 	scope, err := boundSkillScope(ctx)
 	panicIf(err)
-	msg, loaded, missing, built, err := scope.BuildBundleInvocationMessage(ctx, bundleKey, arg, sessionTaskID(session), resolveSessionPlatform())
+	msg, loaded, missing, built, err := scope.BuildBundleInvocationMessage(ctx, bundleKey, arg, sessionTaskID(session), sessionPlatform)
 	if err != nil {
 		return rpcErr(rid, 4018, "bundle dispatch failed: "+errorMessage(err), nil)
 	}

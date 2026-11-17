@@ -59,6 +59,9 @@ func TestUnitTransactionBudgetPreservesScopeAndHealth(t *testing.T) {
 						t.Errorf("property read left its scope: %v", cmd)
 					}
 					if slices.Contains(cmd, "--property=MainPID") {
+						if !tc.graceful {
+							return completedText(cmd, ""), nil
+						}
 						return completedText(cmd, "42"), nil
 					}
 					return completedText(cmd, "TimeoutStopUSec=70s\nTimeoutStartUSec=90s"), nil
@@ -86,10 +89,7 @@ func TestUnitTransactionBudgetPreservesScopeAndHealth(t *testing.T) {
 				health = health[1:]
 				return next, nil
 			})
-			name := "icebath-serve-test"
-			if tc.graceful {
-				name = "icebath-gateway-test"
-			}
+			name := "icebath-gateway-test"
 			restarted, failed := []string{}, []string{}
 			err := restartOneSystemdGatewayUnit(context.Background(), io.Discard, name, "system", scope, 45,
 				map[string][]string{"system": manage}, &restarted, &failed, nil)
@@ -122,7 +122,7 @@ func TestFleetRestartBudgetPreservesUserScopeAndVerifiesHealth(t *testing.T) {
 				unit    string
 			}
 			checks := []healthCheck{}
-			name := "icebath-serve-test"
+			name := "icebath-gateway-test"
 			vsSwap(t, &fleetSystemctl, func(_ context.Context, cmd []string, timeout float64) (*pysubprocess.Completed, error) {
 				calls = append(calls, systemctlCall{cmd, timeout})
 				if !hasPrefix(cmd, scope) {
@@ -193,7 +193,7 @@ func TestBudgetFallbackKeepsRealErrors(t *testing.T) {
 				})
 				if outcome == "timeout" {
 					clock := installFleetClock(t)
-					result, err := systemctlResetAndRestart(context.Background(), io.Discard, []string{"systemctl"}, "icebath-serve-test", nil)
+					result, err := systemctlResetAndRestart(context.Background(), io.Discard, []string{"systemctl"}, "icebath-gateway-test", nil)
 					if err != nil || result.Returncode != unitJobStillRunning {
 						t.Fatalf("result = %v, %v", result, err)
 					}
@@ -202,7 +202,7 @@ func TestBudgetFallbackKeepsRealErrors(t *testing.T) {
 					}
 					return
 				}
-				result, err := systemctlResetAndRestart(context.Background(), io.Discard, []string{"systemctl"}, "icebath-serve-test", nil)
+				result, err := systemctlResetAndRestart(context.Background(), io.Discard, []string{"systemctl"}, "icebath-gateway-test", nil)
 				if err != nil || result.Returncode != outcome.(int) || string(result.Stderr) != "manager diagnostic" {
 					t.Fatalf("result = %v, %v", result, err)
 				}

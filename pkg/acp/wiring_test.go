@@ -7,7 +7,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/provider"
-	"github.com/nickheyer/icebath/pkg/skills"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -39,7 +38,6 @@ func init() {
 		return provider.GetCachedContextLength(ctx, modelID, baseURL, false)
 	}
 	tools.ModelContextLength = provider.ToolModelContextLength
-	tools.AllSkillNames = skills.AllSkillNames
 	tools.ConfigEnvTableKeys = func() []string { return nil }
 	tools.RegisteredAdapterSecretEnv = func(*tools.Env) map[string]bool { return map[string]bool{} }
 	tools.AsyncDelegationOwnerProbes.PidExists = func(int) bool { return false }

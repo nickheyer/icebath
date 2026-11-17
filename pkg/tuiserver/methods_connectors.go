@@ -3,7 +3,6 @@ package tuiserver
 import (
 	"context"
 	"errors"
-	"fmt"
 	"strings"
 	"sync"
 
@@ -21,9 +20,6 @@ import (
 
 // Connector handler body answering a response or raising an error the guard maps to a refusal
 type connectorBody func(ctx context.Context, rid any, params map[string]any) (map[string]any, error)
-
-// Whether each account owned action of the Connectors page may create the guest identity
-var accountCreatesGuest = map[string]bool{"status": false, "connect": true}
 
 var connectorsRegistry = &handlerRegistry{}
 
@@ -144,7 +140,7 @@ func connectorOwnerMatches(ctx context.Context, sid string, owner *tuigateway.Se
 	return current == owner && !truthy(owner.Get("_finalized")) && pyjson.Equal(owner.Get("profile_home"), profileHome)
 }
 
-// Live session this transport steers for a session owner, refused when not owned or hosted on a compute host
+// Live session this transport steers for a session owner, refused when not owned
 func connectorSessionOwner(ctx context.Context, rid any, owner *pydantic.Instance) (*tuigateway.Session, map[string]any) {
 	sid := connectorText(owner, "session_id")
 	_, session := currentSessionSteerAuthority(ctx, sid)
@@ -153,26 +149,7 @@ func connectorSessionOwner(ctx context.Context, rid any, owner *pydantic.Instanc
 		origin != nil && (origin.Session != session || !pyjson.Equal(origin.ProfileHome, session.Get("profile_home"))) {
 		return nil, connectorRPCError(rid, 4001, "not_owner", "session not found or not owned by this transport")
 	}
-	if sessionUsesComputeHost(ctx, session, nil) {
-		return nil, connectorRPCError(rid, 5033, "unsupported_runtime", "Connectors must be managed on the session's compute host.")
-	}
 	return session, nil
-}
-
-// Closed availability refusal for an account owner, nil when connectors are available
-func accountGateClosed(env *tools.Env, rid any) map[string]any {
-	if tools.ConnectorsAvailable(env) {
-		return nil
-	}
-	return connectorRPCError(rid, 4031, "connectors_unavailable", "Connectors are not available.")
-}
-
-// Creates the guest identity for a Connectors page connect, its setup failure as a refusal
-func accountIdentityError(env *tools.Env, rid any) map[string]any {
-	if setupError := tools.EnsureGuestIdentity(env); setupError != "" {
-		return connectorRPCError(rid, 5034, "connector_request_failed", setupError)
-	}
-	return nil
 }
 
 // Request validated against a contract, the invalid params refusal when it does not validate
@@ -184,17 +161,13 @@ func parseConnectorParams(rid any, params map[string]any, model *pydantic.Model)
 	return request, nil
 }
 
-// Validated request and the owning live session, nil for an account owner
+// Validated request and the owning live session
 func connectorParams(ctx context.Context, rid any, params map[string]any, model *pydantic.Model) (*pydantic.Instance, *tuigateway.Session, map[string]any) {
 	request, failure := parseConnectorParams(rid, params, model)
 	if failure != nil {
 		return nil, nil, failure
 	}
-	owner := connectorOwner(request)
-	if owner.Get("type") == "account" {
-		return request, nil, nil
-	}
-	session, failure := connectorSessionOwner(ctx, rid, owner)
+	session, failure := connectorSessionOwner(ctx, rid, connectorOwner(request))
 	return request, session, failure
 }
 
@@ -264,7 +237,7 @@ func sessionConnectorRPC(ctx context.Context, env *tools.Env, rid any, request *
 		if otherAccountTarget(operation, request, names) {
 			return connectorRefusal(rid, tuigateway.ConnectorUnknownTargetRefusal), nil
 		}
-		return connectorReissue(ctx, env, rid, operation, names, "")
+		return connectorReissue(ctx, env, rid, operation, names)
 	}
 	agentSessionID := sessionKey
 	if a := sessionAgent(session); a != nil && a.SessionID() != "" {
@@ -319,72 +292,7 @@ func connectorRows(rows []any) ([]any, error) {
 	return pyjson.Plain(tuigateway.ConnectorUIPayload(dumped)).([]any), nil
 }
 
-// Connectors page list read with the stored bearer, never creating an identity
-func accountConnectorList(ctx context.Context, env *tools.Env, rid any) (map[string]any, error) {
-	rows := []any{}
-	if tools.ReadNousAccessToken(ctx, env) != "" {
-		client, err := tools.NewManagedClient(env, false, tools.InitiatorAgentTool, nil)
-		if err != nil {
-			return nil, err
-		}
-		items, err := client.ListConnectors(ctx, 0)
-		if err != nil {
-			return nil, err
-		}
-		for _, item := range items {
-			rows = append(rows, item)
-		}
-	}
-	tools.NoteConnectedAppsSeen(ctx, env, rows)
-	connectors, err := connectorRows(rows)
-	if err != nil {
-		return nil, err
-	}
-	return ok(rid, map[string]any{"available": true, "connectors": connectors}), nil
-}
-
-// Connectors page connect finding or starting the account operation and answering its first snapshot
-func accountConnectorConnect(ctx context.Context, env *tools.Env, rid any, request *pydantic.Instance) (map[string]any, error) {
-	action := "connect"
-	if truthy(request.Get("reconnect")) {
-		action = "reconnect"
-	}
-	names := connectorNames(request)
-	start, err := tools.FindOrStartAccountOperation(ctx, env, names, action, accountHome(request),
-		connectorOptional(request, "alias"), connectorOptional(request, "connection_id"), tools.InitiatorDesktopPage)
-	var mismatch *tools.AccountOperationMismatch
-	if errors.As(err, &mismatch) {
-		return connectorRefusal(rid, tuigateway.ConnectorInvalidParams), nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	if !start.Started {
-		dead := false
-		for _, name := range names {
-			target := start.Operation.Target(name)
-			if target == nil {
-				return nil, fmt.Errorf("'NoneType' object has no attribute 'state'")
-			}
-			if state := start.Operation.StateOf(target); state == tools.TargetFailed || state == tools.TargetExpired {
-				dead = true
-			}
-		}
-		if dead {
-			return connectorReissue(ctx, env, rid, start.Operation, names, tools.InitiatorDesktopPage)
-		}
-		return ok(rid, connectorOperationView(start.Operation)), nil
-	}
-	if !tools.WaitForAccountPrepare(start) {
-		return ok(rid, connectorOperationView(start.Operation)), nil
-	}
-	if start.Failed() {
-		return connectorRefusal(rid, tuigateway.ConnectorRequestFailed), nil
-	}
-	return ok(rid, connectorOperationView(start.Operation)), nil
-}
-
-// List or connect for an account owner under the Connectors page scope, else for the owning session
+// List or connect for the owning session
 func connectorRPC(ctx context.Context, rid any, params map[string]any, action string) (map[string]any, error) {
 	model := tuigateway.ConnectorsConnectParams
 	if action == "status" {
@@ -393,32 +301,6 @@ func connectorRPC(ctx context.Context, rid any, params map[string]any, action st
 	request, session, failure := connectorParams(ctx, rid, params, model)
 	if failure != nil {
 		return failure, nil
-	}
-	if connectorOwner(request).Get("type") == "account" {
-		var response map[string]any
-		var err error
-		accountScope(ctx, request, func(scoped context.Context, env *tools.Env) {
-			if closed := accountGateClosed(env, rid); closed != nil {
-				if action == "status" {
-					response = ok(rid, map[string]any{"available": false, "connectors": []any{}})
-				} else {
-					response = closed
-				}
-				return
-			}
-			if accountCreatesGuest[action] {
-				if setupError := accountIdentityError(env, rid); setupError != nil {
-					response = setupError
-					return
-				}
-			}
-			if action == "status" {
-				response, err = accountConnectorList(scoped, env, rid)
-			} else {
-				response, err = accountConnectorConnect(scoped, env, rid, request)
-			}
-		})
-		return response, err
 	}
 	sid := connectorText(connectorOwner(request), "session_id")
 	runtimeCtx := withRuntimeSessionRecord(ctx, session)
@@ -444,8 +326,8 @@ func connectorRPC(ctx context.Context, rid any, params map[string]any, action st
 }
 
 // Re runs the named dead rows of an operation, a known refusal reason answered as its refusal
-func connectorReissue(ctx context.Context, env *tools.Env, rid any, operation *tools.ConnectionOperation, names []string, initiator string) (map[string]any, error) {
-	reason, err := mcp.Reissue(ctx, env, operation, names, initiator)
+func connectorReissue(ctx context.Context, env *tools.Env, rid any, operation *tools.ConnectionOperation, names []string) (map[string]any, error) {
+	reason, err := mcp.Reissue(ctx, env, operation, names, "")
 	if err != nil {
 		return nil, err
 	}
@@ -455,57 +337,16 @@ func connectorReissue(ctx context.Context, env *tools.Env, rid any, operation *t
 	return ok(rid, connectorOperationView(operation)), nil
 }
 
-// Profile home of an account request, empty for the launch profile, raising an unknown profile
-func accountHome(request *pydantic.Instance) string {
-	profileDir, err := profileHome(connectorText(request, "profile"))
-	if err != nil {
-		panic(err)
-	}
-	return profileDir
-}
-
-// Runs body with the Connectors page variables bound for a sessionless request, a served profile's page holding its own secrets
-func desktopPageVars(ctx context.Context, body func(ctx context.Context, env *tools.Env)) {
-	cronSession := ""
-	h := home.Dir(ctx)
-	env := &tools.Env{Home: h, Values: &sync.Map{}, TerminalScope: tools.GetTerminalScope(ctx)}
-	if !provider.IsProcessHome(h) {
-		env.Secrets = config.NewSecrets(h)
-	}
-	tools.SetSessionVars(env, tools.SessionVars{Source: "desktop", Profile: currentProfileName(ctx), CronSession: &cronSession})
-	defer clearSessionContext(env)
-	body(tools.WithToolEnv(ctx, env), env)
-}
-
-// Runs body in the runtime scope of the account request's profile with the Connectors page variables bound
-func accountScope(ctx context.Context, request *pydantic.Instance, body func(ctx context.Context, env *tools.Env)) {
-	desktopPageVars(profileRuntimeScope(ctx, accountHome(request), true), body)
-}
-
-// Open operation named by the request for its session or account owner, refused when unknown
+// Open operation named by the request for its session owner, refused when unknown
 func connectorOperationForRequest(ctx context.Context, rid any, request *pydantic.Instance, session *tuigateway.Session) (*tools.ConnectionOperation, map[string]any) {
-	var operation *tools.ConnectionOperation
-	opID := connectorText(request, "op_id")
-	if connectorOwner(request).Get("type") == "session" {
-		operation = tools.LiveGet(strOr(session.Get("session_key")), opID, strOr(session.Get("profile_home")))
-	} else {
-		var closed map[string]any
-		accountScope(ctx, request, func(_ context.Context, env *tools.Env) {
-			if closed = accountGateClosed(env, rid); closed == nil {
-				operation = tools.LiveGetByOpID(opID, accountHome(request))
-			}
-		})
-		if closed != nil {
-			return nil, closed
-		}
-	}
+	operation := tools.LiveGet(strOr(session.Get("session_key")), connectorText(request, "op_id"), strOr(session.Get("profile_home")))
 	if operation == nil {
 		return nil, connectorRefusal(rid, tuigateway.ConnectorUnknownOperation)
 	}
 	return operation, nil
 }
 
-// Live snapshot of one open session or account operation
+// Live snapshot of one open session operation
 func connectorsOperationStatus(ctx context.Context, rid any, params map[string]any) (map[string]any, error) {
 	request, session, failure := connectorParams(ctx, rid, params, tuigateway.ConnectionOperationParams)
 	if failure != nil {
@@ -551,14 +392,6 @@ func connectionRespond(ctx context.Context, rid any, params map[string]any) (map
 	operation, failure := connectorOperationForRequest(ctx, rid, request, session)
 	if failure != nil {
 		return failure, nil
-	}
-	if connectorOwner(request).Get("type") == "account" {
-		var response map[string]any
-		var err error
-		accountScope(ctx, request, func(scoped context.Context, _ *tools.Env) {
-			response, err = applyConnectionAnswer(scoped, rid, answer, operation)
-		})
-		return response, err
 	}
 	scopeHome := strOr(session.Get("profile_home"))
 	if scopeHome == "" {

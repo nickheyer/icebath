@@ -23,11 +23,9 @@ import (
 // Plugin collaborators of a gateway process, the registries the bundled platform and provider plugins load into
 func gatewayPluginServices() *plugins.Services {
 	s := &plugins.Services{
-		Platforms:                   gateway.PlatformRegistryService(),
-		DashboardAuth:               gateway.DashboardAuthRegistryService(),
-		ClearDashboardAuthProviders: gateway.ClearDashboardAuthProviders,
-		ProviderRegistries:          pluginservices.ProviderRegistries(),
-		BoundSessionKey:             func(ctx context.Context) string { return tools.BoundSessionKey(tools.ToolEnvFrom(ctx)) },
+		Platforms:          gateway.PlatformRegistryService(),
+		ProviderRegistries: pluginservices.ProviderRegistries(),
+		BoundSessionKey:    func(ctx context.Context) string { return tools.BoundSessionKey(tools.ToolEnvFrom(ctx)) },
 	}
 	gateway.InstallPluginServices(s)
 	return s

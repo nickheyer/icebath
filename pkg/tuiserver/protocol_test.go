@@ -274,7 +274,7 @@ func TestWindowOwnedRequestRefusesAtOnceWhenNoWindowShowsTheSession(t *testing.T
 	t.Cleanup(tuigateway.ResetForTests)
 	first, second, windows := twoWindowSession(t, "s-none")
 	box := make(chan string, 1)
-	go func() { timeout := 30.0; box <- ask(ctx, "preview.read", "s-none", map[string]any{}, &timeout) }()
+	go func() { timeout := 30.0; box <- ask(ctx, "sudo", "s-none", map[string]any{}, &timeout) }()
 	req := waitOpen(t, "s-none", nil, first, second)
 	started := time.Now()
 	if resp := Dispatch(ctx, notShown(req), windows[0]); resp != nil {
@@ -309,7 +309,7 @@ func TestWindowOwnedRequestDeclineDoesNotBeatTheOwnerWindow(t *testing.T) {
 	t.Cleanup(tuigateway.ResetForTests)
 	bystanderSock, ownerSock, windows := twoWindowSession(t, "s-own")
 	box := make(chan string, 1)
-	go func() { timeout := 5.0; box <- ask(ctx, "preview.read", "s-own", map[string]any{}, &timeout) }()
+	go func() { timeout := 5.0; box <- ask(ctx, "sudo", "s-own", map[string]any{}, &timeout) }()
 	req := waitOpen(t, "s-own", nil, bystanderSock, ownerSock)
 	Dispatch(ctx, notShown(req), windows[0])
 	frame, _ := pyjson.LoadsDict(fmt.Sprintf(`{"jsonrpc": "2.0", "id": %q, "error": {"code": %d, "message": "not here"}}`, req["id"], tuigateway.NotShownCode))
@@ -347,7 +347,7 @@ func TestClientCapabilitiesAdvertisesCountingNotShownDeclines(t *testing.T) {
 }
 
 func TestServerRequestTimeoutEmitsOneRequestCancel(t *testing.T) {
-	for _, method := range []string{"secret", "sudo", "terminal.read", "tour"} {
+	for _, method := range []string{"secret", "sudo", "vault.code", "vault.save_login"} {
 		t.Run(method, func(t *testing.T) {
 			capture := captureProtocol(t)
 			timeout := 0.0
@@ -602,30 +602,6 @@ func approvalSession(t *testing.T, sid, key string) {
 	t.Setenv("ICEBATH_HOME", t.TempDir())
 	swapSessions(t, map[string]*tuigateway.Session{sid: tuigateway.NewSession(map[string]any{"session_key": key, "history": []any{}})})
 	t.Cleanup(func() { tools.UnregisterGatewayNotify(key) })
-}
-
-func TestApprovalPendingReplaysUnresolvedRequests(t *testing.T) {
-	approvalSession(t, "ui-1", "agent-1")
-	tools.QueueGatewayApprovalForTests("agent-1", map[string]any{"request_id": "req-1", "command": "danger"})
-	response := handleRequest(context.Background(), map[string]any{"id": "r1", "method": "approval.pending", "params": map[string]any{"session_id": "ui-1"}})
-	want := map[string]any{"approvals": []map[string]any{{"request_id": "req-1", "command": "danger"}}}
-	if !reflect.DeepEqual(resultOf(t, response), want) {
-		t.Fatalf("response %v", response)
-	}
-}
-
-func TestApprovalReceivedAcknowledgesExactRequest(t *testing.T) {
-	approvalSession(t, "ui-1", "agent-1")
-	entry := tools.QueueGatewayApprovalForTests("agent-1", map[string]any{"request_id": "req-1", "command": "danger"})
-	other := tools.QueueGatewayApprovalForTests("agent-1", map[string]any{"request_id": "req-2", "command": "other"})
-	response := handleRequest(context.Background(), map[string]any{"id": "r2", "method": "approval.received",
-		"params": map[string]any{"session_id": "ui-1", "request_id": "req-1"}})
-	if !reflect.DeepEqual(resultOf(t, response), map[string]any{"acknowledged": true}) {
-		t.Fatalf("response %v", response)
-	}
-	if !entry.Acknowledged || other.Acknowledged {
-		t.Fatalf("acknowledged %v %v", entry.Acknowledged, other.Acknowledged)
-	}
 }
 
 // Waits until a queued approval entry settles and returns its choice

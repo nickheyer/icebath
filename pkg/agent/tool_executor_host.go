@@ -231,11 +231,6 @@ func (a *AIAgent) RecordFileMutationResult(name string, args map[string]any, res
 	}
 }
 
-// Settles an onboarding beat from a general tool result when the chat carries setup_beat
-func (a *AIAgent) ObserveOnboardingResult(ctx context.Context, name string, args map[string]any, result string) string {
-	return tools.ObserveOnboardingToolResult(tools.WithEnvHome(ctx, a.env), a.sessionDB, a.sessionID, a.validToolNames["setup_beat"], name, args, result)
-}
-
 func (a *AIAgent) ObserveToolOutcome(name string, isError bool) {
 	observability.ObserveToolOutcome(a.toolContext(), a, name, isError)
 }

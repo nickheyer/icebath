@@ -16,7 +16,7 @@ func IsTurnSurface(name string) bool { return turnSurfaces[name] }
 
 // Socket on the ready endpoint dialed with this home's ticket of the scope, never through a proxy
 func DialOwnerSocket(ctx context.Context, profileHome string, endpoint *GatewayEndpoint, scope string, maxSize int64) (GatewaySocket, error) {
-	ticket, err := sessionTicket(profileHome, endpoint, "", scope, "", false)
+	ticket, err := sessionTicket(profileHome, endpoint, "", scope, false)
 	if err != nil {
 		return nil, err
 	}

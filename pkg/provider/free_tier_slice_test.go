@@ -1,7 +1,6 @@
 package provider
 
 import (
-	"context"
 	"net/http"
 	"reflect"
 	"slices"
@@ -186,48 +185,5 @@ func TestSignInRendererExitCodes(t *testing.T) {
 	copy := DrainSignInCopy(seq(SignInWaiting{}, SignInFailed{Detail: "x"}), false, func(SignInState) error { panic("hook") })
 	if copy != "Sign-in failed: x" {
 		t.Fatalf("drain copy %q", copy)
-	}
-}
-
-func TestWelcomeTrialClaimsOnceThenSettles(t *testing.T) {
-	_, env := installAnonPortal(t)
-	env = anonDesktopEnv(env)
-	probe, clear, reserved, mark, lock, resolve := welcomeInstallProbe, welcomeProbeClear, welcomeTrialReserved, welcomeMarkUsed, welcomeClaimLock, welcomeResolveSkipped
-	t.Cleanup(func() {
-		welcomeInstallProbe, welcomeProbeClear, welcomeTrialReserved, welcomeMarkUsed, welcomeClaimLock, welcomeResolveSkipped = probe, clear, reserved, mark, lock, resolve
-	})
-	used, marks, isReserved := false, 0, false
-	welcomeInstallProbe = func(_ context.Context) tools.InstallState {
-		if used {
-			return tools.InstallState{Findings: []tools.InstallFinding{{}}}
-		}
-		return tools.InstallState{}
-	}
-	welcomeProbeClear = func() {}
-	welcomeTrialReserved = func() bool { return isReserved }
-	welcomeMarkUsed = func(_ context.Context) error { used, isReserved = true, false; marks++; return nil }
-	welcomeClaimLock = func() (func(), error) { return func() {}, nil }
-	welcomeResolveSkipped = func(PoolEnv, string) (string, error) { return "", &AuthError{Code: "no_provider_configured"} }
-	if reason, err := welcomeClaimBlocker(env, false, nil); err != nil || reason != "" {
-		t.Fatalf("fresh desktop must be claimable %q %v", reason, err)
-	}
-	state, err := ClaimDesktopFreeTier(env, false, false)
-	if err != nil || state == nil || state[WelcomeClaimFlag] != true || marks != 1 {
-		t.Fatalf("claim %v %v marks %d", state, err, marks)
-	}
-	again, err := ClaimDesktopFreeTier(env, false, false)
-	if err != nil || again != nil || marks != 1 {
-		t.Fatalf("second claim must be blocked %v %v", again, err)
-	}
-	if reason, _ := welcomeClaimBlocker(env, true, nil); reason != "a Nous identity exists" {
-		t.Fatalf("blocker %q", reason)
-	}
-	isReserved = true
-	settled, err := SettleInterruptedClaim(env)
-	if err != nil || !settled || marks != 2 || isReserved {
-		t.Fatalf("interrupted claim not settled %v %v", settled, err)
-	}
-	if available, err := welcomeInferenceAvailable(env, false); err != nil || !available {
-		t.Fatalf("claimed trial carries inference %v %v", available, err)
 	}
 }

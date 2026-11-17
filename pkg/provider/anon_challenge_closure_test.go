@@ -58,7 +58,7 @@ func anonBackground(env PoolEnv) PoolEnv {
 func anonPresentEnv(t *testing.T) PoolEnv {
 	t.Helper()
 	t.Setenv("ICEBATH_HOME", t.TempDir())
-	for _, name := range []string{"ICEBATH_DESKTOP", "ICEBATH_DASHBOARD_SESSION_TOKEN", "SSH_TTY", "SSH_CLIENT"} {
+	for _, name := range []string{"SSH_TTY", "SSH_CLIENT"} {
 		t.Setenv(name, "")
 	}
 	resetChallengeForTests()
@@ -82,7 +82,7 @@ func TestChallengeAHostFailureWakesTheWaiterButStillRequiresAnAuthoritativeMint(
 	if portal.count("/api/anonymous/token") != 2 || portal.count("/api/anonymous/challenge/status") != 1 {
 		t.Fatal(portal.paths())
 	}
-	if _, err := resolveNousRuntimeCredentials(anonDesktopEnv(env), false, ""); err == nil {
+	if _, err := resolveNousRuntimeCredentials(env, false, ""); err == nil {
 		t.Fatal("a second caller must fail fast")
 	}
 	if portal.count("/api/anonymous/challenge/status") != 1 {
@@ -132,7 +132,7 @@ func TestChallengeTheStatusPollTrustsWhatTheCredentialWasMintedWith(t *testing.T
 		return real(e, timeout, verify)
 	}
 	portal.set(func(p *anonFakePortal) { p.challengeRequired = true })
-	if _, err := resolveNousRuntimeCredentials(anonDesktopEnv(env), false, ""); err != nil {
+	if _, err := resolveNousRuntimeCredentials(env, false, ""); err != nil {
 		t.Fatal(err)
 	}
 	if portal.count("/api/anonymous/challenge/status") < 1 || len(polledWith) == 0 {
@@ -228,28 +228,6 @@ func TestChallengeAPollErrorIsABlipNotAVerdict(t *testing.T) {
 	}
 }
 
-func TestChallengeAnInheritedDesktopFlagIsNotTheDesktopSurface(t *testing.T) {
-	portal, env := installAnonPortal(t)
-	anonPresentSeams(t)
-	stderr := anonChallengeStderr(t)
-	t.Setenv("ICEBATH_DESKTOP", "1")
-	t.Setenv("ICEBATH_DASHBOARD_SESSION_TOKEN", "")
-	t.Setenv("SSH_TTY", "/dev/pts/0")
-	openBrowserFn = func(string) error { return syscall.ENOENT }
-	if _, err := anonConnectorsToken(t, env); err != nil {
-		t.Fatal(err)
-	}
-	last := portal.tokenRequests[len(portal.tokenRequests)-1]["body"].(map[string]any)["client"].(map[string]any)
-	if last["surface"] != "cli" {
-		t.Fatal(last)
-	}
-	link := portal.URL + "/challenge?code=t"
-	presentChallenge(env, anonTestChallenge(link, "m"))
-	if !strings.Contains(stderr.String(), link) {
-		t.Fatal(stderr.String())
-	}
-}
-
 func TestChallengeOptionalATerminalNeverOpensAnything(t *testing.T) {
 	portal, env := installAnonPortal(t)
 	anonPresentSeams(t)
@@ -261,24 +239,6 @@ func TestChallengeOptionalATerminalNeverOpensAnything(t *testing.T) {
 	}
 	if len(*presented) != 0 || len(*announced) != 0 {
 		t.Fatal(*presented, *announced)
-	}
-}
-
-func TestChallengeOptionalTheDesktopBackendAnnouncesItAndWaitsOnNothing(t *testing.T) {
-	portal, env := installAnonPortal(t)
-	anonPresentSeams(t)
-	anonRecordPresented(t)
-	announced := anonRecordAnnounced(false)
-	portal.set(func(p *anonFakePortal) { p.optionalChallenge = true })
-	creds, err := anonResolve(t, env)
-	if err != nil || anyString(creds["api_key"]) == "" {
-		t.Fatalf("%v %v", creds, err)
-	}
-	if len(*announced) != 1 || (*announced)[0].Required || portal.count("/api/anonymous/challenge/status") != 0 {
-		t.Fatal(*announced, portal.paths())
-	}
-	if pending := PendingChallenge(env); pending == nil || pending["url"] != portal.challengeURL {
-		t.Fatal(pending)
 	}
 }
 
@@ -304,20 +264,6 @@ func TestChallengeOptionalReplayedOffersKeepTheOriginalExpiry(t *testing.T) {
 	clock = clock.Add(41 * time.Second)
 	if pending := PendingChallenge(env); pending != nil {
 		t.Fatal(pending)
-	}
-}
-
-func TestChallengePresentingTheDesktopBackendAnnouncesAndNeverOpensABrowser(t *testing.T) {
-	env := anonPresentEnv(t)
-	t.Setenv("ICEBATH_DESKTOP", "1")
-	t.Setenv("ICEBATH_DASHBOARD_SESSION_TOKEN", "spawn-token")
-	announced := anonRecordAnnounced(true)
-	var opened []BrowserChallenge
-	presentInTerminalFn = func(_ PoolEnv, c BrowserChallenge) { opened = append(opened, c) }
-	challenge := anonTestChallenge("https://portal.example.test/challenge?code=t", "m")
-	presentChallenge(env, challenge)
-	if !reflect.DeepEqual(*announced, []BrowserChallenge{challenge}) || len(opened) != 0 {
-		t.Fatal(*announced, opened)
 	}
 }
 
@@ -453,12 +399,12 @@ func anonConnectorsGuest(t *testing.T) (*anonFakePortal, PoolEnv) {
 	return portal, env
 }
 
-// Installs the portal with the welcome trial claimed, as the trial fixture, returning the desktop env
+// Installs the portal with the welcome trial claimed, as the trial fixture, returning its env
 func anonTrialGuest(t *testing.T) (*anonFakePortal, PoolEnv) {
 	t.Helper()
 	portal, env := installAnonPortal(t)
 	anonClaimedTrial(t, env)
-	return portal, anonDesktopEnv(env)
+	return portal, env
 }
 
 func anonMustToken(t *testing.T, env PoolEnv) string {

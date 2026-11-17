@@ -27,7 +27,7 @@ func (e *LiveConnectionError) Error() string {
 	if e.Main != e.Path {
 		subject = "its main database " + e.Main
 	}
-	return fmt.Sprintf("Refusing to %s %s: a connection to %s is still open in this process, and raw file access would cancel that connection's POSIX advisory locks. Close all database handles (stop the gateway/dashboard) and retry.", e.What, e.Path, subject)
+	return fmt.Sprintf("Refusing to %s %s: a connection to %s is still open in this process, and raw file access would cancel that connection's POSIX advisory locks. Close all database handles (stop the gateway) and retry.", e.What, e.Path, subject)
 }
 
 // Guards the live registry together with the connection lifecycle syscalls it describes

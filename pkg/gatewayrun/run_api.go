@@ -14,7 +14,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/tuiserver"
 )
 
 func apiLog() *slog.Logger { return slog.Default().With("logger", "gateway.run_api") }
@@ -52,7 +51,7 @@ func startGatewayAPI(ctx context.Context, r *GatewayRunner) (*gatewayAPIHandle, 
 	port := socket.Addr().(*net.TCPAddr).Port
 	serveCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
 	l := &sessionListener{runner: r, serveCtx: serveCtx, cancel: cancel, exit: make(chan struct{}), sockets: map[*sessionSocket]struct{}{},
-		state: &gateway.ListenerState{BoundHost: "127.0.0.1", BoundPort: port, TrustedPublicHosts: map[string]bool{}}}
+		state: &gateway.ListenerState{BoundHost: "127.0.0.1"}}
 	l.server = &http.Server{Handler: l}
 	gateway.SetActiveAPIRunner(r)
 	handle := &gatewayAPIHandle{apiOrigin: fmt.Sprintf("http://127.0.0.1:%d", port), listener: l, task: make(chan struct{}), socket: socket}
@@ -196,7 +195,7 @@ func (l *sessionListener) admitSession(sock *sessionSocket) error {
 	}
 	ticket, reason := gateway.GatewayWSTicketFromSubprotocol(sock)
 	peer, _ := sock.BoundaryClient()
-	if reason != "ok" || sock.req.Header.Get("Origin") != "" || gateway.WSHostOriginReason(sock, l.state) != "" ||
+	if reason != "ok" || sock.req.Header.Get("Origin") != "" || gateway.WSHostReason(sock, l.state) != "" ||
 		gateway.WSClientReason(sock, l.state) != "" || (peer != "127.0.0.1" && peer != "::1") {
 		sock.refuse()
 		return nil
@@ -241,7 +240,7 @@ func (l *sessionListener) admitSession(sock *sessionSocket) error {
 	release := runner.AttachClient()
 	defer release()
 	protocol := gateway.CanonicalGatewayProtocol
-	return tuiserver.HandleWS(owned, sock, map[string]any{"user_id": grant["subject"], "provider": "local",
+	return ServeSessionSocket(owned, sock, map[string]any{"user_id": grant["subject"], "provider": "local",
 		"profile_id": grant["profile_id"], "instance_id": grant["instance_id"], "capabilities": grant["capabilities"],
 		"native_bootstrap": true, "profile_scope": profileScope}, &protocol, operator)
 }

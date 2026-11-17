@@ -2,8 +2,6 @@ package tuiserver
 
 import (
 	"context"
-	"net/http"
-	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -19,8 +17,6 @@ import (
 func accountsGate(t *testing.T) {
 	t.Helper()
 	t.Setenv("ICEBATH_HOME", t.TempDir())
-	t.Setenv("ICEBATH_DESKTOP", "")
-	os.Unsetenv("ICEBATH_DESKTOP")
 	tools.LiveResetForTests()
 	savedEnsure, savedHome := tools.EnsureGuestIdentity, hermesHome
 	tools.EnsureGuestIdentity = func(*tools.Env) string { return "" }
@@ -56,54 +52,15 @@ func accountsRPC(t *testing.T, transport *frameRecorder, method string, params m
 	return nil
 }
 
-// Live desktop session of sid on a transport the case owns
+// Live TUI session of sid on a transport the case owns
 func accountsSession(t *testing.T, sid string) *frameRecorder {
 	t.Helper()
 	transport := &frameRecorder{}
 	tuigateway.SetSessionRecord(sid, tuigateway.NewSession(map[string]any{"transport": transport, "agent": nil, "session_key": sid,
 		"history": []any{}, "history_lock": &sync.Mutex{}, "history_version": 0, "running": false, "attached_images": []any{},
-		"source": "desktop"}))
+		"source": "tui"}))
 	t.Cleanup(func() { tuigateway.SetSessionRecord(sid, nil) })
 	return transport
-}
-
-// test_connector_accounts_rpc.py test_account_connect_with_an_alias_mints_that_account
-func TestAccountConnectWithAnAliasMintsThatAccount(t *testing.T) {
-	accountsGate(t)
-	minted := make(chan struct{}, 1)
-	backend := connectorBackendDouble(t, &connectorBackend{connections: func(names []string, _ map[string]any) []any {
-		defer func() {
-			select {
-			case minted <- struct{}{}:
-			default:
-			}
-		}()
-		var results []any
-		for _, name := range names {
-			results = append(results, map[string]any{"connector": name, "status": "initiated", "connectionId": "ca_1",
-				"connectUrl": "https://connect.example/1"})
-		}
-		return results
-	}})
-	reply := accountsRPC(t, nil, "connectors.connect", map[string]any{"owner": map[string]any{"type": "account"},
-		"connectors": []any{"gmail"}, "alias": "work"})
-	result, isResult := reply["result"].(map[string]any)
-	if !isResult {
-		t.Fatalf("reply %v", reply)
-	}
-	select {
-	case <-minted:
-	case <-time.After(2 * time.Second):
-		t.Fatal("no mint")
-	}
-	mints := backend.minted()
-	if len(mints) != 1 || strings.Join(mints[0]["names"].([]string), ",") != "gmail" || mints[0]["reinitiate"] != false || mints[0]["alias"] != "work" {
-		t.Fatalf("mints %v", mints)
-	}
-	targets := result["targets"].([]any)
-	if len(targets) != 1 || targets[0].(map[string]any)["name"] != "gmail" || targets[0].(map[string]any)["alias"] != "work" {
-		t.Fatalf("targets %v", targets)
-	}
 }
 
 // test_connector_accounts_rpc.py test_a_session_retry_for_another_account_does_not_re_mint_the_open_one
@@ -170,68 +127,5 @@ func TestASessionRetryWithTheOpenAccountsIdReissuesIt(t *testing.T) {
 	}
 	if mints := backend.minted(); len(mints) != 1 || strings.Join(mints[0]["names"].([]string), ",") != "gmail" || mints[0]["connection_id"] != "ca_work" {
 		t.Fatalf("mints %v", mints)
-	}
-}
-
-// test_connector_accounts_rpc.py test_rename_to_a_name_another_account_holds_is_alias_taken
-func TestRenameToANameAnotherAccountHoldsIsAliasTaken(t *testing.T) {
-	accountsGate(t)
-	connectorBackendDouble(t, &connectorBackend{portal: func(method, path string, _ map[string]any) (int, any) {
-		if method == http.MethodPatch && strings.HasPrefix(path, "/api/v1/connectors/accounts/") {
-			return http.StatusConflict, map[string]any{"error": map[string]any{"code": "alias_taken", "message": "alias taken"}}
-		}
-		return http.StatusNotFound, map[string]any{}
-	}})
-	reply := accountsRPC(t, nil, "connectors.accounts.rename", map[string]any{"connection_id": "ca_1", "alias": "home"})
-	failure, _ := reply["error"].(map[string]any)
-	data, _ := failure["data"].(map[string]any)
-	if data["reason"] != "ALIAS_TAKEN" {
-		t.Fatalf("reply %v", reply)
-	}
-}
-
-// test_connector_account_surface.py test_account_reads_and_connects_name_the_desktop
-func TestAccountReadsAndConnectsNameTheDesktop(t *testing.T) {
-	accountsGate(t)
-	backend := connectorBackendDouble(t, &connectorBackend{
-		connections: func(names []string, _ map[string]any) []any {
-			var results []any
-			for _, name := range names {
-				results = append(results, map[string]any{"connector": name, "status": "active"})
-			}
-			return results
-		},
-		portal: func(method, path string, _ map[string]any) (int, any) {
-			if path == "/api/v1/connectors/gmail/tools" {
-				return http.StatusNotFound, map[string]any{"error": map[string]any{"code": "connector_not_found", "message": "gone"}}
-			}
-			return http.StatusNotFound, map[string]any{}
-		},
-	})
-	if code := rpcCode(accountsRPC(t, nil, "connectors.tools", map[string]any{"slug": "gmail", "refresh": false})); code != 4041 {
-		t.Fatalf("tools code %v", code)
-	}
-	connected := accountsRPC(t, nil, "connectors.connect", map[string]any{"owner": map[string]any{"type": "account"}, "connectors": []any{"gmail"}})
-	if _, isResult := connected["result"]; !isResult {
-		t.Fatalf("connect %v", connected)
-	}
-	backend.mu.Lock()
-	agents := append([]string(nil), backend.agents...)
-	backend.mu.Unlock()
-	var surfaces []string
-	for _, agent := range agents {
-		_, rest, _ := strings.Cut(agent, " (")
-		surface, _, _ := strings.Cut(rest, ";")
-		surfaces = append(surfaces, surface)
-	}
-	if len(surfaces) != 2 || surfaces[0] != "desktop" || surfaces[1] != "desktop" {
-		t.Fatalf("surfaces %v of %v", surfaces, agents)
-	}
-	agent, err := tools.ConnectorUserAgent(context.Background(), nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, rest, _ := strings.Cut(agent, " ("); !strings.HasPrefix(rest, "cli;") {
-		t.Fatalf("request surface leaked out of the request %q", agent)
 	}
 }

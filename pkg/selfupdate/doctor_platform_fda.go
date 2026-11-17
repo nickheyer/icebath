@@ -36,7 +36,7 @@ func CheckMacosFullDiskAccess(w io.Writer) error {
 			"will never trip per-folder dialogs (Desktop/Downloads/Documents/...) again. Open: System Settings → "+
 			"Privacy & Security → Full Disk Access — or run:\n"+
 			"      open \"x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles\"\n"+
-			"    then enable your terminal (and Icebath.app if you use Desktop), and restart them once. "+
+			"    then enable your terminal, and restart it once. "+
 			"With Icebath's stable signing identities the grant survives every update.")
 	}
 	return nil

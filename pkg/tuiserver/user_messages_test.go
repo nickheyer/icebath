@@ -17,7 +17,7 @@ func TestAuthLockTimeoutContentionGetsTheWaitCopy(t *testing.T) {
 			if strings.Contains(message, "/model") || strings.Contains(message, "icebath setup") {
 				t.Fatalf("lock contention kept the setup hints: %q", message)
 			}
-			if !strings.Contains(message, "lock") || !strings.Contains(message, "dashboard") {
+			if !strings.Contains(message, "lock") || !strings.Contains(message, "background icebath process") {
 				t.Fatalf("missing the wait copy: %q", message)
 			}
 		})

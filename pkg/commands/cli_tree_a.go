@@ -289,7 +289,7 @@ func (c *CLI) addTreeA(root *cobra.Command) {
 	bf(status, "deep", "", "Run deep checks (implies --full; may take longer)")
 
 	pause := c.newCmd(root, "pause", "Emergency stop: pause cron/kanban dispatch and new gateway turns",
-		"Engage the global emergency stop. Halts NEW work only — cron dispatch, kanban dispatch, and new gateway turns — until `icebath resume`. Interactive CLI, TUI and Desktop turns are gateway turns, so they are held too: each gets \"Icebath is paused\" with the reason. Turns already running finish; in-flight work is never killed.")
+		"Engage the global emergency stop. Halts NEW work only — cron dispatch, kanban dispatch, and new gateway turns — until `icebath resume`. Interactive CLI and TUI turns are gateway turns, so they are held too: each gets \"Icebath is paused\" with the reason. Turns already running finish; in-flight work is never killed.")
 	sf(pause, "reason", "", "", "Optional reason stored in the sentinel and shown to users")
 	c.newCmd(root, "resume", "Lift the emergency stop set by `icebath pause`", "Remove the ESTOP sentinel; dispatch resumes on the next tick.")
 
@@ -327,7 +327,7 @@ func (c *CLI) addGateway(root *cobra.Command) {
 	bf(run, "quiet", "q", "Suppress all stderr log output")
 	bf(run, "replace", "", "Replace any existing gateway instance (useful for systemd)")
 	bf(run, "force", "", "Start a foreground gateway even when a systemd/launchd/s6 service already supervises this profile. Without --force, the command refuses because a second dispatcher escapes the service and can corrupt shared gateway state.")
-	bf(run, "no-supervise", "", "Inside the s6-overlay Docker image, normally `gateway run` is automatically redirected to the supervised s6 service (so the gateway gets auto-restart on crash, plus a supervised dashboard if ICEBATH_DASHBOARD is set). Pass --no-supervise to opt out and get the historical pre-s6 foreground behavior: the gateway is the container's main process and the container exits with the gateway's exit code. No effect outside an s6 container.")
+	bf(run, "no-supervise", "", "Inside the s6-overlay Docker image, normally `gateway run` is automatically redirected to the supervised s6 service (so the gateway gets auto-restart on crash). Pass --no-supervise to opt out and get the historical pre-s6 foreground behavior: the gateway is the container's main process and the container exits with the gateway's exit code. No effect outside an s6 container.")
 	bf(run, "external-supervisor", "", "Declare that an external process manager owns this foreground gateway. In-chat restarts and updates exit back to that manager instead of spawning a detached replacement. Use this when a launchd/systemd wrapper strips its native environment markers.")
 	bf(run, "idle-exit", "", "")
 	hide(run, "idle-exit")

@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"sort"
 	"strings"
 	"time"
 
@@ -22,9 +21,6 @@ var computeSessionContextBreakdown = agent.ComputeSessionContextBreakdown
 
 // Per skill and per toolset cost engine behind the expanded context view
 var computeContextDetails = agent.ComputeContextDetails
-
-// Read commands answered from the live session only when its agent lives on a compute host
-var isolatedSessionReadCommands = map[string]bool{"context": true, "tools": true, "help": true}
 
 // Commands a local session answers in process instead of through the slash worker
 var contextLocalInProcess = map[string]bool{"context": true}
@@ -85,21 +81,10 @@ func slashHistorySnapshot(session *tuigateway.Session) []any {
 	return append([]any(nil), historyList(session.Get("history"))...)
 }
 
-// Error text of a compute host control failure, empty for a reply timeout like str of queue Empty
-func controlFailureText(err error) string {
-	if errors.Is(err, ErrHostReplyTimeout) {
-		return ""
-	}
-	return err.Error()
-}
-
 // Dispatches review against the live agent on the async delegation rail under the session identity
 func formatLiveReviewOutput(ctx context.Context, sid string, session *tuigateway.Session, arg string) string {
 	if session == nil {
 		return "Nothing to review yet — send a message first."
-	}
-	if sessionUsesComputeHost(ctx, session, nil) {
-		return "/review runs on the local agent only for now — this session's agent lives on a remote compute host."
 	}
 	a := sessionAgent(session)
 	if a == nil {
@@ -146,25 +131,6 @@ func formatLiveRefineOutput(ctx context.Context, sid string, session *tuigateway
 		return "Agent is running — wait for the turn to finish, then /refine."
 	}
 	focus := pystr.Strip(arg)
-	if sessionUsesComputeHost(ctx, session, nil) {
-		command := "/refine"
-		if focus != "" {
-			command += " " + arg
-		}
-		ack, err := sendComputeHostControl(ctx, sid, "slash.refine", command, nil, true, 30.0, nil)
-		if err != nil {
-			return "compute-host slash.refine failed: " + controlFailureText(err)
-		}
-		frame := objectMap(ack)
-		if frame["type"] == "control.error" || frame["type"] == "error" {
-			if msg := strOr(frame["message"]); truthy(frame["message"]) {
-				return msg
-			}
-			return "compute-host slash.refine failed"
-		}
-		applyComputeHostMetadataMirror(ctx, session, frame)
-		return strOr(frame["output"])
-	}
 	a, _ := session.Get("agent").(refineReviewAgent)
 	if live, isAgent := a.(*agent.AIAgent); a == nil || (isAgent && live == nil) {
 		return "Nothing to refine yet — send a message first."
@@ -292,9 +258,6 @@ func formatLiveUsageTokens(ctx context.Context, session *tuigateway.Session) str
 	}
 	rows = append(rows, [2]string{"Messages:", slashGroupInt(messageCount)}, [2]string{"Compressions:", n("compressions")})
 	model := strOr(usage["model"])
-	if !truthy(usage["model"]) {
-		model = strOr(metadataMirror(session)["model"])
-	}
 	if model == "" && a != nil {
 		model = a.Model()
 	}
@@ -417,7 +380,6 @@ func formatLiveContextOutput(ctx context.Context, sid string, session *tuigatewa
 		}
 	}
 	usage := sessionUsageSnapshot(ctx, session)
-	mirror := metadataMirror(session)
 	var lines []string
 	if len(messages) > 0 {
 		lines = append(lines, fmt.Sprintf("Conversation: %d messages", len(messages)))
@@ -438,18 +400,10 @@ func formatLiveContextOutput(ctx context.Context, sid string, session *tuigatewa
 		counts = append(counts, fmt.Sprintf("%s: %d", r, roles[r]))
 	}
 	lines = append(lines, "  "+strings.Join(counts, ", "))
-	model := mirror["model"]
-	if !truthy(model) {
-		model = usage["model"]
-	}
-	if truthy(model) {
+	if model := usage["model"]; truthy(model) {
 		lines = append(lines, "Model: "+strOr(model))
 	}
-	providerName := "auto"
-	if truthy(mirror["provider"]) {
-		providerName = strOr(mirror["provider"])
-	}
-	lines = append(lines, "Provider: "+providerName)
+	lines = append(lines, "Provider: auto")
 	if len(breakdownLines) > 0 {
 		lines = append(append(lines, ""), breakdownLines...)
 		return strings.Join(lines, "\n")
@@ -483,60 +437,6 @@ func formatLiveContextOutput(ctx context.Context, sid string, session *tuigatewa
 		}
 	}
 	return strings.Join(lines, "\n")
-}
-
-// Sorted tool names of the session info tool groups
-func formatLiveToolsOutput(ctx context.Context, sid string, session *tuigateway.Session, arg string) string {
-	info := sessionInfo(ctx, sessionAgent(session), session)
-	groups, _ := info["tools"].(map[string]any)
-	if len(groups) == 0 {
-		return "No tools available."
-	}
-	seen := map[string]bool{}
-	for _, g := range groups {
-		list, isList := g.([]any)
-		if !isList {
-			if names, isStrings := g.([]string); isStrings {
-				for _, name := range names {
-					seen[name] = true
-				}
-			}
-			continue
-		}
-		for _, name := range list {
-			seen[strOr(name)] = true
-		}
-	}
-	if len(seen) == 0 {
-		return "No tools available."
-	}
-	names := make([]string, 0, len(seen))
-	for name := range seen {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-	rows := make([]string, len(names))
-	for i, name := range names {
-		rows[i] = "  " + name
-	}
-	return fmt.Sprintf("Available tools (%d):\n%s", len(names), strings.Join(rows, "\n"))
-}
-
-// Command registry listing by category, the failure text when the registry cannot be read
-func formatLiveHelpOutput(ctx context.Context, sid string, session *tuigateway.Session, arg string) (out string) {
-	if failure := catchPanic(func() {
-		lines := []string{"Available commands:", ""}
-		for _, group := range CommandsByCategory() {
-			lines = append(lines, group.Category+":")
-			for _, row := range group.Rows {
-				lines = append(lines, fmt.Sprintf("  %-15s %s", row[0], row[1]))
-			}
-		}
-		out = strings.Join(lines, "\n")
-	}); failure != nil {
-		return "help unavailable: " + failureText(failure)
-	}
-	return out
 }
 
 // Current model and provider of the live agent
@@ -599,11 +499,8 @@ func init() {
 		"history": {replyText("No conversation history yet."), formatLiveHistoryOutput, ""},
 		"refine":  {nil, formatLiveRefineOutput, ""},
 		"status":  {nil, formatLiveStatusOutput, ""},
-		"context": {replyText("Conversation is empty (no messages yet)."), formatLiveContextOutput, ""},
-		"tools":   {replyText("No tools available."), formatLiveToolsOutput, ""},
-		"help":    {nil, formatLiveHelpOutput, ""},
-		"clear":   {nil, nil, "Screen clear is terminal-only; desktop/TUI chat left unchanged."},
-		"models":  {nil, nil, "Use /model to view or switch the current model; desktop users can also open the model picker."},
+		"clear":   {nil, nil, "Screen clear is terminal-only; the TUI chat is left unchanged."},
+		"models":  {nil, nil, "Use /model to view or switch the current model."},
 		"rename":  {nil, nil, "Use /title <name> to rename this session."},
 		"effort":  {nil, nil, "Use /reasoning <effort> to change reasoning effort."},
 	}
@@ -615,11 +512,8 @@ func liveSlashCommandOutput(ctx context.Context, sid string, session *tuigateway
 	if name == "model" && pystr.Strip(arg) == "" {
 		return formatLiveModelOutput(session), true
 	}
-	if contextLocalInProcess[name] && session != nil && !sessionUsesComputeHost(ctx, session, nil) {
+	if contextLocalInProcess[name] && session != nil {
 		return formatLiveContextOutput(ctx, sid, session, arg), true
-	}
-	if isolatedSessionReadCommands[name] && !(session != nil && sessionUsesComputeHost(ctx, session, nil)) {
-		return "", false
 	}
 	entry, ok := liveSlashOutput[name]
 	if !ok {

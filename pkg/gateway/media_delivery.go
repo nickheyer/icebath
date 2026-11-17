@@ -57,7 +57,7 @@ func rootCredentialPaths() []string {
 		"google_token.json", "google_oauth_pending.json", filepath.Join("auth", "google_oauth.json"),
 		"webhook_subscriptions.json"}
 	out = append(out, profiles.SecretCacheStores()...)
-	out = append(out, "pairing", "mcp-tokens", "webapp", "sessions", "browser-profile")
+	out = append(out, "pairing", "mcp-tokens", "sessions", "browser-profile")
 	out = append(out, sqliteFiles("state.db")...)
 	return append(out, sqliteFiles("kanban.db")...)
 }

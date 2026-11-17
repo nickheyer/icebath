@@ -101,34 +101,6 @@ func moaValidPresetPayload() map[string]any {
 	}
 }
 
-func TestValidateMoAPayloadAgreesWithCleanSlot(t *testing.T) {
-	payload := map[string]any{"presets": map[string]any{"p": moaValidPresetPayload()}}
-	if problems := ValidateMoAPayload(payload); len(problems) != 0 {
-		t.Fatalf("problems %v", problems)
-	}
-	preset := anyMap(anyMap(normalizeMoAConfig(payload)["presets"])["p"])
-	want := moaEnabledRefs([]map[string]any{{"provider": "openrouter", "model": "deepseek/deepseek-v4-pro"}})
-	if !reflect.DeepEqual(preset["reference_models"], want) || !reflect.DeepEqual(preset["aggregator"], moaValidPresetPayload()["aggregator"]) {
-		t.Fatalf("slots changed %v", preset)
-	}
-	bad := map[string]any{"presets": map[string]any{"p": map[string]any{
-		"reference_models": []any{map[string]any{"provider": "openrouter"}, map[string]any{"provider": "moa", "model": "x"}},
-		"aggregator":       map[string]any{"model": "m"},
-	}}}
-	want2 := []string{
-		"preset 'p' reference 1: model is required (provider 'openrouter' has no model selected)",
-		"preset 'p' reference 2: the Mixture of Agents provider cannot be used inside a preset (recursive MoA)",
-		"preset 'p': needs at least one complete reference model",
-		"preset 'p' aggregator: provider is required",
-	}
-	if got := ValidateMoAPayload(bad); !reflect.DeepEqual(got, want2) {
-		t.Fatalf("problems %q", got)
-	}
-	if got := ValidateMoAPayload([]any{}); !reflect.DeepEqual(got, []string{"MoA config must be an object"}) {
-		t.Fatalf("non object %v", got)
-	}
-}
-
 func TestConfigKeyAggregatorFieldsAreTheSlotFieldsCleanSlotKeeps(t *testing.T) {
 	clean := cleanMoASlot(map[string]any{"provider": "p", "model": "m", "reasoning_effort": "high", "extra": "dropped"}, false)
 	keys := map[string]bool{}

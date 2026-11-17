@@ -21,7 +21,7 @@ import (
 
 const connectorRPCSID = "op-rpc-session"
 
-// Owner and stranger transports with a live desktop session the owner steers and no guest mint
+// Owner and stranger transports with a live TUI session the owner steers and no guest mint
 func connectorOwned(t *testing.T) (*frameRecorder, *frameRecorder, *tuigateway.Session) {
 	t.Helper()
 	t.Setenv("ICEBATH_HOME", t.TempDir())
@@ -31,7 +31,7 @@ func connectorOwned(t *testing.T) (*frameRecorder, *frameRecorder, *tuigateway.S
 	owner, stranger := &frameRecorder{}, &frameRecorder{}
 	session := tuigateway.NewSession(map[string]any{"transport": owner, "agent": nil, "session_key": connectorRPCSID,
 		"history": []any{}, "history_lock": &sync.Mutex{}, "history_version": 0, "running": false, "attached_images": []any{},
-		"source": "desktop"})
+		"source": "tui"})
 	tuigateway.SetSessionRecord(connectorRPCSID, session)
 	savedHome := hermesHome
 	hermesHome = home.Process()
@@ -446,7 +446,7 @@ func (c *fakeConnectorClient) setConnected(name string) {
 	c.connected[name] = true
 }
 
-// Owner and stranger transports of a desktop session in a fresh home
+// Owner and stranger transports of a TUI session in a fresh home
 func connectorE2ESession(t *testing.T) (*frameRecorder, *frameRecorder) {
 	t.Helper()
 	t.Setenv("ICEBATH_HOME", t.TempDir())
@@ -454,7 +454,7 @@ func connectorE2ESession(t *testing.T) (*frameRecorder, *frameRecorder) {
 	owner, stranger := &frameRecorder{}, &frameRecorder{}
 	session := tuigateway.NewSession(map[string]any{"transport": owner, "agent": nil, "session_key": connectorE2ESID,
 		"history": []any{}, "history_lock": &sync.Mutex{}, "history_version": 0, "running": false, "attached_images": []any{},
-		"source": "desktop"})
+		"source": "tui"})
 	tuigateway.SetSessionRecord(connectorE2ESID, session)
 	t.Cleanup(func() {
 		tuigateway.SetSessionRecord(connectorE2ESID, nil)
@@ -526,8 +526,8 @@ func targetStates(targets any) map[string]any {
 	return out
 }
 
-// test_connector_operation_e2e.py test_desktop_connect_settles_through_callback_response
-func TestDesktopConnectSettlesThroughCallbackResponse(t *testing.T) {
+// test_connector_operation_e2e.py connect settles through the callback response
+func TestConnectSettlesThroughCallbackResponse(t *testing.T) {
 	owner, _ := connectorE2ESession(t)
 	client := &fakeConnectorClient{connected: map[string]bool{}}
 	savedTick := tools.ManagedWatchTickSeconds
@@ -677,7 +677,7 @@ func ticketGuestHome(t *testing.T, h, token, portal string) {
 	}
 }
 
-func TestSecondaryTicketRunsConnectorsAndBillingInItsOwnProfile(t *testing.T) {
+func TestSecondaryTicketRunsBillingInItsOwnProfile(t *testing.T) {
 	launch, bee := wsLegacyHomes(t)
 	var mu sync.Mutex
 	var seen [][2]string
@@ -686,8 +686,6 @@ func TestSecondaryTicketRunsConnectorsAndBillingInItsOwnProfile(t *testing.T) {
 		var label string
 		var reply any
 		switch {
-		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/v1/connectors"):
-			label, reply = "list", map[string]any{"items": []any{}}
 		case strings.Contains(r.URL.Path, "charge"):
 			label, reply = "charge", map[string]any{"chargeId": "c"}
 		default:
@@ -711,7 +709,7 @@ func TestSecondaryTicketRunsConnectorsAndBillingInItsOwnProfile(t *testing.T) {
 	calls := []struct {
 		method string
 		params map[string]any
-	}{{"connectors.list", map[string]any{"owner": map[string]any{"type": "account"}}}, {"billing.charge", map[string]any{"amount_usd": 5}}}
+	}{{"billing.charge", map[string]any{"amount_usd": 5}}}
 	for _, call := range calls {
 		wsLegacyCall(t, context.Background(), wsLegacyActor(bee), call.method, call.params)
 	}
@@ -720,7 +718,7 @@ func TestSecondaryTicketRunsConnectorsAndBillingInItsOwnProfile(t *testing.T) {
 	for _, row := range seen {
 		labels[row[0]], homesSeen[row[1]] = true, true
 	}
-	if len(labels) != 2 || !labels["list"] || !labels["charge"] || len(homesSeen) != 1 || !homesSeen["bee"] {
+	if len(labels) != 1 || !labels["charge"] || len(homesSeen) != 1 || !homesSeen["bee"] {
 		t.Fatalf("seen %v", seen)
 	}
 	seen = nil

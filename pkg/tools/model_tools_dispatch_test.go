@@ -116,61 +116,34 @@ func TestTransformToolResultRunsAfterPostToolCall(t *testing.T) {
 	}
 }
 
-var (
-	previewTUIScope     = []string{"coding", "project"}
-	previewDesktopScope = []string{"coding", "desktop_ui", "project"}
-)
+var outsideTUIScope = []string{"coding"}
 
-func previewBridgeError(t *testing.T, name string, scope []string) string {
+func bridgeScopeError(t *testing.T, name string, scope []string) string {
 	t.Helper()
 	env := &Env{Home: t.TempDir()}
-	out := DefaultDispatcher.DispatchWith(context.Background(), &Call{Name: ToolCallName, Args: map[string]any{"name": name, "arguments": map[string]any{"action": "elements"}}, Env: env},
+	out := DefaultDispatcher.DispatchWith(context.Background(), &Call{Name: ToolCallName, Args: map[string]any{"name": name, "arguments": map[string]any{"action": "list"}}, Env: env},
 		DispatchOptions{EnabledToolsets: append([]string(nil), scope...)})
 	msg, _ := decodeModelToolsResult(t, out)["error"].(string)
 	return msg
 }
 
-func previewUnwrap(t *testing.T, scope []string) (string, string) {
-	t.Helper()
-	e := NewExecutor(&fakeExecutorHost{env: &Env{Home: t.TempDir()}, enabled: scope}, DefaultDispatcher)
-	name, _, block := e.unwrapToolSearchCall(context.Background(), ToolCallName, map[string]any{"name": "drive_preview", "arguments": map[string]any{"action": "elements"}}, false)
-	return name, block
-}
-
-func TestBridgeTuiScopeNamesTheGuiSurface(t *testing.T) {
-	err := strings.ToLower(previewBridgeError(t, "drive_preview", previewTUIScope))
-	if !strings.Contains(err, "desktop") || strings.Contains(err, "use tool_search to find") {
-		t.Fatalf("bridge in tui scope: %q", err)
+func TestBridgeOutsideTUIScopeNamesTheTUI(t *testing.T) {
+	err := strings.ToLower(bridgeScopeError(t, "desktop_project", outsideTUIScope))
+	if !strings.Contains(err, "tui session") || strings.Contains(err, "use tool_search to find") {
+		t.Fatalf("bridge outside tui scope: %q", err)
 	}
 }
 
-func TestBridgeTuiScopeDesktopPreviewNamesTheGuiSurface(t *testing.T) {
-	err := strings.ToLower(previewBridgeError(t, "desktop_preview", previewTUIScope))
-	if !strings.Contains(err, "desktop") || strings.Contains(err, "use tool_search to find") {
-		t.Fatalf("bridge in tui scope: %q", err)
-	}
-}
-
-func TestUnwrapTuiScopeNamesTheGuiSurface(t *testing.T) {
-	if _, block := previewUnwrap(t, previewTUIScope); !strings.Contains(strings.ToLower(block), "desktop") || strings.Contains(strings.ToLower(block), "use tool_search to find") {
-		t.Fatalf("unwrap in tui scope: %q", block)
-	}
-}
-
-func TestBridgeDesktopScopeStillReachesTheTool(t *testing.T) {
-	if err := previewBridgeError(t, "drive_preview", previewDesktopScope); !strings.Contains(strings.ToLower(err), "desktop") {
-		t.Fatalf("bridge in desktop scope: %q", err)
-	}
-}
-
-func TestUnwrapDesktopScopeNotBlockedThroughTheDispatcher(t *testing.T) {
-	if name, block := previewUnwrap(t, previewDesktopScope); block != "" || name != "drive_preview" {
-		t.Fatalf("unwrap in desktop scope blocked %q as %q", block, name)
+func TestUnwrapOutsideTUIScopeNamesTheTUI(t *testing.T) {
+	e := NewExecutor(&fakeExecutorHost{env: &Env{Home: t.TempDir()}, enabled: outsideTUIScope}, DefaultDispatcher)
+	_, _, block := e.unwrapToolSearchCall(context.Background(), ToolCallName, map[string]any{"name": "desktop_project", "arguments": map[string]any{"action": "list"}}, false)
+	if !strings.Contains(strings.ToLower(block), "tui session") || strings.Contains(strings.ToLower(block), "use tool_search to find") {
+		t.Fatalf("unwrap outside tui scope: %q", block)
 	}
 }
 
 func TestAbsentNonSurfaceCoreToolReportsUnavailability(t *testing.T) {
-	if err := previewBridgeError(t, "computer_use", previewTUIScope); !strings.Contains(err, "not available in this execution context") {
+	if err := bridgeScopeError(t, "computer_use", outsideTUIScope); !strings.Contains(err, "not available in this execution context") {
 		t.Fatalf("absent core tool: %q", err)
 	}
 }

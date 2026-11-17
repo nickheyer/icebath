@@ -13,11 +13,6 @@ func (h *Hub) SourceRouter() (sources []SkillSource, err error) {
 	return h.createSourceRouter(nil), nil
 }
 
-// Meta and bundle of an identifier from one adapter, else the first metadata only hit
-func ResolveSourceMetaAndBundle(ctx context.Context, identifier string, sources []SkillSource) (*SkillMeta, *SkillBundle, SkillSource) {
-	return (&HubCLI{}).resolveSourceMetaAndBundle(ctx, identifier, sources)
-}
-
 // Directory name of each loadable skill keyed by its load name, disabled skills included when skipDisabled
 func (s *Scope) CatalogDirNames(skipDisabled bool) map[string]string {
 	out := map[string]string{}

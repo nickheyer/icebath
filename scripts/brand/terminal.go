@@ -150,18 +150,6 @@ func (s *sources) logoCells() [][]cell {
 	return rows
 }
 
-func plainLines(rows [][]cell) []string {
-	out := make([]string, len(rows))
-	for i, row := range rows {
-		var b strings.Builder
-		for _, c := range row {
-			b.WriteRune(c.glyph)
-		}
-		out[i] = b.String()
-	}
-	return out
-}
-
 // Rich markup lines, runs of letter cells in the letter colour and accent runs in red, blanks joining a run
 func (s *sources) markupLines(rows [][]cell) []string {
 	out := make([]string, len(rows))
@@ -223,55 +211,4 @@ func (s *sources) bannerGo() []byte {
 	b.WriteString("\n")
 	writeConst("icebathHero", s.markupLines(s.heroCells()))
 	return []byte(b.String())
-}
-
-// TypeScript module holding the TUI splash logo and hero as plain lines the theme colours
-func (s *sources) bannerTS() []byte {
-	var b strings.Builder
-	writeArray := func(name string, lines []string) {
-		fmt.Fprintf(&b, "export const %s = [\n", name)
-		for i, line := range lines {
-			sep := ","
-			if i == len(lines)-1 {
-				sep = ""
-			}
-			fmt.Fprintf(&b, "  '%s'%s\n", line, sep)
-		}
-		b.WriteString("]\n")
-	}
-	writeGradient := func(name string, rows [][]cell) {
-		parts := make([]string, len(rows))
-		for i, row := range rows {
-			parts[i] = fmt.Sprint(rowTone(row))
-		}
-		fmt.Fprintf(&b, "export const %s = [%s] as const\n", name, strings.Join(parts, ", "))
-	}
-	logo, hero := s.logoCells(), s.heroCells()
-	writeArray("LOGO_ART", plainLines(logo))
-	b.WriteString("\n")
-	writeArray("HERO_ART", plainLines(hero))
-	b.WriteString("\n")
-	writeGradient("LOGO_GRADIENT", logo)
-	writeGradient("HERO_GRADIENT", hero)
-	return []byte(b.String())
-}
-
-// Theme palette slot of a row, primary for letters, accent for accent rows and muted for blank rows
-func rowTone(row []cell) int {
-	inked, accents := 0, 0
-	for _, c := range row {
-		if c.inked {
-			inked++
-			if c.accent {
-				accents++
-			}
-		}
-	}
-	switch {
-	case inked == 0:
-		return 3
-	case 2*accents > inked:
-		return 1
-	}
-	return 0
 }

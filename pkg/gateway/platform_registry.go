@@ -22,12 +22,6 @@ import (
 // Builds an adapter for a platform config
 type AdapterFactory func(ctx context.Context, cfg *PlatformConfig) (any, error)
 
-// Dashboard check of one env value with the 400 detail returned when a non empty value fails it
-type EnvValueRule struct {
-	Check   func(value string) bool
-	Message string
-}
-
 // Metadata and factory of one platform adapter, py tags naming the keyword each field takes
 type PlatformEntry struct {
 	Name                       string                                                                                                                       `py:"name"`
@@ -69,12 +63,6 @@ type PlatformEntry struct {
 	AllowlistSuppressesPairing bool                                                                                                                         `py:"allowlist_suppresses_pairing"`
 	TargetRefSyntaxFn          func(ref string) any                                                                                                         `py:"target_ref_syntax_fn"`
 	StandaloneSend             *StandaloneSendPolicy                                                                                                        `py:"standalone_send"`
-	DashboardLabel             string                                                                                                                       `py:"dashboard_label"`
-	DashboardDescription       string                                                                                                                       `py:"dashboard_description"`
-	DocsURL                    string                                                                                                                       `py:"docs_url"`
-	DashboardEnvVars           []string                                                                                                                     `py:"dashboard_env_vars"`
-	DashboardRequiredEnv       []string                                                                                                                     `py:"dashboard_required_env"`
-	EnvValueRules              map[string]EnvValueRule                                                                                                      `py:"env_value_rules"`
 	EnvOverrides               []EnvStep                                                                                                                    `py:"env_overrides"`
 	EnvEnableCredentials       []string                                                                                                                     `py:"env_enable_credentials"`
 }
@@ -103,8 +91,7 @@ func (e *PlatformEntry) RunValidateConfig(ctx context.Context, cfg *PlatformConf
 // Entry with the dataclass defaults, plugin source, plug emoji and the update command allowed
 func NewPlatformEntry(name, label string, factory AdapterFactory, check func() bool) *PlatformEntry {
 	return &PlatformEntry{Name: name, Label: label, AdapterFactory: factory, CheckFn: check, RequiredEnv: []string{},
-		Source: "plugin", Emoji: "\U0001F50C", AllowUpdateCommand: true, DisplayOverrides: map[string]any{},
-		EnvValueRules: map[string]EnvValueRule{}}
+		Source: "plugin", Emoji: "\U0001F50C", AllowUpdateCommand: true, DisplayOverrides: map[string]any{}}
 }
 
 // Sets entry fields from keyword arguments, TypeError for an unknown keyword or a value of the wrong type

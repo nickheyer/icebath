@@ -8,9 +8,7 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/gatewayrun"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/selfupdate"
 )
 
 func TestCLIModuleArgsMapOntoMainKeywords(t *testing.T) {
@@ -74,9 +72,6 @@ func TestGatewayKeywordAnnouncesTheGatewayAndReportsItsStartFailure(t *testing.T
 	t.Setenv("TERMINAL_CWD", ".")
 	t.Setenv("HOME", "")
 	t.Setenv("ICEBATH_EXEC_ASK", "")
-	previous := gatewayrun.RestoreUserProxyEnv
-	gatewayrun.RestoreUserProxyEnv = selfupdate.RestoreUserProxyEnv
-	t.Cleanup(func() { gatewayrun.RestoreUserProxyEnv = previous })
 	resetProcessState(t)
 	out, errOut := captureStreams(t)
 	code := cliModuleMain(context.Background(), []string{"--gateway"}, errOut)

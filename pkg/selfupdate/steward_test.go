@@ -43,7 +43,7 @@ func stSteward(steward *string) string {
 
 func TestStewardSealedTreeNamesItsSteward(t *testing.T) {
 	stNoOwner(t)
-	for _, tc := range [][2]string{{StewardNix, "external"}, {StewardDocker, "external"}, {StewardDesktop, "electron-updater"}} {
+	for _, tc := range [][2]string{{StewardNix, "external"}, {StewardDocker, "external"}} {
 		root := filepath.Join(t.TempDir(), "install")
 		stStamp(t, root, tc[1], map[string]any{"distribution": tc[0]})
 		if got := stSteward(SealedSteward(root)); got != tc[0] {
@@ -171,19 +171,13 @@ func TestStewardMessages(t *testing.T) {
 	if got := StewardUpdateMessage("flatpak"); got != "✗ This icebath install is managed by flatpak.\n\nThe tree has no git checkout, so `icebath update` cannot update it.\nUpdate it with the tool that installed it." {
 		t.Fatal(got)
 	}
-	if !strings.Contains(StewardUpdateMessage(StewardNix), "Nix store") || !strings.Contains(StewardUpdateMessage(StewardDesktop), "desktop app") {
+	if !strings.Contains(StewardUpdateMessage(StewardNix), "Nix store") {
 		t.Fatal("steward texts")
 	}
-	win, mac, linux := "win32", "darwin", "linux"
-	if !strings.Contains(StewardUninstallMessage(StewardDesktop, &win), "Windows Settings") ||
-		!strings.Contains(StewardUninstallMessage(StewardDesktop, &mac), "icebath.app") ||
-		StewardUninstallMessage(StewardDesktop, &linux) != stewardDesktopUninstallDefault {
-		t.Fatal("desktop uninstall texts")
-	}
-	if got := StewardUninstallMessage("flatpak", nil); !strings.HasPrefix(got, "✗ icebath is managed by flatpak.\n") || !strings.HasSuffix(got, "run:\n$ icebath uninstall --data\n") {
+	if got := StewardUninstallMessage("flatpak"); !strings.HasPrefix(got, "✗ icebath is managed by flatpak.\n") || !strings.HasSuffix(got, "run:\n$ icebath uninstall --data\n") {
 		t.Fatal(got)
 	}
-	if !strings.Contains(StewardUninstallMessage(StewardDocker, nil), "docker rm <container>") {
+	if !strings.Contains(StewardUninstallMessage(StewardDocker), "docker rm <container>") {
 		t.Fatal("docker uninstall text")
 	}
 }

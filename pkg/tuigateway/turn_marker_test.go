@@ -30,7 +30,7 @@ func TestMarkerRoundtrip(t *testing.T) {
 
 func TestMarkerSurvivesCorruptSidecar(t *testing.T) {
 	home := t.TempDir()
-	path := filepath.Join(home, "desktop", "interrupted_turns.json")
+	path := filepath.Join(home, "interrupted_turns.json")
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatal(err)
 	}

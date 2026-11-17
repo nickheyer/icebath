@@ -85,7 +85,7 @@ CREATE TABLE IF NOT EXISTS tasks (
     goal_max_turns       INTEGER,
     -- Originating chat/agent session id when the task was created from
     -- inside an agent loop that propagated ` + "`" + `` + "`" + `HERMES_SESSION_ID` + "`" + `` + "`" + `. NULL
-    -- for tasks created from the CLI, dashboard, or any path that doesn't
+    -- for tasks created from the CLI or any path that doesn't
     -- set the env var, and for an id with no ` + "`" + `` + "`" + `sessions` + "`" + `` + "`" + ` row in this
     -- profile's state.db (kanban_create verifies before stamping). Indexed
     -- so per-session list queries stay cheap on larger boards.
@@ -163,8 +163,8 @@ CREATE TABLE IF NOT EXISTS task_runs (
 
 -- Files attached to a task (PDFs, images, source documents). The blob
 -- lives on disk under ` + "`" + `` + "`" + `attachments_root(board)/<task_id>/<stored_name>` + "`" + `` + "`" + `;
--- this row carries metadata + the absolute ` + "`" + `` + "`" + `stored_path` + "`" + `` + "`" + ` so the
--- dashboard can list/download and ` + "`" + `` + "`" + `build_worker_context` + "`" + `` + "`" + ` can surface
+-- this row carries metadata + the absolute ` + "`" + `` + "`" + `stored_path` + "`" + `` + "`" + ` so
+-- ` + "`" + `` + "`" + `build_worker_context` + "`" + `` + "`" + ` can surface
 -- the absolute path to the worker (which has full file-tool access). See
 -- #35338.
 CREATE TABLE IF NOT EXISTS task_attachments (

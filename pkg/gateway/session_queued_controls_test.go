@@ -30,7 +30,7 @@ func TestOnlyInteractiveLocalSessionsAreOfferedQueuedControls(t *testing.T) {
 	for _, c := range []struct {
 		source  string
 		offered bool
-	}{{"gui", true}, {"desktop", true}, {"tui", true}, {"cli", true}, {"acp", true}, {"cron", false}, {"kanban", false}, {"a2a", false}, {"bot_room", false}} {
+	}{{"gui", true}, {state.ClientHistorySource, true}, {"tui", true}, {"cli", true}, {"acp", true}, {"cron", false}, {"kanban", false}, {"a2a", false}, {"bot_room", false}} {
 		a.launchSources = map[string]any{}
 		launchedFrom(t, ctx, db, c.source)
 		controls, err := queuedControls(ctx, a, row)

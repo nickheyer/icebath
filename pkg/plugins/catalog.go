@@ -23,7 +23,7 @@ import (
 var CatalogTiers = []string{"official", "verified", "community"}
 
 // Browse shelves a catalog entry may name
-var CatalogCategories = []string{"desktop", "memory", "platform", "web", "tools", "voice", "automation", "models", "general"}
+var CatalogCategories = []string{"memory", "platform", "web", "tools", "voice", "automation", "models", "general"}
 
 // Hosts catalog images and screenshots may come from
 var ImageHosts = []string{"raw.githubusercontent.com", "github.com"}
@@ -94,7 +94,7 @@ func (e *PluginCatalogEntry) InstallIdentifier() string {
 	return e.Repo
 }
 
-// Ordered mapping of every field the dashboard and JSON output render
+// Ordered mapping of every field the JSON output renders
 func (e *PluginCatalogEntry) ToDict() map[string]any {
 	caps := e.Capabilities
 	capabilities := map[string]any{
@@ -171,7 +171,7 @@ func EntryFromMapping(raw any, label string) *PluginCatalogEntry {
 	repo := catalogField(data, "repo", "")
 	sha := strings.ToLower(pystr.Strip(catalogField(data, "sha", "")))
 	tier := catalogField(data, "tier", "community")
-	category := catalogField(data, "category", "desktop")
+	category := catalogField(data, "category", "general")
 	problem := ""
 	switch {
 	case !catalogNameRe.MatchString(name):

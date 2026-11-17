@@ -324,7 +324,7 @@ func (c *CLI) restoreModalInputSnapshot() {
 	c.app.SetBuffer(snapshot.Text, min(snapshot.Cursor, utf8.RuneCountInString(snapshot.Text)))
 }
 
-// Rings the terminal bell and sends the desktop notification when the display flag allows
+// Rings the terminal bell and sends the OS notification when the display flag allows
 func (c *CLI) ringBell(prompt bool, text, detail string) {
 	c.uiMu.Lock()
 	flag := c.bellOnComplete

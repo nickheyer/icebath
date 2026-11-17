@@ -2,7 +2,6 @@ package gateway
 
 import (
 	"context"
-	"io"
 	"time"
 )
 

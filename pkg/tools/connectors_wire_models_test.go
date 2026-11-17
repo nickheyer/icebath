@@ -15,7 +15,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pydantic"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
@@ -119,20 +118,13 @@ func TestConnectorWireModelsDriveTheGatewayClient(t *testing.T) {
 		t.Fatalf("malformed search error %#v", err)
 	}
 
-	before := len(gateway.sent)
-	_, err = client.Connections(ctx, ConnectionsRequest{Connectors: []string{"gmail"}, ReturnTo: "cli"})
-	var verr *pydantic.ValidationError
-	if !errors.As(err, &verr) || len(gateway.sent) != before {
-		t.Fatalf("an unknown return target must fail validation before sending, got %v", err)
-	}
-
 	gateway.replies = []modelReply{
 		{status: 429, header: http.Header{"Retry-After": {"2"}}, body: `{"code":"PROVIDER_RATE_LIMITED","message":"slow"}`},
 		{status: 200, body: `{"result":{"connector":"gmail","tool":"SEND","account":"work","dataUse":{"requires":["no_training"]},` +
 			`"data":{"file":{"name":"a/b.txt","mimetype":"text/plain","url":"https://storage.test/x","expiresAt":"z"},"n":1}}}`},
 	}
-	before = len(gateway.sent)
-	results, err := client.Execute(ctx, []PlannedCall{{Position: 0, Name: "connectors__gmail__SEND", Connector: "gmail", Tool: "SEND", Arguments: map[string]any{"to": "a"}}}, "", "")
+	before := len(gateway.sent)
+	results, err := client.Execute(ctx, []PlannedCall{{Position: 0, Name: "connectors__gmail__SEND", Connector: "gmail", Tool: "SEND", Arguments: map[string]any{"to": "a"}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -172,11 +164,11 @@ func TestConnectorWireModelsDriveTheGatewayClient(t *testing.T) {
 
 	gateway.replies = []modelReply{{status: 200, body: `{"results":[{"index":0,"data":{"ok":true}},` +
 		`{"index":1,"error":{"code":"CONNECTION_REQUIRED","message":"connect","connectUrl":"https://c"}}]}`}}
-	legacy, err := client.executeLegacy(ctx, []PlannedCall{{Connector: "gmail", Tool: "A"}, {Connector: "gmail", Tool: "B"}}, "hermes-desktop", "op1")
+	legacy, err := client.executeLegacy(ctx, []PlannedCall{{Connector: "gmail", Tool: "A"}, {Connector: "gmail", Tool: "B"}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if body := gateway.sent[len(gateway.sent)-1].body; body["returnTo"] != "hermes-desktop" || body["op"] != "op1" || len(body["tools"].([]any)) != 2 {
+	if body := gateway.sent[len(gateway.sent)-1].body; len(body["tools"].([]any)) != 2 {
 		t.Fatalf("legacy body %#v", body)
 	}
 	if e := legacy[1]["error"].(map[string]any); e["code"] != "CONNECTION_REQUIRED" || e["connect_url"] != "https://c" || e["family"] != "product" {

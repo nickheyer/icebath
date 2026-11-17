@@ -46,12 +46,6 @@ type PlatformRegistry interface {
 	Unregister(name string)
 }
 
-// Process wide dashboard auth provider registry owned by the web server
-type DashboardAuthRegistry interface {
-	RegisterGlobal(provider any) (displayName string, err error)
-	UnregisterGlobal(name string, provider any)
-}
-
 // Plugin registered secret source as the dotenv orchestrator sees it
 type SecretSourceInfo struct {
 	Name      string
@@ -152,7 +146,6 @@ func (m *Manager) discoverAndLoadLocked(ctx context.Context, force bool) (map[st
 		defer raiseUserInterrupt(err)
 		return nil, false
 	}
-	m.evictStalePersistentRegistrations()
 	m.refreshSecretSourcesAfterDiscovery(ctx)
 	if force {
 		m.reRegisterConfigHooksAfterForce(ctx)

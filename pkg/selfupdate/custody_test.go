@@ -174,7 +174,6 @@ func TestCustodyARefusedBuildJoinIsLoggedAndNotedInTheReceipt(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("ICEBATH_HOME", home)
-	cuNoServeHooks(t)
 	logs := cuCaptureLogs(t)
 	report := filepath.Join(t.TempDir(), "report.txt")
 	note := custodyUnavailable + " (could not join the update job: 5); the command was not run"
@@ -242,16 +241,4 @@ func cuStep(payload map[string]any, name string) map[string]any {
 		}
 	}
 	return nil
-}
-
-// Serve obligation hooks for a receipt that carries no plan and no manual serves
-func cuNoServeHooks(t *testing.T) {
-	updaterecord.SetServeObligationHooks(updaterecord.ServeObligationHooks{
-		IsReminderRow: func(row any) bool {
-			m, ok := row.(map[string]any)
-			return ok && (m["kind"] == "serve" || m["kind"] == "dashboard") && m["supervisor"] == "manual-serve"
-		},
-		RetainReceiptManualServes: func(context.Context, map[string]any) []any { return []any{} },
-	})
-	t.Cleanup(installServeObligationHooks)
 }

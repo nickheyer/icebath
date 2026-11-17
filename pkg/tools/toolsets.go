@@ -53,19 +53,18 @@ var feishuTools = []string{
 
 var yuanbaoTools = []string{"yb_query_group_info", "yb_query_group_members", "yb_send_dm", "yb_search_sticker", "yb_send_sticker"}
 
-// ClientSurfaceToolsets are folded in by a GUI client for its own sessions, never by config
-var ClientSurfaceToolsets = map[string]bool{"project": true, "desktop_ui": true, "catalog": true}
+// ClientSurfaceToolsets are folded in by the TUI for its own sessions, never by config
+var ClientSurfaceToolsets = map[string]bool{"project": true}
 
 // OneshotDisabledToolsets are the toolsets nobody is present to use in a one shot session
 var OneshotDisabledToolsets = []string{"clarify"}
 
-// Toolset is one named tool group with its includes and session gating
+// Toolset is one named tool group with its includes
 type Toolset struct {
 	Description string
 	Tools       []string
 	Includes    []string
 	Posture     bool
-	Platforms   map[string]bool
 	Module      string
 }
 
@@ -111,14 +110,6 @@ func bundle(description string, extras ...string) Toolset {
 	return ts(description, concat(CoreTools, extras))
 }
 
-func platformGated(t Toolset, platforms ...string) Toolset {
-	t.Platforms = map[string]bool{}
-	for _, p := range platforms {
-		t.Platforms[p] = true
-	}
-	return t
-}
-
 var toolsetsMu sync.RWMutex
 
 func withoutName(list []string, name string) []string {
@@ -156,12 +147,8 @@ var Toolsets = map[string]Toolset{
 	"context_engine": ts("Runtime tools exposed by the active context engine", nil),
 	"session_search": ts("Search and recall past conversations with summarization", []string{"session_search"}),
 	"connections":    ts("Remote connector discovery, execution, and account authorization", []string{"manage_connections"}),
-	"project":        ts("Desktop Projects - create/switch named workspaces (GUI sessions only)", []string{"desktop_project"}),
+	"project":        ts("Projects - create/switch named workspaces", []string{"desktop_project"}),
 	"bot_room":       ts("Verified text-only Group Chat turn capabilities", nil),
-	"desktop_ui": ts("Desktop GUI affordances - in-app terminal/browser panes, pane focus, reactions, appearance (GUI sessions only)",
-		[]string{"read_terminal", "close_terminal", "desktop_preview", "drive_preview", "annotate_preview", "read_window_below", "focus_pane", "react_to_message", "gui_tour", "show_tip", "set_theme"}),
-	"onboarding":     platformGated(ts("First-run onboarding cards; folded in only for the onboarding chat", []string{"setup_beat"}), "desktop"),
-	"catalog":        platformGated(ts("Desktop catalog plugin/skill install requests through the approval card (GUI sessions only)", []string{"manage_catalog"}), "desktop"),
 	"clarify":        ts("Ask the user clarifying questions (multiple-choice or open-ended)", []string{"clarify"}),
 	"code_execution": ts("Run Python scripts that call tools programmatically (reduces LLM round trips)", []string{"execute_code"}),
 	"delegation":     ts("Spawn subagents with isolated context for complex subtasks", []string{"delegate_task"}),
@@ -221,17 +208,6 @@ func CanonicalToolsetName(name string) string {
 	return name
 }
 
-// ToolsetSessionPlatforms maps every platform gated toolset to the session platforms that get it
-var ToolsetSessionPlatforms = func() map[string]map[string]bool {
-	out := map[string]map[string]bool{}
-	for name, spec := range Toolsets {
-		if spec.Platforms != nil {
-			out[name] = spec.Platforms
-		}
-	}
-	return out
-}()
-
 // BuiltinToolNames is every tool the static table names before runtime additions
 var BuiltinToolNames = func() map[string]bool {
 	out := map[string]bool{}
@@ -261,7 +237,7 @@ var PlatformRegistered = func(name string) bool {
 var toolsetOrder = []string{
 	"web", "search", "x_search", "vision", "video", "image_gen", "video_gen", "computer_use", "terminal", "skills",
 	"browser", "cronjob", "file", "tts", "todo", "memory", "context_engine", "session_search", "connections",
-	"project", "bot_room", "desktop_ui", "onboarding", "catalog", "clarify", "code_execution", "delegation", "kanban",
+	"project", "bot_room", "clarify", "code_execution", "delegation", "kanban",
 	"discord", "discord_admin", "yuanbao", "feishu_doc", "feishu_drive", "debugging", "safe", "coding",
 	"icebath-acp", "icebath-api-server", "icebath-cli", "icebath-cron", "icebath-telegram", "icebath-discord",
 	"icebath-whatsapp", "icebath-slack", "icebath-signal", "icebath-bluebubbles", "icebath-email",
@@ -502,9 +478,6 @@ func (r *Registry) resolveVisited(ctx context.Context, scope, name string, inclu
 	if name == "all" || name == "*" {
 		all := map[string]bool{}
 		for _, tsName := range r.ToolsetNames(ctx, scope) {
-			if _, gated := ToolsetSessionPlatforms[tsName]; gated {
-				continue
-			}
 			copyVisited := map[string]bool{}
 			for k, v := range visited {
 				copyVisited[k] = v
@@ -595,47 +568,17 @@ func (r *Registry) ToolsetNames(ctx context.Context, scope string) []string {
 	return sortedSet(names)
 }
 
-// SessionPlatformToolDrops returns the tools of every platform gated toolset this platform lacks
-func (r *Registry) SessionPlatformToolDrops(ctx context.Context, scope, platform string) map[string]bool {
-	out := map[string]bool{}
-	for name, platforms := range ToolsetSessionPlatforms {
-		if platforms[platform] {
-			continue
-		}
-		for _, t := range r.ResolveToolset(ctx, scope, name) {
-			out[t] = true
-		}
+// SessionDisabledToolsets extends a disabled list with the one shot toolsets of a one shot session
+func SessionDisabledToolsets(disabled []string, oneshot bool) []string {
+	if !oneshot {
+		return disabled
 	}
-	return out
-}
-
-// SessionPlatformToolDrops returns the default registry tools of platform gated toolsets the platform lacks
-func SessionPlatformToolDrops(platform string) map[string]bool {
-	return Default.SessionPlatformToolDrops(context.Background(), ScopeKey(home.Dir(context.Background())), platform)
-}
-
-// SessionDisabledToolsets extends a disabled list with platform gated and one shot toolsets
-func SessionDisabledToolsets(disabled []string, platform string, oneshot bool) []string {
 	have := map[string]bool{}
 	for _, d := range disabled {
 		have[d] = true
 	}
-	var gated []string
-	names := make([]string, 0, len(ToolsetSessionPlatforms))
-	for n := range ToolsetSessionPlatforms {
-		names = append(names, n)
-	}
-	sort.Strings(names)
-	for _, n := range names {
-		if !ToolsetSessionPlatforms[n][platform] {
-			gated = append(gated, n)
-		}
-	}
-	if oneshot {
-		gated = append(gated, OneshotDisabledToolsets...)
-	}
 	var extra []string
-	for _, g := range gated {
+	for _, g := range OneshotDisabledToolsets {
 		if !have[g] {
 			extra = append(extra, g)
 		}
@@ -812,9 +755,6 @@ func (r *Registry) SelectToolNames(ctx context.Context, env *Env, enabled, disab
 		notices = append(notices, r.applyToolsetSelection(ctx, env, tools, list, false)...)
 	} else {
 		for name := range r.AllToolsets(ctx, scope) {
-			if _, gated := ToolsetSessionPlatforms[name]; gated {
-				continue
-			}
 			for _, t := range r.ResolveToolset(ctx, scope, name) {
 				tools[t] = true
 			}

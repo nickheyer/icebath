@@ -329,14 +329,6 @@ node_modules/
 *.ncb
 *.aps
 
-# Visual Studio LightSwitch build output
-**/*.HTMLClient/GeneratedArtifacts
-**/*.DesktopClient/GeneratedArtifacts
-**/*.DesktopClient/ModelManifest.xml
-**/*.Server/GeneratedArtifacts
-**/*.Server/ModelManifest.xml
-_Pvt_Extensions
-
 # Paket dependency manager
 **/.paket/paket.exe
 paket-files/
@@ -491,7 +483,6 @@ dist/
 /profiles/
 /credentials/
 /mcp-tokens/
-/webapp/
 /pairing/
 /platforms/
 /backups/
@@ -509,8 +500,3 @@ dist/
 /icebath.build
 /icebath.exe.build
 icebath_agent.egg-info/
-cmd/icebath/web_dist/
-apps/desktop/build/
-apps/desktop/dist/
-apps/desktop/dist-webapp/
-apps/desktop/release/

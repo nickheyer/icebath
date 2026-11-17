@@ -91,7 +91,7 @@ func TestShouldExclude(t *testing.T) {
 	t.Run("test_keeps_nested_dirs_named_like_runtime_trees", func(t *testing.T) {
 		checkExclude(t, nil, []string{"skills/mlops/models/notes.md", "scratch/node/index.js", "profiles/clean/skills/x/models/a.txt"})
 	})
-	t.Run("test_excludes_desktop_emergency_state_db_baks", func(t *testing.T) {
+	t.Run("test_excludes_emergency_state_db_baks", func(t *testing.T) {
 		checkExclude(t, []string{"state.db.pre-update-emergency-2026-08-15T04-55-33-619Z.bak",
 			"profiles/coder/state.db.pre-update-emergency-2026-08-15T04-55-33-619Z.bak"}, []string{"config.yaml.bak"})
 	})

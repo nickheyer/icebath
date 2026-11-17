@@ -34,20 +34,23 @@ var (
 	channelBuildIDRE       = regexp.MustCompile(`^[a-f0-9]{32}$`)
 	channelSourceVersionRE = regexp.MustCompile(`^(?:(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*))$`)
 	channelReleaseTagRE    = regexp.MustCompile(`^(?:v[0-9]+\.[0-9]+\.[0-9]+(?:\+canary\.20[0-9]{6}T[0-9]{6}Z)?)$`)
-	channelCanaryQuadRE    = regexp.MustCompile(`^(?:[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)$`)
-	channelStableQuadRE    = regexp.MustCompile(`^(?:[0-9]+\.[0-9]+\.[0-9]+\.0)$`)
 	channelTokenRE         = regexp.MustCompile(`^[a-f0-9]{16}$`)
 	channelDisplayRE       = regexp.MustCompile(`^(?:[A-Za-z0-9][A-Za-z0-9 ._-]{0,79})$`)
-	channelPascalRE        = regexp.MustCompile(`^(?:[A-Za-z][A-Za-z0-9]{0,63})$`)
-	channelAppIDRE         = regexp.MustCompile(`^(?:[a-z][a-z0-9.-]{2,127})$`)
-	channelMSIXRE          = regexp.MustCompile(`^(?:[A-Za-z][A-Za-z0-9.-]{2,49})$`)
 	channelCLIRE           = regexp.MustCompile(`^(?:[a-z][a-z0-9-]{0,63})$`)
-	channelEnvNameRE       = regexp.MustCompile(`^(?:[A-Za-z_][A-Za-z0-9_]*)$`)
 	channelBranchRE        = regexp.MustCompile(`^(?:[A-Za-z0-9][A-Za-z0-9_./-]*)$`)
 	channelArtifactRE      = regexp.MustCompile(`^[A-Za-z0-9_./+-]+$`)
-	channelTeamRE          = regexp.MustCompile(`^[A-Z0-9]{10}$`)
 	attemptRefRE           = regexp.MustCompile(`^rc\.([1-9][0-9]*)-(v[^/]+)$`)
 )
+
+// Fields of a channel identity with the wire grammar each one must match
+var channelIdentityChecks = []struct {
+	re           *regexp.Regexp
+	field, label string
+}{
+	{channelTokenRE, "token", "identity token"},
+	{channelDisplayRE, "displayName", "identity display name"},
+	{channelCLIRE, "cliName", "CLI name"},
+}
 
 // ChannelNotFound is the missing channel object, still a ChannelError to every caller
 type ChannelNotFound struct{ ChannelError }
@@ -173,13 +176,13 @@ func channelArtifactKey(value any) (string, error) {
 	return key, nil
 }
 
-// Package version and Windows quad a sequence publishes, the quad carrying the sequence in its middle fields
-func channelPackageVersions(sequence any) (string, string, error) {
+// Version a preview build of the sequence carries
+func channelSequenceVersion(sequence any) (string, error) {
 	n, err := channelInteger(sequence, "sequence", 1, channelMaxSequence)
 	if err != nil {
-		return "", "", err
+		return "", err
 	}
-	return fmt.Sprintf("0.0.%d", n), fmt.Sprintf("0.%d.%d.0", n/65536, n%65536), nil
+	return fmt.Sprintf("0.0.%d", n), nil
 }
 
 // Python int value in range, a bool or any other type answering the labelled ChannelError
@@ -208,31 +211,33 @@ func channelSchema(value any) (*pyjson.Object, error) {
 	return obj, nil
 }
 
-// Identity object whose token, names, app ids and executable names all match their wire grammar
+// Identity object whose token, display name and CLI name match their wire grammar, other fields ignored
 func validateChannelIdentity(value any) (*pyjson.Object, error) {
 	obj, ok := value.(*pyjson.Object)
 	if !ok {
 		return nil, channelErr("Invalid channel identity")
 	}
-	checks := []struct {
-		re           *regexp.Regexp
-		field, label string
-	}{
-		{channelTokenRE, "token", "identity token"},
-		{channelDisplayRE, "displayName", "identity display name"},
-		{channelPascalRE, "appNamePascal", "appNamePascal"},
-		{channelPascalRE, "artifactNamePascal", "artifactNamePascal"},
-		{channelAppIDRE, "appId", "app ID"},
-		{channelMSIXRE, "msixAppIdWithOrg", "MSIX identity"},
-		{channelCLIRE, "cliName", "CLI name"},
-		{channelDisplayRE, "windowsExecutableName", "Windows executable"},
-	}
-	for _, check := range checks {
+	for _, check := range channelIdentityChecks {
 		if _, err := channelMatch(check.re, obj.Vals[check.field], check.label); err != nil {
 			return nil, err
 		}
 	}
 	return obj, nil
+}
+
+// Reports whether two identity objects agree on every channel identity field
+func sameChannelIdentity(a, b any) bool {
+	left, isLeft := a.(*pyjson.Object)
+	right, isRight := b.(*pyjson.Object)
+	if !isLeft || !isRight {
+		return false
+	}
+	for _, check := range channelIdentityChecks {
+		if !pyjson.Equal(left.Vals[check.field], right.Vals[check.field]) {
+			return false
+		}
+	}
+	return true
 }
 
 // Version a final vX.Y.Z attempt ref names, false for any other ref shape
@@ -275,13 +280,13 @@ func validateChannelRequest(value any, repository, baseURL *string, policy strin
 	if _, err := channelMatch(channelSourceVersionRE, v["sourceVersion"], "source version"); err != nil {
 		return nil, err
 	}
-	version, windowsVersion, err := channelPackageVersions(v["sequence"])
+	version, err := channelSequenceVersion(v["sequence"])
 	if err != nil {
 		return nil, err
 	}
 	if policy == "preview" {
-		if !pyjson.Equal(v["version"], version) || !pyjson.Equal(v["windowsVersion"], windowsVersion) {
-			return nil, channelErr("Channel package version does not match sequence")
+		if !pyjson.Equal(v["version"], version) {
+			return nil, channelErr("Channel version does not match sequence")
 		}
 	} else {
 		tag, err := channelMatch(channelReleaseTagRE, v["releaseTag"], "release tag")
@@ -289,7 +294,7 @@ func validateChannelRequest(value any, repository, baseURL *string, policy strin
 			return nil, err
 		}
 		if !pyjson.Equal(v["version"], tag[1:]) {
-			return nil, channelErr("Release package version mismatch")
+			return nil, channelErr("Release version mismatch")
 		}
 		if archiveRef, present := v["archiveRef"]; present && archiveRef != nil {
 			ref, isStr := archiveRef.(string)
@@ -305,35 +310,9 @@ func validateChannelRequest(value any, repository, baseURL *string, policy strin
 				return nil, channelErr("Archive ref does not name the release version")
 			}
 		}
-		pattern := channelStableQuadRE
-		if policy == "canary-release" {
-			pattern = channelCanaryQuadRE
-		}
-		quad, err := channelMatch(pattern, v["windowsVersion"], "Windows version")
-		if err != nil {
-			return nil, err
-		}
-		for _, part := range strings.Split(quad, ".") {
-			if n, _ := new(big.Int).SetString(part, 10); n.Cmp(big.NewInt(65535)) > 0 {
-				return nil, channelErr("Invalid Windows version")
-			}
-		}
 	}
 	if _, err := validateChannelIdentity(v["identity"]); err != nil {
 		return nil, err
-	}
-	values, ok := v["bundleEnv"].(*pyjson.Object)
-	if !ok {
-		return nil, channelErr("Invalid bundle environment")
-	}
-	for _, key := range values.Keys {
-		if _, err := channelMatch(channelEnvNameRE, key, "bundle environment name"); err != nil {
-			return nil, err
-		}
-		item := values.Vals[key]
-		if s, isStr := item.(string); item != nil && (!isStr || strings.Contains(s, "\x00")) {
-			return nil, channelErr("Invalid bundle environment value")
-		}
 	}
 	base, isStr := v["publicBase"].(string)
 	if !isStr {
@@ -435,7 +414,7 @@ func validateChannelRecord(value any, name, repository *string) (*pyjson.Object,
 	if policy == "source-branch" {
 		delivery, isObj := v["delivery"].(*pyjson.Object)
 		if v["identity"] != nil || head != nil || !isObj || !pyjson.Equal(delivery.Vals["kind"], "source-branch") {
-			return nil, channelErr("Source branch cannot carry native artifacts")
+			return nil, channelErr("Source branch channel carries only its branch delivery")
 		}
 		branch, err := channelMatch(channelBranchRE, delivery.Vals["branch"], "source branch")
 		if err != nil {
@@ -703,7 +682,7 @@ func compareDottedInts(a, b string) int {
 	return len(left) - len(right)
 }
 
-// Build manifest bound to its record's identity, head and admitted archive prefixes
+// Build manifest bound to its record's identity, channel and head
 func validateChannelManifest(value any, record *pyjson.Object, baseURL string) (*pyjson.Object, error) {
 	manifest, err := channelSchema(value)
 	if err != nil {
@@ -721,7 +700,7 @@ func validateChannelManifest(value any, record *pyjson.Object, baseURL string) (
 		return nil, err
 	}
 	rv := request.Vals
-	if !pyjson.Equal(rv["identity"], record.Vals["identity"]) {
+	if !sameChannelIdentity(rv["identity"], record.Vals["identity"]) {
 		return nil, channelErr("Manifest channel identity mismatch")
 	}
 	if !pyjson.Equal(rv["channel"], record.Vals["name"]) {
@@ -732,96 +711,6 @@ func validateChannelManifest(value any, record *pyjson.Object, baseURL string) (
 			if !pyjson.Equal(rv[field], head.Vals[field]) {
 				return nil, channelErr("Manifest does not match channel head")
 			}
-		}
-	}
-	packages, ok := manifest.Vals["packages"].([]any)
-	if !ok || len(packages) == 0 {
-		return nil, channelErr("Build manifest has no packages")
-	}
-	prefix, _ := channelBuildPrefix(rv["buildId"])
-	prefixes := []string{prefix}
-	if policy == "stable-release" || policy == "canary-release" {
-		archive, _ := rv["archiveRef"].(string)
-		if archive == "" {
-			archive = rv["releaseTag"].(string)
-		}
-		prefixes = append(prefixes, "releases/tag/"+archive+"/")
-	}
-	admitted := func(key string) bool {
-		for _, p := range prefixes {
-			if strings.HasPrefix(key, p) {
-				return true
-			}
-		}
-		return false
-	}
-	identity := rv["identity"].(*pyjson.Object)
-	seen := map[[3]string]bool{}
-	for _, entry := range packages {
-		pkg, ok := entry.(*pyjson.Object)
-		if !ok {
-			return nil, channelErr("Invalid native package")
-		}
-		platform, _ := pkg.Vals["platform"].(string)
-		arch, _ := pkg.Vals["arch"].(string)
-		variant, _ := pkg.Vals["variant"].(string)
-		if (platform != "darwin" && platform != "win32") || (arch != "arm64" && arch != "x64") || variant != "bundled" {
-			return nil, channelErr("Unsupported channel package target")
-		}
-		target := [3]string{platform, arch, variant}
-		if seen[target] {
-			return nil, channelErr("Duplicate package target")
-		}
-		seen[target] = true
-		artifact, ok := pkg.Vals["artifact"].(*pyjson.Object)
-		if !ok {
-			return nil, channelErr("Invalid package artifact")
-		}
-		key, err := channelArtifactKey(artifact.Vals["key"])
-		if err != nil {
-			return nil, err
-		}
-		if !admitted(key) {
-			return nil, channelErr("Artifact outside admitted build namespace")
-		}
-		if _, err := requireChannelSHA256(artifact.Vals["sha256"]); err != nil {
-			return nil, err
-		}
-		if _, err := channelInteger(artifact.Vals["size"], "artifact size", 1, channelMaxSafeInt); err != nil {
-			return nil, err
-		}
-		identityField, versionField, signingField := "msixAppIdWithOrg", "windowsVersion", "publisher"
-		if platform == "darwin" {
-			identityField, versionField, signingField = "appId", "version", "teamId"
-		}
-		if !pyjson.Equal(pkg.Vals["identity"], identity.Vals[identityField]) || !pyjson.Equal(pkg.Vals["version"], rv[versionField]) {
-			return nil, channelErr("Native package identity or version mismatch")
-		}
-		signing, isStr := pkg.Vals[signingField].(string)
-		control := false
-		for _, c := range signing {
-			if c < 32 {
-				control = true
-			}
-		}
-		if !isStr || signing == "" || control {
-			return nil, channelErr("Missing native signing identity")
-		}
-		if platform == "darwin" {
-			if _, err := channelMatch(channelTeamRE, signing, "Apple team ID"); err != nil {
-				return nil, err
-			}
-		}
-		feed, ok := pkg.Vals["feed"].(*pyjson.Object)
-		if !ok || !pyjson.Equal(feed.Vals["channel"], "stable") {
-			return nil, channelErr("Channel native metadata requires a neutral stable feed")
-		}
-		feedKey, err := channelArtifactKey(feed.Vals["key"])
-		if err != nil {
-			return nil, err
-		}
-		if !admitted(feedKey) {
-			return nil, channelErr("Native metadata outside admitted build namespace")
 		}
 	}
 	return manifest, nil

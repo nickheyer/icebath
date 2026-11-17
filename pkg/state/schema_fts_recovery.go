@@ -152,20 +152,6 @@ func (s *sessionSchema) deferStaleFTSForHolders(ctx context.Context, conn SQLite
 		holdersSince, holdersAttempts = now, big.NewInt(1)
 	}
 	escalate := attempts.Cmp(big.NewInt(ftsHolderEscalateAttempts)) >= 0 && now-firstSeen >= ftsHolderEscalateSeconds
-	if escalate {
-		reaped, err := s.host.reapInactiveOrphanDesktopHolders(foreignHolders, ftsHolderEscalateSeconds)
-		if err != nil {
-			return false, err
-		}
-		if len(reaped) > 0 {
-			slog.Error(fmt.Sprintf("Reaped inactive orphan Desktop backend(s) %s after %s "+
-				"state.db FTS rebuild deferrals; checking holders again.", pyrepr.Repr(pidList(reaped)), attempts.String()))
-			if foreignHolders, err = s.host.foreignStateDBHolders(); err != nil {
-				return false, err
-			}
-			holderPIDs = positiveHolderPIDs(foreignHolders)
-		}
-	}
 	futile := len(holderPIDs) > 0 && holdersAttempts.Cmp(big.NewInt(ftsHolderFutileAttempts)) >= 0 &&
 		now-holdersSince >= ftsHolderFutileSeconds
 	diagnostic := pyjson.NewObject()

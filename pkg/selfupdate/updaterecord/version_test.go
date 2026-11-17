@@ -211,7 +211,7 @@ func TestResolveStampFileFallsBackToCodeRootWhenEnvUnset(t *testing.T) {
 func TestMalformedStampDegradesToTheBuildIdentity(t *testing.T) {
 	for _, stamp := range []map[string]any{
 		{"commit": "cccccccccccccccccccccccccccccccccccccccc", "updateMechanism": "bogus"},
-		{"commit": "cccccccccccccccccccccccccccccccccccccccc", "updateMechanism": "self", "payload": "light"},
+		{"commit": "cccccccccccccccccccccccccccccccccccccccc"},
 	} {
 		path := vtStamp(t, stamp)
 		if _, err := stampVersionInfo(); err == nil {

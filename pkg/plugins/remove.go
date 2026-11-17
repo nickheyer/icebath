@@ -161,7 +161,7 @@ func CmdRemove(ctx context.Context, name string, out io.Writer) error {
 	return nil
 }
 
-// Shared remove tail for the CLI, the dashboard and the manage RPC, unlinking a symlinked alias only
+// Shared remove tail for the CLI and the manage RPC, unlinking a symlinked alias only
 func removeUserPlugin(ctx context.Context, dir, name, target string) (map[string]any, error) {
 	h := home.Dir(ctx)
 	link := filepath.Join(dir, strings.Trim(name, "/"))
@@ -228,8 +228,8 @@ func mergeResult(base, extra map[string]any) map[string]any {
 	return base
 }
 
-// Deletes a plugin tree under the user plugins dir only, for the dashboard
-func DashboardRemoveUserPlugin(ctx context.Context, name string) (map[string]any, error) {
+// Deletes a plugin tree under the user plugins dir only, refusing bundled plugins
+func UnattendedRemoveUserPlugin(ctx context.Context, name string) (map[string]any, error) {
 	h := home.Dir(ctx)
 	dir, err := pluginsDir(h)
 	if err != nil {
@@ -241,7 +241,7 @@ func DashboardRemoveUserPlugin(ctx context.Context, name string) (map[string]any
 	}
 	for _, e := range entries {
 		if e.Name == name && e.Source == "bundled" {
-			return map[string]any{"ok": false, "error": "Bundled plugins cannot be removed from the dashboard."}, nil
+			return map[string]any{"ok": false, "error": "Bundled plugins cannot be removed."}, nil
 		}
 	}
 	target, err := userInstalledPluginDir(ctx, name)

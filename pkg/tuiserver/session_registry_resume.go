@@ -54,7 +54,6 @@ func lazyResumeInfo(ctx context.Context, cwd, model, providerName, profile strin
 	info["tools"] = map[string]any{}
 	info["skills"] = map[string]any{}
 	info["lazy"] = true
-	info["desktop_contract"] = desktopBackendContract
 	info["profile_name"] = responseProfileName(ctx, profile)
 	return info
 }

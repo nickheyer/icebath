@@ -514,11 +514,6 @@ func resolveToolsets(ctx context.Context, params, cfg map[string]any, source str
 				return nil, refuseText("toolsets", fmt.Sprintf("MCP server %s %s", pyrepr.Repr(server), why))
 			}
 		}
-		for _, item := range explicit {
-			if item == "desktop_ui" && source != "gui" {
-				return nil, refuseText("toolsets", "desktop_ui is only available on the Desktop, not on "+source)
-			}
-		}
 		section, err := setdefaultMap(cfg, "platform_toolsets")
 		if err != nil {
 			return nil, err
@@ -568,18 +563,10 @@ func resolveToolsets(ctx context.Context, params, cfg map[string]any, source str
 		}
 		disabled := map[string]bool{}
 		for _, name := range tools.ParseConfigStringList(agent["disabled_toolsets"]) {
-			if name != "desktop_ui" {
-				disabled[name] = true
-			}
+			disabled[name] = true
 		}
-		fold := map[string]bool{"project": true}
-		if source == "gui" {
-			fold = tools.ClientSurfaceToolsets
-		}
-		for name := range fold {
-			if !disabled[name] {
-				enabled[name] = true
-			}
+		if !disabled["project"] {
+			enabled["project"] = true
 		}
 	}
 	if safeMode {

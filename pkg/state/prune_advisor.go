@@ -500,7 +500,7 @@ func AutoPruneAdviceLines(advice PruneAdvice, commandPrefix string) []string {
 	return lines
 }
 
-// Notification payload for the TUI and Desktop, a short status text with the full question as detail
+// Notification payload for the TUI and gateway, a short status text with the full question as detail
 func AutoPruneNoticePayload(advice PruneAdvice) *pyjson.Object {
 	payload := pyjson.NewObject()
 	payload.Set("text", fmt.Sprintf("⚠ Low disk (%s free) · /autoprune on|off|later", pruneGB(advice.Disk.FreeBytes)))

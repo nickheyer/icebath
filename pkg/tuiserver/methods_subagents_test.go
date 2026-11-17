@@ -102,7 +102,7 @@ func TestRosterOmitsConversationsStoredInAnotherProfile(t *testing.T) {
 // test_subagent_roster.py test_roster_resolves_a_background_process_route_key_to_its_stored_conversation
 func TestRosterResolvesABackgroundProcessRouteKeyToItsStoredConversation(t *testing.T) {
 	db := rosterFixture(t)
-	route := "agent:main:local:dm:desktop-chat-1"
+	route := "agent:main:local:dm:tui-chat-1"
 	if err := db.CreateSession(state.NewSession{ID: "local-abc123", Source: "local", SessionKey: route}); err != nil {
 		t.Fatal(err)
 	}
@@ -129,13 +129,8 @@ func rosterTwoProfiles(t *testing.T) {
 	prevServed := servedProfileHomes
 	servedProfileHomes = map[string]bool{}
 	servedProfileMu.Unlock()
-	prevOpen := OpenSessionDBAtPath
-	OpenSessionDBAtPath = func(ctx context.Context, dbPath string, readOnly bool) (*state.DB, error) {
-		return state.NewSessionDB(ctx, dbPath, readOnly)
-	}
 	t.Cleanup(func() {
 		provider.SetMultiplexActive(prevMultiplex)
-		OpenSessionDBAtPath = prevOpen
 		wsTestSwapLaunchHome(prevHome)
 		servedProfileMu.Lock()
 		servedProfileHomes = prevServed

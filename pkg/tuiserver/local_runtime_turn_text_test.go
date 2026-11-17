@@ -42,7 +42,7 @@ func localResolutionError(t *testing.T, h string) *provider.LocalRuntimeUnavaila
 	return local
 }
 
-func TestChatTextNamesTheLocalServerAndNoDesktopOnlyPane(t *testing.T) {
+func TestChatTextNamesTheLocalServerAndNoAppOnlyPane(t *testing.T) {
 	for _, enabled := range []bool{false, true} {
 		t.Run(map[bool]string{false: "False", true: "True"}[enabled], func(t *testing.T) {
 			h := llamacppHome(t, map[string]any{"enabled": enabled})

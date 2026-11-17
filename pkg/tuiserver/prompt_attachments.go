@@ -15,10 +15,8 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/filedrop"
-	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/stageduploads"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
 )
 
@@ -275,61 +273,20 @@ func sanitizeAttachmentName(name string) string {
 	return candidate
 }
 
-// Reads at most the cap from a file, refusing one that grew past it after inspection
-func readAttachmentBytes(path string, maxBytes int) ([]byte, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return nil, err
-	}
-	defer f.Close()
-	payload, err := io.ReadAll(io.LimitReader(f, int64(maxBytes)+1))
-	if err != nil {
-		return nil, err
-	}
-	if len(payload) > maxBytes {
-		info, statErr := f.Stat()
-		if statErr != nil {
-			return nil, statErr
-		}
-		return nil, &attachmentError{tooLarge("attachment", int(info.Size()), maxBytes)}
-	}
-	return payload, nil
-}
-
 // ValueError of an attachment staging step
 type attachmentError struct{ msg string }
 
 func (e *attachmentError) Error() string      { return e.msg }
 func (e *attachmentError) PyTypeName() string { return "ValueError" }
 
-// Copies a browser upload receipt into this session under the browser cap
-func stageBrowserFileAttachment(ctx context.Context, session *tuigateway.Session, stagedUpload any, name string) (string, bool, error) {
-	rawHome, rawPath, err := stageduploads.ParseStagedUpload(ctx, stagedUpload)
-	if err != nil {
-		return "", false, err
-	}
-	source, err := stageduploads.ResolveStagedUpload(rawHome, rawPath)
-	if err != nil {
-		return "", false, err
-	}
-	limit := home.WebappAttachmentMaxBytes
-	return stageSessionFileAttachment(ctx, session, source, "", name, &limit, true)
+// Whether an attached host file is referenced where it is, inside the workspace
+func referencedInPlace(path, workspace string) bool {
+	_, inside := relativeTo(path, workspace)
+	return inside
 }
 
-// Whether an attached host file is referenced where it is, inside the workspace and not a staged browser upload
-func referencedInPlace(session *tuigateway.Session, path, workspace string, staged bool) bool {
-	if _, inside := relativeTo(path, workspace); staged || !inside {
-		return false
-	}
-	profileHome := strOr(session.Get("profile_home"))
-	if profileHome == "" {
-		profileHome = launchHome()
-	}
-	return !stageduploads.IsStagedUpload(profileHome, path)
-}
-
-// Makes a desktop file attachment visible to the agent as the stored path and whether it was copied
-func stageSessionFileAttachment(ctx context.Context, session *tuigateway.Session, rawPath, dataURL, name string, maxBytes *int, staged bool) (string, bool, error) {
+// Makes a file attachment visible to the agent as the stored path and whether it was copied
+func stageSessionFileAttachment(ctx context.Context, session *tuigateway.Session, rawPath, dataURL, name string) (string, bool, error) {
 	workspace := resolveLax(sessionCwd(ctx, session))
 	resolved := ""
 	if rawPath != "" {
@@ -345,26 +302,15 @@ func stageSessionFileAttachment(ctx context.Context, session *tuigateway.Session
 	var payload []byte
 	filename := ""
 	if resolved != "" {
-		if referencedInPlace(session, resolved, workspace, staged) {
+		if referencedInPlace(resolved, workspace) {
 			return resolved, false, nil
-		}
-		if maxBytes != nil {
-			data, err := readAttachmentBytes(resolved, *maxBytes)
-			if err != nil {
-				return "", false, err
-			}
-			payload = data
 		}
 		filename = pypath.Name(resolved)
 	} else {
 		if dataURL == "" {
 			return "", false, &attachmentError{"file not found on gateway and no data_url provided"}
 		}
-		inlineMax := attachmentMaxBytes
-		if maxBytes != nil {
-			inlineMax = min(*maxBytes, attachmentMaxBytes)
-		}
-		data, err := b64Payload(dataURL, anyMediaDataURL, inlineMax, "attachment")
+		data, err := b64Payload(dataURL, anyMediaDataURL, attachmentMaxBytes, "attachment")
 		var over *payloadTooLarge
 		if errors.As(err, &over) {
 			return "", false, err

@@ -9,7 +9,6 @@ import (
 	"math/big"
 	"net/http"
 	"net/url"
-	"os"
 	"sort"
 	"strconv"
 	"strings"
@@ -554,7 +553,7 @@ const (
 	requestIDHeader = "x-request-id"
 )
 
-var executionSurfaces = map[string]bool{"acp": true, "api": true, "batch": true, "cli": true, "desktop": true, "gateway": true, "python": true, "scheduled_task": true, "tui": true, "other": true, "unknown": true}
+var executionSurfaces = map[string]bool{"acp": true, "api": true, "batch": true, "cli": true, "gateway": true, "python": true, "scheduled_task": true, "tui": true, "other": true, "unknown": true}
 var surfaceAliases = map[string]string{"api_server": "api", "relay": "gateway", "cron": "scheduled_task", "scheduler": "scheduled_task", "scheduled": "scheduled_task"}
 var knownGatewayPlatforms = map[string]bool{"discord": true, "email": true, "slack": true, "telegram": true, "teams": true, "whatsapp": true}
 
@@ -1291,15 +1290,13 @@ type ConnectionsRequest struct {
 	Reinitiate   bool
 	Alias        string
 	ConnectionID string
-	ReturnTo     string
-	Op           string
 }
 
 // Connections starts authorizations, never retried because the gateway cannot deduplicate them
 func (c *ConnectorClient) Connections(ctx context.Context, req ConnectionsRequest) (map[string]any, error) {
 	body, err := wireBody(ConnectorConnectionsRequest, pyjson.ObjectOf("connectors", wireStrings(req.Connectors), "reinitiate", req.Reinitiate,
-		"alias", wireOptional(req.Alias), "connection_id", wireOptional(req.ConnectionID), "return_to", wireOptional(req.ReturnTo),
-		"op", wireOptional(req.Op), "initiator", wireOptional(c.initiator)))
+		"alias", wireOptional(req.Alias), "connection_id", wireOptional(req.ConnectionID),
+		"initiator", wireOptional(c.initiator)))
 	if err != nil {
 		return nil, err
 	}
@@ -1588,12 +1585,12 @@ func retryWait(status int, headers http.Header) (float64, bool) {
 	return wait, true
 }
 
-func (c *ConnectorClient) executeOne(ctx context.Context, plan PlannedCall, returnTo, op string) (map[string]any, bool, error) {
+func (c *ConnectorClient) executeOne(ctx context.Context, plan PlannedCall) (map[string]any, bool, error) {
 	call, err := wireExecuteCall(plan)
 	if err != nil {
 		return nil, false, err
 	}
-	body, err := wireBody(ConnectorExecuteSingleRequest, pyjson.ObjectOf("call", call, "return_to", wireOptional(returnTo), "op", wireOptional(op)))
+	body, err := wireBody(ConnectorExecuteSingleRequest, pyjson.ObjectOf("call", call))
 	if err != nil {
 		return nil, false, err
 	}
@@ -1661,7 +1658,7 @@ func (c *ConnectorClient) executeOne(ctx context.Context, plan PlannedCall, retu
 	return nil, false, newToolGatewayError("", "connector execute retries exhausted", "TRANSPORT_ERROR", 0, "", true)
 }
 
-func (c *ConnectorClient) executeLegacy(ctx context.Context, planned []PlannedCall, returnTo, op string) ([]map[string]any, error) {
+func (c *ConnectorClient) executeLegacy(ctx context.Context, planned []PlannedCall) ([]map[string]any, error) {
 	tools := make([]any, 0, len(planned))
 	for _, plan := range planned {
 		call, err := wireExecuteCall(plan)
@@ -1670,7 +1667,7 @@ func (c *ConnectorClient) executeLegacy(ctx context.Context, planned []PlannedCa
 		}
 		tools = append(tools, call)
 	}
-	body, err := wireBody(ConnectorExecuteRequest, pyjson.ObjectOf("tools", tools, "return_to", wireOptional(returnTo), "op", wireOptional(op)))
+	body, err := wireBody(ConnectorExecuteRequest, pyjson.ObjectOf("tools", tools))
 	if err != nil {
 		return nil, err
 	}
@@ -1691,17 +1688,17 @@ func (c *ConnectorClient) executeLegacy(ctx context.Context, planned []PlannedCa
 }
 
 // Execute runs planned calls one request each, falling back to the array form on older gateways
-func (c *ConnectorClient) Execute(ctx context.Context, planned []PlannedCall, returnTo, op string) ([]map[string]any, error) {
+func (c *ConnectorClient) Execute(ctx context.Context, planned []PlannedCall) ([]map[string]any, error) {
 	origin := c.origin()
 	legacyExecuteOrigins.Lock()
 	legacy := origin != "" && legacyExecuteOrigins.set[origin]
 	legacyExecuteOrigins.Unlock()
 	if legacy {
-		return c.executeLegacy(ctx, planned, returnTo, op)
+		return c.executeLegacy(ctx, planned)
 	}
 	var results []map[string]any
 	for index, plan := range planned {
-		result, ok, err := c.executeOne(ctx, plan, returnTo, op)
+		result, ok, err := c.executeOne(ctx, plan)
 		if err != nil {
 			return nil, err
 		}
@@ -1712,7 +1709,7 @@ func (c *ConnectorClient) Execute(ctx context.Context, planned []PlannedCall, re
 				legacyExecuteOrigins.Unlock()
 			}
 			envLog(c.env).Info("Connector gateway predates single-call execute; using the array form")
-			rest, err := c.executeLegacy(ctx, planned[index:], returnTo, op)
+			rest, err := c.executeLegacy(ctx, planned[index:])
 			if err != nil {
 				return nil, err
 			}
@@ -1721,18 +1718,6 @@ func (c *ConnectorClient) Execute(ctx context.Context, planned []PlannedCall, re
 		results = append(results, result)
 	}
 	return results, nil
-}
-
-// ReturnToArgs are the returnTo and op fields only the desktop surface sends
-func ReturnToArgs(env *Env, op string) (string, string) {
-	if sessionPlatformName(env) != "desktop" {
-		return "", ""
-	}
-	target := "hermes-desktop"
-	if os.Getenv("ICEBATH_DESKTOP_DEV_SERVER") != "" {
-		target = "hermes-desktop-dev"
-	}
-	return target, op
 }
 
 func sortedConnectorKeys(m map[string]any) []string {

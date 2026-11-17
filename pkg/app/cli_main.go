@@ -62,7 +62,7 @@ func Main(ctx context.Context, o MainOptions) (code int, err error) {
 		}
 	}()
 	if !(o.ListTools || o.ListToolsets) {
-		tools.RegisterSelf(ctx, "cli", "", nil)
+		tools.RegisterSelf(ctx, "cli", "")
 		if warning := profiles.SharedProfileWarning(ctx, home.Dir(ctx), ""); warning != "" {
 			fmt.Fprintln(stderrWriter(), i18n.T(ctx, "cli.startup.warning", "", map[string]any{"warning": warning}))
 		}

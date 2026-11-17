@@ -64,11 +64,11 @@ func TestIdleReaperRearmsMissingWsOrphanTimer(t *testing.T) {
 			t.Setenv("ICEBATH_HOME", h)
 			useSharedDB(t, ledgerHandle(t, filepath.Join(h, "state.db")))
 			sid, siblingSID := "detached-without-reaper", "live-sibling"
-			orphanLease, refusal, err := activesessions.TryAcquire(ctx, sid, "desktop", map[string]any{}, nil, h, true)
+			orphanLease, refusal, err := activesessions.TryAcquire(ctx, sid, "tui", map[string]any{}, nil, h, true)
 			if err != nil || orphanLease == nil || refusal != nil {
 				t.Fatalf("orphan lease %v %v %v", orphanLease, refusal, err)
 			}
-			siblingLease, refusal, err := activesessions.TryAcquire(ctx, siblingSID, "desktop", map[string]any{}, nil, h, true)
+			siblingLease, refusal, err := activesessions.TryAcquire(ctx, siblingSID, "tui", map[string]any{}, nil, h, true)
 			if err != nil || siblingLease == nil || refusal != nil {
 				t.Fatalf("sibling lease %v %v %v", siblingLease, refusal, err)
 			}
@@ -201,7 +201,7 @@ func idempotencyScope(t *testing.T) {
 
 func TestSessionCreateIdempotencyKeyDedupesRetry(t *testing.T) {
 	idempotencyScope(t)
-	params := map[string]any{"cols": 96, "source": "desktop", "messages": []any{map[string]any{"role": "user", "content": "branch me"}},
+	params := map[string]any{"cols": 96, "source": "tui", "messages": []any{map[string]any{"role": "user", "content": "branch me"}},
 		"parent_session_id": "parent-1", "idempotency_key": "branch-retry-abc"}
 	first := createdSID(t, createCall(t, "c1", params))
 	if n := len(tuigateway.LiveSessions()); n != 1 {
@@ -217,7 +217,7 @@ func TestSessionCreateIdempotencyKeyDedupesRetry(t *testing.T) {
 
 func TestSessionCreateNoIdempotencyKeyCreatesDistinctSessions(t *testing.T) {
 	idempotencyScope(t)
-	params := map[string]any{"cols": 96, "source": "desktop"}
+	params := map[string]any{"cols": 96, "source": "tui"}
 	first, second := createdSID(t, createCall(t, "c1", params)), createdSID(t, createCall(t, "c2", params))
 	if first == second || len(tuigateway.LiveSessions()) != 2 {
 		t.Fatalf("sessions %s %s live %d", first, second, len(tuigateway.LiveSessions()))
@@ -226,7 +226,7 @@ func TestSessionCreateNoIdempotencyKeyCreatesDistinctSessions(t *testing.T) {
 
 func TestSessionCreateIdempotencyKeyExpiresWithSession(t *testing.T) {
 	idempotencyScope(t)
-	params := map[string]any{"cols": 96, "source": "desktop", "idempotency_key": "branch-retry-xyz"}
+	params := map[string]any{"cols": 96, "source": "tui", "idempotency_key": "branch-retry-xyz"}
 	first := createdSID(t, createCall(t, "c1", params))
 	tuigateway.SetSessionRecord(first, nil)
 	second := createdSID(t, createCall(t, "c2", params))

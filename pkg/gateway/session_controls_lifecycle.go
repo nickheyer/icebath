@@ -9,7 +9,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
 )
 
 // Canonical local id abbreviation the TUI exit hint prints
@@ -119,13 +118,9 @@ func (c *AuthorityConnection) createSession(ctx context.Context, params *pyjson.
 				}
 			}
 		}
-		desktopLocal := false
-		if ws, ok := c.transport.(*tuigateway.WSTransport); ok && ws != nil {
-			desktopLocal = ws.DesktopLocal
-		}
 		plain, _ := pyjson.Plain(params).(map[string]any)
 		existing, staged, err := stageLocalSession(ctx, a, c.actor, plain, localCreateOptions{SkillsPrompt: skillsPrompt,
-			ClientLocal: c.nativeOwner, DesktopLocal: desktopLocal})
+			ClientLocal: c.nativeOwner})
 		if err != nil {
 			return nil, err
 		}
@@ -306,7 +301,7 @@ func (c *AuthorityConnection) resume(ctx context.Context, ref SessionRef, params
 	delete(c.handedBack, ref.SessionID)
 	c.mu.Unlock()
 	c.spawnNotice(ctx, ref)
-	info := pyjson.ObjectOf("desktop_protocol", CanonicalGatewayProtocol)
+	info := pyjson.ObjectOf("gateway_protocol", CanonicalGatewayProtocol)
 	attachedLive, ok := a.live(snapshot.Handle.Ref.SessionID)
 	if !ok {
 		return nil, &pyKeyError{key: snapshot.Handle.Ref.SessionID}

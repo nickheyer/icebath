@@ -25,7 +25,6 @@ var RunCLIHook func(argv []string) int
 
 // Steps of a historical finish, each the host behaviour unless a hermes test replaces it
 var (
-	finishBuildProducts    = BuildUpdateProducts
 	finishMaintenance      = RunPostUpdateMaintenance
 	finishRestartFleet     = restartGatewayFleetAfterUpdate
 	finishMergeResume      = resumeWindowsGatewaysAndMergeOutcome
@@ -63,14 +62,13 @@ func optionalText(value any) *string {
 
 // Inputs of finishing a selected checkout after its code is committed
 type finishUpdateOptions struct {
-	Root                      string
-	AssumeYes, GatewayMode    bool
-	PreUpdateSnapshotID       *string
-	HadDesktopAppBeforeUpdate bool
-	PreUpdateVersion          *string
-	Plan                      *UpdatePlan
-	WindowsResume             map[string]any
-	Followups                 *[][2]string
+	Root                   string
+	AssumeYes, GatewayMode bool
+	PreUpdateSnapshotID    *string
+	PreUpdateVersion       *string
+	Plan                   *UpdatePlan
+	WindowsResume          map[string]any
+	Followups              *[][2]string
 }
 
 // Runs maintenance, the stamp and the fleet restart of a committed checkout, every failure owed and never fatal
@@ -82,8 +80,7 @@ func finishUpdate(ctx context.Context, w, errw io.Writer, o finishUpdateOptions)
 	runtimeSafe := false
 	safe, err := finishMaintenance(ctx, PostUpdateMaintenance{
 		AssumeYes: o.AssumeYes, GatewayMode: o.GatewayMode, PreUpdateSnapshotID: o.PreUpdateSnapshotID,
-		HadDesktopAppBeforeUpdate: o.HadDesktopAppBeforeUpdate, PreUpdateVersion: o.PreUpdateVersion,
-		Followups: owed, Stdout: w, Stderr: errw})
+		PreUpdateVersion: o.PreUpdateVersion, Followups: owed, Stdout: w, Stderr: errw})
 	if err != nil {
 		if isInterrupt(err) {
 			return err
@@ -268,13 +265,6 @@ func updateFinish(ctx context.Context, contextPath, resultPath string, stdout, s
 			return &pm.SystemExit{Code: 2}
 		}
 		resumeArmed = true
-		desktopValue := request.GetOr("desktop", nil)
-		desktop := pyrepr.Truthy(desktopValue)
-		if desktopValue == nil {
-			desktopDir := filepath.Join(root, "apps", "desktop")
-			_, packaged := desktopPackagedExecutable(desktopDir)
-			desktop = packaged || desktopDistExists(desktopDir)
-		}
 		if _, err := ArmCompletion(ctx, root); err != nil {
 			if !pypath.IsOSError(err) {
 				return err
@@ -282,14 +272,6 @@ func updateFinish(ctx context.Context, contextPath, resultPath string, stdout, s
 			fmt.Fprintf(stdout, "  ⚠ Could not record the owed source-update tail: %s\n", launchErrorText(err))
 		}
 		owed := [][2]string{}
-		if err := finishBuildProducts(ctx, root, desktop); err != nil {
-			if isInterrupt(err) {
-				return err
-			}
-			reason := pyReason(err)
-			updaterecord.RecordFollowup(ctx, "build", reason, updaterecord.FollowupRetryDefault)
-			owed = append(owed, [2]string{"build", reason})
-		}
 		assumeYes, err := pyDictItem(request, "assume_yes")
 		if err != nil {
 			return err
@@ -300,9 +282,9 @@ func updateFinish(ctx context.Context, contextPath, resultPath string, stdout, s
 		}
 		return finishUpdate(ctx, stdout, stderr, finishUpdateOptions{
 			Root: root, AssumeYes: pyrepr.Truthy(assumeYes), GatewayMode: pyrepr.Truthy(gatewayMode),
-			PreUpdateSnapshotID:       optionalText(request.GetOr("pre_update_snapshot_id", nil)),
-			HadDesktopAppBeforeUpdate: desktop, PreUpdateVersion: optionalText(request.GetOr("pre_update_version", nil)),
-			Plan: plan, WindowsResume: token, Followups: &owed})
+			PreUpdateSnapshotID: optionalText(request.GetOr("pre_update_snapshot_id", nil)),
+			PreUpdateVersion:    optionalText(request.GetOr("pre_update_version", nil)),
+			Plan:                plan, WindowsResume: token, Followups: &owed})
 	}
 	interrupted := error(nil)
 	if err := body(); err == nil {

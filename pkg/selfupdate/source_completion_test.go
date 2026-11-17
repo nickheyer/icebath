@@ -53,19 +53,16 @@ func scRepo(t *testing.T) string {
 	return root
 }
 
-// Replaces the launcher publish, the product build and the maintenance with stand ins
-func scDependencies(t *testing.T, build func(context.Context, string, bool) error, maintenance func(context.Context, PostUpdateMaintenance) (bool, error)) {
+// Replaces the launcher publish and the maintenance with stand ins
+func scDependencies(t *testing.T, maintenance func(context.Context, PostUpdateMaintenance) (bool, error)) {
 	t.Helper()
-	prevPublish, prevBuild, prevMaint := publishLaunchers, sourceCompletionBuildProducts, sourceCompletionMaintenance
+	prevPublish, prevMaint := publishLaunchers, sourceCompletionMaintenance
 	publishLaunchers = func(context.Context, string) error { return nil }
-	sourceCompletionBuildProducts = build
 	sourceCompletionMaintenance = maintenance
 	t.Cleanup(func() {
-		publishLaunchers, sourceCompletionBuildProducts, sourceCompletionMaintenance = prevPublish, prevBuild, prevMaint
+		publishLaunchers, sourceCompletionMaintenance = prevPublish, prevMaint
 	})
 }
-
-func scNoBuild(context.Context, string, bool) error { return nil }
 
 // Completion options writing to buffers, with the followups slice when given
 func scOptions(owed *[][2]string) SourceCompletion {
@@ -80,7 +77,7 @@ func scStampExists(root string) bool {
 func TestSuccessfulSourceCompletionWritesCheckoutIdentity(t *testing.T) {
 	root := scRepo(t)
 	stampedEarly := false
-	scDependencies(t, scNoBuild, func(context.Context, PostUpdateMaintenance) (bool, error) {
+	scDependencies(t, func(context.Context, PostUpdateMaintenance) (bool, error) {
 		stampedEarly = scStampExists(root)
 		return true, nil
 	})
@@ -92,18 +89,18 @@ func TestSuccessfulSourceCompletionWritesCheckoutIdentity(t *testing.T) {
 
 func TestFailedSourceCompletionDoesNotPublishIdentity(t *testing.T) {
 	root := scRepo(t)
-	scDependencies(t, func(context.Context, string, bool) error { return errors.New("web UI build: npm exited 1") },
-		func(context.Context, PostUpdateMaintenance) (bool, error) { return true, nil })
+	scDependencies(t, func(context.Context, PostUpdateMaintenance) (bool, error) { return true, nil })
+	publishLaunchers = func(context.Context, string) error { return errors.New("launcher directory is read-only") }
 	var owed [][2]string
 	ok, err := CompleteSourceCheckout(context.Background(), root, scOptions(&owed))
-	if err != nil || ok || len(owed) != 1 || owed[0][0] != "build" || scStampExists(root) {
+	if err != nil || ok || len(owed) != 1 || owed[0][0] != "launchers" || scStampExists(root) {
 		t.Fatalf("ok %v err %v owed %v stamp %v", ok, err, owed, scStampExists(root))
 	}
 }
 
 func TestUnsafeSqliteWithholdsSuccessButNotTheFinishedTail(t *testing.T) {
 	root := scRepo(t)
-	scDependencies(t, scNoBuild, func(context.Context, PostUpdateMaintenance) (bool, error) { return false, nil })
+	scDependencies(t, func(context.Context, PostUpdateMaintenance) (bool, error) { return false, nil })
 	owed := [][2]string{}
 	ok, err := CompleteSourceCheckout(context.Background(), root, scOptions(&owed))
 	if err != nil || ok || len(owed) != 0 || !scStampExists(root) {
@@ -114,7 +111,7 @@ func TestUnsafeSqliteWithholdsSuccessButNotTheFinishedTail(t *testing.T) {
 func TestCompletedMaintenanceSurvivesStampIoError(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv(home.EnvHome, filepath.Join(tmp, ".icebath"))
-	scDependencies(t, scNoBuild, func(context.Context, PostUpdateMaintenance) (bool, error) { return true, nil })
+	scDependencies(t, func(context.Context, PostUpdateMaintenance) (bool, error) { return true, nil })
 	prev := sourceCompletionWriteStamp
 	sourceCompletionWriteStamp = func(string, bool) (*pyjson.Object, error) {
 		return nil, &pm.PyError{Class: "OSError", Message: "readonly"}
@@ -131,16 +128,17 @@ func TestCompletionHoldsTheUpdateLockDuringTheTail(t *testing.T) {
 	root := scRepo(t)
 	marker := updaterecord.UpdateMarkerPath()
 	var holder *updaterecord.UpdateHolder
-	scDependencies(t, func(ctx context.Context, _ string, _ bool) error {
+	scDependencies(t, func(context.Context, PostUpdateMaintenance) (bool, error) { return true, nil })
+	publishLaunchers = func(ctx context.Context, _ string) error {
 		holder = updaterecord.ReadLiveUpdate(ctx, marker, "")
 		return nil
-	}, func(context.Context, PostUpdateMaintenance) (bool, error) { return true, nil })
+	}
 	ok, err := CompleteSourceCheckout(context.Background(), root, scOptions(nil))
 	if err != nil || !ok {
 		t.Fatalf("ok %v err %v", ok, err)
 	}
 	if holder == nil || holder.PID != os.Getpid() {
-		t.Fatalf("the tail must hold the shared lock while it builds: %+v", holder)
+		t.Fatalf("the tail must hold the shared lock while it publishes launchers: %+v", holder)
 	}
 	if _, err := os.Stat(marker); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("a completed tail must release the lock for the next launch: %v", err)
@@ -171,7 +169,7 @@ func TestCompletionRefusesToStackOnALiveUpdate(t *testing.T) {
 	if err := os.WriteFile(marker, []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	scDependencies(t, scNoBuild, func(context.Context, PostUpdateMaintenance) (bool, error) { return true, nil })
+	scDependencies(t, func(context.Context, PostUpdateMaintenance) (bool, error) { return true, nil })
 	_, err := CompleteSourceCheckout(context.Background(), root, scOptions(nil))
 	if err == nil || !strings.Contains(err.Error(), "an update is still running") {
 		t.Fatalf("err %v", err)
@@ -269,7 +267,6 @@ func scChild(mode string, args []string) int {
 		return 0
 	case "tail":
 		publishLaunchers = func(context.Context, string) error { return nil }
-		sourceCompletionBuildProducts = scNoBuild
 		sourceCompletionMaintenance = func(context.Context, PostUpdateMaintenance) (bool, error) { return true, nil }
 		ok, err := CompleteSourceCheckout(context.Background(), args[0], SourceCompletion{AssumeYes: true, Stdout: os.Stdout, Stderr: os.Stderr})
 		if err != nil {
@@ -362,7 +359,7 @@ func TestOwnGitAndGitLessZipInstallsAreLeftAlone(t *testing.T) {
 // Entry refuses a tree without the checkout marker and parses its flags with argparse errors
 func TestSourceCompletionMainArgumentsAndCheckoutCheck(t *testing.T) {
 	var stdout, stderr bytes.Buffer
-	if code := SourceCompletionMain(context.Background(), []string{"--desktop"}, &stdout, &stderr); code != 2 ||
+	if code := SourceCompletionMain(context.Background(), []string{"--interactive"}, &stdout, &stderr); code != 2 ||
 		!strings.HasSuffix(stderr.String(), "icebath source-completion: error: the following arguments are required: --source\n") {
 		t.Fatalf("missing source %d %q", code, stderr.String())
 	}
@@ -402,8 +399,8 @@ func TestSourceCompletionBootstrapReentersTheCheckoutBinary(t *testing.T) {
 		return 3, nil
 	}
 	var stdout, stderr bytes.Buffer
-	code := SourceCompletionMain(context.Background(), []string{"--source", dir, "--desktop", "--interactive", "--finish-update"}, &stdout, &stderr)
-	want := []string{dir, "/opt/icebath/icebath", SourceCompletionEntry, "--source", dir, "--desktop", "--finish-update", sourceCompletionPrepared}
+	code := SourceCompletionMain(context.Background(), []string{"--source", dir, "--interactive", "--finish-update"}, &stdout, &stderr)
+	want := []string{dir, "/opt/icebath/icebath", SourceCompletionEntry, "--source", dir, "--finish-update", sourceCompletionPrepared}
 	if code != 3 || strings.Join(got, " ") != strings.Join(want, " ") {
 		t.Fatalf("code %d command %q %s", code, got, stderr.String())
 	}

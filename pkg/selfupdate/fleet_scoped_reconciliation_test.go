@@ -18,11 +18,6 @@ import (
 
 const scopedDeadPID = 1<<22 - 7
 
-func scopedManual() map[string]any {
-	return map[string]any{"kind": "serve", "profile": "work", "pid": 900, "supervisor": "manual-serve", "restart_via": "respawn-argv",
-		"code_sha": "old", "detail": map[string]any{"create_time": 1000.0}}
-}
-
 func scopedCurrent(overrides ...any) map[string]any {
 	row := map[string]any{"profile": "alpha", "state": "current", "code_sha": "new"}
 	for i := 0; i+1 < len(overrides); i += 2 {
@@ -103,13 +98,8 @@ func TestScopedReconciliationMatrix(t *testing.T) {
 		{"marker-no-sha-stale", map[string]any{}, marker(""), []map[string]any{stale}, true},
 		{"checkout-moved", map[string]any{}, marker("old"), []map[string]any{scopedCurrent()}, true},
 		{"marker-empty-no-receipt", map[string]any{}, marker("new"), []map[string]any{}, true},
-		{"markerless-stamped-manual", map[string]any{"outcome": "partial", "plan": map[string]any{"runtimes": []any{scopedManual()}}}, nil, []map[string]any{}, false},
-		{"old-manual-new-marker", map[string]any{"outcome": "success", "post_update": map[string]any{"sha": "old"},
-			"plan": map[string]any{"runtimes": []any{scopedManual()}}, "fleet": []any{}}, marker("new"), []map[string]any{}, true},
-		{"same-sha-not-ownership", map[string]any{"outcome": "success", "post_update": map[string]any{"sha": "new"},
-			"plan": map[string]any{"runtimes": []any{scopedManual()}}, "fleet": []any{}}, marker("new"), []map[string]any{}, true},
-		{"mixed-receipt-successors", map[string]any{"outcome": "partial", "plan": map[string]any{"runtimes": []any{scopedGateway("alpha"), scopedManual()}},
-			"fleet": []any{stale}}, nil, []map[string]any{scopedCurrent()}, false},
+		{"markerless-planned-gateway-without-successor", map[string]any{"outcome": "partial", "plan": map[string]any{"runtimes": []any{scopedGateway("work")}}},
+			nil, []map[string]any{}, true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -153,12 +143,7 @@ func TestScopedReconciliationMatrix(t *testing.T) {
 }
 
 func TestGatewaylessHostSettlesOnHostEvidence(t *testing.T) {
-	record := func(kind, profile string, pid int, supervisor, restartVia string) *RuntimeRecord {
-		return &RuntimeRecord{Kind: kind, Profile: profile, PID: &pid, Supervisor: supervisor, RestartVia: restartVia}
-	}
-	desktop := record("serve", "default", 901, "desktop", "desktop-respawn")
-	desktopReceipt := map[string]any{"outcome": "failed", "plan": map[string]any{"runtimes": []any{
-		map[string]any{"kind": "serve", "profile": "default", "supervisor": "desktop"}}}}
+	livePID := 904
 	type gatewayState struct {
 		profile, state string
 		stated         bool
@@ -171,19 +156,15 @@ func TestGatewaylessHostSettlesOnHostEvidence(t *testing.T) {
 		checkout string
 		pending  bool
 	}{
-		{"desktop-only", map[string]any{}, []*RuntimeRecord{desktop}, nil, "new", false},
 		{"nothing-running", map[string]any{}, nil, nil, "new", false},
-		{"gateway-stopped-cleanly", map[string]any{}, []*RuntimeRecord{desktop}, []gatewayState{{"default", "stopped", true}}, "new", false},
+		{"gateway-stopped-cleanly", map[string]any{}, nil, []gatewayState{{"default", "stopped", true}}, "new", false},
 		{"gateway-startup-failed", map[string]any{}, nil, []gatewayState{{"default", "startup_failed", true}}, "new", false},
-		{"carried-local-commit", map[string]any{}, []*RuntimeRecord{desktop}, nil, "hotfix", false},
-		{"manual-receipt-gatewayless-host", map[string]any{"outcome": "success", "plan": map[string]any{"runtimes": []any{scopedManual()}}}, nil, nil, "new", false},
-		{"desktop-receipt-stopped-gateway", desktopReceipt, []*RuntimeRecord{desktop}, []gatewayState{{"default", "running", true}}, "new", true},
-		{"named-profile-gateway-gone", map[string]any{}, []*RuntimeRecord{desktop}, []gatewayState{{"work", "running", true}}, "new", true},
+		{"carried-local-commit", map[string]any{}, nil, nil, "hotfix", false},
+		{"failed-receipt-running-gateway-state", map[string]any{"outcome": "failed"}, nil, []gatewayState{{"default", "running", true}}, "new", true},
+		{"named-profile-gateway-gone", map[string]any{}, nil, []gatewayState{{"work", "running", true}}, "new", true},
 		{"state-record-without-state", map[string]any{}, nil, []gatewayState{{"default", "", false}}, "new", true},
-		{"unclassified-serve", map[string]any{}, []*RuntimeRecord{record("serve", "default", 902, "manual", "")}, nil, "new", true},
-		{"manual-serve-without-identity", map[string]any{}, []*RuntimeRecord{record("serve", "work", 903, "manual-serve", "respawn-argv")}, nil, "new", true},
-		{"gateway-runtime-without-fleet-row", map[string]any{}, []*RuntimeRecord{record("gateway", "default", 904, "manual", "")}, nil, "new", true},
-		{"checkout-diverged", map[string]any{}, []*RuntimeRecord{desktop}, nil, "elsewhere", true},
+		{"gateway-runtime-without-fleet-row", map[string]any{}, []*RuntimeRecord{{Kind: "gateway", Profile: "default", PID: &livePID, Supervisor: "manual"}}, nil, "new", true},
+		{"checkout-diverged", map[string]any{}, nil, nil, "elsewhere", true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

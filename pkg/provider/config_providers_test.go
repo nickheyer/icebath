@@ -388,8 +388,8 @@ func TestProfilelessProvidersStillPresent(t *testing.T) {
 			t.Fatalf("%s empty label or description: %+v", slug, d)
 		}
 	}
-	if by["xai-oauth"].Tab != "accounts" || by["openai-api"].Tab != "keys" {
-		t.Fatalf("tabs: %+v %+v", by["xai-oauth"], by["openai-api"])
+	if !by["xai-oauth"].OAuth || by["openai-api"].OAuth {
+		t.Fatalf("oauth: %+v %+v", by["xai-oauth"], by["openai-api"])
 	}
 }
 
@@ -400,8 +400,8 @@ func TestAPIKeyProvidersExposeACredentialEnvVar(t *testing.T) {
 			t.Errorf("%s is api_key but exposes no env var", d.Slug)
 		}
 	}
-	if TabForAuthType(AuthTypeExternalProcess) != "accounts" || TabForAuthType(AuthTypeAWSSDK) != "keys" {
-		t.Fatal("tab mapping")
+	if !signInAuthTypes[AuthTypeExternalProcess] || signInAuthTypes[AuthTypeAWSSDK] {
+		t.Fatal("sign in mapping")
 	}
 }
 

@@ -13,11 +13,11 @@ import (
 
 const autoContinueFreshnessMinutesDefault = 15
 
-// Enabled flag, freshness window in seconds and max attempts of desktop.auto_continue
+// Enabled flag, freshness window in seconds and max attempts of sessions.auto_continue
 func autoContinueConfig(ctx context.Context) (bool, float64, int) {
 	cfg := map[string]any{}
-	if desktop, ok := loadCfg(ctx)["desktop"].(map[string]any); ok {
-		if ac, isMap := desktop["auto_continue"].(map[string]any); isMap {
+	if sessions, ok := loadCfg(ctx)["sessions"].(map[string]any); ok {
+		if ac, isMap := sessions["auto_continue"].(map[string]any); isMap {
 			cfg = ac
 		}
 	}

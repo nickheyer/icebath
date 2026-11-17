@@ -398,7 +398,7 @@ func normalizeSessionSource(value any) string {
 		text = strings.ToLower(strings.TrimSpace(pyrepr.Str(value)))
 	}
 	switch text {
-	case "api_server", "hermes_browser", "cli", "telegram", "discord", "slack", "desktop", "dashboard":
+	case "api_server", "hermes_browser", "cli", "telegram", "discord", "slack":
 		return text
 	case "browser":
 		return "hermes_browser"

@@ -301,13 +301,13 @@ func TestWorkspaceInputsNestedDistTravelsButRootDistStaysOut(t *testing.T) {
 	tmp := t.TempDir()
 	core := filepath.Join(tmp, "core")
 	peWrite(t, filepath.Join(core, "pyproject.toml"), "[project]\nname=\"core\"\nversion=\"1\"\nrequires-python=\">=3.11\"\n[tool.setuptools.packages.find]\ninclude=[\"*\"]\n")
-	peWrite(t, filepath.Join(core, "plugins", "kanban", "dashboard", "dist", "index.js"), "ENTRY\n")
+	peWrite(t, filepath.Join(core, "plugins", "kanban", "bundle", "dist", "index.js"), "ENTRY\n")
 	peWrite(t, filepath.Join(core, "dist", "core-1.whl"), "OUTPUT\n")
 	destination := filepath.Join(tmp, "stage")
 	if err := copyCoreInputs(core, destination); err != nil {
 		t.Fatal(err)
 	}
-	if got := peRead(t, filepath.Join(destination, "plugins", "kanban", "dashboard", "dist", "index.js")); got != "ENTRY\n" {
+	if got := peRead(t, filepath.Join(destination, "plugins", "kanban", "bundle", "dist", "index.js")); got != "ENTRY\n" {
 		t.Fatalf("bundle %q", got)
 	}
 	if _, err := os.Lstat(filepath.Join(destination, "dist")); err == nil {

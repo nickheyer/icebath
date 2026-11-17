@@ -74,7 +74,7 @@ func (a *APIServerAdapter) getPlatformCallbackAdapter(ctx context.Context, reque
 }
 
 // Application serving a request, the adapter's own
-func (a *APIServerAdapter) currentApp(request *gateway.WebRequest) *gateway.WebApplication {
+func (a *APIServerAdapter) currentApp(request *gateway.WebRequest) *gateway.HTTPApp {
 	return a.app
 }
 

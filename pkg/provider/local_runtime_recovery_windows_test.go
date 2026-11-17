@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/proc"
-	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 // Copies this test binary to dst so a process can run it under the server's name
@@ -57,9 +56,9 @@ func lr7StateIs(t *testing.T, path string, state map[string]any) bool {
 	return reflect.DeepEqual(onDisk, want)
 }
 
-func TestStartupPreservesTreesAndExplicitStopChecksOwner(t *testing.T) {
+func TestStartupPreservesRecordedTrees(t *testing.T) {
 	for _, c := range []string{"modern", "legacy", "live-owner", "pid-reused", "unknown-owner", "wrong-exe",
-		"legacy-key", "legacy-models", "busy", "state-replaced", "wrong-parent"} {
+		"legacy-key", "legacy-models", "busy", "wrong-parent"} {
 		t.Run(c, func(t *testing.T) { lr7StartupCase(t, c) })
 	}
 }
@@ -150,52 +149,5 @@ func lr7StartupCase(t *testing.T, c string) {
 		if !lr7StateIs(t, statePath, state) {
 			t.Fatalf("startup rewrote the state: %s", c)
 		}
-	}
-	if c == "state-replaced" {
-		created, err := tools.ProcessBirth(os.Getpid())
-		if err != nil {
-			t.Fatal(err)
-		}
-		state["owner_pid"], state["owner_create_time"] = os.Getpid(), created
-		lr4WriteState(t, statePath, state)
-	}
-	switch c {
-	case "modern", "legacy", "busy":
-		if c == "modern" && getLocalSupervisor() != nil {
-			t.Fatal("the dashboard stop would shut down a supervisor this process never started")
-		}
-		if c == "modern" {
-			savedDeps := lmDeps
-			t.Cleanup(func() { lmDeps = savedDeps })
-			var disabled []bool
-			lmDeps.setRuntimeEnabled = func(ctx context.Context, enabled bool) (map[string]any, error) {
-				disabled = append(disabled, enabled)
-				return map[string]any{}, nil
-			}
-			if _, err := LocalModelsServer(context.Background(), "stop"); err != nil {
-				t.Fatalf("stop route %v", err)
-			}
-			if !reflect.DeepEqual(disabled, []bool{false}) {
-				t.Fatalf("disabled %v", disabled)
-			}
-		} else if err := lmTerminateStatePID(); err != nil {
-			t.Fatalf("stop %v", err)
-		}
-		if !lr3Wait(func() bool { return !lr3Alive(router) && !lr3Alive(child) }, 10*time.Second) {
-			t.Fatal("process transition did not complete")
-		}
-		if ep := lr4StateEndpoint(); ep != nil {
-			t.Fatalf("stopped server still resolves %v", ep)
-		}
-	default:
-		if err := lmTerminateStatePID(); lmStatusOf(err) != 409 {
-			t.Fatalf("unsafe recovery: %s %v", c, err)
-		}
-		if !alive() {
-			t.Fatalf("unsafe recovery: %s", c)
-		}
-	}
-	if !lr7StateIs(t, statePath, state) {
-		t.Fatalf("stop rewrote the state: %s", c)
 	}
 }

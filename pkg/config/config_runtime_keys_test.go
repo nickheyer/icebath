@@ -21,7 +21,7 @@ func TestRuntimeReadKeyOwnersInOrder(t *testing.T) {
 	if !IsRuntimeReadKey([]string{"browser", "cloud_provider"}, owners) || *scans != 0 {
 		t.Fatal("selection key refused")
 	}
-	for _, key := range [][]string{{"computer_use", "backend"}, {"dashboard", "kanban", "columns"}} {
+	for _, key := range [][]string{{"computer_use", "backend"}} {
 		if !IsRuntimeReadKey(key, owners) {
 			t.Fatalf("core runtime key %v refused", key)
 		}

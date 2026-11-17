@@ -87,17 +87,9 @@ func policyTools(ctx context.Context, policy *LocalSessionPolicy, cfg map[string
 	if len(configured) == 0 {
 		configured = nil
 	}
-	disabled := tools.SessionDisabledToolsets(configured, policy.Platform, policy.Source == "oneshot")
+	disabled := tools.SessionDisabledToolsets(configured, policy.Source == "oneshot")
 	defs := tools.Default.ToolDefinitions(ctx, nil, tools.DefinitionOptions{Enabled: enabled, Disabled: disabled, Quiet: true})
-	drops := tools.SessionPlatformToolDrops(policy.Platform)
-	kept := []map[string]any{}
-	for _, def := range defs {
-		function, _ := pyjson.Dict(def["function"])
-		if name, _ := function["name"].(string); !drops[name] {
-			kept = append(kept, def)
-		}
-	}
-	return enabled, kept, nil
+	return enabled, defs, nil
 }
 
 // Named project owning the cwd with its id, slug, name and primary path, nil when none or unreadable

@@ -1,10 +1,8 @@
 package tui
 
 import (
-	"os"
 	"reflect"
 	"slices"
-	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -143,21 +141,16 @@ var (
 	launchID     = uuid.NewString()
 )
 
-// Launch latency report, sent once per process and never for a dashboard chat tab
+// Launch latency report, sent once per process
 type startupLatency struct {
 	reported bool
 }
 
 var startupReport startupLatency
 
-// Whether this TUI runs inside a dashboard chat tab
-func dashboardTUIMode() bool {
-	return truthyToggle.MatchString(strings.TrimFunc(os.Getenv("ICEBATH_TUI_DASHBOARD"), isJSSpace))
-}
-
 // Params of the launch latency report on the first gateway.ready, false when it was sent or is not wanted
 func (r *startupLatency) take() (map[string]any, bool) {
-	if r.reported || dashboardTUIMode() {
+	if r.reported {
 		return nil, false
 	}
 	r.reported = true

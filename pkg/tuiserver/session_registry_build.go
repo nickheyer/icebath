@@ -132,24 +132,21 @@ func bindBuildProfileScopes(ctx context.Context, profileHome string) (scoped con
 
 // Agent construction arguments of a deferred first prompt build
 type makeAgentOptions struct {
-	sessionID                  string
-	sessionDB                  *state.DB
-	modelOverride              any
-	providerOverride           string
-	reasoningConfigOverride    map[string]any
-	reasoningOverrideSet       bool
-	serviceTierOverride        *string
-	platformOverride           string
-	contextCwdIsLaunchArtifact *bool
-	cwdOverride                string
-	authUserID                 *string
+	sessionID               string
+	sessionDB               *state.DB
+	modelOverride           any
+	providerOverride        string
+	reasoningConfigOverride map[string]any
+	reasoningOverrideSet    bool
+	serviceTierOverride     *string
+	platformOverride        string
+	cwdOverride             string
+	authUserID              *string
 }
 
 // makeAgent arguments of a deferred build, a stored runtime identity restored whole when its provider routes
 func deferredBuildAgentKwargs(ctx context.Context, current *tuigateway.Session, sessionDB *state.DB) makeAgentOptions {
-	launch := contextCwdIsLaunchArtifact(current)
-	kw := makeAgentOptions{sessionDB: sessionDB, contextCwdIsLaunchArtifact: &launch, platformOverride: sessionSource(current),
-		cwdOverride: sessionCwd(ctx, current)}
+	kw := makeAgentOptions{sessionDB: sessionDB, platformOverride: sessionSource(current), cwdOverride: sessionCwd(ctx, current)}
 	if resumeSID := strOr(current.Get("resume_session_id")); resumeSID != "" {
 		kw.sessionID = resumeSID
 	}
@@ -505,7 +502,7 @@ func makeAgent(ctx context.Context, sid, key string, o makeAgentOptions) (any, e
 		Model: model, MaxIterations: new(cfgMaxTurns(cfg, 500)), Provider: rt.Provider, RequestedProvider: rt.RequestedProvider,
 		BaseURL: rt.BaseURL, APIKey: rt.APIKey, APIMode: string(rt.APIMode), ACPCommand: rt.Command, ACPArgs: rt.Args,
 		CredentialPool: rt.CredentialPool, Runtime: rt, QuietMode: true, VerboseLogging: false, ReasoningConfig: reasoning,
-		ServiceTier: tier, EnabledToolsets: tools.OnboardingToolsets(ctx, loadEnabledToolsets(ctx, platform), db, sessionKey),
+		ServiceTier: tier, EnabledToolsets: loadEnabledToolsets(ctx, platform),
 		DisabledToolsets: loadDisabledToolsets(ctx), ProvidersAllowed: routing["only"], ProvidersIgnored: routing["ignore"],
 		ProvidersOrder: routing["order"], ProviderSort: routing["sort"], ProviderRequireParameters: truthy(routing["require_parameters"]),
 		ProviderDataCollection: routing["data_collection"], Platform: platform, SessionID: sessionKey, Cwd: o.cwdOverride,
@@ -521,20 +518,13 @@ func makeAgent(ctx context.Context, sid, key string, o makeAgentOptions) (any, e
 	if err != nil {
 		return nil, err
 	}
-	launch := false
-	if o.contextCwdIsLaunchArtifact != nil {
-		launch = *o.contextCwdIsLaunchArtifact
-	} else {
-		launch = contextCwdIsLaunchArtifact(session)
-	}
-	a.SetContextCwdIsLaunchArtifact(launch)
 	if fallbackNotice != "" {
 		a.SetPendingFallbackNotice([]string{fallbackNotice})
 	}
 	return a, nil
 }
 
-// Shared owner MCP discovery wait the dashboard socket and desktop surfaces start
+// Shared owner MCP discovery wait the session socket starts
 func mcpStartupWait(ctx context.Context) {
 	mcp.WaitForDiscovery(ctx, configEnv(ctx), nil, false)
 }

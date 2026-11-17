@@ -11,17 +11,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/hermetic"
 )
 
-// Stands a listener server in for the dashboard builder for one case
-func fakeGatewayListener(t *testing.T) {
-	t.Helper()
-	prev, prevDist := BuildGatewayListener, gateway.WebappRendererBuild.PackagedDist
-	gateway.WebappRendererBuild.PackagedDist = func() string { return "" }
-	BuildGatewayListener = func(context.Context, gateway.GatewayAPIRunner, *gateway.ListenerState, *gateway.WebappMount, string, int) (gateway.GatewayListenerServer, error) {
-		return &fakeListenerServer{mount: &fakeDashboardMount{}, exit: make(chan struct{})}, nil
-	}
-	t.Cleanup(func() { BuildGatewayListener, gateway.WebappRendererBuild.PackagedDist = prev, prevDist })
-}
-
 // Short home for a case that binds the control socket, removed with the case
 func shortGatewayHome(t *testing.T) string {
 	t.Helper()
@@ -39,12 +28,10 @@ func shortGatewayHome(t *testing.T) string {
 
 func TestListenerFailureStopsBootstrapBackgroundThreads(t *testing.T) {
 	shortGatewayHome(t)
-	fakeGatewayListener(t)
-	prevRestore, prevStart, prevPublish := RestoreUserProxyEnv, startCronAndHousekeeping, publishRuntimeReady
+	prevStart, prevPublish := startCronAndHousekeeping, publishRuntimeReady
 	t.Cleanup(func() {
-		RestoreUserProxyEnv, startCronAndHousekeeping, publishRuntimeReady = prevRestore, prevStart, prevPublish
+		startCronAndHousekeeping, publishRuntimeReady = prevStart, prevPublish
 	})
-	RestoreUserProxyEnv = func(map[string]string) {}
 	var owned []cronHousekeeping
 	startCronAndHousekeeping = func(ctx context.Context, r *GatewayRunner) cronHousekeeping {
 		ch := startGatewayStartCronAndHousekeeping(ctx, r)
@@ -55,7 +42,7 @@ func TestListenerFailureStopsBootstrapBackgroundThreads(t *testing.T) {
 		if err := publishGatewayRuntimeReady(r); err != nil {
 			return err
 		}
-		r.sessionAPI.server.RequestExit()
+		r.sessionAPI.listener.requestExit()
 		return nil
 	}
 	type outcome struct {
@@ -97,7 +84,6 @@ func TestRuntimeWaitObservesListenerExit(t *testing.T) {
 		}
 		hermetic.Run(t, name, func(t *testing.T) {
 			h := shortGatewayHome(t)
-			fakeGatewayListener(t)
 			ctx := context.Background()
 			if err := gateway.ProcessOwnership.Reserve(ctx, []string{h}, ""); err != nil {
 				t.Fatal(err)
@@ -141,7 +127,7 @@ func TestRuntimeWaitObservesListenerExit(t *testing.T) {
 			waiter := make(chan error, 1)
 			go func() { waiter <- waitGatewayRuntime(waitCtx, r) }()
 			if listenerFailure {
-				r.sessionAPI.server.RequestExit()
+				r.sessionAPI.listener.requestExit()
 			} else if err := r.Stop(ctx, false, false, false); err != nil {
 				t.Fatal(err)
 			}

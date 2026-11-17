@@ -4,15 +4,13 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"strings"
 
 	"github.com/nickheyer/icebath/pkg/activesessions"
 )
 
 // Claims the active lease for a surface, a reasonless ownership refusal when the claim itself errors
 func ClaimActiveSessionSlotRefusal(ctx context.Context, sessionKey, liveSessionID, surface, profileHome string) (*activesessions.Lease, *activesessions.Refusal) {
-	lease, refusal, err := activesessions.TryAcquire(ctx, sessionKey, surface, loadCfg(ctx), leaseMetadata(liveSessionID), profileHome,
-		strings.ToLower(strings.TrimSpace(surface)) == "desktop")
+	lease, refusal, err := activesessions.TryAcquire(ctx, sessionKey, surface, loadCfg(ctx), leaseMetadata(liveSessionID), profileHome, false)
 	if err != nil {
 		slog.Default().With("logger", "tui_gateway.server").Warn(fmt.Sprintf("Failed to claim active session slot: %s", err))
 		return nil, &activesessions.Refusal{Message: sessionOwnershipUnavailable}

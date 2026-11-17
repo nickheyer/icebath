@@ -138,7 +138,7 @@ func (HostInstaller) Refuse(ctx context.Context, entry *plugins.PluginCatalogEnt
 }
 
 func (HostInstaller) InstallPlugin(ctx context.Context, name string, force, enable bool, ref string, onStep func(plugins.InstallPhase)) (map[string]any, error) {
-	return plugins.DashboardInstallPlugin(ctx, plugins.DashboardInstallOptions{Force: force, Enable: enable, CatalogName: name,
+	return plugins.UnattendedInstallPlugin(ctx, plugins.UnattendedInstallOptions{Force: force, Enable: enable, CatalogName: name,
 		Ref: ref, OnStep: onStep})
 }
 
@@ -606,7 +606,7 @@ func catalogPluginRow(ctx context.Context, entry *plugins.PluginCatalogEntry, la
 		requires = entry.RequiresIcebath
 	}
 	row := pyjson.ObjectOf("display", display, "description", catalogFirstSentence(entry.Description), "tier", tier,
-		"repo", entry.Repo, "sha", entry.Sha, "requires_icebath", requires, "has_desktop_half", false, "target_profile", label,
+		"repo", entry.Repo, "sha", entry.Sha, "requires_icebath", requires, "target_profile", label,
 		"app_state", presence.State)
 	if len(entry.Platforms) > 0 {
 		platforms := make([]any, len(entry.Platforms))

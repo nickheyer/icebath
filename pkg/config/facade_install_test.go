@@ -246,7 +246,7 @@ func TestUpdateCommandsByMethod(t *testing.T) {
 	}
 	msg := FormatDockerUpdateMessage()
 	for _, want := range []string{"``icebath update`` doesn't apply inside the Docker container", "docker pull ghcr.io/nickheyer/icebath:latest",
-		"docker compose up -d --force-recreate gateway dashboard", "$ICEBATH_HOME", "ICEBATH_BOT_DESKTOP=1"} {
+		"docker compose up -d --force-recreate gateway\n", "$ICEBATH_HOME", "ICEBATH_BOT_DESKTOP=1"} {
 		if !strings.Contains(msg, want) {
 			t.Fatalf("docker message lacks %q", want)
 		}

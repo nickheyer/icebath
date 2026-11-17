@@ -142,8 +142,6 @@ func (ntfyPlatformPlugin) Register(ctx *plugins.Context) error {
 		RequiredEnv: []string{"NTFY_TOPIC"},
 		Extra: map[string]any{
 			"target_ref_syntax_fn":   gateway.ParseNonempty,
-			"dashboard_description":  "Chat with Icebath over ntfy push topics (ntfy.sh or self-hosted).",
-			"docs_url":               "https://hermes-agent.nousresearch.com/docs/user-guide/messaging/ntfy",
 			"scoped_check_fn":        checkRequirements,
 			"scoped_validate_config": validateConfig,
 			"is_connected":           isConnected,

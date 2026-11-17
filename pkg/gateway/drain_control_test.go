@@ -181,7 +181,7 @@ func (r *fakeDrainRunner) SessionRuntimeDescriptor() map[string]any { return r.d
 func (r *fakeDrainRunner) Draining() bool                           { return r.draining }
 func (r *fakeDrainRunner) Running() bool                            { return r.running }
 
-func TestRestartWaitGatesReadsTicketsAndVerbs(t *testing.T) {
+func TestRestartWaitGatesVerbs(t *testing.T) {
 	r := &fakeDrainRunner{descriptor: map[string]any{"drain_reason": "operator"}, draining: true, running: true}
 	OpenRestartWait(r)
 	if RestartWaitOpen(r) {
@@ -191,16 +191,6 @@ func TestRestartWaitGatesReadsTicketsAndVerbs(t *testing.T) {
 	OpenRestartWait(r)
 	if !RestartWaitOpen(r) {
 		t.Fatal("restart wait not open")
-	}
-	for path, want := range map[string]bool{"/api/health": true, "/api/sessions/abc/messages/around": true,
-		"/api/profiles/sessions/sidebar": true, "/api/sessions/a/b": false, "/api/config": false} {
-		if got := RestartWaitRead(r, "GET", path); got != want {
-			t.Errorf("read %s = %v", path, got)
-		}
-	}
-	if RestartWaitRead(r, "POST", "/api/health") || !RestartWaitSocketTicket(r, "POST", "/api/webapp/socket-ticket", "socket=gateway") ||
-		RestartWaitSocketTicket(r, "POST", "/api/webapp/socket-ticket", "socket=gateway&socket=gateway") {
-		t.Fatal("ticket gate")
 	}
 	if WSMethodRefusedWhileDraining(r, "prompt.submit") || !WSMethodRefusedWhileDraining(r, "config.set") {
 		t.Fatal("ws verb gate")

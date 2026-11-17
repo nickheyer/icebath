@@ -12,7 +12,7 @@ import (
 
 var queuedTextOnly = map[string]bool{"text": true, "surface_v1": true, "display_v1": true, "local_operator_v1": true}
 
-var queuedInteractiveSources = map[string]bool{"cli": true, "tui": true, "gui": true, "desktop": true, "acp": true}
+var queuedInteractiveSources = map[string]bool{"cli": true, "tui": true, "gui": true, state.ClientHistorySource: true, "acp": true}
 
 // Connection surface the queued row verbs read, its authority, actor, operator flag and submission parser
 type QueuedControlConnection interface {

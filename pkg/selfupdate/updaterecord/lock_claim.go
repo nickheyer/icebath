@@ -143,7 +143,7 @@ func isAncestorPID(pid int) bool {
 	return false
 }
 
-// Reports whether a gateway, serve or dashboard host sits between this process and holderPID
+// Reports whether a gateway host sits between this process and holderPID
 func runtimeHostBelow(holderPID int) bool {
 	match := runtimeHostMatcher.Load()
 	if match == nil {
@@ -428,7 +428,7 @@ func DescribeHolder(holder *UpdateHolder) string {
 		return "✗ Cannot lock this install for the update: " + holder.Reason + ".\n" +
 			"\n" +
 			"  Updating without the lock could let two updates corrupt the install, or run\n" +
-			"  under a Desktop app, gateway or installer that cannot see it. Make that path\n" +
+			"  under a gateway or installer that cannot see it. Make that path\n" +
 			"  writable (fix its owner or permissions, or remount a read-only filesystem\n" +
 			"  read-write), or run `icebath update` as the user that owns the install."
 	}
@@ -452,8 +452,8 @@ func DescribeHolder(holder *UpdateHolder) string {
 	return "✗ Another icebath update is already running (started " + elapsed + " ago" + who + ").\n" +
 		"\n" +
 		"  Running two at once would corrupt the install. Wait for it to finish\n" +
-		"  (watch `icebath logs`), or close the Desktop/dashboard window that\n" +
-		"  started it, then run `icebath update` again."
+		"  (watch `icebath logs`), or stop the process that started it, then\n" +
+		"  run `icebath update` again."
 }
 
 type heldCheckout struct {
@@ -807,7 +807,7 @@ func publishExclusive(ctx context.Context, path string, body []byte) (bool, erro
 
 // Why an unwritable marker location refuses the update
 func markerUnwritable(path string, err error) string {
-	return fmt.Sprintf("%s is not writable (%s); the update records itself there so the Desktop app, gateways, installers and other updaters wait for it", path, pypath.OSErrorText(err))
+	return fmt.Sprintf("%s is not writable (%s); the update records itself there so gateways, installers and other updaters wait for it", path, pypath.OSErrorText(err))
 }
 
 var claims struct {

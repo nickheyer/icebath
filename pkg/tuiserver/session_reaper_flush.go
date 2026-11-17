@@ -147,7 +147,7 @@ func stopTurnsBeforeExit(ctx context.Context, budgetS *float64) {
 	}
 	var threads []*memory.ContextThread
 	for _, live := range running {
-		suppress(func() { interruptSessionTurn(ctx, live.SID, live.Session, "", false) })
+		suppress(func() { interruptSessionTurn(ctx, live.SID, live.Session, false) })
 		if t, ok := live.Session.Get("_run_thread").(*memory.ContextThread); ok && t != nil && t != currentRunThread(ctx) {
 			threads = append(threads, t)
 		}

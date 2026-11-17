@@ -100,9 +100,6 @@ func (c *CLI) addPM(root *cobra.Command) {
 	takeover := c.newCmd(root, "update-takeover", "finish an update a historical updater handed off", "")
 	takeover.Hidden = true
 	c.pos(takeover, p("context"), p("result"))
-	serveResume := c.newCmd(root, "update-serve-resume", "relaunch the manual backends a historical updater paused", "")
-	serveResume.Hidden = true
-	c.pos(serveResume, p("context"), p("result"))
 	finish := c.newCmd(root, "update-finish", "finish an update in the selected checkout", "")
 	finish.Hidden = true
 	c.pos(finish, p("context"), p("result"))

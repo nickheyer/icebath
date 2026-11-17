@@ -15,7 +15,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/cron"
-	"github.com/nickheyer/icebath/pkg/dashboard"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/tuiserver"
@@ -41,9 +40,9 @@ func (sessionHandlerNameError) PyTypeName() string { return "NameError" }
 
 // Makes every admitted session socket fail with the NameError before it answers and returns to the ordinary gateway entry
 func breakSessionOwner() {
-	dashboard.ReplaceSessionHandleWS(func(context.Context, tuiserver.ServedSocket, map[string]any, *string, bool) error {
+	sessionHandleWS = func(context.Context, tuiserver.ServedSocket, map[string]any, *string, bool) error {
 		return sessionHandlerNameError{}
-	})
+	}
 }
 
 // Class name and message of a Python classed error, the text type(exc).__name__ and str(exc) give

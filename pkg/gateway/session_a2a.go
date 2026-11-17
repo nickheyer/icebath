@@ -118,7 +118,7 @@ var (
 		return ensureGatewayRuntime(ctx, home, false)
 	}
 	forwardSessionTicket = func(home string, endpoint *GatewayEndpoint) (string, error) {
-		return sessionTicket(home, endpoint, "", "", "", false)
+		return sessionTicket(home, endpoint, "", "", false)
 	}
 )
 

@@ -142,19 +142,6 @@ func stampGet(stamp *pyjson.Object, key string) any {
 	return value
 }
 
-// Reports whether a packaged payload or OS updater owns the install's channel identity
-func packageChannel(stamp *pyjson.Object) bool {
-	switch stampGet(stamp, "payload") {
-	case "bundled", "light", "runtime":
-		return true
-	}
-	switch stampGet(stamp, "updateMechanism") {
-	case "electron-updater", "app-installer", "microsoft-store":
-		return true
-	}
-	return false
-}
-
 func rootOrInstall(projectRoot string) string {
 	if projectRoot == "" {
 		return pm.InstallRoot()
@@ -162,31 +149,16 @@ func rootOrInstall(projectRoot string) string {
 	return projectRoot
 }
 
-// Channel an unconfigured install tracks, stable for official releases and the baked identity of packages
+// Channel an unconfigured install tracks, stable for official releases and main otherwise
 func DefaultChannel(projectRoot string) (string, error) {
-	root := rootOrInstall(projectRoot)
-	stamp := pm.ReadInstallStamp(root)
-	if !packageChannel(stamp) {
-		official, err := tracksOfficialOrigin(root)
-		if err != nil {
-			return "", err
-		}
-		if official {
-			return ChannelStable, nil
-		}
-		return ChannelMain, nil
+	official, err := tracksOfficialOrigin(rootOrInstall(projectRoot))
+	if err != nil {
+		return "", err
 	}
-	if stampGet(stamp, "source") == "channel-build" {
-		request, ok := stampGet(stamp, "channelBuild").(*pyjson.Object)
-		if !ok {
-			return "", &ValueError{Msg: "Channel bundle has no baked subscription"}
-		}
-		return ValidateChannelName(stampGet(request, "channel"))
+	if official {
+		return ChannelStable, nil
 	}
-	if IsCanaryTag(stampGet(stamp, "tag")) {
-		return ChannelCanary, nil
-	}
-	return ChannelStable, nil
+	return ChannelMain, nil
 }
 
 var releaseBuildRE = regexp.MustCompile(`^v(?:0|[1-9]\p{Nd}{0,2})\.(?:0|[1-9]\p{Nd}*)\.(?:0|[1-9]\p{Nd}*)(?:-[a-z0-9]+(?:-[a-z0-9]+)*\.\p{Nd}+)?$`)
@@ -246,12 +218,9 @@ func RidesDefaultChannel(record map[string]any, channel, projectRoot string) (bo
 	return channel == def, nil
 }
 
-// Channel this install updates from, the package identity first, then its record, then the default
+// Channel this install updates from, its record first, then the default
 func ResolveUpdateChannel(cfg any, projectRoot string) (string, error) {
 	root := rootOrInstall(projectRoot)
-	if packageChannel(pm.ReadInstallStamp(root)) {
-		return DefaultChannel(root)
-	}
 	if configured, ok := ChannelRecord(cfg, root)["channel"]; ok && configured != nil {
 		return ValidateChannelName(configured)
 	}
@@ -269,7 +238,7 @@ func SetInstallChannel(ctx context.Context, channel, projectRoot string) (string
 		return "", err
 	}
 	stamp := pm.ReadInstallStamp(root)
-	if packageChannel(stamp) || stampGet(stamp, "updateMechanism") == "external" {
+	if stampGet(stamp, "updateMechanism") == "external" {
 		distribution := stampGet(stamp, "distribution")
 		if !pyrepr.Truthy(distribution) {
 			distribution = "an external steward"

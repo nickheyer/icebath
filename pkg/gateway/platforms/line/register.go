@@ -145,8 +145,6 @@ func (linePlatformPlugin) Register(ctx *plugins.Context) error {
 			"scoped_check_fn":        checkRequirements,
 			"scoped_validate_config": validateConfig,
 			"is_connected":           validateConfig,
-			"dashboard_description":  "Use Icebath from LINE via the LINE Messaging API webhook.",
-			"docs_url":               "https://hermes-agent.nousresearch.com/docs/user-guide/messaging/line",
 			"setup_fn":               InteractiveSetup,
 			"env_enablement_fn":      envEnablement,
 			"cron_deliver_env_var":   "LINE_HOME_CHANNEL",

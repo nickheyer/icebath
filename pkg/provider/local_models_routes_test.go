@@ -10,7 +10,6 @@ import (
 	"reflect"
 	"strings"
 	"sync"
-	"syscall"
 	"testing"
 	"time"
 
@@ -332,24 +331,11 @@ func TestCatalogNeverHidesUnaffordableModels(t *testing.T) {
 	}
 }
 
-func TestDownloadUnknownModel404s(t *testing.T) {
-	lmRoutesClient(t)
-	if _, err := LocalModelsDownload(context.Background(), "nope"); lmStatusOf(err) != 404 {
-		t.Fatalf("download %v", err)
-	}
-}
-
 // Generous GPU budget so the download path, not variant selection, is what a test exercises
 func lmPinBudget(t *testing.T) HardwareBudget {
 	budget := NewHardwareBudget(64<<30, 64<<30, 64<<30)
 	lmDeps.probeBudget = func(bool) (HardwareBudget, error) { return budget, nil }
 	return budget
-}
-
-// Retry backoff of every download taken instantly for the rest of the test
-func lmInstantRetries(t *testing.T) {
-	prev := pm.SwapDownloadWaitRetry(func(*pm.Download, time.Duration) error { return nil })
-	t.Cleanup(func() { pm.SwapDownloadWaitRetry(prev) })
 }
 
 // Whether the quickstart single flight lock is held
@@ -378,82 +364,6 @@ func lmGlob(t *testing.T, dir, pattern string) []string {
 	return matches
 }
 
-func TestDownloadShortOfServerLengthErrorsAndCleansUp(t *testing.T) {
-	lmRoutesClient(t)
-	lmInstantRetries(t)
-	srv := newLMRangeServer(t)
-	srv.set("/model", []byte("not the real body"))
-	srv.contentLen["/model"] = 32
-	destination := filepath.Join(localModelsDir(), "truncated.gguf")
-	lmDeps.downloadPlan = func(CatalogEntry, QuantVariant) []lmPlanRow { return []lmPlanRow{{srv.url("/model"), destination, 32}} }
-	lmPinBudget(t)
-	resp, err := LocalModelsDownload(context.Background(), Catalog()[0].ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	jobID, _ := resp["job_id"].(string)
-	if jobID == "" {
-		t.Fatalf("resp %v", resp)
-	}
-	status := lmPoll(t, jobID, 10*time.Second, "done", "error")
-	if status["status"] != "error" {
-		t.Fatalf("status %v", status)
-	}
-	requests := srv.seen()
-	probed, ranged := false, false
-	for _, r := range requests {
-		probed = probed || r == "bytes=0-0"
-		ranged = ranged || r != "bytes=0-0"
-	}
-	if !probed || !ranged {
-		t.Fatalf("requests %v", requests)
-	}
-	if !strings.Contains(status["error"].(string), "IncompleteRead") {
-		t.Fatalf("error %v", status["error"])
-	}
-	if lrPathExists(destination) {
-		t.Fatal("truncated download staged")
-	}
-	if lmRunningOf(jobID) != nil {
-		t.Fatal("failed job kept its handles")
-	}
-	if parts := lmGlob(t, localModelsDir(), "*.part"); len(parts) != 0 {
-		t.Fatalf("parts %v", parts)
-	}
-}
-
-func TestDownloadAlreadyDownloadedShortCircuits(t *testing.T) {
-	lmRoutesClient(t)
-	budget := lmPinBudget(t)
-	entry := Catalog()[0]
-	choice := SelectVariant(entry, budget)
-	if choice == nil {
-		t.Fatal("no variant fits")
-	}
-	for _, row := range lmDownloadPlan(entry, choice.Variant) {
-		lmWriteFakeGGUF(t, row.Dest, 1024)
-	}
-	resp, err := LocalModelsDownload(context.Background(), entry.ID)
-	if err != nil || resp["already_downloaded"] != true {
-		t.Fatalf("download %v %v", resp, err)
-	}
-}
-
-func TestDeleteModel(t *testing.T) {
-	lmRoutesClient(t)
-	doomed := filepath.Join(localModelsDir(), "Doomed.gguf")
-	lmWriteFakeGGUF(t, doomed, 1024)
-	if _, err := LocalModelsDelete(context.Background(), "Doomed"); err != nil {
-		t.Fatal(err)
-	}
-	if lrPathExists(doomed) {
-		t.Fatal("model still on disk")
-	}
-	if _, err := LocalModelsDelete(context.Background(), "Doomed"); lmStatusOf(err) != 404 {
-		t.Fatalf("second delete %v", err)
-	}
-}
-
 func TestRuntimeInstallRejectsImpossibleCombo(t *testing.T) {
 	lmRoutesClient(t)
 	lockPath := filepath.Join(filepath.Dir(pm.PartialsRoot()), "unavailable-lock.json")
@@ -465,107 +375,9 @@ func TestRuntimeInstallRejectsImpossibleCombo(t *testing.T) {
 	}
 	prev := pm.SwapLockfilePath(func() string { return lockPath })
 	t.Cleanup(func() { pm.SwapLockfilePath(prev) })
-	_, err := LocalModelsRuntimeInstall(context.Background(), "cpu", "")
+	_, err := LocalModelsRuntimeInstall(context.Background(), "cpu")
 	if lmStatusOf(err) != 400 || !strings.Contains(err.(*HTTPException).Detail, "not pinned") {
 		t.Fatalf("install %v", err)
-	}
-}
-
-func TestJobPollUnknown404s(t *testing.T) {
-	lmRoutesClient(t)
-	if _, err := LocalModelsJob(context.Background(), "deadbeef"); lmStatusOf(err) != 404 {
-		t.Fatalf("job %v", err)
-	}
-}
-
-func TestEjectWithoutSupervisorIsNotA500(t *testing.T) {
-	lmRoutesClient(t)
-	lmDeps.getSupervisor = func() localModelsSupervisor { return nil }
-	lmDeps.stateEndpoint = func() (map[string]any, error) { return nil, nil }
-	if _, err := LocalModelsEject(context.Background(), "anything"); lmStatusOf(err) != 409 {
-		t.Fatalf("eject %v", err)
-	}
-}
-
-// Range server answering every plan URL with body, standing in for the downloader's opener
-func lmFakeOpener(t *testing.T, body []byte) *lmRangeServer {
-	srv := newLMRangeServer(t)
-	srv.fallback = body
-	lmDeps.hfURL = func(repo, path, revision string) string {
-		return srv.url("/" + repo + "/resolve/" + revision + "/" + path)
-	}
-	return srv
-}
-
-func TestDownloadToleratesStaleCatalogSize(t *testing.T) {
-	lmRoutesClient(t)
-	lmFakeOpener(t, bytes.Repeat([]byte("x"), 48))
-	lmPinBudget(t)
-	lmDeps.refreshLocalRuntime = func(context.Context) (bool, error) { return false, nil }
-	resp, err := LocalModelsDownload(context.Background(), Catalog()[0].ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if status := lmPoll(t, resp["job_id"].(string), 10*time.Second, "done", "error"); status["status"] != "done" {
-		t.Fatalf("status %v", status["error"])
-	}
-}
-
-func TestDownloadSurvivesAHeldFinishedFile(t *testing.T) {
-	lmRoutesClient(t)
-	body := bytes.Repeat([]byte("x"), 48)
-	lmFakeOpener(t, body)
-	var mu sync.Mutex
-	var refusals []string
-	prev := pm.SwapRenameFile(func(src, dst string) error {
-		mu.Lock()
-		held := strings.HasSuffix(src, ".download") && len(refusals) < 2
-		if held {
-			refusals = append(refusals, src)
-		}
-		mu.Unlock()
-		if held {
-			return &os.LinkError{Op: "rename", Old: src, New: dst, Err: syscall.EACCES}
-		}
-		return os.Rename(src, dst)
-	})
-	t.Cleanup(func() { pm.SwapRenameFile(prev) })
-	lmPinBudget(t)
-	lmDeps.refreshLocalRuntime = func(context.Context) (bool, error) { return false, nil }
-	resp, err := LocalModelsDownload(context.Background(), Catalog()[0].ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if status := lmPoll(t, resp["job_id"].(string), 15*time.Second, "done", "error"); status["status"] != "done" {
-		t.Fatalf("status %v", status["error"])
-	}
-	mu.Lock()
-	count := len(refusals)
-	mu.Unlock()
-	if count != 2 {
-		t.Fatalf("refusals %d", count)
-	}
-	if parts := lmGlob(t, localModelsDir(), "*.part"); len(parts) != 0 {
-		t.Fatalf("parts %v", parts)
-	}
-	landed := false
-	for _, p := range lmGlob(t, localModelsDir(), "*.gguf") {
-		if got, _ := os.ReadFile(p); bytes.Equal(got, body) {
-			landed = true
-		}
-	}
-	if !landed {
-		t.Fatal("held file never landed")
-	}
-}
-
-func TestDownloadPauseAndResumeUnknown404(t *testing.T) {
-	lmRoutesClient(t)
-	if _, err := LocalModelsDownloadPause(context.Background(), "deadbeef"); lmStatusOf(err) != 404 {
-		t.Fatalf("pause %v", err)
-	}
-	if _, err := LocalModelsDownloadResume(context.Background(), "deadbeef"); lmStatusOf(err) != 404 {
-		t.Fatalf("resume %v", err)
 	}
 }
 
@@ -591,7 +403,7 @@ func lmPauseWhenFlowing(t *testing.T, jobID string) {
 	t.Helper()
 	deadline := time.Now().Add(15 * time.Second)
 	for time.Now().Before(deadline) {
-		view, err := LocalModelsJob(context.Background(), jobID)
+		view, err := LocalModelsJobView(jobID)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -602,8 +414,7 @@ func lmPauseWhenFlowing(t *testing.T, jobID string) {
 	}
 	deadline = time.Now().Add(15 * time.Second)
 	for time.Now().Before(deadline) {
-		resp, err := LocalModelsDownloadPause(context.Background(), jobID)
-		if err == nil && resp["paused"] == true {
+		if LocalModelsPauseJob(jobID) {
 			return
 		}
 		time.Sleep(30 * time.Millisecond)
@@ -613,131 +424,6 @@ func lmPauseWhenFlowing(t *testing.T, jobID string) {
 
 // Eight MiB of every byte value repeated
 func lmBigBody() []byte { return bytes.Repeat(lmBytes256(), 8*1024*1024/256) }
-
-func TestDownloadResumeCompletesBytes(t *testing.T) {
-	lmRoutesClient(t)
-	lmPinBudget(t)
-	big := lmBigBody()
-	srv, _ := lmServePlan(t, []struct {
-		name string
-		body []byte
-	}{{"PartA", big}})
-	resp, err := LocalModelsDownload(context.Background(), Catalog()[0].ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	jobID := resp["job_id"].(string)
-	lmPauseWhenFlowing(t, jobID)
-	status := lmPoll(t, jobID, 15*time.Second, "paused", "done", "error")
-	if status["status"] != "paused" {
-		t.Fatalf("status %v", status)
-	}
-	srv.slow(0, 128*1024)
-	if status["error"] != nil {
-		t.Fatalf("error %v", status["error"])
-	}
-	if running := lmRunningOf(jobID); running == nil || running.resume == nil {
-		t.Fatal("paused job lost its resume handle")
-	}
-	partials := lmGlob(t, pm.PartialsRoot(), "*.part")
-	grown := false
-	for _, p := range partials {
-		if st, err := os.Stat(p); err == nil && st.Size() > 0 {
-			grown = true
-		}
-	}
-	if len(partials) == 0 || !grown {
-		t.Fatalf("partials %v", partials)
-	}
-	resumed, err := LocalModelsDownloadResume(context.Background(), jobID)
-	if err != nil || resumed["resumed"] != true {
-		t.Fatalf("resume %v %v", resumed, err)
-	}
-	status = lmPoll(t, jobID, 15*time.Second, "done", "error")
-	if status["status"] != "done" {
-		t.Fatalf("status %v", status)
-	}
-	if got, _ := os.ReadFile(filepath.Join(localModelsDir(), "PartA.gguf")); !bytes.Equal(got, big) {
-		t.Fatalf("staged %d bytes", len(got))
-	}
-	if lmRunningOf(jobID) != nil {
-		t.Fatal("finished job kept its handles")
-	}
-}
-
-// Download double counting constructions whose transfer waits for a release
-type lmCountingDownload struct {
-	inner   lmDownloader
-	started chan struct{}
-	release chan struct{}
-	once    *sync.Once
-}
-
-func (d *lmCountingDownload) Run(progress pm.ProgressFunc) ([]string, error) {
-	d.once.Do(func() { close(d.started) })
-	select {
-	case <-d.release:
-	case <-time.After(15 * time.Second):
-		return nil, errors.New("release never came")
-	}
-	return d.inner.Run(progress)
-}
-
-func TestRepeatedResumeNeverSpawnsConcurrentWriters(t *testing.T) {
-	lmRoutesClient(t)
-	lmPinBudget(t)
-	srv, _ := lmServePlan(t, []struct {
-		name string
-		body []byte
-	}{{"PartA", lmBigBody()}})
-	resp, err := LocalModelsDownload(context.Background(), Catalog()[0].ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	jobID := resp["job_id"].(string)
-	lmPauseWhenFlowing(t, jobID)
-	if status := lmPoll(t, jobID, 15*time.Second, "paused", "done", "error"); status["status"] != "paused" {
-		t.Fatalf("status %v", status)
-	}
-	var mu sync.Mutex
-	built := 0
-	started, release, once := make(chan struct{}), make(chan struct{}), &sync.Once{}
-	real := lmDeps.newDownload
-	lmDeps.newDownload = func(sources []pm.Source, pause *pm.PauseEvent) lmDownloader {
-		mu.Lock()
-		built++
-		mu.Unlock()
-		return &lmCountingDownload{inner: real(sources, pause), started: started, release: release, once: once}
-	}
-	func() {
-		defer func() {
-			srv.slow(0, 128*1024)
-			close(release)
-		}()
-		if _, err := LocalModelsDownloadResume(context.Background(), jobID); err != nil {
-			t.Fatal(err)
-		}
-		select {
-		case <-started:
-		case <-time.After(15 * time.Second):
-			t.Fatal("resume never built a Download")
-		}
-		for range 2 {
-			again, err := LocalModelsDownloadResume(context.Background(), jobID)
-			if err != nil || again["resumed"] != false {
-				t.Fatalf("second resume %v %v", again, err)
-			}
-		}
-		mu.Lock()
-		defer mu.Unlock()
-		if built != 1 {
-			t.Fatalf("built %d downloads", built)
-		}
-	}()
-	if status := lmPoll(t, jobID, 15*time.Second, "done", "error"); status["status"] != "done" {
-		t.Fatalf("status %v", status)
-	}
-}
 
 func TestQuickstartPauseStopsTheSequence(t *testing.T) {
 	lmRoutesClient(t)
@@ -767,12 +453,12 @@ func TestQuickstartPauseStopsTheSequence(t *testing.T) {
 		count("server")
 		return nil, errors.New("server must not start after a pause")
 	}
-	lmDeps.applyAssignment = func(context.Context, string, string, string, string, string, string) (map[string]any, error) {
+	lmDeps.applyAssignment = func(context.Context, string, string, string, string) (map[string]any, error) {
 		count("assign")
 		return nil, nil
 	}
 	entryID := Catalog()[0].ID
-	resp, err := LocalModelsQuickstart(context.Background(), entryID, "")
+	resp, err := LocalModelsQuickstart(context.Background(), entryID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -787,11 +473,11 @@ func TestQuickstartPauseStopsTheSequence(t *testing.T) {
 	if lrPathExists(filepath.Join(localModelsDir(), "QsPartB.gguf")) {
 		t.Fatal("second plan file touched after the pause")
 	}
-	if running := lmRunningOf(jobID); running == nil || running.resume == nil {
-		t.Fatal("paused quickstart lost its resume handle")
+	if lmRunningOf(jobID) != nil {
+		t.Fatal("paused quickstart kept its handles")
 	}
-	if !lmQuickstartLocked() {
-		t.Fatal("paused quickstart must retain setup ownership")
+	if lmQuickstartLocked() {
+		t.Fatal("paused quickstart kept the setup lock")
 	}
 	lmDeps.ensureServer = func(context.Context, map[string]any, map[string]any, string, string, string) error {
 		count("server")
@@ -802,14 +488,12 @@ func TestQuickstartPauseStopsTheSequence(t *testing.T) {
 		return nil
 	}
 	srv.slow(0, 128*1024)
-	if _, err := LocalModelsQuickstart(context.Background(), entryID, ""); lmStatusOf(err) != 409 {
+	again, err := LocalModelsQuickstart(context.Background(), entryID)
+	if err != nil {
 		t.Fatalf("second quickstart %v", err)
 	}
-	resumed, err := LocalModelsDownloadResume(context.Background(), jobID)
-	if err != nil || resumed["resumed"] != true {
-		t.Fatalf("resume %v %v", resumed, err)
-	}
-	if status := lmPoll(t, jobID, 15*time.Second, "done", "error"); status["status"] != "done" {
+	againID := again["job_id"].(string)
+	if status := lmPoll(t, againID, 15*time.Second, "done", "error"); status["status"] != "done" {
 		t.Fatalf("status %v", status)
 	}
 	if got := snapshot(); !reflect.DeepEqual(got, map[string]int{"server": 1, "assign": 1}) {
@@ -820,30 +504,10 @@ func TestQuickstartPauseStopsTheSequence(t *testing.T) {
 			t.Fatalf("%s %d bytes", name, len(got))
 		}
 	}
-	if lmRunningOf(jobID) != nil {
+	if lmRunningOf(againID) != nil {
 		t.Fatal("finished quickstart kept its handles")
 	}
 	if lmQuickstartLocked() {
 		t.Fatal("finished quickstart kept the setup lock")
-	}
-}
-
-func TestDownloadFailureReleasesResumeHandle(t *testing.T) {
-	lmRoutesClient(t)
-	lmPinBudget(t)
-	lmDeps.downloadPlan = func(CatalogEntry, QuantVariant) []lmPlanRow { return nil }
-	lmDeps.downloadJob = func(context.Context, map[string]any, []lmPlanRow) error {
-		return errors.New("download failed")
-	}
-	resp, err := LocalModelsDownload(context.Background(), Catalog()[0].ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	jobID := resp["job_id"].(string)
-	if status := lmPoll(t, jobID, 15*time.Second, "paused", "done", "error"); status["status"] != "error" {
-		t.Fatalf("status %v", status)
-	}
-	if lmRunningOf(jobID) != nil {
-		t.Fatal("failed job kept its handles")
 	}
 }

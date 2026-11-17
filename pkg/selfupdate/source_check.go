@@ -2,10 +2,7 @@ package selfupdate
 
 import (
 	"context"
-	"errors"
-	"flag"
 	"fmt"
-	"io"
 	"log/slog"
 	"os"
 	"os/exec"
@@ -270,15 +267,10 @@ func unsupportedReason(ctx context.Context, stamp *pyjson.Object, root, h string
 	if stampGet(stamp, "source") == "commit-build" {
 		return pyjson.ObjectOf("reason", "commit-build", "message", CommitBuildUpdateMessage)
 	}
-	payload := stampGet(stamp, "payload")
-	bundled := payload == "bundled" || payload == "light" || payload == "runtime"
-	if !bundled && !explicitRoot {
+	if !explicitRoot {
 		if method, err := config.DetectInstallMethod(ctx, h, root); err == nil && (method == "docker" || config.IsPackageManagerInstallMethod(method)) {
-			bundled = true
+			return pyjson.ObjectOf("reason", "not-a-git-checkout")
 		}
-	}
-	if bundled {
-		return pyjson.ObjectOf("reason", "not-a-git-checkout")
 	}
 	if _, err := os.Stat(filepath.Join(root, ".git")); embedded == "" && err != nil {
 		return pyjson.ObjectOf("reason", "not-a-git-checkout", "message", "This install has no git checkout to update.")
@@ -316,16 +308,6 @@ func readSourceCheckout(ctx context.Context, root, git, embedded string) sourceC
 	status, _ := checkGitStdout(ctx, []string{"status", "--porcelain"}, root, git)
 	co.dirty = status != ""
 	return co
-}
-
-// Branch the Desktop setting pins, empty when unset or blank
-func configuredBranch(desktopConfig any) string {
-	obj, ok := desktopConfig.(*pyjson.Object)
-	if !ok {
-		return ""
-	}
-	value, _ := stampGet(obj, "branch").(string)
-	return pystr.Strip(value)
 }
 
 // The checkout's branch, or fallback when detached or unreadable
@@ -586,20 +568,6 @@ func branchRemote(co sourceCheckout, selectedBranch string) string {
 	return "origin"
 }
 
-// Points the Desktop branch setting back at main unless it changed while the probe ran
-func healDeletedBranch(ctx context.Context, branchConfigPath string, desktopConfig any) error {
-	if !pyjson.Equal(readJSONFile(branchConfigPath), desktopConfig) {
-		return nil
-	}
-	obj, _ := desktopConfig.(*pyjson.Object)
-	healed := pyjson.NewObject()
-	if obj != nil {
-		healed = obj.Copy()
-	}
-	healed.Set("branch", "main")
-	return config.AtomicJSONWrite(ctx, branchConfigPath, healed)
-}
-
 // Why a branch the remote does not advertise keeps its pin, empty when healing loses nothing
 func unhealableReason(ctx context.Context, co sourceCheckout, branch string) string {
 	if co.embedded != "" {
@@ -651,13 +619,8 @@ func behindCount(ctx context.Context, co sourceCheckout, target string) (int64, 
 	return UpdateAvailableNoCount, []any{}
 }
 
-type branchHeal struct {
-	path          string
-	desktopConfig any
-}
-
 // Compares the checkout with the selected branch's remote tip, falling back to main when it was deleted
-func checkBranch(ctx context.Context, result *pyjson.Object, co sourceCheckout, selectedBranch string, heal *branchHeal) error {
+func checkBranch(ctx context.Context, result *pyjson.Object, co sourceCheckout, selectedBranch string) error {
 	result.Set("branch", selectedBranch)
 	remote := branchRemote(co, selectedBranch)
 	target, missing, failure := branchTip(ctx, co.repository, selectedBranch, co.root, co.git, remote)
@@ -677,11 +640,6 @@ func checkBranch(ctx context.Context, result *pyjson.Object, co sourceCheckout, 
 	}
 	if missing && selectedBranch != "main" {
 		result.Set("branch", "main")
-		if heal != nil {
-			if err := healDeletedBranch(ctx, heal.path, heal.desktopConfig); err != nil {
-				return err
-			}
-		}
 		mainRemote := "origin"
 		if co.embedded != "" {
 			mainRemote = remote
@@ -712,7 +670,6 @@ type SourceCheckOptions struct {
 	Branch           *string
 	Channel          *string
 	CachePath        string
-	BranchConfigPath string
 	Force            bool
 	Passive          bool
 	Git              string
@@ -769,15 +726,7 @@ func CheckForUpdates(ctx context.Context, opts SourceCheckOptions) (*pyjson.Obje
 		return nil, err
 	}
 	co := readSourceCheckout(ctx, root, installedGit(ctx, git), embedded)
-	var desktopConfig any
-	if opts.BranchConfigPath != "" {
-		desktopConfig = readJSONFile(opts.BranchConfigPath)
-	}
-	configured := configuredBranch(desktopConfig)
 	selected := checkedOutBranch(co.currentBranch, "main")
-	if configured != "" {
-		selected = configured
-	}
 	if opts.Branch != nil && *opts.Branch != "" {
 		selected = *opts.Branch
 	}
@@ -817,16 +766,12 @@ func CheckForUpdates(ctx context.Context, opts SourceCheckOptions) (*pyjson.Obje
 	} else if opts.Branch == nil {
 		target = resolveCheckChannel(ctx, result, channel, co, forwardOnly)
 		if target != nil && target.Commit == "" {
-			selected = firstNonEmpty(configured, checkedOutBranch(co.currentBranch, target.Branch))
+			selected = checkedOutBranch(co.currentBranch, target.Branch)
 		}
 	}
 	_, failed := result.Get("error")
 	if !failed && (target == nil || target.Branch != "") {
-		var heal *branchHeal
-		if opts.BranchConfigPath != "" && opts.Branch == nil && configured == selected {
-			heal = &branchHeal{path: opts.BranchConfigPath, desktopConfig: desktopConfig}
-		}
-		if err := checkBranch(ctx, result, co, selected, heal); err != nil {
+		if err := checkBranch(ctx, result, co, selected); err != nil {
 			return nil, err
 		}
 	}
@@ -835,105 +780,4 @@ func CheckForUpdates(ctx context.Context, opts SourceCheckOptions) (*pyjson.Obje
 		holdRefusedRelease(ctx, result, co, h)
 	}
 	return result, nil
-}
-
-const sourceCheckUsage = "usage: icebath source-check [-h] --install-root INSTALL_ROOT --home HOME [--git GIT]\n" +
-	"                             [--branch BRANCH] [--channel CHANNEL]\n" +
-	"                             [--cache-path CACHE_PATH]\n" +
-	"                             [--branch-config-path BRANCH_CONFIG_PATH] [--force]\n" +
-	"                             [--set-channel SET_CHANNEL]\n"
-
-type optionalFlag struct{ value *string }
-
-func (f *optionalFlag) String() string {
-	if f.value == nil {
-		return ""
-	}
-	return *f.value
-}
-
-func (f *optionalFlag) Set(value string) error {
-	f.value = &value
-	return nil
-}
-
-// Desktop's passive check entry, reporting the status as one JSON line and persisting a selected channel first
-func SourceCheckMain(ctx context.Context, args []string, stdout, stderr io.Writer) int {
-	fail := func(message string) int {
-		fmt.Fprint(stderr, sourceCheckUsage)
-		fmt.Fprintf(stderr, "icebath source-check: error: %s\n", message)
-		return 2
-	}
-	set := flag.NewFlagSet("icebath source-check", flag.ContinueOnError)
-	set.SetOutput(io.Discard)
-	var installRoot, homeDir, branch, channel, cachePath, branchConfig, setChannel optionalFlag
-	git := set.String("git", "git", "")
-	force := set.Bool("force", false, "")
-	set.Var(&installRoot, "install-root", "")
-	set.Var(&homeDir, "home", "")
-	set.Var(&branch, "branch", "")
-	set.Var(&channel, "channel", "")
-	set.Var(&cachePath, "cache-path", "")
-	set.Var(&branchConfig, "branch-config-path", "")
-	set.Var(&setChannel, "set-channel", "")
-	if err := set.Parse(args); err != nil {
-		if errors.Is(err, flag.ErrHelp) {
-			fmt.Fprint(stdout, sourceCheckUsage)
-			return 0
-		}
-		return fail(err.Error())
-	}
-	if set.NArg() > 0 {
-		return fail("unrecognized arguments: " + strings.Join(set.Args(), " "))
-	}
-	var missing []string
-	if installRoot.value == nil {
-		missing = append(missing, "--install-root")
-	}
-	if homeDir.value == nil {
-		missing = append(missing, "--home")
-	}
-	if len(missing) > 0 {
-		return fail("the following arguments are required: " + strings.Join(missing, ", "))
-	}
-	for _, named := range []struct {
-		flag  string
-		value *optionalFlag
-	}{{"--channel", &channel}, {"--set-channel", &setChannel}} {
-		if named.value.value != nil {
-			if _, err := ValidateChannelName(*named.value.value); err != nil {
-				return fail(fmt.Sprintf("argument %s: invalid validate_name value: %s", named.flag, pyrepr.Repr(*named.value.value)))
-			}
-		}
-	}
-	if setChannel.value != nil {
-		scoped := home.WithOverride(ctx, *homeDir.value)
-		if _, err := SetInstallChannel(scoped, *setChannel.value, *installRoot.value); err != nil {
-			fmt.Fprintln(stderr, err)
-			return 1
-		}
-		*force = true
-	}
-	result, err := CheckForUpdates(ctx, SourceCheckOptions{InstallRoot: *installRoot.value, Home: *homeDir.value,
-		Branch: branch.value, Channel: channel.value, CachePath: branchOr(cachePath.value),
-		BranchConfigPath: branchOr(branchConfig.value), Force: *force, Git: *git})
-	if err != nil {
-		fmt.Fprintln(stderr, err)
-		return 1
-	}
-	result.Set("channelSelectable", true)
-	text, err := pyjson.Dumps(result)
-	if err != nil {
-		fmt.Fprintln(stderr, err)
-		return 1
-	}
-	fmt.Fprintln(stdout, text)
-	return 0
-}
-
-func branchOr(value *string) string {
-	if value == nil {
-		return ""
-	}
-	return *value
 }

@@ -20,19 +20,6 @@ func refreshActiveMemoryProviderDependencies(ctx context.Context) error {
 	return pm.StopForRelaunch(ctx)
 }
 
-// Retired dependency hook of an old updater, hands the run to the takeover child without a currency answer
-func npmLockfileChanged(ctx context.Context, icebathRoot string) error {
-	return pm.StopForRelaunch(ctx)
-}
-
-// Retired dependency hook of an old updater, hands the run to the takeover child without an npm install
-func updateNodeDependencies(ctx context.Context) error { return pm.StopForRelaunch(ctx) }
-
-// Retired dependency hook of an old updater, hands the run to the takeover child without a desktop build
-func rebuildDesktopAfterUpdate(ctx context.Context, desktopDir string, hadDesktopAppBeforeUpdate bool) error {
-	return pm.StopForRelaunch(ctx)
-}
-
 // Retired dependency hook of an old updater, hands the run to the takeover child without an ownership preflight
 func pathUID(ctx context.Context, path string) error { return pm.StopForRelaunch(ctx) }
 
@@ -47,9 +34,6 @@ func (e *ShimQuarantineError) Error() string {
 func newShimQuarantineError(failedShims []string) *ShimQuarantineError {
 	return &ShimQuarantineError{FailedShims: append([]string{}, failedShims...)}
 }
-
-// Retired main entry of an old updater, hands the run to the takeover child without selecting a build stamp
-func desktopStampPath(ctx context.Context) error { return pm.StopForRelaunch(ctx) }
 
 // Retired main entry of an old updater, answers nothing so broken imports read as unknown
 func detectBrokenLazyRefreshImports(installCmdPrefix []string, env map[string]string) []string {

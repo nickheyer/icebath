@@ -16,7 +16,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
-// Largest foreign log the desktop browser previews or imports
+// Largest foreign log the foreign session browser previews or imports
 const foreignMaxLogBytes = 32 * 1024 * 1024
 
 // Foreign sources in their declaration order

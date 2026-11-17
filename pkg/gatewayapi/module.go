@@ -482,14 +482,14 @@ var securityHeaders = [][2]string{
 }
 
 // Middleware adding CORS headers for allowed origins and answering the preflight, reading the adapter the app holds
-func corsMiddlewareFor(app *gateway.WebApplication) gateway.WebMiddleware {
+func corsMiddlewareFor(app *gateway.HTTPApp) gateway.WebMiddleware {
 	return func(ctx context.Context, request *gateway.WebRequest, handler gateway.WebHandler) (*gateway.WebResponse, error) {
 		return corsMiddleware(ctx, app, request, handler)
 	}
 }
 
 // CORS headers for allowed origins and the OPTIONS preflight, 403 for a disallowed browser origin
-func corsMiddleware(ctx context.Context, app *gateway.WebApplication, request *gateway.WebRequest, handler gateway.WebHandler) (*gateway.WebResponse, error) {
+func corsMiddleware(ctx context.Context, app *gateway.HTTPApp, request *gateway.WebRequest, handler gateway.WebHandler) (*gateway.WebResponse, error) {
 	adapter, _ := app.State["api_server_adapter"].(*APIServerAdapter)
 	origin := request.Header.Get("Origin")
 	var headers [][2]string

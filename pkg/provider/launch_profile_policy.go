@@ -2,10 +2,8 @@ package provider
 
 import (
 	"context"
-	"log/slog"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 	"sync"
 
@@ -56,26 +54,6 @@ func ActivateMultiProfileHosting() {
 	SetMultiplexActive(true)
 }
 
-// Resolved homes this host could serve, the launch home plus every profile carrying a servability marker
-func servableProfileHomes(ctx context.Context) (map[string]bool, error) {
-	served, err := launchProfilesToServe(ctx, true, true, true)
-	if err != nil {
-		return nil, err
-	}
-	homes := map[string]bool{}
-	for _, p := range served {
-		if p.Name == "default" || home.ProfileHasServableIdentity(p.Home) {
-			homes[launchResolvedPath(p.Home)] = true
-		}
-	}
-	launch := os.Getenv(home.EnvHome)
-	if launch == "" {
-		launch = home.PlatformDefault()
-	}
-	homes[launchResolvedPath(launch)] = true
-	return homes, nil
-}
-
 // Absolute path with every existing symlink resolved, the non strict Path.resolve form
 func launchResolvedPath(p string) string {
 	abs, err := filepath.Abs(p)
@@ -95,33 +73,6 @@ func launchResolvedPath(p string) string {
 		rest = filepath.Join(filepath.Base(cur), rest)
 		cur = parent
 	}
-}
-
-// Activates multi profile hosting and per home log routing when more than one servable home exists, true when it activated
-func ActivateMultiProfileHostingEagerly(ctx context.Context) (bool, error) {
-	if IsMultiplexActive(ctx) {
-		return false, nil
-	}
-	homes, err := servableProfileHomes(ctx)
-	if err != nil {
-		slog.Warn("Could not enumerate this host's profile homes; activating multi-profile hosting fail-closed (unscoped credential reads will raise instead of borrowing the launch profile's)", "error", err)
-		ActivateMultiProfileHosting()
-		return true, nil
-	}
-	if len(homes) < 2 {
-		return false, nil
-	}
-	slog.Info("Multi-profile hosting activated at startup", "homes", len(homes))
-	ActivateMultiProfileHosting()
-	sorted := make([]string, 0, len(homes))
-	for h := range homes {
-		sorted = append(sorted, h)
-	}
-	sort.Strings(sorted)
-	if _, err := enableProfileLogRouting(sorted); err != nil {
-		return true, err
-	}
-	return true, nil
 }
 
 // Launch profile env, frozen once multiplexing is active and the live process env before

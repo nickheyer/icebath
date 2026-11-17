@@ -9,10 +9,8 @@ func init() {
 	registerTodoTool()
 	registerClarifyTool()
 	registerSessionSearchTool()
-	registerDesktopUITools()
 	registerDiscordTools()
 	registerProjectTools()
-	registerSetupBeatTool()
 	registerCheckpointManager()
 	registerRemoteTerminalBackends()
 }

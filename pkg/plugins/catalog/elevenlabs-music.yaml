@@ -7,8 +7,7 @@ description: 'ElevenLabs Music for Hermes: describe a song or paste your lyrics 
   and sends the track, 3 seconds to 10 minutes, vocals or instrumental. It can redo one section, extend or
   loop a song, split it into stems (vocals, drums, bass, guitar, piano, other) and score a video. Long songs
   finish in the background and arrive in the chat. Bundles a music skill (prompting, composition plans,
-  edit recipes) and, in Hermes Desktop, an inline music card with synced lyrics, format downloads and a
-  music library tab. Model, audio format and endpoint are plugin settings.
+  edit recipes). Model, audio format and endpoint are plugin settings.
   Disclosure: uses your ElevenLabs API key (ELEVENLABS_API_KEY, the same key as Hermes''s ElevenLabs voice;
   needs a paid ElevenLabs plan, and a restricted key needs the Music permission); compose, plan, upload,
   stems and video calls are paid generations billed to your ElevenLabs account by length (drafting a plan

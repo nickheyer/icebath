@@ -80,9 +80,6 @@ func watcherHomeFixture(t *testing.T) (string, *watchEvents) {
 	changeState.Lock()
 	changeState.sigs, changeState.checkedAt, changeState.broadcastAt = map[string]any{}, map[string]float64{}, map[string]float64{}
 	changeState.Unlock()
-	botRelayOutboxSeen.Lock()
-	botRelayOutboxSeen.ns = 0
-	botRelayOutboxSeen.Unlock()
 	pairingRootsCache.Lock()
 	pairingRootsCache.set = false
 	pairingRootsCache.Unlock()
@@ -482,76 +479,6 @@ func TestRenderablePetBroadcastsMetaPayload(t *testing.T) {
 	payload := got[0].payload
 	if payload["enabled"] != true || payload["slug"] != "boba" || payload["spritesheetRevision"] == "" {
 		t.Fatalf("payload = %v", payload)
-	}
-}
-
-func TestEnqueuedEnvelopeBroadcastsOutboxPending(t *testing.T) {
-	h, events := watcherHomeFixture(t)
-	outbox := filepath.Join(h, "bot_relay", "outbox")
-	mkdirs(t, outbox)
-	watchPass(0)
-	id := string(slices.Repeat([]byte("a"), 32))
-	watchWriteFile(t, filepath.Join(outbox, id+".json"), `{"id": "`+id+`"}`)
-	watchPass(10)
-	if !events.has("bot_relay.outbox.pending") {
-		t.Fatalf("events = %v", events.all())
-	}
-}
-
-func TestDrainedOutboxDoesNotRebroadcastPending(t *testing.T) {
-	h, events := watcherHomeFixture(t)
-	envelope := filepath.Join(h, "bot_relay", "outbox", string(slices.Repeat([]byte("b"), 32))+".json")
-	watchWriteFile(t, envelope, "{}")
-	watchPass(0)
-	if err := os.Remove(envelope); err != nil {
-		t.Fatal(err)
-	}
-	watchPass(10)
-	watchPass(20)
-	if got := events.named("bot_relay.outbox.pending"); len(got) != 0 {
-		t.Fatalf("events = %v", got)
-	}
-}
-
-func TestNewEnvelopeAfterDrainFiresPendingAgain(t *testing.T) {
-	h, events := watcherHomeFixture(t)
-	outbox := filepath.Join(h, "bot_relay", "outbox")
-	first := filepath.Join(outbox, string(slices.Repeat([]byte("c"), 32))+".json")
-	watchWriteFile(t, first, "{}")
-	watchPass(0)
-	watchWriteFile(t, first, "{}")
-	info, err := os.Stat(first)
-	if err != nil {
-		t.Fatal(err)
-	}
-	bump := info.ModTime().Add(time.Millisecond)
-	if err := os.Chtimes(first, bump, bump); err != nil {
-		t.Fatal(err)
-	}
-	watchPass(10)
-	if err := os.Remove(first); err != nil {
-		t.Fatal(err)
-	}
-	watchPass(20)
-	second := filepath.Join(outbox, string(slices.Repeat([]byte("d"), 32))+".json")
-	watchWriteFile(t, second, "{}")
-	newer := bump.Add(time.Millisecond)
-	if err := os.Chtimes(second, newer, newer); err != nil {
-		t.Fatal(err)
-	}
-	watchPass(30)
-	got := events.named("bot_relay.outbox.pending")
-	if len(got) != 2 || len(got[0].payload) != 0 || len(got[1].payload) != 0 {
-		t.Fatalf("events = %v", got)
-	}
-}
-
-func TestNoOutboxDirNeverFiresPending(t *testing.T) {
-	_, events := watcherHomeFixture(t)
-	watchPass(0)
-	watchPass(10)
-	if got := events.named("bot_relay.outbox.pending"); len(got) != 0 {
-		t.Fatalf("events = %v", got)
 	}
 }
 

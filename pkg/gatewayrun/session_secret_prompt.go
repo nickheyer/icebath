@@ -36,7 +36,7 @@ func secretPromptScope(ctx context.Context, t *TurnRunner, a *agent.AIAgent) con
 			params.Set("metadata", secretMetadataObject(metadata))
 		}
 		timeout := secretTimeoutS
-		value := gateway.AskViewer(live.EventStream, sessionID, "secret", params, a.InterruptRequested, &timeout, true)
+		value := gateway.AskViewer(live.EventStream, sessionID, "secret", params, a.InterruptRequested, &timeout)
 		if value == "" {
 			return secretSkipped(varName, "cancelled", "Secret setup was skipped."), nil
 		}

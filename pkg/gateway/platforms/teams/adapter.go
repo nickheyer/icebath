@@ -122,7 +122,7 @@ type TeamsAdapter struct {
 	tokenMu          sync.Mutex
 	bfTokenCache     *bfToken
 	app              *teamsApp
-	runner           *gateway.WebAppRunner
+	runner           *gateway.HTTPAppRunner
 	dedup            *gateway.MessageDeduplicator
 	convRefs         map[string]conversationRef
 	sentIDs          []string
@@ -239,7 +239,7 @@ func (a *TeamsAdapter) Connect(ctx context.Context, isReconnect bool) (bool, err
 
 // Builds the web app with the health and activity routes, wires plugins and binds the listener
 func (a *TeamsAdapter) connect(ctx context.Context) error {
-	app := gateway.NewWebApplication(maxBodyBytes)
+	app := gateway.NewHTTPApp(maxBodyBytes)
 	if err := app.AddGet("/health", func(context.Context, *gateway.WebRequest) (*gateway.WebResponse, error) {
 		return gateway.WebTextResponse(200, "ok", "", nil), nil
 	}); err != nil {

@@ -56,7 +56,7 @@ func TestInterruptRunningTurnFiresAgentLoopStopped(t *testing.T) {
 		calls = append(calls, kwargs)
 		return nil
 	})
-	interruptSessionTurn(context.Background(), "s1", stopHookSession(true), "", false)
+	interruptSessionTurn(context.Background(), "s1", stopHookSession(true), false)
 	want := map[string]any{"session_key": "agent:main:tui:dm:s1", "platform": "tui", "reason": "user_stop", "invalidation_reason": "session_interrupt"}
 	if len(calls) != 1 || !reflect.DeepEqual(calls[0], want) {
 		t.Fatalf("hook calls %v", calls)
@@ -70,7 +70,7 @@ func TestInterruptIdleSessionDoesNotFireHook(t *testing.T) {
 		calls = append(calls, kwargs)
 		return nil
 	})
-	interruptSessionTurn(context.Background(), "s1", stopHookSession(false), "", false)
+	interruptSessionTurn(context.Background(), "s1", stopHookSession(false), false)
 	if len(calls) != 0 {
 		t.Fatalf("hook calls %v", calls)
 	}
@@ -80,7 +80,7 @@ func TestHookFailureDoesNotBreakInterrupt(t *testing.T) {
 	stopHookHome(t)
 	recordHook(context.Background(), "agent_loop_stopped", func(context.Context, map[string]any) error { panic(errors.New("plugin exploded")) })
 	session := stopHookSession(true)
-	interruptSessionTurn(context.Background(), "s1", session, "", false)
+	interruptSessionTurn(context.Background(), "s1", session, false)
 	if session.Get("_turn_cancel_requested") != true {
 		t.Fatalf("cancel flag %v", session.Get("_turn_cancel_requested"))
 	}
@@ -112,7 +112,7 @@ func TestInterruptHookObserverSeesTheSessionsProfileABA(t *testing.T) {
 	for _, profileHome := range []any{nil, routed, nil} {
 		session := stopHookSession(true)
 		session.Set("profile_home", profileHome)
-		interruptSessionTurn(context.Background(), "s1", session, "", false)
+		interruptSessionTurn(context.Background(), "s1", session, false)
 		if got := home.Dir(context.Background()); got != launch {
 			t.Fatalf("home binding leaked past the dispatch %s", got)
 		}

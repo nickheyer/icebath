@@ -4,7 +4,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/gateway"
 )
 
 func TestEmptyAllowlistDropWarningOnlyForUntouchedDefault(t *testing.T) {
@@ -21,9 +20,7 @@ func TestEmptyAllowlistDropWarningOnlyForUntouchedDefault(t *testing.T) {
 			t.Fatalf("%+v warned", tc)
 		}
 	}
-	e := gateway.PlatformEntry{}
-	applyDashboardCard(&e)
-	if e.DashboardDescription != "Use Icebath inside Feishu / Lark." || len(e.DashboardEnvVars) != 4 || !strings.Contains(platformHint, "Feishu (Lark)") {
-		t.Fatalf("%+v", e)
+	if !strings.Contains(platformHint, "Feishu (Lark)") {
+		t.Fatalf("%q", platformHint)
 	}
 }

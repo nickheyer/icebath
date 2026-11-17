@@ -3,12 +3,10 @@ package tuiserver
 import (
 	"context"
 	"fmt"
-	"reflect"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/tools"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
 )
 
@@ -83,54 +81,6 @@ func noteUserInput(session *tuigateway.Session) {
 	}
 }
 
-// Whether two values are the same Python object, maps compared by identity
-func sameObject(a, b any) bool {
-	if a == nil || b == nil {
-		return a == nil && b == nil
-	}
-	va, vb := reflect.ValueOf(a), reflect.ValueOf(b)
-	if va.Kind() != vb.Kind() {
-		return false
-	}
-	switch va.Kind() {
-	case reflect.Map, reflect.Pointer, reflect.Slice:
-		return va.UnsafePointer() == vb.UnsafePointer()
-	}
-	return a == b
-}
-
-// Clears a stopped turn whose compute host is gone, keeping a successor turn and one the supervisor still owes
-func recoverUnreachableComputeHostTurn(ctx context.Context, sid string, session *tuigateway.Session, inflightAtInterrupt any) {
-	pending := true
-	if failure := catchPanic(func() {
-		supervisor, err := getComputeHostSupervisor(ctx, nil)
-		panicIf(err)
-		pending = supervisor.HasPendingTurn(sid)
-	}); failure != nil {
-		logger().Warn(fmt.Sprintf("session.interrupt: compute-host pending-turn probe failed for %s: %s", sid, errorMessage(failure)))
-		pending = true
-	}
-	func() {
-		unlock := historyLockOf(session)
-		defer unlock()
-		session.Set("_turn_cancel_requested", true)
-		session.Set("queued_prompt", nil)
-		session.Pop("queued_prompts")
-		generation, _ := pyIntOf(session.Get("_queued_prompt_generation"))
-		session.Set("_queued_prompt_generation", generation+1)
-		inflightNow := session.Get(inflightTurnKey)
-		if !pending && truthy(session.Get("running")) && inflightNow != nil && sameObject(inflightNow, inflightAtInterrupt) {
-			session.Set("running", false)
-			clearInflightTurn(session)
-		}
-	}()
-	clearPending(&sid)
-	suppress(func() {
-		announceCancelledGatewayApprovals(session, "interrupt", sid)
-		tools.ResolveGatewayApproval(strOr(session.Get("session_key")), "deny", true, "", "")
-	})
-}
-
 // Stops the running turn of a session, a hosted task mismatch leaving it running
 func sessionInterrupt(ctx context.Context, rid any, params map[string]any) (out map[string]any) {
 	ttsStreamStop(false)
@@ -161,19 +111,7 @@ func sessionInterrupt(ctx context.Context, rid any, params map[string]any) (out 
 		sid = pyrepr.Str(params["session_id"])
 	}
 	noteUserInput(session)
-	if sessionUsesComputeHost(ctx, session, nil) {
-		unlock := historyLockOf(session)
-		inflightAtInterrupt := session.Get(inflightTurnKey)
-		unlock()
-		if failure := catchPanic(func() {
-			interruptSessionTurn(ctx, sid, session, fmt.Sprintf("interrupt-%s", pyrepr.Str(rid)), false)
-		}); failure != nil {
-			logger().Warn(fmt.Sprintf("session.interrupt: compute-host interrupt failed for %s: %s", sid, errorMessage(failure)))
-			recoverUnreachableComputeHostTurn(ctx, sid, session, inflightAtInterrupt)
-		}
-		return ok(rid, map[string]any{"status": "interrupted", "turn_isolation": true})
-	}
-	interruptSessionTurn(ctx, sid, session, "", false)
+	interruptSessionTurn(ctx, sid, session, false)
 	unlock := historyLockOf(session)
 	popped, _ := session.Pop("_active_turn_marker_key")
 	unlock()

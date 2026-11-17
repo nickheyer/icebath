@@ -127,17 +127,6 @@ func TestOrderedToolsetNamesCustomToolsetAppended(t *testing.T) {
 	}
 }
 
-func TestSessionPlatformToolDropsDefaultRegistry(t *testing.T) {
-	for _, platform := range []string{"cli", "tui", "telegram", "cron", ""} {
-		if !SessionPlatformToolDrops(platform)["manage_catalog"] {
-			t.Fatalf("manage_catalog kept on %q", platform)
-		}
-	}
-	if SessionPlatformToolDrops("desktop")["manage_catalog"] {
-		t.Fatal("manage_catalog dropped on desktop")
-	}
-}
-
 func TestStaticToolsetWrappersMatchTheTable(t *testing.T) {
 	names := OrderedStaticToolsetNames()
 	if !reflect.DeepEqual(names, orderedToolsetNames()) || len(names) == 0 {

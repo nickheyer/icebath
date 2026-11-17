@@ -68,7 +68,7 @@ func lmSetRuntimeConfig(t *testing.T, settings map[string]any) {
 
 func TestQuickstartUnknownModel404s(t *testing.T) {
 	lmTestHome(t, ".icebath")
-	if _, err := LocalModelsQuickstart(context.Background(), "no-such", ""); lmStatusOf(err) != 404 {
+	if _, err := LocalModelsQuickstart(context.Background(), "no-such"); lmStatusOf(err) != 404 {
 		t.Fatalf("quickstart %v", err)
 	}
 }
@@ -95,8 +95,8 @@ func TestQuickstartWithoutRecommendationRequiresExplicitChoice(t *testing.T) {
 		calls.add([]any{"server", cfg["local_runtime"].(map[string]any)["enabled"], force})
 		return &lmFakeSupervisor{models: lmRouterModels(map[string]any{chosenModelID: "loaded"})}, nil
 	}
-	lmDeps.applyAssignment = func(ctx context.Context, scope, provider, model, task, baseURL, apiKey string) (map[string]any, error) {
-		calls.add([]any{"assign", scope, provider, model, task, baseURL, apiKey})
+	lmDeps.applyAssignment = func(ctx context.Context, provider, model, baseURL, apiKey string) (map[string]any, error) {
+		calls.add([]any{"assign", provider, model, baseURL, apiKey})
 		return nil, nil
 	}
 	catalog, err := LocalModelsCatalog(ctx)
@@ -117,7 +117,7 @@ func TestQuickstartWithoutRecommendationRequiresExplicitChoice(t *testing.T) {
 		t.Fatalf("chosen %v", chosen)
 	}
 	chosenModelID = chosen["model_id"].(string)
-	_, err = LocalModelsQuickstart(ctx, "", "")
+	_, err = LocalModelsQuickstart(ctx, "")
 	if lmStatusOf(err) != 409 || !strings.Contains(strings.ToLower(err.(*HTTPException).Detail), "no automatic recommendation") {
 		t.Fatalf("automatic %v", err)
 	}
@@ -127,7 +127,7 @@ func TestQuickstartWithoutRecommendationRequiresExplicitChoice(t *testing.T) {
 	if got := lmRuntimeEnabled(t); got != false {
 		t.Fatalf("enabled %v", got)
 	}
-	result, err := LocalModelsQuickstart(ctx, chosen["id"].(string), "")
+	result, err := LocalModelsQuickstart(ctx, chosen["id"].(string))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -141,7 +141,7 @@ func TestQuickstartWithoutRecommendationRequiresExplicitChoice(t *testing.T) {
 	want := []any{
 		[]any{"download", chosen["display_name"]},
 		[]any{"server", true, true},
-		[]any{"assign", "main", "llamacpp", chosenModelID, "", "", ""},
+		[]any{"assign", "llamacpp", chosenModelID, "", ""},
 	}
 	if got := calls.list(); !reflect.DeepEqual(got, want) {
 		t.Fatalf("calls %v", got)
@@ -154,7 +154,7 @@ func TestQuickstartWithoutRecommendationRequiresExplicitChoice(t *testing.T) {
 func TestQuickstartRefusesWhenNothingFits(t *testing.T) {
 	lmTestHome(t, ".icebath")
 	catalogSelectVariantFn = func(CatalogEntry, HardwareBudget) *VariantChoice { return nil }
-	_, err := LocalModelsQuickstart(context.Background(), "", "")
+	_, err := LocalModelsQuickstart(context.Background(), "")
 	if lmStatusOf(err) != 409 || !strings.Contains(err.(*HTTPException).Detail, "Local Models") {
 		t.Fatalf("quickstart %v", err)
 	}
@@ -195,11 +195,11 @@ func TestQuickstartRunsAllThreeLegs(t *testing.T) {
 	lmDeps.stateEndpoint = func() (map[string]any, error) {
 		return map[string]any{"base_url": "http://127.0.0.1:1/v1", "api_key": "k"}, nil
 	}
-	lmDeps.applyAssignment = func(context.Context, string, string, string, string, string, string) (map[string]any, error) {
+	lmDeps.applyAssignment = func(context.Context, string, string, string, string) (map[string]any, error) {
 		calls.add("assign")
 		return nil, nil
 	}
-	body, err := LocalModelsQuickstart(context.Background(), "", "")
+	body, err := LocalModelsQuickstart(context.Background(), "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -256,11 +256,11 @@ func TestQuickstartSkipsSatisfiedLegs(t *testing.T) {
 	lmDeps.stateEndpoint = func() (map[string]any, error) {
 		return map[string]any{"base_url": "http://127.0.0.1:1/v1", "api_key": "k"}, nil
 	}
-	lmDeps.applyAssignment = func(context.Context, string, string, string, string, string, string) (map[string]any, error) {
+	lmDeps.applyAssignment = func(context.Context, string, string, string, string) (map[string]any, error) {
 		calls.add("assign")
 		return nil, nil
 	}
-	body, err := LocalModelsQuickstart(context.Background(), "", "")
+	body, err := LocalModelsQuickstart(context.Background(), "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -296,7 +296,7 @@ func TestQuickstartIsSingleFlight(t *testing.T) {
 	lmQuickstartReady(t)
 	lmQuickstartMu.Lock()
 	defer lmQuickstartMu.Unlock()
-	_, err := LocalModelsQuickstart(context.Background(), "", "")
+	_, err := LocalModelsQuickstart(context.Background(), "")
 	if lmStatusOf(err) != 409 || !strings.Contains(strings.ToLower(err.(*HTTPException).Detail), "already running") {
 		t.Fatalf("quickstart %v", err)
 	}
@@ -305,14 +305,14 @@ func TestQuickstartIsSingleFlight(t *testing.T) {
 func TestAssignDefaultReachesModelAssignment(t *testing.T) {
 	lmTestHome(t, ".icebath")
 	var seen [][]string
-	lmDeps.applyAssignment = func(ctx context.Context, scope, provider, model, task, baseURL, apiKey string) (map[string]any, error) {
-		seen = append(seen, []string{scope, provider, model, task, baseURL, apiKey})
+	lmDeps.applyAssignment = func(ctx context.Context, provider, model, baseURL, apiKey string) (map[string]any, error) {
+		seen = append(seen, []string{provider, model, baseURL, apiKey})
 		return nil, nil
 	}
 	if err := lmAssignDefault(context.Background(), map[string]any{}, "some-model"); err != nil {
 		t.Fatal(err)
 	}
-	if want := [][]string{{"main", "llamacpp", "some-model", "", "", ""}}; !reflect.DeepEqual(seen, want) {
+	if want := [][]string{{"llamacpp", "some-model", "", ""}}; !reflect.DeepEqual(seen, want) {
 		t.Fatalf("seen %v", seen)
 	}
 }
@@ -359,7 +359,7 @@ func TestQuickstartPricesAfterInstallingTheEngine(t *testing.T) {
 		assigned = append(assigned, modelID)
 		return nil
 	}
-	resp, err := LocalModelsQuickstart(context.Background(), "", "")
+	resp, err := LocalModelsQuickstart(context.Background(), "")
 	if err != nil {
 		t.Fatal(err)
 	}

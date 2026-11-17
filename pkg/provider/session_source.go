@@ -6,7 +6,7 @@ import (
 )
 
 // Interactive UI transport labels a one shot child inherits but does not belong to
-var UITransportSources = map[string]bool{"tui": true, "desktop": true}
+var UITransportSources = map[string]bool{"tui": true}
 
 // Source label of finite non interactive CLI runs
 const OneshotSource = "oneshot"

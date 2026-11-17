@@ -40,7 +40,7 @@ func admitLedgerInput(t *testing.T, db *state.DB, sessionID, text string, claime
 }
 
 func TestReapLeavesRowOpenWhileTheLedgerHoldsItsTurn(t *testing.T) {
-	for _, source := range []string{"gui", "tui"} {
+	for _, source := range []string{"cli", "tui"} {
 		for _, claimed := range []bool{true, false} {
 			name := source + "-queued"
 			if claimed {

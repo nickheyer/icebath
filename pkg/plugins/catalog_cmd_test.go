@@ -160,29 +160,20 @@ func TestReadCatalogSidecarMigratesLegacyRecordFields(t *testing.T) {
 }
 
 func TestSurfaceDeltaAndConsentMessage(t *testing.T) {
-	old := map[string]map[string]bool{"tools": {"a": true}, "desktop": {"plugin.js": true}}
-	newSurface := map[string]map[string]bool{"tools": {"a": true, "c": true, "b": true}, "desktop": {"desktop/plugin.js": true},
-		"python_dependencies": {"requests": true}}
+	old := map[string]map[string]bool{"tools": {"a": true}}
+	newSurface := map[string]map[string]bool{"tools": {"a": true, "c": true, "b": true}, "python_dependencies": {"requests": true}}
 	delta := surfaceDelta(old, newSurface)
-	if len(delta) != 2 || !slices.Equal(delta["tools"], []string{"b", "c"}) || len(delta["desktop"]) != 0 {
+	if len(delta) != 2 || !slices.Equal(delta["tools"], []string{"b", "c"}) {
 		t.Fatalf("delta %v", delta)
 	}
 	err := &RepinConsentRequired{Name: "p", Sha: strings.Repeat("d", 40), Delta: delta}
 	if err.Error() != "Updating 'p' to dddddddd adds tools: b, c; Python dependencies: requests. Confirm to continue." {
 		t.Errorf("message %q", err.Error())
 	}
-	if d := surfaceDelta(map[string]map[string]bool{}, map[string]map[string]bool{"desktop": {"plugin.js": true}}); !slices.Equal(d["desktop"], []string{"plugin.js"}) {
-		t.Errorf("new desktop half %v", d)
-	}
-	tree := t.TempDir()
-	c6Write(t, filepath.Join(tree, "desktop", "plugin.js"), "x")
-	if s := desktopSurface(tree); !s["desktop/plugin.js"] {
-		t.Errorf("desktop surface %v", s)
-	}
 	prev := installedServices()
 	t.Cleanup(func() { services.Store(prev) })
 	InstallServices(&Services{})
-	if _, err := pluginSurface(nil, tree); !errors.As(err, new(*ServiceMissingError)) {
+	if _, err := pluginSurface(nil); !errors.As(err, new(*ServiceMissingError)) {
 		t.Errorf("missing OAuthSurface service: %v", err)
 	}
 }

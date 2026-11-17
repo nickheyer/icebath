@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -14,6 +13,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/nickheyer/icebath/pkg/config"
 )
 
 // ---- test_credential_pool_provider_boundary.py ----

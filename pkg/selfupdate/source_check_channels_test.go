@@ -199,7 +199,7 @@ func TestSourceCheckCommitBuildNeverChecksUpstreamOrReusesSourceCache(t *testing
 	for _, passive := range []bool{false, true} {
 		root := filepath.Join(t.TempDir(), "app")
 		os.MkdirAll(root, 0o755)
-		scWrite(t, filepath.Join(root, "install-stamp.json"), `{"source": "commit-build", "distribution": "desktop-app", "payload": "bundled",`+
+		scWrite(t, filepath.Join(root, "install-stamp.json"), `{"source": "commit-build", "distribution": "docker",`+
 			` "updateMechanism": "external", "commit": "`+strings.Repeat("a", 40)+`", "displayVersion": "1.2.3+gabcdef12",`+
 			` "baseVersion": "1.2.3", "channel": "canary"}`)
 		h := filepath.Join(t.TempDir(), "home")

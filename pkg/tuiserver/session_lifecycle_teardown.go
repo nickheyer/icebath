@@ -7,9 +7,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/activesessions"
 	"github.com/nickheyer/icebath/pkg/agent"
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
+	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/memory"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -27,23 +26,12 @@ var (
 	})
 )
 
-// Applies the session.interrupt contract to one claimed session, true when the compute host control channel was used
-func interruptSessionTurn(ctx context.Context, sid string, session *tuigateway.Session, requestID string, orphan bool) bool {
-	useComputeHost := sessionUsesComputeHost(ctx, session, nil)
+// Applies the session.interrupt contract to one claimed session
+func interruptSessionTurn(ctx context.Context, sid string, session *tuigateway.Session, orphan bool) {
 	compressing := truthy(session.Get("_manual_compress_active"))
 	shouldInterrupt := truthy(session.Get("running")) && !compressing
 	runThreadAlive := false
-	if useComputeHost {
-		if shouldInterrupt || truthy(session.Get("_compute_host_active")) {
-			supervisor, err := getComputeHostSupervisor(ctx, nil)
-			if err != nil {
-				panic(err)
-			}
-			if err := supervisor.Interrupt(sid, requestID); err != nil {
-				panic(err)
-			}
-		}
-	} else if rt, ok := session.Get("_run_thread").(*memory.ContextThread); ok && rt != nil {
+	if rt, ok := session.Get("_run_thread").(*memory.ContextThread); ok && rt != nil {
 		runThreadAlive = rt.Alive()
 	}
 	unlock := historyLockOf(session)
@@ -65,18 +53,16 @@ func interruptSessionTurn(ctx context.Context, sid string, session *tuigateway.S
 				"platform": "tui", "reason": "user_stop", "invalidation_reason": "session_interrupt"})
 		}()
 	}
-	if !useComputeHost {
-		if shouldInterrupt {
-			agent.RequestHardInterruptOf(session.Get("agent"), nil, nil)
+	if shouldInterrupt {
+		agent.RequestHardInterruptOf(session.Get("agent"), nil, nil)
+	}
+	if !runThreadAlive && !compressing {
+		unlock := historyLockOf(session)
+		if truthy(session.Get("running")) {
+			session.Set("running", false)
+			clearInflightTurn(session)
 		}
-		if !runThreadAlive && !compressing {
-			unlock := historyLockOf(session)
-			if truthy(session.Get("running")) {
-				session.Set("running", false)
-				clearInflightTurn(session)
-			}
-			unlock()
-		}
+		unlock()
 	}
 	if a := sessionAgent(session); a != nil {
 		suppress(func() { a.CancelBackgroundReview("session interrupted", "session interrupted") })
@@ -90,38 +76,6 @@ func interruptSessionTurn(ctx context.Context, sid string, session *tuigateway.S
 		announceCancelledGatewayApprovals(session, reason, sid)
 		tools.ResolveGatewayApproval(strOr(session.Get("session_key")), "deny", true, "", "")
 	})
-	return useComputeHost
-}
-
-// Interrupts an isolated child turn and gives it the close grace, keeping its real lease when it never settled
-func settleIsolatedTurnBeforeClose(ctx context.Context, session *tuigateway.Session) {
-	if !truthy(session.Get("_compute_host_turn_id")) || !sessionUsesComputeHost(ctx, session, nil) {
-		return
-	}
-	suppress(func() { interruptSessionTurn(ctx, lifecycleOwnSID(session, ""), session, "", false) })
-	deadline := pythread.Monotonic() + turnSettleBeforeCloseSeconds
-	for truthy(session.Get("_compute_host_turn_id")) && pythread.Monotonic() < deadline {
-		time.Sleep(50 * time.Millisecond)
-	}
-	unlock := historyLockOf(session)
-	if !truthy(session.Get("_compute_host_turn_id")) {
-		unlock()
-		return
-	}
-	popped, _ := session.Pop("active_session_lease")
-	lease, _ := popped.(*activesessions.Lease)
-	if lease == nil {
-		unlock()
-		return
-	}
-	session.Set("_deferred_active_session_lease", lease)
-	deferredActiveSessionLeases.Lock()
-	deferredActiveSessionLeases.leases[lease.LeaseID] = lease
-	deferredActiveSessionLeases.ages[lease.LeaseID] = nowSeconds()
-	deferredActiveSessionLeases.Unlock()
-	unlock()
-	logger().Warn(fmt.Sprintf("isolated turn still live after %.1fs close grace; holding lease for %s until the child settles",
-		turnSettleBeforeCloseSeconds, strOr(session.Get("session_key"))))
 }
 
 // Finishes a close the caller claimed by popping the session, waiting out its turn first
@@ -144,9 +98,6 @@ func teardownPoppedSession(ctx context.Context, session *tuigateway.Session, end
 				logger().Warn(fmt.Sprintf("session turn thread still alive after %.1fs teardown grace", turnSettleBeforeCloseSeconds))
 			}
 		}()
-	}
-	if endReason != "tui_shutdown" {
-		settleIsolatedTurnBeforeClose(ctx, session)
 	}
 	defer tuigateway.ForgetSession(strOr(session.Get("_sid")))
 	teardownSessionFn(ctx, session, endReason)
@@ -181,16 +132,6 @@ func wsOrphanTurnActivityIsFresh(session *tuigateway.Session) (fresh bool) {
 	stale := wsOrphanActivityStaleS()
 	if stale <= 0 {
 		return false
-	}
-	if truthy(session.Get("_compute_host_turn_id")) {
-		unlock := historyLockOf(session)
-		defer unlock()
-		stamp, isInt := int64Of(session.Get("_compute_host_activity_ns"))
-		if !truthy(session.Get("running")) || !isInt {
-			return false
-		}
-		age := float64(monotonicNS()-stamp) / 1e9
-		return 0 <= age && age < stale
 	}
 	a, _ := session.Get("agent").(activitySummarizer)
 	if a == nil {
@@ -309,8 +250,8 @@ func scheduleWSOrphanReap(ctx context.Context, sid string, delayS *float64, expe
 						sessionsLock.Unlock()
 					}
 				}()
-				isolated := interruptSessionTurn(ctx, sid, interruptSession, "client-gone-"+sid, true)
-				logger().Info(fmt.Sprintf("client_gone sid=%s action=interrupt turn_isolation=%s", sid, pyBoolText(isolated)))
+				interruptSessionTurn(ctx, sid, interruptSession, true)
+				logger().Info(fmt.Sprintf("client_gone sid=%s action=interrupt", sid))
 			}()
 		}
 		if rescheduleDelay != nil {
@@ -338,30 +279,6 @@ func scheduleWSOrphanReap(ctx context.Context, sid string, delayS *float64, expe
 		suppress(prior.cancel)
 	}
 	timer.start()
-}
-
-// System wide monotonic clock in nanoseconds, comparable across local processes like perf_counter_ns
-func monotonicNS() int64 { return int64(pythread.Monotonic() * 1e9) }
-
-// Integer value of a slot, false for anything but an int
-func int64Of(v any) (int64, bool) {
-	switch n := v.(type) {
-	case int:
-		return int64(n), true
-	case int64:
-		return n, true
-	case int32:
-		return int64(n), true
-	}
-	return 0, false
-}
-
-// Python bool text of a flag
-func pyBoolText(v bool) string {
-	if v {
-		return "True"
-	}
-	return "False"
 }
 
 // Attaches a live peer beside the existing subscribers, re-arming the reap when that peer already closed
@@ -436,4 +353,29 @@ func closeSessionsForTransport(ctx context.Context, transport tuigateway.Transpo
 		}
 	}
 	return reaped, detached
+}
+
+// Locks the history lock a session holds and returns the unlock, a no-op when it holds none
+func historyLockOf(session *tuigateway.Session) func() {
+	lock, _ := session.Get("history_lock").(sync.Locker)
+	if lock == nil {
+		return func() {}
+	}
+	lock.Lock()
+	return lock.Unlock
+}
+
+// Python int of a session value, zero for a falsy one
+func pyIntOf(v any) (int, error) {
+	if !truthy(v) {
+		return 0, nil
+	}
+	n, err := pyint.Of(v)
+	if err != nil {
+		return 0, err
+	}
+	if !n.IsInt64() {
+		return 0, fmt.Errorf("Python int too large to convert to C long")
+	}
+	return int(n.Int64()), nil
 }

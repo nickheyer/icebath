@@ -12,7 +12,6 @@ readme: true
 platforms: [linux, macos]
 requires_hermes: ">=0.21.5"
 screenshots:
-  - https://raw.githubusercontent.com/RegeneratusLabs/Soul-Finder/deec34636d95f898b084e6e24a19766ecd20acf2/screenshots/desktop.png
   - https://raw.githubusercontent.com/RegeneratusLabs/Soul-Finder/deec34636d95f898b084e6e24a19766ecd20acf2/screenshots/tui.png
 capabilities:
   provides_tools:

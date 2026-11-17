@@ -43,11 +43,10 @@ const ManagedNote = "Settled once. connected → use the app now; skipped → th
 // GuestSetupFailed is the error code of a guest identity that could not be created for a connect
 const GuestSetupFailed = "GUEST_SETUP_FAILED"
 
-// Connect request initiators, the agent tool, the desktop Connectors page and the card's Try again
+// Connect request initiators, the agent tool and the card's Try again
 const (
-	InitiatorAgentTool   = "agent_tool"
-	InitiatorDesktopPage = "desktop_page"
-	InitiatorCardRetry   = "card_retry"
+	InitiatorAgentTool = "agent_tool"
+	InitiatorCardRetry = "card_retry"
 )
 
 // NoteAppConnected counts a finished connect toward the guest connector offer, installed by pkg/mcp over pkg/provider
@@ -183,9 +182,8 @@ func Mint(ctx context.Context, env *Env, client ManagedClient, op *ConnectionOpe
 	if connectionID == "" && hasNamed {
 		alias = namedAlias
 	}
-	returnTo, opArg := ReturnToArgs(env, op.OpID)
 	response, err := client.Connections(ctx, ConnectionsRequest{Connectors: names, Reinitiate: reinitiate, Alias: alias,
-		ConnectionID: connectionID, ReturnTo: returnTo, Op: opArg})
+		ConnectionID: connectionID})
 	if err != nil {
 		return err
 	}

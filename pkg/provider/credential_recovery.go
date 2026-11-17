@@ -38,7 +38,7 @@ func oauthReloginCommandIn(h, provider string) string {
 // ProviderAuthKind is oauth for providers whose credential is an OAuth grant, api_key for everything else
 func ProviderAuthKind(provider string) string {
 	descriptor, ok := ProviderCatalogBySlug()[strings.ToLower(strings.TrimSpace(provider))]
-	if ok && descriptor.Tab == "accounts" {
+	if ok && descriptor.OAuth {
 		return "oauth"
 	}
 	return "api_key"

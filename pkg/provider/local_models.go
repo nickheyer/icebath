@@ -17,7 +17,6 @@ import (
 	"regexp"
 	"runtime/pprof"
 	"slices"
-	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -28,7 +27,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/pm"
@@ -78,10 +76,9 @@ type lmPlanRow struct {
 	Bytes int64
 }
 
-// One live job's pause switch, resume entry and trailing transfer samples
+// One live job's pause switch and trailing transfer samples
 type lmRunningEntry struct {
 	pause   *pm.PauseEvent
-	resume  func(ctx context.Context) bool
 	samples []lmRateSample
 }
 
@@ -140,7 +137,6 @@ type localModelsDeps struct {
 	servingEngine        func() *Engine
 	ensureLocalRuntime   func(ctx context.Context, cfg map[string]any, force bool) (localModelsSupervisor, error)
 	refreshLocalRuntime  func(ctx context.Context) (bool, error)
-	shutdownLocalRuntime func() error
 	adoptLegacyModels    func() ([]string, error)
 	stateEndpoint        func() (map[string]any, error)
 	routerRequest        func(endpoint map[string]any, path string, timeout time.Duration, payload []byte) (any, error)
@@ -161,10 +157,8 @@ type localModelsDeps struct {
 	installEngineJob     func(ctx context.Context, job map[string]any, backend string) (Engine, error)
 	ensureServer         func(ctx context.Context, job map[string]any, cfg map[string]any, modelID, failDetail, skipMsg string) error
 	assignDefault        func(ctx context.Context, job map[string]any, modelID string) error
-	applyAssignment      func(ctx context.Context, scope, provider, model, task, baseURL, apiKey string) (map[string]any, error)
+	applyAssignment      func(ctx context.Context, provider, model, baseURL, apiKey string) (map[string]any, error)
 	refreshRuntime       func(ctx context.Context, refreshLocal func(ctx context.Context) (bool, error), skipMsg string)
-	terminateStatePID    func() error
-	stopRecordedOrphan   func() (bool, error)
 	loadingProgress      func() map[string]LoadProgress
 	readPresetDecisions  func() map[string]*PresetEntry
 	clearWindowOverride  func(modelID string) error
@@ -203,22 +197,21 @@ func defaultLocalModelsDeps() localModelsDeps {
 			}
 			return sup, err
 		},
-		refreshLocalRuntime:  func(ctx context.Context) (bool, error) { return refreshLocalRuntimeCtx(ctx), nil },
-		shutdownLocalRuntime: ShutdownLocalRuntime,
-		adoptLegacyModels:    adoptLegacyModels,
-		stateEndpoint:        lmStateEndpoint,
-		routerRequest:        lmRouterRequest,
-		loadConfig:           lmLoadConfig,
-		runtimeSection:       lmRuntimeSection,
-		quickstartTarget:     lmQuickstartTarget,
-		setRuntimeEnabled:    lmSetRuntimeEnabled,
-		runtimeTarget:        lmRuntimeTarget,
-		engineTooOld:         lmEngineTooOld,
-		hfURL:                lmHFURL,
-		downloadPlan:         lmDownloadPlan,
-		downloadTarget:       lmDownloadTarget,
-		runDownloadPlan:      lmRunDownloadPlan,
-		downloadJob:          lmDownloadJob,
+		refreshLocalRuntime: func(ctx context.Context) (bool, error) { return refreshLocalRuntimeCtx(ctx), nil },
+		adoptLegacyModels:   adoptLegacyModels,
+		stateEndpoint:       lmStateEndpoint,
+		routerRequest:       lmRouterRequest,
+		loadConfig:          lmLoadConfig,
+		runtimeSection:      lmRuntimeSection,
+		quickstartTarget:    lmQuickstartTarget,
+		setRuntimeEnabled:   lmSetRuntimeEnabled,
+		runtimeTarget:       lmRuntimeTarget,
+		engineTooOld:        lmEngineTooOld,
+		hfURL:               lmHFURL,
+		downloadPlan:        lmDownloadPlan,
+		downloadTarget:      lmDownloadTarget,
+		runDownloadPlan:     lmRunDownloadPlan,
+		downloadJob:         lmDownloadJob,
 		newDownload: func(sources []pm.Source, pause *pm.PauseEvent) lmDownloader {
 			return pm.NewDownload(sources, pm.DownloadOptions{Pause: pause})
 		},
@@ -227,12 +220,10 @@ func defaultLocalModelsDeps() localModelsDeps {
 		installEngineJob:     lmInstallEngineJob,
 		ensureServer:         lmEnsureServer,
 		assignDefault:        lmAssignDefault,
-		applyAssignment: func(ctx context.Context, scope, provider, model, task, baseURL, apiKey string) (map[string]any, error) {
-			return ApplyModelAssignmentSync(ctx, scope, provider, model, task, baseURL, apiKey, AuxReasoningEffort{}, nil)
+		applyAssignment: func(ctx context.Context, provider, model, baseURL, apiKey string) (map[string]any, error) {
+			return ApplyModelAssignmentSync(ctx, provider, model, baseURL, apiKey, nil)
 		},
 		refreshRuntime:      lmRefreshRuntime,
-		terminateStatePID:   lmTerminateStatePID,
-		stopRecordedOrphan:  StopRecordedOrphan,
 		loadingProgress:     GetLoadingProgress,
 		readPresetDecisions: func() map[string]*PresetEntry { return readPresetDecisions("") },
 		clearWindowOverride: ClearWindowOverride,
@@ -363,7 +354,7 @@ func lmRecordRate(job map[string]any, done int64) {
 	}
 }
 
-// Wire view of a job with its pause, resume and percent facts, the caller holding the registry lock
+// Wire view of a job with its pause and percent facts, the caller holding the registry lock
 func lmJobView(job map[string]any) map[string]any {
 	out := make(map[string]any, len(job)+4)
 	for k, v := range job {
@@ -371,15 +362,13 @@ func lmJobView(job map[string]any) map[string]any {
 	}
 	running := lmRunning[lmJobID(job)]
 	var pause *pm.PauseEvent
-	hasResume := false
 	if running != nil {
-		pause, hasResume = running.pause, running.resume != nil
+		pause = running.pause
 	}
 	status := out["status"]
 	pauseRequested := pause != nil && pause.IsSet() && status == "running"
 	out["pause_requested"] = pauseRequested
 	out["can_pause"] = pause != nil && status == "running" && localModelsDownloadPhases[anyString(out["phase"])] && !pauseRequested
-	out["can_resume"] = status == "paused" && hasResume
 	if total, ok := out["total_bytes"].(int64); ok && total != 0 {
 		done, _ := out["done_bytes"].(int64)
 		out["percent"] = min(int64(100), int64(math.RoundToEven(float64(done)/float64(total)*100)))
@@ -421,27 +410,22 @@ type lmSpawnOptions struct {
 	failMsg       string
 	onExit        func()
 	downloadLabel *string
-	resumable     bool
+	pausable      bool
 }
 
-// Starts one worker per job, a pause keeping the job's resources and a terminal outcome releasing them
+// Starts one worker per job, a pausable job holding its pause switch until the worker ends
 func lmSpawnJob(ctx context.Context, job map[string]any, name string, body func(ctx context.Context) error, opts lmSpawnOptions) {
-	var guard sync.Mutex
-	pause := pm.NewPauseEvent()
 	jobID := lmJobID(job)
 	run := func(ctx context.Context) {
 		status := "done"
 		defer func() {
 			defer func() {
 				lmJobsMu.Lock()
-				if status != "paused" {
-					delete(lmRunning, jobID)
-				}
+				delete(lmRunning, jobID)
 				job["status"] = status
-				guard.Unlock()
 				lmJobsMu.Unlock()
 			}()
-			if status != "paused" && opts.onExit != nil {
+			if opts.onExit != nil {
 				opts.onExit()
 			}
 		}()
@@ -465,32 +449,14 @@ func lmSpawnJob(ctx context.Context, job map[string]any, name string, body func(
 			lmJobsMu.Unlock()
 		}
 	}
-	start := func(ctx context.Context, initial bool) bool {
-		if !guard.TryLock() {
-			return false
-		}
-		lmJobsMu.Lock()
-		if !initial && job["status"] != "paused" {
-			lmJobsMu.Unlock()
-			guard.Unlock()
-			return false
-		}
-		pause.Clear()
-		if running := lmRunning[jobID]; running != nil {
-			running.samples = nil
-		}
-		job["status"] = "running"
-		job["error"] = nil
-		lmJobsMu.Unlock()
-		go pprof.Do(context.WithoutCancel(ctx), pprof.Labels("thread", name), run)
-		return true
+	lmJobsMu.Lock()
+	if opts.pausable {
+		lmRunning[jobID] = &lmRunningEntry{pause: pm.NewPauseEvent()}
 	}
-	if opts.resumable {
-		lmJobsMu.Lock()
-		lmRunning[jobID] = &lmRunningEntry{resume: func(ctx context.Context) bool { return start(ctx, false) }, pause: pause}
-		lmJobsMu.Unlock()
-	}
-	start(ctx, true)
+	job["status"] = "running"
+	job["error"] = nil
+	lmJobsMu.Unlock()
+	go pprof.Do(context.WithoutCancel(ctx), pprof.Labels("thread", name), run)
 }
 
 // Bounces a running router through refreshLocal so it rescans the models directory, a failure only logged under skipMsg
@@ -1007,7 +973,7 @@ func lmAssignDefault(ctx context.Context, job map[string]any, modelID string) er
 	if err := lmStep(job, "setting-default", "Making it your default"); err != nil {
 		return err
 	}
-	_, err := lmDeps.applyAssignment(ctx, "main", "llamacpp", modelID, "", "", "")
+	_, err := lmDeps.applyAssignment(ctx, "llamacpp", modelID, "", "")
 	return err
 }
 
@@ -1018,27 +984,6 @@ func lmHFURL(repo, path, revision string) string {
 
 // Variant model id of a staged file with split part suffixes stripped
 func lmModelIDFor(gguf string) string { return ModelIDFromStem(pyPathStem(gguf)) }
-
-// Every local file of a staged model, its split parts plus the catalog companions on disk
-func lmVariantFilesOnDisk(modelID string) []string {
-	var files []string
-	for _, p := range lrGlobGGUF(lmDeps.modelsDir()) {
-		if lmModelIDFor(p) == modelID {
-			files = append(files, p)
-		}
-	}
-	if entry, _ := FindEntryForModel(modelID); entry != nil {
-		for _, a := range []*AssetFile{entry.MMProj, entry.Draft, entry.MTPHead} {
-			if a == nil {
-				continue
-			}
-			if p := filepath.Join(lmDeps.assetsDir(), a.LocalName()); lrPathExists(p) {
-				files = append(files, p)
-			}
-		}
-	}
-	return files
-}
 
 // Everything a variant needs, its files then the projector, draft and MTP head companions
 func lmDownloadPlan(entry CatalogEntry, variant QuantVariant) []lmPlanRow {
@@ -1645,19 +1590,15 @@ func lmInstallEngineJob(ctx context.Context, job map[string]any, backend string)
 }
 
 // LocalModelsRuntimeInstall starts the job installing the pinned engine, fetching missing drafts and restarting a stale server
-func LocalModelsRuntimeInstall(ctx context.Context, backendRequest, profile string) (map[string]any, error) {
+func LocalModelsRuntimeInstall(ctx context.Context, backendRequest string) (map[string]any, error) {
 	tag, backend, err := lmDeps.runtimeTarget(ctx, backendRequest)
 	if err != nil {
 		return nil, err
 	}
 	job := lmNewJob("runtime-install", fmt.Sprintf("llama.cpp %s (%s)", tag, backend), nil)
 	jobID := lmJobID(job)
-	owedRestart := false
 	run := func(ctx context.Context) error {
-		sctx, _, err := ConfigProfileScope(ctx, profile)
-		if err != nil {
-			return err
-		}
+		sctx := currentProfileScope(ctx)
 		previous, err := lmDeps.installedEngine(sctx, backend)
 		if err != nil {
 			return err
@@ -1670,8 +1611,8 @@ func LocalModelsRuntimeInstall(ctx context.Context, backendRequest, profile stri
 		if err != nil {
 			return err
 		}
+		owedRestart := false
 		if len(drafts) > 0 {
-			before := owedRestart
 			owedRestart = true
 			if err := lmStep(job, "downloading", "Downloading draft models that speed up generation"); err != nil {
 				return err
@@ -1686,7 +1627,7 @@ func LocalModelsRuntimeInstall(ctx context.Context, backendRequest, profile stri
 					return err
 				}
 				if len(after) == len(drafts) {
-					owedRestart = before
+					owedRestart = false
 				}
 			}
 		}
@@ -1704,11 +1645,10 @@ func LocalModelsRuntimeInstall(ctx context.Context, backendRequest, profile stri
 			if _, err := lmDeps.refreshLocalRuntime(sctx); err != nil {
 				return err
 			}
-			owedRestart = false
 		}
 		return lmFinish(job, fmt.Sprintf("llama.cpp %s ready (%s)", tag, backend))
 	}
-	lmSpawnJob(ctx, job, "lr-runtime-install", run, lmSpawnOptions{failMsg: "runtime install failed: %s", resumable: true})
+	lmSpawnJob(ctx, job, "lr-runtime-install", run, lmSpawnOptions{failMsg: "runtime install failed: %s", pausable: true})
 	return map[string]any{"job_id": jobID, "backend": backend, "tag": tag}, nil
 }
 
@@ -1741,32 +1681,6 @@ func lmDownloadTarget(ctx context.Context, modelID string) (CatalogEntry, QuantV
 	return entry, choice.Variant, nil
 }
 
-// LocalModelsDownload starts the download job of a family's build for this machine or of an exact variant
-func LocalModelsDownload(ctx context.Context, modelID string) (map[string]any, error) {
-	entry, variant, err := lmDeps.downloadTarget(ctx, modelID)
-	if err != nil {
-		return nil, err
-	}
-	plan := lmDeps.downloadPlan(entry, variant)
-	if len(plan) > 0 && lmPlanOnDisk(plan) {
-		return map[string]any{"job_id": nil, "already_downloaded": true, "model_id": variant.ModelID()}, nil
-	}
-	job := lmNewJob("model-download", fmt.Sprintf("%s (%s)", entry.DisplayName, variant.Quant), entry.ID)
-	jobID := lmJobID(job)
-	run := func(ctx context.Context) error {
-		if err := lmDeps.runDownloadPlan(ctx, job, plan, entry.DisplayName, &entry); err != nil {
-			return err
-		}
-		if err := lmFinish(job, entry.DisplayName+" ready"); err != nil {
-			return err
-		}
-		lmDeps.refreshRuntime(ctx, lmDeps.refreshLocalRuntime, "post-download runtime refresh skipped")
-		return nil
-	}
-	lmSpawnJob(ctx, job, "lr-model-download", run, lmSpawnOptions{failMsg: "model download failed: %s", resumable: true})
-	return map[string]any{"job_id": jobID, "model_id": variant.ModelID()}, nil
-}
-
 // Whether every destination of a plan is a file on disk
 func lmPlanOnDisk(plan []lmPlanRow) bool {
 	for _, row := range plan {
@@ -1775,53 +1689,6 @@ func lmPlanOnDisk(plan []lmPlanRow) bool {
 		}
 	}
 	return true
-}
-
-// LocalModelsDownloadPause pauses the download phase of a model, component or quickstart job
-func LocalModelsDownloadPause(ctx context.Context, jobID string) (map[string]any, error) {
-	lmJobsMu.Lock()
-	defer lmJobsMu.Unlock()
-	job, ok := lmJobs[jobID]
-	if !ok {
-		return nil, httpException(404, "unknown download job")
-	}
-	if view := lmJobView(job); view["can_pause"] != true {
-		return map[string]any{"ok": true, "paused": false}, nil
-	}
-	lmRunning[jobID].pause.Set()
-	return map[string]any{"ok": true, "paused": true}, nil
-}
-
-// LocalModelsDownloadResume restarts a paused job, PM reusing verified files and durable ranges
-func LocalModelsDownloadResume(ctx context.Context, jobID string) (map[string]any, error) {
-	lmJobsMu.Lock()
-	_, known := lmJobs[jobID]
-	var resume func(ctx context.Context) bool
-	if running := lmRunning[jobID]; running != nil {
-		resume = running.resume
-	}
-	lmJobsMu.Unlock()
-	if !known {
-		return nil, httpException(404, "unknown download job")
-	}
-	return map[string]any{"ok": true, "resumed": resume != nil && resume(ctx)}, nil
-}
-
-// LocalModelsDelete removes every split part and companion of a model, then bounces the router off the request
-func LocalModelsDelete(ctx context.Context, modelID string) (map[string]any, error) {
-	files := lmVariantFilesOnDisk(modelID)
-	if len(files) == 0 {
-		return nil, httpException(404, "model not found")
-	}
-	for _, p := range files {
-		if err := os.Remove(p); err != nil && !errors.Is(err, os.ErrNotExist) {
-			return nil, err
-		}
-	}
-	lmQuiet(func() (struct{}, error) { return struct{}{}, lmDeps.clearWindowOverride(modelID) }, struct{}{}, "", "window-override clear skipped")
-	refresh, refreshLocal := lmDeps.refreshRuntime, lmDeps.refreshLocalRuntime
-	go refresh(context.WithoutCancel(ctx), refreshLocal, "post-delete runtime refresh skipped")
-	return map[string]any{"ok": true}, nil
 }
 
 // Explicit model or the machine's recommendation followed by the other recommendable entries, the first that runs here
@@ -1894,7 +1761,7 @@ func lmRepricedQuickstart(ctx context.Context, job map[string]any, modelID strin
 }
 
 // LocalModelsQuickstart starts the one job installing the runtime, downloading this machine's build and making it the default
-func LocalModelsQuickstart(ctx context.Context, modelID, profile string) (map[string]any, error) {
+func LocalModelsQuickstart(ctx context.Context, modelID string) (map[string]any, error) {
 	budget, err := lmDeps.probeBudget(true)
 	if err != nil {
 		return nil, err
@@ -1956,10 +1823,7 @@ func LocalModelsQuickstart(ctx context.Context, modelID, profile string) (map[st
 		if err := lmStep(job, "starting-server", "Starting the local server"); err != nil {
 			return err
 		}
-		sctx, _, err := ConfigProfileScope(ctx, profile)
-		if err != nil {
-			return err
-		}
+		sctx := currentProfileScope(ctx)
 		cfg, err := lmDeps.setRuntimeEnabled(sctx, true)
 		if err != nil {
 			return err
@@ -1973,96 +1837,19 @@ func LocalModelsQuickstart(ctx context.Context, modelID, profile string) (map[st
 		}
 		return lmFinish(job, entry.DisplayName+" is ready — new chats use it")
 	}
-	lmSpawnJob(ctx, job, "lr-quickstart", run, lmSpawnOptions{failMsg: "quickstart failed: %s", onExit: lmQuickstartMu.Unlock, resumable: true})
+	lmSpawnJob(ctx, job, "lr-quickstart", run, lmSpawnOptions{failMsg: "quickstart failed: %s", onExit: lmQuickstartMu.Unlock, pausable: true})
 	return resp, nil
 }
 
-// Stops a recorded orphan through explicit recovery, a 409 when a live owner holds the server
-func lmTerminateStatePID() error {
-	stopped, err := lmDeps.stopRecordedOrphan()
-	if err != nil {
-		return err
-	}
-	if !stopped {
-		return httpException(409, "Another Icebath process owns this server, or its ownership could not be verified")
-	}
-	return nil
-}
-
-// Tears the server down and persists the runtime as disabled
-func lmStopServer(ctx context.Context) error {
-	if lmDeps.getSupervisor() != nil {
-		if err := lmDeps.shutdownLocalRuntime(); err != nil {
-			return err
-		}
-	} else if err := lmDeps.terminateStatePID(); err != nil {
-		return err
-	}
-	_, err := lmDeps.setRuntimeEnabled(ctx, false)
-	return err
-}
-
-// Persists the runtime as enabled and force starts the server
-func lmStartServer(ctx context.Context) error {
-	cfg, err := lmDeps.setRuntimeEnabled(ctx, true)
-	if err != nil {
-		return err
-	}
-	_, err = lmStartLocalServer(ctx, cfg, lmServerStartFailed)
-	return err
-}
-
-// LocalModelsServer turns the local engine off durably or back on, any failure but a refusal answering 502
-func LocalModelsServer(ctx context.Context, action string) (map[string]any, error) {
-	action = pystr.Lower(pystr.Strip(action))
-	actions := map[string]func(context.Context) error{"stop": lmStopServer, "start": lmStartServer}
-	fn, ok := actions[action]
-	if !ok {
-		return nil, httpException(400, "action must be 'stop' or 'start'")
-	}
-	if err := fn(ctx); err != nil {
-		var refusal *HTTPException
-		if errors.As(err, &refusal) {
-			return nil, err
-		}
-		return nil, httpException(502, err.Error())
-	}
-	return map[string]any{"ok": true, "action": action}, nil
-}
-
-// LocalModelsEject frees a loaded model's memory now through the supervisor or the persisted endpoint
-func LocalModelsEject(ctx context.Context, modelID string) (map[string]any, error) {
-	if sup := lmDeps.getSupervisor(); sup != nil {
-		if err := sup.UnloadModel(modelID); err != nil {
-			return nil, lmHTTPError(502, "", err)
-		}
-		return map[string]any{"ok": true}, nil
-	}
-	endpoint, err := lmDeps.stateEndpoint()
-	if err != nil {
-		return nil, err
-	}
-	if endpoint == nil {
-		return nil, httpException(409, "local server is not running")
-	}
-	if _, err := lmDeps.routerRequest(endpoint, "/models/unload", 120*time.Second, lrRequestBody("model", modelID)); err != nil {
-		return nil, lmHTTPError(502, "", err)
-	}
-	return map[string]any{"ok": true}, nil
-}
-
 // LocalModelsActivate starts the job making a downloaded model the default for new chats with the server up
-func LocalModelsActivate(ctx context.Context, modelID, profile string) (map[string]any, error) {
+func LocalModelsActivate(ctx context.Context, modelID string) (map[string]any, error) {
 	if !slices.Contains(lmDeps.stagedModelIDs(), modelID) {
 		return nil, httpException(404, modelID+" is not downloaded")
 	}
 	job := lmNewJob("model-activate", modelID, modelID)
 	jobID := lmJobID(job)
 	run := func(ctx context.Context) error {
-		sctx, _, err := ConfigProfileScope(ctx, profile)
-		if err != nil {
-			return err
-		}
+		sctx := currentProfileScope(ctx)
 		cfg, err := configLoadFn(sctx)
 		if err != nil {
 			return err
@@ -2083,51 +1870,6 @@ func LocalModelsActivate(ctx context.Context, modelID, profile string) (map[stri
 	}
 	lmSpawnJob(ctx, job, "lr-model-activate", run, lmSpawnOptions{failMsg: "model activate failed: %s"})
 	return map[string]any{"job_id": jobID}, nil
-}
-
-// LocalModelsJobs lists running and paused jobs first, then the twenty newest settled ones
-func LocalModelsJobs(ctx context.Context) (map[string]any, error) {
-	lmJobsMu.Lock()
-	defer lmJobsMu.Unlock()
-	jobs := make([]map[string]any, 0, len(lmJobOrder))
-	for _, id := range lmJobOrder {
-		if job, ok := lmJobs[id]; ok {
-			jobs = append(jobs, job)
-		}
-	}
-	sort.SliceStable(jobs, func(i, j int) bool {
-		a, _ := jobs[i]["started_at"].(float64)
-		b, _ := jobs[j]["started_at"].(float64)
-		return -a < -b
-	})
-	var active, recent []map[string]any
-	for _, job := range jobs {
-		switch job["status"] {
-		case "running", "paused":
-			active = append(active, job)
-		case "done", "error":
-			recent = append(recent, job)
-		}
-	}
-	if len(recent) > 20 {
-		recent = recent[:20]
-	}
-	views := []any{}
-	for _, job := range append(active, recent...) {
-		views = append(views, lmJobView(job))
-	}
-	return map[string]any{"jobs": views}, nil
-}
-
-// LocalModelsJob is one job's wire view, a 404 for an unknown id
-func LocalModelsJob(ctx context.Context, jobID string) (map[string]any, error) {
-	lmJobsMu.Lock()
-	defer lmJobsMu.Unlock()
-	job, ok := lmJobs[jobID]
-	if !ok {
-		return nil, httpException(404, "job not found")
-	}
-	return lmJobView(job), nil
 }
 
 // LocalModelsJobView is the job view the terminal flow renders, a KeyError for an unknown id
@@ -2151,109 +1893,4 @@ func LocalModelsPauseJob(jobID string) bool {
 	}
 	running.pause.Set()
 	return true
-}
-
-// LocalModelsSearch is the full text Hugging Face search over GGUF models behind the curated catalog
-func LocalModelsSearch(ctx context.Context, q string, limit int) (map[string]any, error) {
-	if pystr.Strip(q) == "" {
-		return map[string]any{"hits": []any{}}, nil
-	}
-	hits, err := lmDeps.searchModels(q, limit)
-	if err != nil {
-		return nil, lmHTTPError(502, "Hugging Face search unavailable: ", err)
-	}
-	out := []any{}
-	for _, h := range hits {
-		out = append(out, map[string]any{"repo": h.Repo, "downloads": h.Downloads, "likes": h.Likes, "updated": h.Updated, "gated": h.Gated})
-	}
-	return map[string]any{"hits": out}, nil
-}
-
-// LocalModelsSearchFiles lists the servable GGUFs of one repo with a rough fit verdict per quant
-func LocalModelsSearchFiles(ctx context.Context, repo string) (map[string]any, error) {
-	prefix := fmt.Sprintf("Could not list %s: ", repo)
-	budget, err := lmDeps.probeBudget(true)
-	if err != nil {
-		return nil, lmHTTPError(502, prefix, err)
-	}
-	groups, err := lmDeps.pricedRepoFiles(repo, budget)
-	if err != nil {
-		return nil, lmHTTPError(502, prefix, err)
-	}
-	out := []any{}
-	for _, g := range groups {
-		paths := make([]any, len(g.Paths))
-		for i, p := range g.Paths {
-			paths[i] = p
-		}
-		out = append(out, map[string]any{"label": g.Label, "paths": paths, "total_bytes": g.TotalBytes, "fit": g.Fit})
-	}
-	return map[string]any{"files": out}, nil
-}
-
-// LocalModelsDownloadBrowsed downloads an arbitrary Hugging Face GGUF, every split part in order, into the models dir
-func LocalModelsDownloadBrowsed(ctx context.Context, repo string, paths []string) (map[string]any, error) {
-	var ggufs []string
-	for _, p := range paths {
-		if strings.HasSuffix(pystr.Lower(p), ".gguf") {
-			ggufs = append(ggufs, p)
-		}
-	}
-	if len(ggufs) == 0 {
-		return nil, httpException(422, "no .gguf files given")
-	}
-	modelID := lmBrowsedModelIDRE.ReplaceAllString(lmLastSegment(ggufs[0]), "$1")
-	if slices.Contains(lmDeps.stagedModelIDs(), modelID) {
-		return map[string]any{"job_id": nil, "already_downloaded": true, "model_id": modelID}, nil
-	}
-	job := lmNewJob("model-download", fmt.Sprintf("%s (from %s)", modelID, repo), modelID)
-	jobID := lmJobID(job)
-	plan := make([]lmPlanRow, 0, len(ggufs))
-	for _, p := range ggufs {
-		plan = append(plan, lmPlanRow{lmDeps.hfURL(repo, hfQuote(p), "main"), filepath.Join(lmDeps.modelsDir(), lmLastSegment(p)), 0})
-	}
-	fetch := func(ctx context.Context) error { return lmDeps.runDownloadPlan(ctx, job, plan, modelID, nil) }
-	lmSpawnJob(ctx, job, "lm-download-browsed", fetch, lmSpawnOptions{downloadLabel: &modelID, resumable: true})
-	return map[string]any{"job_id": jobID, "model_id": modelID}, nil
-}
-
-// Text after the last slash
-func lmLastSegment(p string) string {
-	if i := strings.LastIndex(p, "/"); i >= 0 {
-		return p[i+1:]
-	}
-	return p
-}
-
-// pathlib suffix of a path's final component
-func lmPathSuffix(p string) string {
-	name := filepath.Base(p)
-	if i := strings.LastIndex(name, "."); i > 0 && i < len(name)-1 {
-		return name[i:]
-	}
-	return ""
-}
-
-// LocalModelsSideload links a GGUF already on this machine into the models dir, copying only when linking fails
-func LocalModelsSideload(ctx context.Context, path string) (map[string]any, error) {
-	path = pypath.PathStr(path)
-	if !lrIsFile(path) || pystr.Lower(lmPathSuffix(path)) != ".gguf" {
-		return nil, httpException(422, "Pick a .gguf model file")
-	}
-	dest := filepath.Join(lmDeps.modelsDir(), filepath.Base(path))
-	if lrPathExists(dest) {
-		return map[string]any{"ok": true, "model_id": pyPathStem(dest), "already_present": true}, nil
-	}
-	if err := os.MkdirAll(filepath.Dir(dest), 0o777); err != nil {
-		return nil, err
-	}
-	if err := os.Link(path, dest); err != nil {
-		if err := os.Symlink(path, dest); err != nil {
-			if err := pyshutil.CopyFile(path, dest); err != nil {
-				return nil, err
-			}
-		}
-	}
-	lmDeps.refreshRuntime(ctx, lmDeps.refreshLocalRuntime, "post-sideload runtime refresh skipped")
-	return map[string]any{"ok": true, "model_id": pyPathStem(dest)}, nil
 }

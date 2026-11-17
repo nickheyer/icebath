@@ -164,21 +164,21 @@ func TestPersistBranchCopiesTheParentSystemPrompt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := db.CreateSession(state.NewSession{ID: "parent", Source: "desktop", Model: "test-model"}); err != nil {
+	if err := db.CreateSession(state.NewSession{ID: "parent", Source: "tui", Model: "test-model"}); err != nil {
 		t.Fatal(err)
 	}
 	prompt := "PARENT PROMPT\n\nWorkspace snapshot: session start"
 	if err := db.UpdateSystemPrompt(ctx, "parent", &prompt); err != nil {
 		t.Fatal(err)
 	}
-	if err := persistBranch(ctx, db, "child", "parent", "Branch", []map[string]any{{"role": "user", "content": "hello"}}, "desktop", &tmp,
+	if err := persistBranch(ctx, db, "child", "parent", "Branch", []map[string]any{{"role": "user", "content": "hello"}}, "tui", &tmp,
 		"default", "test-model", nil, false, "user", nil); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.CreateSession(state.NewSession{ID: "bare", Source: "desktop", Model: "test-model"}); err != nil {
+	if err := db.CreateSession(state.NewSession{ID: "bare", Source: "tui", Model: "test-model"}); err != nil {
 		t.Fatal(err)
 	}
-	if err := persistBranch(ctx, db, "bare-child", "bare", "Branch 2", []map[string]any{{"role": "user", "content": "hi"}}, "desktop", &tmp,
+	if err := persistBranch(ctx, db, "bare-child", "bare", "Branch 2", []map[string]any{{"role": "user", "content": "hi"}}, "tui", &tmp,
 		"default", "test-model", nil, false, "user", nil); err != nil {
 		t.Fatal(err)
 	}
@@ -198,8 +198,8 @@ func TestPersistBranchCopiesTheParentSystemPrompt(t *testing.T) {
 	}
 }
 
-// test_seeded_branch_title_routing.py test_seeded_desktop_branch_title_is_derived_until_the_user_renames
-func TestSeededDesktopBranchTitleIsDerivedUntilTheUserRenames(t *testing.T) {
+// test_seeded_branch_title_routing.py test_seeded_branch_title_is_derived_until_the_user_renames
+func TestSeededBranchTitleIsDerivedUntilTheUserRenames(t *testing.T) {
 	sessionCaseScope(t)
 	ctx := context.Background()
 	tmp := t.TempDir()
@@ -215,13 +215,13 @@ func TestSeededDesktopBranchTitleIsDerivedUntilTheUserRenames(t *testing.T) {
 	useSharedDB(t, db)
 	history := []any{map[string]any{"role": "user", "content": "Synthetic parent input"},
 		map[string]any{"role": "assistant", "content": "Synthetic parent response"}}
-	if err := db.CreateSession(state.NewSession{ID: "parent", Source: "desktop", Cwd: project}); err != nil {
+	if err := db.CreateSession(state.NewSession{ID: "parent", Source: "tui", Cwd: project}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := db.SetAutoTitleContext(ctx, "parent", "Generated parent title", "llm"); err != nil {
 		t.Fatal(err)
 	}
-	response := lookupMethod("session.create")(ctx, "create", map[string]any{"source": "desktop", "cwd": project,
+	response := lookupMethod("session.create")(ctx, "create", map[string]any{"source": "tui", "cwd": project,
 		"parent_session_id": "parent", "messages": history})
 	if _, failed := response["error"]; failed {
 		t.Fatalf("create %v", response)

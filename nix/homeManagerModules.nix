@@ -1,4 +1,4 @@
-# Home Manager module installing icebath and running its gateway and backend as user services
+# Home Manager module installing icebath and running its gateway as a user service
 { inputs, ... }:
 {
   flake.homeManagerModules.default =
@@ -186,17 +186,7 @@
                   inherit cfg;
                   opt = options.services.icebath-agent.workingDirectory;
                   optionPath = "services.icebath-agent";
-                }
-                ++ common.backendBindAssertions {
-                  inherit cfg;
-                  optionPath = "services.icebath-agent";
-                }
-                ++ [
-                  {
-                    assertion = !isDarwin || cfg.backend.waitFor != "interface";
-                    message = "services.icebath-agent.backend.waitFor = \"interface\" works on Linux only. Use \"hostname\" on Darwin.";
-                  }
-                ];
+                };
             }
 
             (lib.mkIf cfgPrograms.enable {
@@ -235,14 +225,6 @@
               };
             })
 
-            (lib.mkIf (isLinux && cfg.backend.mode != "none") {
-              systemd.user.services.icebath-backend = mkUnit {
-                description = common.backendDescription cfg;
-                argv = common.backendArgv { inherit pkgs cfg; };
-                environment = common.backendSessionEnvironment { inherit cfg; };
-              };
-            })
-
             (lib.mkIf (isDarwin && cfg.gateway.enable) {
               launchd.agents.icebath-agent = mkAgent {
                 argv = common.gatewayArgv cfg;
@@ -250,13 +232,6 @@
               };
             })
 
-            (lib.mkIf (isDarwin && cfg.backend.mode != "none") {
-              launchd.agents.icebath-backend = mkAgent {
-                argv = common.backendArgv { inherit pkgs cfg; };
-                logName = "icebath-backend";
-                environment = common.backendSessionEnvironment { inherit cfg; };
-              };
-            })
           ]
         ))
       ];

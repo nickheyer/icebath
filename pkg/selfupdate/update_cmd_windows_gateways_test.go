@@ -264,10 +264,10 @@ func TestThePauseRecordSurvivesExactlyWhenTheServiceRollbackFailed(t *testing.T)
 			service := gatewaycli.WindowsGatewayService{Name: "icebath-gw", Profile: "default", GatewayPID: pid, GatewayCreateTime: 1.0,
 				ServicePID: pid, ServiceCreateTime: 1.0}
 			savedWindows, savedPids, savedProcesses, savedServices := winIsWindows, winFindGatewayPids, winFindProfileProcesses, winFindServices
-			savedStopAll, savedAttested, savedStop, savedRestore := winStopGateways, winRecordAttested, winStopService, winRestoreService
+			savedStopAll, savedStop, savedRestore := winStopGateways, winStopService, winRestoreService
 			t.Cleanup(func() {
 				winIsWindows, winFindGatewayPids, winFindProfileProcesses, winFindServices = savedWindows, savedPids, savedProcesses, savedServices
-				winStopGateways, winRecordAttested, winStopService, winRestoreService = savedStopAll, savedAttested, savedStop, savedRestore
+				winStopGateways, winStopService, winRestoreService = savedStopAll, savedStop, savedRestore
 			})
 			winIsWindows = func() bool { return true }
 			winFindGatewayPids = func(context.Context) ([]int, error) { return nil, nil }
@@ -279,7 +279,6 @@ func TestThePauseRecordSurvivesExactlyWhenTheServiceRollbackFailed(t *testing.T)
 				func(int) error, map[int]any) (map[string]any, error) {
 				return map[string]any{}, nil
 			}
-			winRecordAttested = func(context.Context, map[string]any, map[string]bool) {}
 			winStopService = func(context.Context, string, []gatewaycli.ProcessIdentity, *gatewaycli.ProcessIdentity, *gatewaycli.ProcessIdentity, float64) error {
 				return &os.SyscallError{Syscall: "access denied", Err: os.ErrPermission}
 			}

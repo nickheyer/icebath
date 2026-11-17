@@ -11,7 +11,7 @@ description: >-
   speech and votes are `[agora:msg]` comments, the conclusion is written to task.result,
   and an adopted conclusion becomes execution tasks parented to the motion so context
   reaches workers through Hermes' own parent handoff. Ships 20 tools, 3 kanban lifecycle
-  hooks, a dashboard tab and an `hermes agora` CLI; installing writes nothing — the three
+  hooks and an `hermes agora` CLI; installing writes nothing — the three
   bundled skills are deployed by an explicit `hermes agora setup`. Disclosure — creates a
   Hermes profile per worker by asking core to provision it (`hermes profile create
   --clone`, which copies config.yaml and .env into the new profile as owner-only files,
@@ -28,8 +28,7 @@ description: >-
   pinned in `scheduled` status, and deletes a project's own tasks when it stops or completes;
   registers one recurring cron job and writes its runner script to
   HERMES_HOME/scripts/leader_heartbeat.sh; writes AGENTS.md into the configured project
-  workdir; deploys three bundled skills into HERMES_HOME/skills/collaboration/; and serves a
-  dashboard tab plus REST routes through the Hermes dashboard. No network egress of its own —
+  workdir; and deploys three bundled skills into HERMES_HOME/skills/collaboration/. No network egress of its own —
   model calls happen inside the spawned Hermes subprocesses under the operator's own provider
   credentials.
 maintainer: yzy806806

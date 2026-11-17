@@ -538,31 +538,6 @@ func TestOtherProfileHomeDoesNotBridgeProcessConfig(t *testing.T) {
 	expectEnv(t, "TERMINAL_ENV", "docker")
 }
 
-func TestParentInjectedDashboardSessionTokenSurvivesDotenv(t *testing.T) {
-	root := envLoaderRoot(t)
-	h := envLoaderProfile(t, root, "hermes")
-	writeEnvBytes(t, filepath.Join(h, ".env"), []byte("ICEBATH_DASHBOARD_SESSION_TOKEN=persisted-token\nICEBATH_DASHBOARD_PUBLIC_URL=http://127.0.0.1:1\n"))
-	t.Setenv("ICEBATH_DASHBOARD_SESSION_TOKEN", "link-token")
-	t.Setenv("ICEBATH_DASHBOARD_PUBLIC_URL", "http://127.0.0.1:43123")
-	mustLoad(t, DotenvLoadOptions{Home: h})
-	expectEnv(t, "ICEBATH_DASHBOARD_SESSION_TOKEN", "link-token")
-	expectEnv(t, "ICEBATH_DASHBOARD_PUBLIC_URL", "http://127.0.0.1:1")
-	mustLoad(t, DotenvLoadOptions{Home: h})
-	expectEnv(t, "ICEBATH_DASHBOARD_SESSION_TOKEN", "link-token")
-}
-
-func TestDotenvPublishedDashboardSessionTokenStillReloads(t *testing.T) {
-	root := envLoaderRoot(t)
-	h := envLoaderProfile(t, root, "hermes")
-	envLoaderUnset(t, "ICEBATH_DASHBOARD_SESSION_TOKEN")
-	writeEnvBytes(t, filepath.Join(h, ".env"), []byte("ICEBATH_DASHBOARD_SESSION_TOKEN=first\n"))
-	mustLoad(t, DotenvLoadOptions{Home: h})
-	expectEnv(t, "ICEBATH_DASHBOARD_SESSION_TOKEN", "first")
-	writeEnvBytes(t, filepath.Join(h, ".env"), []byte("ICEBATH_DASHBOARD_SESSION_TOKEN=second\n"))
-	mustLoad(t, DotenvLoadOptions{Home: h})
-	expectEnv(t, "ICEBATH_DASHBOARD_SESSION_TOKEN", "second")
-}
-
 const dotenvBasePath = "/usr/bin:/bin"
 
 // Profile home with the boot PATH pinned and multiplexing off

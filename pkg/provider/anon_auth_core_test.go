@@ -83,7 +83,7 @@ func TestAnonAClaimedTrialCarriesInferenceOnEverySurface(t *testing.T) {
 	_, env := installAnonPortal(t)
 	anonClaimedTrial(t, env)
 	if !freeInferenceActive(env, currentNousState(env)) {
-		t.Fatal("a claimed trial carries inference off the desktop")
+		t.Fatal("a claimed trial carries no inference")
 	}
 	if pid, err := resolveProvider(env, "auto"); pid != "nous" || err != nil {
 		t.Fatalf("%q %v", pid, err)
@@ -323,11 +323,10 @@ func TestAnonClaimedTrialHasTheNoticePendingOnceAndTheFlagPersists(t *testing.T)
 
 func TestAnonConnectorOnlyGuestHasNoNoticePending(t *testing.T) {
 	_, env := installAnonPortal(t)
-	desktop := anonDesktopEnv(env)
-	if _, err := EnsurePortalIdentity(desktop, PortalIdentityOptions{Explicit: true}); err != nil {
+	if _, err := EnsurePortalIdentity(env, PortalIdentityOptions{Explicit: true}); err != nil {
 		t.Fatal(err)
 	}
-	if !hasGuest(desktop) || guestNoticePending(desktop) {
+	if !hasGuest(env) || guestNoticePending(env) {
 		t.Fatal("a connector only guest has no notice")
 	}
 }
@@ -358,7 +357,7 @@ func TestFreeTierBootstrapOnAFreshMachineMintsNothing(t *testing.T) {
 	anonNoAWS(t)
 	resetFreeTierBootstrapForTests()
 	t.Cleanup(resetFreeTierBootstrapForTests)
-	record := RunFreeTierBootstrap(anonDesktopEnv(env), false)
+	record := RunFreeTierBootstrap(env, false)
 	if record.HasIdentity || record.FreeTierAccount {
 		t.Fatalf("%+v", record)
 	}

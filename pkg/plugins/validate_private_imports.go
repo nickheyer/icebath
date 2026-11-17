@@ -28,7 +28,7 @@ var privateImportsPublic = func() map[string]bool {
 		"tools.computer_use.backend", "tools.registry",
 		"agent.context_references", "agent.plugin_llm", "agent.transcription_provider", "agent.tts_provider",
 		"cron.execution_identity",
-		"hermes_cli.dashboard_auth", "hermes_cli.platform_actions", "hermes_cli.plugins:PluginContext",
+		"hermes_cli.platform_actions", "hermes_cli.plugins:PluginContext",
 		"hermes_cli.plugins_ledger:PluginRegistration", "hermes_cli.plugins_state:PluginState",
 		"agent.runtime_cwd:resolve_agent_cwd", "agent.usage_pricing:CostResult", "hermes_cli.auth_constants:AuthError",
 		"tools.environments.base:BaseEnvironment", "tools.environments:BaseEnvironment",

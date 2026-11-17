@@ -23,7 +23,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/skills"
 )
 
-// Slow install step ids the desktop catalog card words in its own language
+// Slow install step ids a connector operation reports while a plugin installs
 type InstallPhase string
 
 const (
@@ -969,8 +969,8 @@ func enablePlaced(ctx context.Context, h, installedName string) (map[string]any,
 	return nil, err
 }
 
-// Inputs of a dashboard or TUI install, a nil AssumeDepsConsent takes the fresh enable as consent
-type DashboardInstallOptions struct {
+// Inputs of an unattended install, a nil AssumeDepsConsent takes the fresh enable as consent
+type UnattendedInstallOptions struct {
 	Identifier   string
 	Force        bool
 	Enable       bool
@@ -982,8 +982,8 @@ type DashboardInstallOptions struct {
 	AssumeDepsConsent *bool
 }
 
-// Non interactive install for the dashboard and TUI with the kill list enforced on every path
-func DashboardInstallPlugin(ctx context.Context, opts DashboardInstallOptions) (map[string]any, error) {
+// Non interactive install with the kill list enforced on every path
+func UnattendedInstallPlugin(ctx context.Context, opts UnattendedInstallOptions) (map[string]any, error) {
 	h := home.Dir(ctx)
 	step := opts.OnStep
 	if step == nil {

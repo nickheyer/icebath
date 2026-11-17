@@ -173,21 +173,6 @@ func terminalConfigValueIsBridgeable(key string, value any) bool {
 	return true
 }
 
-// Env vars a raw terminal section explicitly owns
-func TerminalConfigOwnedEnvVars(terminalConfig any) map[string]bool {
-	out := map[string]bool{}
-	section, ok := terminalConfig.(map[string]any)
-	if !ok {
-		return out
-	}
-	for _, pair := range TerminalConfigEnvMap {
-		if value, has := section[pair[0]]; has && terminalConfigValueIsBridgeable(pair[0], value) {
-			out[pair[1]] = true
-		}
-	}
-	return out
-}
-
 // Reports whether the remote SSH shell must expand a tilde cwd itself
 func IsSSHRemoteTildeCwd(backend, cwd string) bool {
 	return strings.ToLower(strings.TrimSpace(backend)) == "ssh" && (cwd == "~" || strings.HasPrefix(cwd, "~/"))

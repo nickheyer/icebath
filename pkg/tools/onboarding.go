@@ -17,6 +17,7 @@ const (
 	OnboardingBusyInputFlag       = "busy_input_prompt"
 	OnboardingToolProgressFlag    = "tool_progress_prompt"
 	OnboardingOpenclawResidueFlag = "openclaw_residue_cleanup"
+	OnboardingProfileBuildFlag    = "profile_build_offered"
 )
 
 // Busy input hints keyed by the busy_input_mode just applied, interrupt being the default branch
@@ -131,8 +132,8 @@ const OnboardingPlainIntroNote = "[System note: This is the user's very first me
 	"available commands, in one or two sentences.]"
 
 // One shot sidecar note for the install's first ever message, nil when this is not first contact
-func FirstContactTurnNote(ctx context.Context, cfg any, configPath string, sessionHistoryEmpty, installHasPriorSessions, onboardingRunActive bool) *string {
-	if !sessionHistoryEmpty || installHasPriorSessions || onboardingRunActive {
+func FirstContactTurnNote(ctx context.Context, cfg any, configPath string, sessionHistoryEmpty, installHasPriorSessions bool) *string {
+	if !sessionHistoryEmpty || installHasPriorSessions {
 		return nil
 	}
 	if ProfileBuildMode(cfg) == "ask" && !IsSeen(cfg, OnboardingProfileBuildFlag) {

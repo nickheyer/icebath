@@ -198,7 +198,7 @@ func guardOfficialDockerRootGateway(w io.Writer) error {
 		"If you override entrypoint in Docker Compose, include "+
 		"/opt/icebath/docker/entrypoint.sh before the Icebath command.",
 		"  Running the gateway as root can leave root-owned files in "+
-			"$ICEBATH_HOME and break later non-root dashboard/gateway runs.",
+			"$ICEBATH_HOME and break later non-root gateway runs.",
 		"  Set ICEBATH_ALLOW_ROOT_GATEWAY=1 only if you intentionally accept this risk.")
 	return exitWith(1)
 }
@@ -411,8 +411,7 @@ func maybeRedirectRunToS6Supervision(ctx context.Context, w, errw io.Writer, ns 
 		return false, err
 	}
 	gateway.DisarmStartupWatchdog()
-	fmt.Fprintln(errw, "→ gateway is now running under s6 supervision (auto-restart on crash,\n"+
-		"  dashboard supervised alongside if ICEBATH_DASHBOARD is set).\n"+
+	fmt.Fprintln(errw, "→ gateway is now running under s6 supervision (auto-restart on crash).\n"+
 		"  This is the recommended setup for the s6 container image — the\n"+
 		"  gateway will keep running even if it crashes.\n"+
 		"  Use `--no-supervise` (or ICEBATH_GATEWAY_NO_SUPERVISE=1) to opt out\n"+

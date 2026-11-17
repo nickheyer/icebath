@@ -61,7 +61,7 @@ func modelAssign(ctx context.Context, rid any, params map[string]any) (map[strin
 	}
 	locked, unlock := provider.LockConfigMutation(ctx)
 	defer unlock()
-	saved, err := provider.ApplyModelAssignmentSync(locked, "main", providerName, model, "", baseURL, apiKey, provider.AuxReasoningEffort{}, prepared)
+	saved, err := provider.ApplyModelAssignmentSync(locked, providerName, model, baseURL, apiKey, prepared)
 	if err != nil {
 		return nil, err
 	}

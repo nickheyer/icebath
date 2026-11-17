@@ -226,7 +226,7 @@ func resumeLiveUnpersisted(r *resumeCtx, liveSID string, live *tuigateway.Sessio
 	}
 	return ok(r.rid, attachTodoState(map[string]any{"session_id": liveSID, "stored_session_id": strOr(live.Get("session_key")),
 		"message_count": len(messages), "messages": messages,
-		"info": map[string]any{"model": model, "provider": providerName, "lazy": true, "desktop_contract": desktopBackendContract,
+		"info": map[string]any{"model": model, "provider": providerName, "lazy": true,
 			"profile_name": profileName}}, live))
 }
 
@@ -495,7 +495,7 @@ func resumeDeferred(r *resumeCtx) map[string]any {
 	if reused := r.claim(sid, record); reused != nil {
 		return reused
 	}
-	scheduleResumeHydration(r.ctx, sid, r.target, r.db, r.ownsDB, source == "desktop" && r.omitMessages)
+	scheduleResumeHydration(r.ctx, sid, r.target, r.db, r.ownsDB)
 	r.ownsDB = false
 	scheduleSessionCapEnforcement(r.ctx)
 	hydrating := true
@@ -547,9 +547,8 @@ func resumeEager(r *resumeCtx) map[string]any {
 		panicIf(err)
 		prefix = r.displayPrefix()
 		stored = storedSessionRuntimeOverrides(scoped, r.found)
-		launch := launchCwdNotAWorkspace[source] && r.profileResumeCwd == ""
 		options := makeAgentOptions{sessionDB: r.db, platformOverride: source, cwdOverride: r.profileResumeCwd,
-			contextCwdIsLaunchArtifact: &launch, authUserID: tuigateway.TransportAuthUserID(tuigateway.CurrentTransport(r.ctx))}
+			authUserID: tuigateway.TransportAuthUserID(tuigateway.CurrentTransport(r.ctx))}
 		options.applyOverrides(stored)
 		built, err = makeAgentInContext(scoped, sid, r.target, options)
 		panicIf(err)

@@ -24,13 +24,11 @@ const (
 	CategoryBackground    = "Background & Automation"
 )
 
-// Meta carries the gateway, executor and desktop fields every Def embeds
+// Meta carries the gateway and executor fields every Def embeds
 type Meta struct {
-	GatewayOnly        bool
-	GatewayConfigGate  string
-	Execute            string
-	Desktop            string
-	DesktopSubcommands []string
+	GatewayOnly       bool
+	GatewayConfigGate string
+	Execute           string
 }
 
 // Subgroup is one /help sub heading of the Session category with the names it collects
@@ -81,9 +79,9 @@ var Builtin = []Def{
 	def("topic", "Enable or inspect Telegram DM topic sessions", CategorySession,
 		Meta{GatewayOnly: true}, Def{ArgsHint: "[off|help|session-id]"}),
 	def("clear", "Clear screen and start a new session", CategorySession,
-		Meta{Desktop: "terminal"}, Def{CLIOnly: true}),
+		Meta{}, Def{CLIOnly: true}),
 	def("redraw", "Force a full UI repaint (recovers from terminal drift)", CategorySession,
-		Meta{Desktop: "terminal"}, Def{CLIOnly: true}),
+		Meta{}, Def{CLIOnly: true}),
 	def("history", "Show conversation history", CategorySession, Meta{}, Def{CLIOnly: true}),
 	def("save", "Export the current conversation (bare /save shows usage)", CategorySession,
 		Meta{}, Def{ArgsHint: "<json|md|html> [filename] [redact]"}),
@@ -93,17 +91,17 @@ var Builtin = []Def{
 	def("undo", "Back up N user turns and re-prompt (default 1)", CategorySession, Meta{}, Def{ArgsHint: "[N]"}),
 	def("title", "Set a title for the current session", CategorySession, Meta{}, Def{ArgsHint: "[name]"}),
 	def("handoff", "Hand off this session to a messaging platform (Telegram, Discord, etc.)", CategorySession,
-		Meta{}, Def{ArgsHint: "<platform>", CLIOnly: true, ArgumentMode: "options"}),
+		Meta{}, Def{ArgsHint: "<platform>", CLIOnly: true}),
 	def("branch", "Branch the current session (new thread on Discord/Telegram/Slack/Matrix; --here stays here)", CategorySession,
 		Meta{}, Def{Aliases: []string{"fork"}, ArgsHint: "[--here] [name]"}),
 	def("worktree", "Show, list, create, or prune isolated git worktrees", CategorySession,
-		Meta{Desktop: "terminal"}, Def{CLIOnly: true, ArgsHint: "[new [name]|list|prune [--dry-run]]", Subcommands: []string{"new", "list", "prune"}}),
+		Meta{}, Def{CLIOnly: true, ArgsHint: "[new [name]|list|prune [--dry-run]]", Subcommands: []string{"new", "list", "prune"}}),
 	def("compress", "Compress conversation context (add 'here [N]' to keep recent N turns; --preview shows what would happen)", CategorySession,
 		Meta{}, Def{Aliases: []string{"compact"}, ArgsHint: "[here [N] | focus topic | --preview|--dry-run]"}),
 	def("rollback", "List or restore filesystem checkpoints (restores keep your hand-edits; --all overrides)", CategorySession,
 		Meta{}, Def{ArgsHint: "[number] [--all]"}),
 	def("snapshot", "Create or restore state snapshots of icebath config/state", CategorySession,
-		Meta{Desktop: "terminal"}, Def{CLIOnly: true, Aliases: []string{"snap"}, ArgsHint: "[create|restore <id>|prune]"}),
+		Meta{}, Def{CLIOnly: true, Aliases: []string{"snap"}, ArgsHint: "[create|restore <id>|prune]"}),
 	def("export", "Export a profile (config, skills, theme) to a shareable archive", CategoryConfiguration,
 		Meta{}, Def{CLIOnly: true, ArgsHint: "[profile] [-o output.tar.gz]"}),
 	def("import", "Import a shared profile archive as a new profile", CategoryConfiguration,
@@ -133,7 +131,7 @@ var Builtin = []Def{
 		Meta{}, Def{Aliases: []string{"s"}, ArgsHint: "<prompt>", BusyPolicy: BusyDispatch, BusyHandler: "steer"}),
 	def("goal", "Set a standing goal icebath works on across turns until achieved", CategorySession,
 		Meta{}, Def{ArgsHint: "[text | -- <text> | draft <text> | show | gate add <cmd> | pause | resume | clear | status | wait <pid> | unwait]",
-			ArgumentMode: "mixed", BusyPolicy: BusyDispatch, BusyHandler: "goal"}),
+			BusyPolicy: BusyDispatch, BusyHandler: "goal"}),
 	def("heartbeat", "Set a recurring prompt that re-enters this session when idle", CategorySession,
 		Meta{}, Def{Aliases: []string{"hb"}, ArgsHint: "[every <interval> <prompt> | status | pause | resume | clear]",
 			Subcommands: []string{"status", "pause", "resume", "clear"}, BusyPolicy: BusyDispatch}),
@@ -143,8 +141,8 @@ var Builtin = []Def{
 		Meta{}, Def{ArgsHint: "[review instructions]"}),
 	def("loop", "Re-run a prompt on a recurring interval in this session", CategorySession,
 		Meta{}, Def{Aliases: []string{"proactive"},
-			ArgsHint:     "[interval] <prompt> [--times N] [--until <condition>] | status | pause | resume | stop",
-			ArgumentMode: "mixed", BusyPolicy: BusyDispatch, BusyHandler: "loop"}),
+			ArgsHint:   "[interval] <prompt> [--times N] [--until <condition>] | status | pause | resume | stop",
+			BusyPolicy: BusyDispatch, BusyHandler: "loop"}),
 	def("plan", "Write a markdown implementation plan to .icebath/plans/ without executing anything", CategorySession,
 		Meta{}, Def{ArgsHint: "[task]"}),
 	def("moa", "Run one prompt through the default Mixture of Agents preset, then restore your model", CategorySession,
@@ -161,21 +159,21 @@ var Builtin = []Def{
 	def("profile", "Show active profile name and home directory", CategoryInfo,
 		Meta{Execute: "profile"}, Def{BusyPolicy: BusyDispatch}),
 	def("sethome", "Set this chat as the home channel", CategorySession,
-		Meta{GatewayOnly: true, Desktop: "terminal"}, Def{Aliases: []string{"set-home"}}),
+		Meta{GatewayOnly: true}, Def{Aliases: []string{"set-home"}}),
 	def("resume", "Resume a previously-named session", CategorySession,
-		Meta{}, Def{ArgsHint: "[name]", ArgumentMode: "mixed"}),
+		Meta{}, Def{ArgsHint: "[name]"}),
 	def("sessions", "Browse and resume previous sessions", CategorySession, Meta{}, Def{}),
 
 	def("config", "Show current configuration", CategoryConfiguration, Meta{}, Def{CLIOnly: true}),
 	def("model", "Switch model (session-scoped; --global to persist)", CategoryConfiguration,
-		Meta{Desktop: "hidden"}, Def{ArgsHint: "[model|reset] [--provider name] [--reasoning level] [--global|--session] [--refresh]",
+		Meta{}, Def{ArgsHint: "[model|reset] [--provider name] [--reasoning level] [--global|--session] [--refresh]",
 			BusyPolicy: BusyReject, BusyHandler: "model"}),
 	def("codex-runtime", "Toggle codex app-server runtime for OpenAI/Codex models", CategoryConfiguration,
 		Meta{}, Def{Aliases: []string{"codex_runtime"}, ArgsHint: "[auto|codex_app_server]", BusyPolicy: BusyReject, BusyHandler: "codex-runtime"}),
 	def("personality", "Set a predefined personality", CategoryConfiguration,
-		Meta{}, Def{ArgsHint: "[name]", ArgumentMode: "options"}),
+		Meta{}, Def{ArgsHint: "[name]"}),
 	def("statusbar", "Toggle the context/model status bar", CategoryConfiguration,
-		Meta{Desktop: "terminal"}, Def{CLIOnly: true, Aliases: []string{"sb"}}),
+		Meta{}, Def{CLIOnly: true, Aliases: []string{"sb"}}),
 	def("battery", "Toggle a color-coded battery indicator in the status bar", CategoryConfiguration,
 		Meta{}, Def{CLIOnly: true, ArgsHint: "[on|off|status]", Subcommands: []string{"on", "off", "status"}}),
 	def("timestamps", "Toggle [HH:MM] timestamps on messages and /history", CategoryConfiguration,
@@ -183,11 +181,11 @@ var Builtin = []Def{
 	def("diff", "Show git changes in the working directory", CategoryInfo,
 		Meta{}, Def{ArgsHint: "[staged|all|session] [--stat] [path...]", Subcommands: []string{"staged", "all", "session"}}),
 	def("verbose", "Cycle tool progress display: off -> new -> all -> verbose", CategoryConfiguration,
-		Meta{GatewayConfigGate: "display.tool_progress_command", Desktop: "terminal"}, Def{CLIOnly: true, BusyPolicy: BusyDispatch}),
+		Meta{GatewayConfigGate: "display.tool_progress_command"}, Def{CLIOnly: true, BusyPolicy: BusyDispatch}),
 	def("focus", "Toggle focus view — show only your prompt and the final response", CategoryConfiguration,
 		Meta{}, Def{CLIOnly: true, ArgsHint: "[on|off|status]", Subcommands: []string{"on", "off", "status"}}),
 	def("footer", "Toggle gateway runtime-metadata footer on final replies", CategoryConfiguration,
-		Meta{Desktop: "terminal"}, Def{ArgsHint: "[on|off|status]", Subcommands: []string{"on", "off", "status"}, BusyPolicy: BusyDispatch}),
+		Meta{}, Def{ArgsHint: "[on|off|status]", Subcommands: []string{"on", "off", "status"}, BusyPolicy: BusyDispatch}),
 	def("yolo", "Toggle YOLO mode (skip all dangerous command approvals)", CategoryConfiguration,
 		Meta{}, Def{BusyPolicy: BusyDispatch}),
 	def("approvals", "Show or set the persistent dangerous-command approval mode", CategoryConfiguration,
@@ -196,26 +194,26 @@ var Builtin = []Def{
 		Meta{}, Def{ArgsHint: "[level|show|hide|full|clamp] [--global]",
 			Subcommands: []string{"none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra", "show", "hide", "on", "off", "full", "clamp", "--global"}}),
 	def("fast", "Fast mode — OpenAI Priority Processing / Anthropic Fast Mode (normal/fast/auto/cold/ultrafast)", CategoryConfiguration,
-		Meta{Desktop: "advanced"}, Def{ArgsHint: "[normal|fast|auto|cold|ultrafast|status] [--global]",
+		Meta{}, Def{ArgsHint: "[normal|fast|auto|cold|ultrafast|status] [--global]",
 			Subcommands: []string{"normal", "fast", "auto", "cold", "ultrafast", "ultra", "status", "on", "off", "--global"}}),
 	def("skin", "Show or change the display skin/theme", CategoryConfiguration,
-		Meta{}, Def{CLIOnly: true, ArgsHint: "[name]", ArgumentMode: "options"}),
+		Meta{}, Def{CLIOnly: true, ArgsHint: "[name]"}),
 	def("indicator", "Pick the TUI busy-indicator style", CategoryConfiguration,
-		Meta{Desktop: "terminal"}, Def{CLIOnly: true, ArgsHint: "[" + strings.Join(IndicatorStyles, "|") + "]", Subcommands: append([]string(nil), IndicatorStyles...)}),
+		Meta{}, Def{CLIOnly: true, ArgsHint: "[" + strings.Join(IndicatorStyles, "|") + "]", Subcommands: append([]string(nil), IndicatorStyles...)}),
 	def("voice", "Toggle voice mode", CategoryConfiguration,
-		Meta{Desktop: "composer-voice"}, Def{ArgsHint: "[on|off|tts|status]", Subcommands: []string{"on", "off", "tts", "status"}}),
+		Meta{}, Def{ArgsHint: "[on|off|tts|status]", Subcommands: []string{"on", "off", "tts", "status"}}),
 	def("wake", "Toggle the 'Hey icebath' wake word listener", CategoryConfiguration,
 		Meta{}, Def{CLIOnly: true, ArgsHint: "[on|off|status]", Subcommands: []string{"on", "off", "status"}}),
 	def("busy", "Control how messages behave while icebath is working", CategoryConfiguration,
-		Meta{Desktop: "terminal"}, Def{ArgsHint: "[queue|steer|interrupt|status]", Subcommands: []string{"queue", "steer", "interrupt", "status"}, BusyPolicy: BusyDispatch}),
+		Meta{}, Def{ArgsHint: "[queue|steer|interrupt|status]", Subcommands: []string{"queue", "steer", "interrupt", "status"}, BusyPolicy: BusyDispatch}),
 	def("autoprune", "Turn automatic pruning of old sessions on or off", CategoryConfiguration,
-		Meta{Execute: "autoprune"}, Def{ArgsHint: "[on|off|later|status]", Subcommands: []string{"on", "off", "later", "status"}, BusyPolicy: BusyDispatch, ArgumentMode: "options"}),
+		Meta{Execute: "autoprune"}, Def{ArgsHint: "[on|off|later|status]", Subcommands: []string{"on", "off", "later", "status"}, BusyPolicy: BusyDispatch}),
 
 	def("tools", "Manage tools: /tools [list|disable|enable] [name...]", CategoryToolsSkills,
-		Meta{}, Def{ArgsHint: "[list|disable|enable] [name...]", CLIOnly: true, ArgumentMode: "options"}),
-	def("toolsets", "List available toolsets", CategoryToolsSkills, Meta{Desktop: "terminal"}, Def{CLIOnly: true}),
+		Meta{}, Def{ArgsHint: "[list|disable|enable] [name...]", CLIOnly: true}),
+	def("toolsets", "List available toolsets", CategoryToolsSkills, Meta{}, Def{CLIOnly: true}),
 	def("skills", "Search, install, inspect, or manage skills", CategoryToolsSkills,
-		Meta{GatewayConfigGate: "skills.write_approval", DesktopSubcommands: []string{"pending", "approve", "reject", "diff", "approval"}},
+		Meta{GatewayConfigGate: "skills.write_approval"},
 		Def{CLIOnly: true, Subcommands: []string{"search", "browse", "inspect", "install", "audit", "pending", "approve", "reject", "diff", "approval"}}),
 	def("memory", "Review pending memory writes / toggle the approval gate", CategoryToolsSkills,
 		Meta{}, Def{ArgsHint: "[pending|approve|reject|approval] [id|on|off]", Subcommands: []string{"pending", "approve", "reject", "approval"}}),
@@ -229,29 +227,29 @@ var Builtin = []Def{
 	def("init", "Generate or update AGENTS.md project instructions from a repo scan", CategoryToolsSkills,
 		Meta{}, Def{ArgsHint: "[notes]"}),
 	def("cron", "Manage scheduled tasks", CategoryToolsSkills,
-		Meta{Desktop: "terminal"}, Def{CLIOnly: true, ArgsHint: "[subcommand]", Subcommands: []string{"list", "add", "create", "edit", "pause", "resume", "run", "remove"}}),
+		Meta{}, Def{CLIOnly: true, ArgsHint: "[subcommand]", Subcommands: []string{"list", "add", "create", "edit", "pause", "resume", "run", "remove"}}),
 	def("suggestions", "Review suggested automations (accept/dismiss)", CategoryToolsSkills,
 		Meta{}, Def{Aliases: []string{"suggest"}, ArgsHint: "[accept|dismiss N | catalog]", Subcommands: []string{"accept", "dismiss", "catalog", "clear"}}),
 	def("blueprint", "Set up an automation from a blueprint template", CategoryToolsSkills,
 		Meta{}, Def{Aliases: []string{"bp"}, ArgsHint: "[name] [slot=value ...]"}),
 	def("curator", "Background skill maintenance (status, run, pin, archive, list-archived)", CategoryToolsSkills,
-		Meta{Desktop: "advanced"}, Def{ArgsHint: "[subcommand]", Subcommands: []string{"status", "run", "pause", "resume", "pin", "unpin", "restore", "list-archived"}}),
+		Meta{}, Def{ArgsHint: "[subcommand]", Subcommands: []string{"status", "run", "pause", "resume", "pin", "unpin", "restore", "list-archived"}}),
 	def("kanban", "Multi-profile collaboration board (tasks, links, comments)", CategoryToolsSkills,
-		Meta{Desktop: "advanced"}, Def{ArgsHint: "[subcommand]", BusyPolicy: BusyDispatch,
+		Meta{}, Def{ArgsHint: "[subcommand]", BusyPolicy: BusyDispatch,
 			Subcommands: []string{"init", "boards", "create", "list", "ls", "show", "assign",
 				"reclaim", "reassign", "diagnostics", "diag", "link", "unlink",
 				"claim", "comment", "complete", "edit", "block", "unblock",
 				"archive", "tail", "dispatch", "stats", "notify-subscribe",
 				"notify-list", "notify-unsubscribe", "log", "runs",
 				"heartbeat", "assignees", "context", "specify", "gc"}}),
-	def("reload", "Reload .env variables into the running session", CategoryToolsSkills, Meta{Desktop: "terminal"}, Def{CLIOnly: true}),
+	def("reload", "Reload .env variables into the running session", CategoryToolsSkills, Meta{}, Def{CLIOnly: true}),
 	def("reload-mcp", "Reload MCP servers from config", CategoryToolsSkills,
-		Meta{Desktop: "advanced"}, Def{Aliases: []string{"reload_mcp"}}),
+		Meta{}, Def{Aliases: []string{"reload_mcp"}}),
 	def("reload-skills", "Re-scan ~/.icebath/skills/ for newly installed or removed skills", CategoryToolsSkills,
-		Meta{Desktop: "advanced"}, Def{Aliases: []string{"reload_skills"}}),
+		Meta{}, Def{Aliases: []string{"reload_skills"}}),
 	def("browser", "Connect browser tools to your live Chromium-family browser via CDP", CategoryToolsSkills,
 		Meta{}, Def{CLIOnly: true, ArgsHint: "[connect|disconnect|status]", Subcommands: []string{"connect", "disconnect", "status"}}),
-	def("plugins", "List installed plugins and their status", CategoryToolsSkills, Meta{Desktop: "terminal"}, Def{CLIOnly: true}),
+	def("plugins", "List installed plugins and their status", CategoryToolsSkills, Meta{}, Def{CLIOnly: true}),
 
 	def("commands", "Browse all commands and skills (paginated)", CategoryInfo,
 		Meta{GatewayOnly: true, Execute: "gateway_commands"}, Def{ArgsHint: "[page]", BusyPolicy: BusyDispatch}),
@@ -259,31 +257,31 @@ var Builtin = []Def{
 		Meta{Execute: "gateway_help"}, Def{BusyPolicy: BusyDispatch, ArgsHint: "[skills|<filter>]"}),
 	def("palette", "Open the fuzzy command palette (also Ctrl+P)", CategoryInfo, Meta{}, Def{CLIOnly: true, BusyPolicy: BusyDispatch}),
 	def("restart", "Gracefully restart the gateway after draining active runs", CategorySession,
-		Meta{GatewayOnly: true, Desktop: "terminal"}, Def{BusyPolicy: BusyDispatch}),
+		Meta{GatewayOnly: true}, Def{BusyPolicy: BusyDispatch}),
 	def("usage", "Show token usage and rate limits; `reset` redeems a banked Codex limit reset", CategoryInfo,
 		Meta{}, Def{ArgsHint: "[reset [--force]]"}),
 	def("subscription", "View your Nous plan and change it in the browser", CategoryInfo,
 		Meta{}, Def{CLIOnly: true, Aliases: []string{"upgrade"}}),
 	def("login", "Sign in with a Nous account (keeps your connectors)", CategoryInfo,
-		Meta{Desktop: "settings"}, Def{BusyPolicy: BusyDispatch}),
+		Meta{}, Def{BusyPolicy: BusyDispatch}),
 	def("topup", "Show your Nous balance and manage billing on the portal", CategoryInfo, Meta{}, Def{}),
-	def("insights", "Show usage insights and analytics", CategoryInfo, Meta{Desktop: "advanced"}, Def{ArgsHint: "[days]"}),
+	def("insights", "Show usage insights and analytics", CategoryInfo, Meta{}, Def{ArgsHint: "[days]"}),
 	def("platforms", "Show gateway/messaging platform status", CategoryInfo,
-		Meta{Desktop: "terminal"}, Def{CLIOnly: true, Aliases: []string{"gateway"}}),
+		Meta{}, Def{CLIOnly: true, Aliases: []string{"gateway"}}),
 	def("platform", "Pause, resume, or list a failing gateway platform", CategoryInfo,
 		Meta{GatewayOnly: true}, Def{ArgsHint: "<pause|resume|list> [name]"}),
 	def("copy", "Copy the last assistant response to clipboard", CategoryInfo,
-		Meta{Desktop: "terminal"}, Def{CLIOnly: true, ArgsHint: "[number]"}),
-	def("paste", "Attach clipboard image from your clipboard", CategoryInfo, Meta{Desktop: "terminal"}, Def{CLIOnly: true}),
+		Meta{}, Def{CLIOnly: true, ArgsHint: "[number]"}),
+	def("paste", "Attach clipboard image from your clipboard", CategoryInfo, Meta{}, Def{CLIOnly: true}),
 	def("image", "Attach a local image file for your next prompt", CategoryInfo,
-		Meta{Desktop: "terminal"}, Def{CLIOnly: true, ArgsHint: "<path>"}),
-	def("update", "Update icebath to the latest version", CategoryInfo, Meta{Desktop: "terminal"}, Def{BusyPolicy: BusyDispatch}),
+		Meta{}, Def{CLIOnly: true, ArgsHint: "<path>"}),
+	def("update", "Update icebath to the latest version", CategoryInfo, Meta{}, Def{BusyPolicy: BusyDispatch}),
 	def("version", "Show icebath version", CategoryInfo, Meta{Execute: "version"}, Def{Aliases: []string{"v"}, BusyPolicy: BusyDispatch}),
 	def("debug", "Upload debug report (system info + logs) and get shareable links", CategoryInfo,
 		Meta{}, Def{ArgsHint: "[nous|local]"}),
 
 	def("quit", "Exit the CLI (use --delete to also remove session history)", CategoryExit,
-		Meta{Desktop: "terminal"}, Def{CLIOnly: true, Aliases: []string{"exit"}, ArgsHint: "[--delete]"}),
+		Meta{}, Def{CLIOnly: true, Aliases: []string{"exit"}, ArgsHint: "[--delete]"}),
 }
 
 // ExecuteKeys lists every registry owned executor key the app must bind
@@ -408,59 +406,6 @@ func Subcommands(r *Registry) map[string][]string {
 		}
 		if m := pipeSubsRe.FindString(d.ArgsHint); m != "" {
 			out["/"+d.Name] = strings.Split(m, "|")
-		}
-	}
-	return out
-}
-
-var proseHints = []string{"<prompt>", "[text", "instructions", "[interval]", "<what"}
-
-// InferArgumentMode returns the composer mode declared on the command or inferred from its hint
-func InferArgumentMode(d *Def) string {
-	switch d.ArgumentMode {
-	case "options", "text", "mixed":
-		return d.ArgumentMode
-	}
-	hint := strings.TrimSpace(d.ArgsHint)
-	if len(d.Subcommands) > 0 {
-		lower := strings.ToLower(hint)
-		for _, token := range proseHints {
-			if hint != "" && strings.Contains(lower, token) {
-				return "mixed"
-			}
-		}
-		return "options"
-	}
-	if hint != "" {
-		return "text"
-	}
-	return ""
-}
-
-// DesktopMeta returns the commands.catalog wire shape for one command
-func DesktopMeta(d *Def) map[string]any {
-	meta := map[string]any{"argument_mode": nilIfEmpty(InferArgumentMode(d)), "desktop": nilIfEmpty(d.Desktop)}
-	if d.DesktopSubcommands != nil {
-		meta["desktop_subcommands"] = append([]string{}, d.DesktopSubcommands...)
-	}
-	return meta
-}
-
-func nilIfEmpty(s string) any {
-	if s == "" {
-		return nil
-	}
-	return s
-}
-
-// DesktopSurfaceRegistry maps every /name and alias to its desktop disposition, empty when offered
-func DesktopSurfaceRegistry() map[string]string {
-	out := map[string]string{}
-	for _, d := range Builtin {
-		m := builtinMeta[d.Name]
-		out["/"+d.Name] = m.Desktop
-		for _, a := range d.Aliases {
-			out["/"+a] = m.Desktop
 		}
 	}
 	return out

@@ -380,7 +380,7 @@ const StorageRecoveryDocsURL = "https://hermes-agent.nousresearch.com/docs/user-
 // The message of a write refused while a deleted wal generation is held
 const DeletedWalGenerationMsg = "FATAL: session storage stopped writing because another icebath process still holds a deleted " +
 	"state.db-wal or state.db-shm inode (an old copy of the write-ahead log). Nothing is lost: quit " +
-	"every icebath process on this profile (Desktop app, gateway, dashboard, cron), run `icebath doctor` " +
+	"every icebath process on this profile (TUI, gateway, cron), run `icebath doctor` " +
 	"(it names the processes still holding the log), then start icebath again. Do not delete the WAL " +
 	"yourself and do not run `icebath doctor --fix` while they are running. " +
 	"Guide: " + StorageRecoveryDocsURL + " " +

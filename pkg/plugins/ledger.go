@@ -32,7 +32,6 @@ type Registration struct {
 	Key        string
 	Release    func() error
 	PluginKey  string
-	Persistent bool
 	HoldStream bool
 	disposed   bool
 	onDispose  func(*Registration)
@@ -73,16 +72,14 @@ func callGuarded(fn func() error) (err error) {
 	return fn()
 }
 
-// Records one registration under the plugin key, persistent ones kept out of the unload order
-func (m *Manager) trackRegistration(manifest *Manifest, kind, key string, release func() error, persistent bool) *Registration {
-	r := &Registration{Kind: kind, Key: key, Release: release, PluginKey: manifest.ID(), Persistent: persistent}
+// Records one registration under the plugin key and in the unload order
+func (m *Manager) trackRegistration(manifest *Manifest, kind, key string, release func() error) *Registration {
+	r := &Registration{Kind: kind, Key: key, Release: release, PluginKey: manifest.ID()}
 	r.onDispose = func(disposed *Registration) { m.forgetRegistrations([]*Registration{disposed}) }
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.ownershipLedger[r.PluginKey] = append(m.ownershipLedger[r.PluginKey], r)
-	if !persistent {
-		m.registrationOrder = append(m.registrationOrder, r)
-	}
+	m.registrationOrder = append(m.registrationOrder, r)
 	return r
 }
 
@@ -92,64 +89,14 @@ func (m *Manager) trackScopedRegistration(manifest *Manifest, kind, name string,
 	scope := m.home
 	lease := replacementCoordinator.Acquire([3]string{kind, scope, name}, current, previous,
 		func(replacement any) error { return restore(name, current, replacement, scope) }, finalize)
-	return m.trackRegistration(manifest, kind, name, lease.Dispose, false)
+	return m.trackRegistration(manifest, kind, name, lease.Dispose)
 }
-
-// Live persistent registrations across every plugin, caller holding the lock
-func (m *Manager) activePersistentLocked() []*Registration {
-	var out []*Registration
-	for _, owned := range m.ownershipLedger {
-		for _, r := range owned {
-			if r.Persistent && r.Active() {
-				out = append(out, r)
-			}
-		}
-	}
-	return out
-}
-
-// Disposes parked persistent handles whose plugin did not re-register the same kind and key
-func (m *Manager) evictStalePersistentRegistrations() {
-	m.mu.Lock()
-	if len(m.persistentCarryover) == 0 {
-		m.mu.Unlock()
-		return
-	}
-	parked := m.persistentCarryover
-	m.persistentCarryover = nil
-	current := map[[2]string]bool{}
-	for _, r := range m.activePersistentLocked() {
-		current[[2]string{r.Kind, r.Key}] = true
-	}
-	m.mu.Unlock()
-	var stale []*Registration
-	for _, r := range parked {
-		if r.Active() && !current[[2]string{r.Kind, r.Key}] {
-			stale = append(stale, r)
-		}
-	}
-	for _, r := range stale {
-		logInfo(fmt.Sprintf("Evicting persistent registration %s/%s: plugin '%s' no longer supplies it after re-discovery",
-			r.Kind, r.Key, r.PluginKey))
-	}
-	m.disposeRegistrations(stale)
-}
-
-// Disposes parked persistent handles whose plugin did not re-register, the forced rediscovery eviction pass
-func (m *Manager) EvictStalePersistentRegistrations() { m.evictStalePersistentRegistrations() }
 
 // Registrations enrolled in reverse order teardown, in registration order
 func (m *Manager) RegistrationOrder() []*Registration {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return append([]*Registration(nil), m.registrationOrder...)
-}
-
-// Persistent handles the last unload all parked for the rediscovery eviction pass
-func (m *Manager) PersistentCarryover() []*Registration {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	return append([]*Registration(nil), m.persistentCarryover...)
 }
 
 // Registrations the ownership ledger attributes to one plugin key
@@ -310,7 +257,7 @@ func (m *Manager) registerFallbackHookWith(c *Context, src *hookSource, hookName
 	m.mu.RUnlock()
 	var handle *Registration
 	if owned {
-		handle = c.track("hook", hookName, func() error { return nil }, false)
+		handle = c.track("hook", hookName, func() error { return nil })
 	} else {
 		handle = register()
 	}
@@ -372,13 +319,6 @@ func (m *Manager) unloadScoped(plugin any) bool {
 				registrations = append(registrations, r)
 			}
 		}
-		for _, key := range sortedSet(targetKeys) {
-			for _, r := range m.ownershipLedger[key] {
-				if r.Persistent && r.Active() {
-					registrations = append(registrations, r)
-				}
-			}
-		}
 	}
 	m.mu.RUnlock()
 	found := len(targetKeys) > 0 || len(registrations) > 0
@@ -438,15 +378,6 @@ func (m *Manager) resetAfterUnloadAll(registrations []*Registration) {
 		}
 	}
 	m.mu.Lock()
-	parked := map[*Registration]bool{}
-	for _, r := range m.persistentCarryover {
-		parked[r] = true
-	}
-	for _, r := range m.activePersistentLocked() {
-		if !parked[r] {
-			m.persistentCarryover = append(m.persistentCarryover, r)
-		}
-	}
 	clear(m.ownershipLedger)
 	clear(m.plugins)
 	clear(m.pluginSeq)

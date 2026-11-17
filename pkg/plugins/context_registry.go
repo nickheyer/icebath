@@ -69,7 +69,7 @@ func trackMappingEntry[V comparable](c *Context, kind, key string, mapping map[s
 // Leases one generation of a replaceable manager slot so unload restores the predecessor while current
 func (c *Context) trackReplacement(kind, key string, slot, current, previous any, restore func(replacement any) error) *Registration {
 	lease := replacementCoordinator.Acquire(slot, current, previous, restore, nil)
-	return c.track(kind, key, lease.Dispose, false)
+	return c.track(kind, key, lease.Dispose)
 }
 
 // Stores and leases a manager mapping entry then logs the registration at debug

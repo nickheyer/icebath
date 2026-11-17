@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"context"
+	"maps"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -19,9 +20,8 @@ import (
 
 // Launch policy section and marker names a local session policy carries
 const (
-	FollowAdopted    = "follow_adopted"
-	LocalDesktopChat = "desktop_local"
-	SessionPins      = "session_pins"
+	FollowAdopted = "follow_adopted"
+	SessionPins   = "session_pins"
 )
 
 var (
@@ -41,8 +41,8 @@ var (
 		"api_key_env"}
 	// Troubleshooting isolation fields of a launch request
 	BypassFields = []string{"safe_mode", "ignore_user_config"}
-	// Creation label to agent surface
-	Surfaces = map[string]string{"cli": "cli", "tui": "tui", "gui": "desktop", "acp": "acp", "tool": "cli", "oneshot": "cli"}
+	// Creation label to agent surface, adopted gui history running on the TUI surface
+	Surfaces = map[string]string{"cli": "cli", "tui": "tui", "gui": "tui", "acp": "acp", "tool": "cli", "oneshot": "cli"}
 	// Creation labels of the owner chats that carry the Daybreak route
 	DaybreakLabels = map[string]bool{"cli": true, "tui": true, "gui": true, "oneshot": true}
 	// Creation labels stored under the local source
@@ -53,10 +53,16 @@ var (
 	EditApprovalPolicies = []string{"ask", "workspace_session", "session"}
 )
 
+// Labels and surfaces joined into one group whenever a label runs on a surface
 func surfaceGroups() map[string]map[string]bool {
 	groups := map[string]map[string]bool{}
 	for label := range storedAsLocal {
 		group := map[string]bool{label: true, Surfaces[label]: true}
+		for name := range maps.Clone(group) {
+			for member := range groups[name] {
+				group[member] = true
+			}
+		}
 		for name := range group {
 			groups[name] = group
 		}

@@ -9,10 +9,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/nickheyer/icebath/pkg/agent"
-	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/tools"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
 )
 
@@ -21,7 +18,6 @@ var promptSideRegistry = &handlerRegistry{}
 func init() {
 	promptSideRegistry.method("prompt.background", promptBackground)
 	promptSideRegistry.method("prompt.btw", promptBtw)
-	promptSideRegistry.method("preview.restart", previewRestart)
 	promptSideRegistry.install()
 }
 
@@ -59,19 +55,11 @@ func sideAgentArgs(ctx context.Context, rid any, params map[string]any, prefix s
 
 // Runs body on a session work thread in the session profile and cwd, its text or error emitted on parent
 func spawnSideAgent(ctx context.Context, rid any, session *tuigateway.Session, taskID, parent, event string,
-	body func(ctx context.Context) (string, error), cwd string, extra map[string]any, cleanup func(ctx context.Context)) map[string]any {
+	body func(ctx context.Context) (string, error), extra map[string]any) map[string]any {
 	run := func(workCtx context.Context) {
-		dir := cwd
-		if dir == "" {
-			dir = sessionCwd(workCtx, session)
-		}
+		dir := sessionCwd(workCtx, session)
 		bound, env := setSessionContext(workCtx, taskID, &dir, parent)
-		defer func() {
-			if cleanup != nil {
-				cleanup(bound)
-			}
-			clearSessionContext(env)
-		}()
+		defer clearSessionContext(env)
 		payload := map[string]any{"task_id": taskID}
 		for key, value := range extra {
 			payload[key] = value
@@ -123,7 +111,7 @@ func promptBackground(ctx context.Context, rid any, params map[string]any) map[s
 		}
 		return finalResponseText(result), nil
 	}
-	return spawnSideAgent(ctx, rid, session, taskID, parent, "background.complete", body, "", nil, nil)
+	return spawnSideAgent(ctx, rid, session, taskID, parent, "background.complete", body, nil)
 }
 
 // Side question over a snapshot of the live conversation, history and prompt cache untouched, answered as btw.complete
@@ -158,69 +146,5 @@ func promptBtw(ctx context.Context, rid any, params map[string]any) map[string]a
 		opts.Parent, opts.MainRuntime = parentAgent, mainRuntime
 		return agent.AnswerSideQuestion(ctx, question, snapshot, opts)
 	}
-	return spawnSideAgent(ctx, rid, session, taskID, parent, "btw.complete", body, "", map[string]any{"question": text}, nil)
-}
-
-// Hidden terminal and file agent bringing the preview URL's server back up, reported on preview.restart.progress and complete
-func previewRestart(ctx context.Context, rid any, params map[string]any) map[string]any {
-	session, errResp := sess(ctx, params, rid)
-	if errResp != nil {
-		return errResp
-	}
-	field := func(key string) string { return pystr.Strip(pyrepr.Str(orEmpty(params[key]))) }
-	url, cwd, consoleContext := field("url"), field("cwd"), field("context")
-	if url == "" {
-		return rpcErr(rid, 4012, "url required", nil)
-	}
-	taskID := sideTaskID("preview")
-	parent := ""
-	if value, present := params["session_id"]; present {
-		parent = pyrepr.Str(value)
-	}
-	unlock := lockHistory(session)
-	var snapshot []map[string]any
-	for _, item := range historyList(session.Get("history")) {
-		if row, isDict := item.(map[string]any); isDict {
-			snapshot = append(snapshot, row)
-		}
-	}
-	unlock()
-	parentHistory := gateway.PreviewRestartHistory(snapshot, 24, 1200)
-	prompt := gateway.PreviewRestartPrompt(url, cwd, consoleContext, len(parentHistory) > 0)
-	previewCwd := gateway.ValidatedPreviewCwd(cwd)
-	body := func(ctx context.Context) (string, error) {
-		if previewCwd != "" {
-			if err := tools.RegisterTaskEnvOverrides(tools.ToolEnvFrom(ctx), taskID, map[string]any{"cwd": previewCwd}); err != nil {
-				return "", err
-			}
-		}
-		historyNote := ""
-		if len(parentHistory) > 0 {
-			historyNote = fmt.Sprintf(" (with %d parent-session messages of context)", len(parentHistory))
-		}
-		tuigateway.Emit(ctx, "preview.restart.progress", parent, map[string]any{"task_id": taskID, "text": "Starting hidden restart agent" + historyNote})
-		parentAgent := sessionAgent(session)
-		if parentAgent == nil {
-			return "", errors.New("'NoneType' object has no attribute 'model'")
-		}
-		opts := ephemeralPreviewAgentKwargs(ctx, parentAgent, taskID)
-		previewRestartCallbacks(ctx, parent, taskID).applyTo(&opts)
-		restarter, err := agent.NewAIAgent(ctx, opts)
-		if err != nil {
-			return "", err
-		}
-		var history []map[string]any
-		if len(parentHistory) > 0 {
-			history = parentHistory
-		}
-		result, err := restarter.RunConversation(ctx, prompt, agent.RunConversationOptions{TaskID: taskID, ConversationHistory: history})
-		if err != nil {
-			return "", err
-		}
-		return finalResponseText(result), nil
-	}
-	cleanup := func(ctx context.Context) {
-		suppress(func() { tools.ClearTaskEnvOverrides(tools.ToolEnvFrom(ctx), taskID) })
-	}
-	return spawnSideAgent(ctx, rid, session, taskID, parent, "preview.restart.complete", body, previewCwd, nil, cleanup)
+	return spawnSideAgent(ctx, rid, session, taskID, parent, "btw.complete", body, map[string]any{"question": text})
 }

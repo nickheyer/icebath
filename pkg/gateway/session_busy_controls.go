@@ -230,7 +230,7 @@ func showReasoningConfig(ctx context.Context, a *SessionAuthority, actor Princip
 	return pyjson.ObjectOf("key", "show_reasoning", "value", flag, "scope", "session"), nil
 }
 
-// Whether an unset reasoning flag shows reasoning, display.show_reasoning for an Ink or Desktop launch
+// Whether an unset reasoning flag shows reasoning, display.show_reasoning for a TUI launch
 func launchShowsReasoning(ctx context.Context, policy *LocalSessionPolicy, a *SessionAuthority) (bool, error) {
 	if policy == nil || !configDefaultSources[policy.Source] {
 		return false, nil

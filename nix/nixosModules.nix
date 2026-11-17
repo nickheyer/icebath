@@ -1,4 +1,4 @@
-# NixOS module running the icebath gateway and backend as system services or in an OCI container
+# NixOS module running the icebath gateway as a system service or in an OCI container
 { inputs, ... }:
 {
   flake.nixosModules.default =
@@ -166,8 +166,7 @@
       commonUnitEnvironment = {
         HOME = cfg.stateDir;
       }
-      // common.processEnvironment { inherit icebathHome; }
-      // common.backendSessionEnvironment { inherit cfg; };
+      // common.processEnvironment { inherit icebathHome; };
 
       unitPath = common.processPath { inherit pkgs cfg; };
 
@@ -304,17 +303,7 @@
                 inherit cfg;
                 opt = options.services.icebath-agent.workingDirectory;
                 optionPath = "services.icebath-agent";
-              }
-              ++ common.backendBindAssertions {
-                inherit cfg;
-                optionPath = "services.icebath-agent";
-              }
-              ++ [
-                {
-                  assertion = !(cfg.container.enable && cfg.backend.mode != "none");
-                  message = "services.icebath-agent: backend.mode is not supported together with container.enable — the container runs the gateway only.";
-                }
-              ];
+              };
           }
 
           (lib.mkIf (cfg.extraPackages != [ ]) {
@@ -465,23 +454,6 @@
 
               serviceConfig = commonServiceConfig // {
                 ExecStart = lib.escapeShellArgs (common.gatewayArgv cfg);
-              };
-
-              path = unitPath;
-            };
-          })
-
-          (lib.mkIf (!cfg.container.enable && cfg.backend.mode != "none") {
-            systemd.services.icebath-backend = {
-              description = common.backendDescription cfg;
-              wantedBy = [ "multi-user.target" ];
-              after = [ "network-online.target" ];
-              wants = [ "network-online.target" ];
-
-              environment = commonUnitEnvironment;
-
-              serviceConfig = commonServiceConfig // {
-                ExecStart = lib.escapeShellArgs (common.backendArgv { inherit pkgs cfg; });
               };
 
               path = unitPath;

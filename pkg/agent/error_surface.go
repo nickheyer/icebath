@@ -96,9 +96,9 @@ func surfaceAPIKeyEnv(providerName string) string {
 	return d.APIKeyEnvVars[0]
 }
 
-// oauth for providers on the desktop Accounts tab, api_key for every other provider
+// oauth for providers whose credential is a sign in grant, api_key for every other provider
 func surfaceAuthKind(providerName string) string {
-	if d, ok := provider.ProviderCatalogBySlug()[strings.ToLower(pystr.Strip(providerName))]; ok && d.Tab == "accounts" {
+	if d, ok := provider.ProviderCatalogBySlug()[strings.ToLower(pystr.Strip(providerName))]; ok && d.OAuth {
 		return "oauth"
 	}
 	return "api_key"

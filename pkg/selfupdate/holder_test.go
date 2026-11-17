@@ -4,22 +4,22 @@ import "testing"
 
 func TestHolderSubcommandParsesSubcommand(t *testing.T) {
 	for cmdline, want := range map[string]string{
-		`C:\x\venv\Scripts\python.exe -m icebath_cli.main serve --host 127.0.0.1`: "serve",
-		`C:\x\venv\Scripts\python.exe -m icebath_cli.main dashboard`:              "dashboard",
-		`python.exe -m icebath_cli.main gateway run`:                              "gateway",
-		`python -m icebath_cli.main --profile serve gateway run`:                  "gateway",
-		`python -m icebath_cli.main -p work serve`:                                "serve",
-		`python -m icebath_cli.main kanban --preserve-cache`:                      "kanban",
-		`python -m icebath_cli.main --reasoning high serve`:                       "serve",
-		`python -m icebath_cli.main -m dashboard serve`:                           "serve",
-		`python -m icebath_cli.main -t browser,files gateway run`:                 "gateway",
-		`python -m icebath_cli.main --model=dashboard serve`:                      "serve",
-		`python -m icebath_cli.main -c mysession serve`:                           "serve",
-		`C:\bin\icebath.exe dashboard`:                                            "dashboard",
-		`/usr/local/bin/icebath serve`:                                            "serve",
-		`/opt/icebath/icebath --profile work dashboard --port 9119`:               "dashboard",
-		`python -c import time; time.sleep(3)`:                                    "",
-		`python -m icebath_cli.main`:                                              "",
+		`C:\x\venv\Scripts\python.exe -m icebath_cli.main cron --list`: "cron",
+		`C:\x\venv\Scripts\python.exe -m icebath_cli.main chat`:        "chat",
+		`python.exe -m icebath_cli.main gateway run`:                   "gateway",
+		`python -m icebath_cli.main --profile chat gateway run`:        "gateway",
+		`python -m icebath_cli.main -p work cron`:                      "cron",
+		`python -m icebath_cli.main kanban --preserve-cache`:           "kanban",
+		`python -m icebath_cli.main --reasoning high chat`:             "chat",
+		`python -m icebath_cli.main -m cron chat`:                      "chat",
+		`python -m icebath_cli.main -t browser,files gateway run`:      "gateway",
+		`python -m icebath_cli.main --model=cron chat`:                 "chat",
+		`python -m icebath_cli.main -c mysession chat`:                 "chat",
+		`C:\bin\icebath.exe update`:                                    "update",
+		`/usr/local/bin/icebath chat`:                                  "chat",
+		`/opt/icebath/icebath --profile work gateway run --replace`:    "gateway",
+		`python -c import time; time.sleep(3)`:                         "",
+		`python -m icebath_cli.main`:                                   "",
 	} {
 		got, ok := hermesHolderSubcommand(cmdline)
 		if got != want || ok != (want != "") {
@@ -28,14 +28,13 @@ func TestHolderSubcommandParsesSubcommand(t *testing.T) {
 	}
 }
 
-func TestHolderRuntimeHostMatchesServeDashboardAndGateways(t *testing.T) {
+func TestHolderRuntimeHostMatchesOnlyGateways(t *testing.T) {
 	for cmdline, want := range map[string]bool{
-		"/usr/local/bin/icebath serve":              true,
-		"/usr/local/bin/icebath dashboard":          true,
-		"/usr/local/bin/icebath gateway run":        true,
-		"/usr/local/bin/icebath kanban --serve":     false,
-		"/usr/local/bin/icebath update":             false,
-		"/usr/bin/vim notes-about-icebath-serve.md": false,
+		"/usr/local/bin/icebath gateway run":          true,
+		"/usr/local/bin/icebath chat":                 false,
+		"/usr/local/bin/icebath kanban --serve":       false,
+		"/usr/local/bin/icebath update":               false,
+		"/usr/bin/vim notes-about-icebath.md":         false,
 	} {
 		if got := isRuntimeHost([]string{cmdline}); got != want {
 			t.Errorf("%q = %v", cmdline, got)

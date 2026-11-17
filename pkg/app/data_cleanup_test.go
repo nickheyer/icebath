@@ -31,12 +31,11 @@ import (
 type dataLayoutFixture struct {
 	home      string
 	source    string
-	userdata  string
 	witnesses []string
 	data      []string
 }
 
-// Builds the layout under root, routing the user home, desktop data, runtime store and project root into it
+// Builds the layout under root, routing the user home, runtime store and project root into it
 func dataLayoutAt(t *testing.T, root string) dataLayoutFixture {
 	t.Helper()
 	user := filepath.Join(root, "user")
@@ -50,7 +49,7 @@ func dataLayoutAt(t *testing.T, root string) dataLayoutFixture {
 	t.Setenv("ICEBATH_HOME", h)
 	t.Setenv(pm.EnvRuntimeDir, store)
 	swap(t, &uninstallProjectRoot, func() string { return source })
-	f := dataLayoutFixture{home: h, source: source, userdata: desktopUserdataDir()}
+	f := dataLayoutFixture{home: h, source: source}
 	f.witnesses = []string{filepath.Join(source, "hermes_cli", "__init__.py"), filepath.Join(store, "python", "python.exe"),
 		filepath.Join(h, "installs", "other-install", "facts.json"), filepath.Join(h, "bin", "icebath.cmd"),
 		filepath.Join(h, "profiles", "sibling", "config.yaml"), filepath.Join(h, "cache", "partials", ".locks", "other-profile-transfer")}
@@ -147,12 +146,11 @@ func TestDataOnlyReportsAFailedRemoval(t *testing.T) {
 	f.witnessesKept(t, 0)
 }
 
-func TestNamedHomeDoesNotEraseSiblingsOrDesktopData(t *testing.T) {
+func TestNamedHomeDoesNotEraseSiblings(t *testing.T) {
 	f := dataLayout(t)
 	active := filepath.Join(f.home, "profiles", "active")
 	config := filepath.Join(active, "config.yaml")
 	uninstallWrite(t, config, "model: selected")
-	uninstallWrite(t, filepath.Join(f.userdata, "preferences.json"), "keep")
 	t.Setenv("ICEBATH_HOME", active)
 	if code, err := RunDataUninstall(context.Background(), map[string]any{"yes": true}, io.Discard); code != 0 || err != nil {
 		t.Fatalf("exit %d %v", code, err)
@@ -161,9 +159,6 @@ func TestNamedHomeDoesNotEraseSiblingsOrDesktopData(t *testing.T) {
 		t.Fatal("active profile config kept")
 	}
 	f.witnessesKept(t, 0)
-	if text, _ := os.ReadFile(filepath.Join(f.userdata, "preferences.json")); string(text) != "keep" {
-		t.Fatal("desktop data erased by a named profile")
-	}
 }
 
 func TestDirectoryReplacedWithALinkDoesNotExpandRemoval(t *testing.T) {
@@ -178,7 +173,7 @@ func TestDirectoryReplacedWithALinkDoesNotExpandRemoval(t *testing.T) {
 		t.Skipf("native symlink creation unavailable: %v", err)
 	}
 	os.Remove(probe)
-	plan, err := planDataRemoval(context.Background(), f.home, f.source, nil)
+	plan, err := planDataRemoval(context.Background(), f.home, f.source)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -194,27 +189,6 @@ func TestDirectoryReplacedWithALinkDoesNotExpandRemoval(t *testing.T) {
 	if text, _ := os.ReadFile(witness); string(text) != "not Icebath data" {
 		t.Fatal("foreign data removed")
 	}
-}
-
-func TestDataOnlyPreservesTheContainingBundledApplication(t *testing.T) {
-	f := dataLayout(t)
-	app := filepath.Join(f.home, "installed-app")
-	payload := filepath.Join(app, "resources", bundlePayloadDirName)
-	project := filepath.Join(payload, "repo")
-	uninstallWrite(t, filepath.Join(project, "install-stamp.json"), `{"payload": "bundled"}`)
-	shell := filepath.Join(app, "Icebath.exe")
-	uninstallWrite(t, shell, "retained app bytes")
-	os.MkdirAll(filepath.Join(payload, "venv"), 0o755)
-	manifest := filepath.Join(payload, "manifest.json")
-	uninstallWrite(t, manifest, `{"repo": "repo", "venv": "venv"}`)
-	swap(t, &uninstallProjectRoot, func() string { return project })
-	if code, err := RunDataUninstall(context.Background(), map[string]any{"yes": true}, io.Discard); code != 0 || err != nil {
-		t.Fatalf("exit %d %v", code, err)
-	}
-	if text, _ := os.ReadFile(shell); string(text) != "retained app bytes" || !uninstallExists(manifest) {
-		t.Fatal("bundled app removed")
-	}
-	f.dataExists(t, false)
 }
 
 func TestDataOnlyWorksFromASelfContainedRuntimeWithoutAnApp(t *testing.T) {
@@ -251,7 +225,7 @@ func dataCLIUninstall(t *testing.T, argv []string) (int, error) {
 }
 
 func TestDataEntrypointsPreserveRuntime(t *testing.T) {
-	for _, entry := range []string{"cli", "module", "cli-dry-run"} {
+	for _, entry := range []string{"cli", "cli-dry-run"} {
 		t.Run(entry, func(t *testing.T) {
 			f := dataLayout(t)
 			noCodeRemoval := func(context.Context, map[string]any, io.Writer) (int, error) {
@@ -259,19 +233,12 @@ func TestDataEntrypointsPreserveRuntime(t *testing.T) {
 				return 0, nil
 			}
 			swap(t, &uninstallRunAgentMode, noCodeRemoval)
-			swap(t, &uninstallRunGUIMode, noCodeRemoval)
-			if entry == "module" {
-				if code := UninstallModuleMain(context.Background(), []string{"--mode", "data"}, io.Discard, io.Discard); code != 0 {
-					t.Fatalf("module exit %d", code)
-				}
-			} else {
-				flag := "--yes"
-				if entry == "cli-dry-run" {
-					flag = "--dry-run"
-				}
-				if _, err := dataCLIUninstall(t, []string{"uninstall", "--data", flag}); err != nil {
-					t.Fatal(err)
-				}
+			flag := "--yes"
+			if entry == "cli-dry-run" {
+				flag = "--dry-run"
+			}
+			if _, err := dataCLIUninstall(t, []string{"uninstall", "--data", flag}); err != nil {
+				t.Fatal(err)
 			}
 			f.witnessesKept(t, 0)
 			f.dataExists(t, entry == "cli-dry-run")
@@ -280,61 +247,13 @@ func TestDataEntrypointsPreserveRuntime(t *testing.T) {
 }
 
 func TestConflictingDataModeIsRejectedBeforeDispatch(t *testing.T) {
-	for _, other := range []string{"--full", "--gui"} {
+	for _, other := range []string{"--full"} {
 		t.Run(other, func(t *testing.T) {
 			_, err := dataCLIUninstall(t, []string{"uninstall", "--data", other, "--yes"})
 			if code, _ := commands.ExitCode(err); code != 2 {
 				t.Fatalf("exit %d error %v", code, err)
 			}
 		})
-	}
-}
-
-func TestModuleSubprocessRemovesOnlyTheDisposableHome(t *testing.T) {
-	f := dataLayout(t)
-	exe, err := os.Executable()
-	if err != nil {
-		t.Fatal(err)
-	}
-	tmp := filepath.Dir(filepath.Dir(f.home))
-	env := []string{"ICEBATH_HOME=" + f.home, pm.EnvRuntimeDir + "=" + filepath.Join(f.home, "machine", "tool-store"),
-		"HOME=" + tmp, "USERPROFILE=" + tmp, "APPDATA=" + tmp, "LOCALAPPDATA=" + tmp}
-	for _, kv := range os.Environ() {
-		name, _, _ := strings.Cut(kv, "=")
-		switch strings.ToUpper(name) {
-		case "PATH", "SYSTEMROOT", "WINDIR", "SYSTEMDRIVE", "TEMP", "TMP":
-			env = append(env, kv)
-		}
-	}
-	cmd := exec.Command(exe, UninstallModuleEntry, "--mode", "data")
-	cmd.Dir, cmd.Env = tmp, env
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("%v\n%s", err, out)
-	}
-	f.witnessesKept(t, 1)
-	f.dataExists(t, false)
-	if uninstallExists(filepath.Join(f.home, "skills")) || uninstallExists(filepath.Join(f.home, "SOUL.md")) {
-		t.Fatal("the run seeded the home it removed")
-	}
-}
-
-func TestModuleUsesTheDesktopInstancesExplicitDataPath(t *testing.T) {
-	f := dataLayout(t)
-	tmp := filepath.Dir(filepath.Dir(f.home))
-	ordinary := filepath.Join(tmp, "user", "desktop-data")
-	variant := filepath.Join(tmp, "variant-desktop-data")
-	for _, dir := range []string{ordinary, variant} {
-		uninstallWrite(t, filepath.Join(dir, "preferences.json"), "{}")
-	}
-	if code := UninstallModuleMain(context.Background(), []string{"--mode", "data", "--desktop-userdata", variant}, io.Discard, io.Discard); code != 0 {
-		t.Fatalf("exit %d", code)
-	}
-	if uninstallExists(variant) {
-		t.Fatal("explicit desktop data kept")
-	}
-	if text, _ := os.ReadFile(filepath.Join(ordinary, "preferences.json")); string(text) != "{}" {
-		t.Fatal("ordinary desktop data removed")
 	}
 }
 
@@ -451,21 +370,6 @@ func TestManualGatewayDrainsOverRealControlTransportBeforeDeletion(t *testing.T)
 	f.dataExists(t, false)
 }
 
-func TestBackendInitialProfileIsNotItsWriteScope(t *testing.T) {
-	for _, profile := range []string{"", "sibling"} {
-		t.Run(fmt.Sprintf("%q", profile), func(t *testing.T) {
-			f := dataLayout(t)
-			if !tools.RegisterSelf(context.Background(), "serve", uninstallProjectRoot(), map[string]any{"profile": profile}) {
-				t.Fatal("register_self refused")
-			}
-			if code, _ := RunDataUninstall(context.Background(), map[string]any{"yes": true}, io.Discard); code == 0 {
-				t.Fatal("live backend did not block")
-			}
-			f.dataExists(t, true)
-		})
-	}
-}
-
 func TestDetachedCronAttemptMustFinishBeforeDataRemoval(t *testing.T) {
 	for _, terminal := range []bool{false, true} {
 		t.Run(fmt.Sprint(terminal), func(t *testing.T) {
@@ -539,12 +443,12 @@ func TestProfileDataCleanupDrainsOnlyAManualGateway(t *testing.T) {
 	manual := func() *pyjson.Object {
 		return pyjson.ObjectOf("pid", int64(4321), "supervisor", "none", "launch_supervisor", "manual")
 	}
-	desktop := manual()
-	desktop.Set("launch_supervisor", "desktop")
+	systemd := manual()
+	systemd.Set("launch_supervisor", "systemd")
 	cases := []struct {
 		identity *pyjson.Object
 		refusal  string
-	}{{manual(), ""}, {desktop, "desktop gateway still owns"}, {pyjson.ObjectOf("pid", int64(4321), "supervisor", "none"), "unknown gateway still owns"}}
+	}{{manual(), ""}, {systemd, "systemd gateway still owns"}, {pyjson.ObjectOf("pid", int64(4321), "supervisor", "none"), "unknown gateway still owns"}}
 	for i, tc := range cases {
 		t.Run(fmt.Sprint(i), func(t *testing.T) {
 			h, err := filepath.EvalSymlinks(t.TempDir())
@@ -572,21 +476,6 @@ func TestProfileDataCleanupDrainsOnlyAManualGateway(t *testing.T) {
 				t.Fatalf("error %v paused %v", err, reachedPause)
 			}
 		})
-	}
-}
-
-func TestRunDataUninstallRemovesElectronUserdata(t *testing.T) {
-	tmp := t.TempDir()
-	installKindHome(t, tmp)
-	t.Setenv("XDG_CONFIG_HOME", tmp)
-	t.Setenv("APPDATA", tmp)
-	userdata := desktopUserdataDir()
-	uninstallWrite(t, filepath.Join(userdata, "connection.json"), "{}")
-	if code, err := RunDataUninstall(context.Background(), map[string]any{"yes": true}, io.Discard); code != 0 || err != nil {
-		t.Fatalf("exit %d %v", code, err)
-	}
-	if uninstallExists(userdata) {
-		t.Fatal("desktop data kept")
 	}
 }
 

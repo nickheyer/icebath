@@ -594,16 +594,6 @@ func setTaskOverride(ctx context.Context, conn state.SQLiteConn, taskID, query s
 	return true, nil
 }
 
-// Sets the per task reasoning effort, empty clearing it and none pinning thinking off
-func SetReasoningEffort(ctx context.Context, conn state.SQLiteConn, taskID string, effort *string) (bool, error) {
-	effort, err := NormalizeReasoningEffort(effort)
-	if err != nil {
-		return false, err
-	}
-	return setTaskOverride(ctx, conn, taskID, "UPDATE tasks SET reasoning_effort = ? WHERE id = ?", []any{optStrValue(effort)},
-		"reasoning_effort_set", payload("reasoning_effort", effort), []string{"reasoning_effort"}, "cannot set reasoning effort")
-}
-
 // Links parent to child, reporting whether the edge gated a ready child back to todo
 func LinkTasks(ctx context.Context, conn state.SQLiteConn, parentID, childID string, expectedChildRunID *int64) (bool, error) {
 	if parentID == childID {
@@ -933,11 +923,6 @@ func StoreAttachmentBytes(ctx context.Context, conn state.SQLiteConn, taskID, fi
 	}
 	os.Remove(destPath)
 	return 0, err
-}
-
-// Records the metadata row and attached event of a blob the caller already wrote
-func AddAttachment(ctx context.Context, conn state.SQLiteConn, taskID, filename, storedPath string, contentType *string, size int64, uploadedBy *string) (int64, error) {
-	return addAttachment(ctx, conn, taskID, filename, storedPath, contentType, size, uploadedBy, nil)
 }
 
 // Row insert of an attachment, a content type binding failure raised where the insert binds it

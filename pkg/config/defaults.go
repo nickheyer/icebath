@@ -1,7 +1,7 @@
 package config
 
 // Schema version written to config.yaml, bumped only when existing files need a migration
-const Version = 53
+const Version = 54
 
 // Toolset selection every new config starts from
 const DefaultToolset = "icebath-cli"
@@ -555,44 +555,6 @@ func defaultsLiteral() Tree {
 				"unicode_cols": 0,
 			},
 		},
-		"webapp": map[string]any{
-			"enabled":    false,
-			"host":       "127.0.0.1",
-			"port":       9120,
-			"public_url": "",
-		},
-		"dashboard": map[string]any{
-			"theme":                       "default",
-			"turn_isolation":              false,
-			"compute_host_heartbeat_secs": 15,
-			"compute_host_respawn_max":    3,
-			"show_token_analytics":        false,
-			"trusted_proxies":             []any{},
-			"ws_ping_interval":            20.0,
-			"ws_ping_timeout":             20.0,
-			"ws_orphan_reap_grace_s":      20.0,
-			"ws_orphan_activity_stale_s":  600.0,
-			"startup_orphan_sweep":        true,
-			"oauth": map[string]any{
-				"client_id":  "",
-				"portal_url": "",
-			},
-			"basic_auth": map[string]any{
-				"username":            "",
-				"password_hash":       "",
-				"password":            "",
-				"secret":              "",
-				"session_ttl_seconds": 0,
-			},
-			"session_token_auth": map[string]any{
-				"enabled": true,
-			},
-			"drain_auth": map[string]any{
-				"scope":            "drain",
-				"min_secret_chars": 43,
-			},
-			"public_url": "",
-		},
 		"privacy": map[string]any{
 			"redact_pii": false,
 		},
@@ -1058,7 +1020,7 @@ func defaultsLiteral() Tree {
 				"max_search_limit":     25,
 				"listing":              "auto",
 				"listing_max_tokens":   4000,
-				"defer":                []any{"computer_use", "session_search", "image_generate", "todo_list", "process_manage", "cronjob_manage", "browser_vault", "drive_preview", "gui_tour", "desktop_preview", "annotate_preview", "manage_catalog", "show_tip", "desktop_project", "close_terminal", "set_theme", "read_terminal", "read_window_below", "focus_pane"},
+				"defer":                []any{"computer_use", "session_search", "image_generate", "todo_list", "process_manage", "cronjob_manage", "browser_vault", "desktop_project"},
 			},
 			"connectors": map[string]any{
 				"enabled": true,
@@ -1168,20 +1130,28 @@ func defaultsLiteral() Tree {
 			"fresh_final_after_seconds": 0.0,
 		},
 		"sessions": map[string]any{
-			"auto_prune":               false,
-			"retention_days":           90,
-			"auto_archive":             false,
-			"auto_archive_days":        3,
-			"show_subagents":           false,
-			"vacuum_after_prune":       true,
-			"min_vacuum_interval_days": 30,
-			"min_interval_hours":       24,
-			"fts_optimize_notice":      "advise",
-			"cjk_fts":                  true,
-			"search_slow_ms":           1000,
-			"max_resume_messages":      20000,
-			"max_export_messages":      20000,
-			"orphan_end_grace_s":       300.0,
+			"auto_prune":                 false,
+			"retention_days":             90,
+			"auto_archive":               false,
+			"auto_archive_days":          3,
+			"show_subagents":             false,
+			"vacuum_after_prune":         true,
+			"min_vacuum_interval_days":   30,
+			"min_interval_hours":         24,
+			"fts_optimize_notice":        "advise",
+			"cjk_fts":                    true,
+			"search_slow_ms":             1000,
+			"max_resume_messages":        20000,
+			"max_export_messages":        20000,
+			"orphan_end_grace_s":         300.0,
+			"ws_orphan_reap_grace_s":     20.0,
+			"ws_orphan_activity_stale_s": 600.0,
+			"startup_orphan_sweep":       true,
+			"auto_continue": map[string]any{
+				"enabled":           true,
+				"freshness_minutes": 15,
+				"max_attempts":      2,
+			},
 		},
 		"onboarding": map[string]any{
 			"seen":          map[string]any{},
@@ -1294,26 +1264,6 @@ func defaultsLiteral() Tree {
 			"allow_env_fallback":  false,
 			"upstream_deny_cidrs": nil,
 			"extra_allowed_hosts": []any{},
-		},
-		"desktop": map[string]any{
-			"font_family":               "",
-			"repo_scan_enabled":         true,
-			"repo_scan_roots":           []any{},
-			"repo_scan_exclude_paths":   []any{},
-			"electron_flags":            []any{},
-			"renderer_max_old_space_mb": 0,
-			"ozone_platform_hint":       "auto",
-			"disable_gpu":               "auto",
-			"password_store":            "auto",
-			"renderer_accessibility":    true,
-			"manage_launcher_entry":     true,
-			"macos_signing_identity":    "",
-			"ssh_path":                  "",
-			"auto_continue": map[string]any{
-				"enabled":           true,
-				"freshness_minutes": 15,
-				"max_attempts":      2,
-			},
 		},
 		"nous": map[string]any{
 			"keepalive_interval_seconds": 900,

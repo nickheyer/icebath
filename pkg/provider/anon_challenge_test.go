@@ -23,11 +23,11 @@ func anonRecordPresented(t *testing.T) *[]BrowserChallenge {
 	return seen
 }
 
-// A free model call by a guest that claimed the welcome trial on the desktop backend
+// A free model call by a guest that claimed the welcome trial
 func anonResolve(t *testing.T, env PoolEnv) (map[string]any, error) {
 	t.Helper()
 	anonClaimedTrial(t, env)
-	return resolveNousRuntimeCredentials(anonDesktopEnv(env), false, "")
+	return resolveNousRuntimeCredentials(env, false, "")
 }
 
 // A connectors token read, the one exchange a terminal guest makes
@@ -81,7 +81,7 @@ func TestChallengeIsPresentedPolledAndTheExchangeRetried(t *testing.T) {
 	if portal.count("/api/anonymous/token") != 2 || portal.count("/api/anonymous/challenge/status") != 4 {
 		t.Fatalf("paths %v", portal.paths())
 	}
-	if PendingChallenge(anonDesktopEnv(env)) != nil {
+	if PendingChallenge(env) != nil {
 		t.Fatal("a cleared challenge must not stay pending")
 	}
 }
@@ -121,7 +121,7 @@ func TestChallengeThatNeverClearsIsARetryableErrorNotAHang(t *testing.T) {
 	if ae.Code != AnonChallengeRequired || !anonRetryable(ae) || !strings.Contains(ae.Error(), "browser") {
 		t.Fatalf("%v %v", ae.Code, ae)
 	}
-	if _, err := resolveNousRuntimeCredentials(anonDesktopEnv(env), false, ""); anonCodeOf(t, err) == nil {
+	if _, err := resolveNousRuntimeCredentials(env, false, ""); anonCodeOf(t, err) == nil {
 		t.Fatal("a queued caller must fail fast")
 	}
 	if len(*presented) != 1 {
@@ -154,7 +154,7 @@ func TestChallengeBackgroundCallerAnnouncesAndReturnsAtOnce(t *testing.T) {
 		p.challengeRequired = true
 		p.challengeNeverClears = true
 	})
-	background := anonDesktopEnv(env)
+	background := env
 	background.Ctx = withBackgroundCaller(background.Ctx)
 	_, err := resolveNousRuntimeCredentials(background, false, "")
 	ae := anonCodeOf(t, err)

@@ -2,7 +2,6 @@ package selfupdate
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -17,12 +16,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pydeadline"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
 	"github.com/nickheyer/icebath/pkg/pm"
-	"github.com/nickheyer/icebath/pkg/tools"
 )
-
-var backendPurposes = map[string]bool{"serve": true, "dashboard": true}
 
 // Process probes of the holder scans and the Windows pause, the calls its tests replace
 var (
@@ -36,8 +31,6 @@ var (
 	winBirth           = proc.Birth
 	winSnapshot        = proc.Snapshot
 	winPidExists       = proc.Exists
-	winLedgerEntries   = func() []map[string]any { return tools.LedgerEntries(tools.LedgerOptions{}) }
-	winSpawnerIsDead   = tools.SpawnerIsDead
 	winDetectHolders   = detectVenvPythonProcesses
 	winFindGatewayPids = func(ctx context.Context) ([]int, error) { return gateway.FindGatewayPIDsFor(ctx, nil, true) }
 	winMonotonic       = func() float64 { return float64(time.Now().UnixNano()) / 1e9 }
@@ -148,26 +141,6 @@ func lowerDirPrefix(path string) string {
 	return strings.TrimRight(strings.ToLower(raw), sep) + sep
 }
 
-// True when a process has a running parent that is not a recycled pid
-func parentIsLive(pid int) (bool, error) {
-	parent, ok := winPPID(pid)
-	if !ok {
-		return false, proc.ErrNoSuchProcess
-	}
-	if parent <= 0 || !winPidExists(parent) {
-		return false, nil
-	}
-	parentBorn, err := winBirth(parent)
-	if err != nil {
-		return false, err
-	}
-	born, err := winBirth(pid)
-	if err != nil {
-		return false, err
-	}
-	return parentBorn <= born, nil
-}
-
 // Venv directory of the checkout the holder scans match against
 func winVenvPrefix() string {
 	root := fleetProjectRoot()
@@ -261,21 +234,17 @@ func venvLauncherAncestors(pids []int) []int {
 	return found
 }
 
-// Whether a command line is the pausable gateway the Desktop preflight exempts
+// Whether a command line is a gateway the update can pause
 func winIsPausableGateway(cmdline string) bool {
 	return pm.LooksLikeGatewayCommandLine != nil && pm.LooksLikeGatewayCommandLine(cmdline)
 }
 
-// Machine readable class of one venv holder, gateway, backend, a hermes subcommand or python
+// Machine readable class of one venv holder, gateway, a hermes subcommand or python
 func venvHolderKind(cmdline string) string {
 	if winIsPausableGateway(cmdline) {
 		return "gateway"
 	}
-	subcommand, ok := hermesHolderSubcommand(cmdline)
-	switch {
-	case ok && backendPurposes[subcommand]:
-		return "backend"
-	case ok && subcommand != "":
+	if subcommand, ok := hermesHolderSubcommand(cmdline); ok && subcommand != "" {
 		return "hermes:" + subcommand
 	}
 	return "python"
@@ -347,278 +316,10 @@ func refuseGatewayAncestorTreeKill(ctx context.Context, w io.Writer, pids []int,
 	return true
 }
 
-// Whether a ledger entry carries an integer pid, with that pid
-func winEntryPid(entry map[string]any) (int, bool) {
-	if _, isBool := entry["pid"].(bool); isBool {
-		return 0, false
-	}
-	pid, ok := pyIntValue(entry["pid"])
-	return int(pid), ok
-}
-
-// Ledger entries of the holders that are manual serve or dashboard backends whose spawner is not provably alive
-func ledgerManualServeHolders(matches []venvMatch) []map[string]any {
-	holderPids := map[int]bool{}
-	for _, match := range matches {
-		holderPids[match.PID] = true
-	}
-	var entries []map[string]any
-	for _, entry := range winLedgerEntries() {
-		purpose, _ := entry["purpose"].(string)
-		pid, ok := winEntryPid(entry)
-		if !backendPurposes[purpose] || !ok || !holderPids[pid] {
-			continue
-		}
-		if dead, known := winSpawnerIsDead(entry); known && !dead {
-			continue
-		}
-		entries = append(entries, entry)
-	}
-	return entries
-}
-
-// Launch commands of stopped serves rebuilt from the ledger host, port and profile
-func serveRelaunchCommands(entries []map[string]any) [][]string {
-	command := "icebath"
-	if scripts := venvScriptsDir(fleetProjectRoot()); scripts != "" {
-		for _, name := range []string{"icebath.exe", "icebath"} {
-			if takeoverIsFile(filepath.Join(scripts, name)) {
-				command = filepath.Join(scripts, name)
-				break
-			}
-		}
-	}
-	commands := [][]string{}
-	for _, entry := range entries {
-		if _, isBool := entry["port"].(bool); isBool {
-			continue
-		}
-		port, ok := pyIntValue(entry["port"])
-		if !ok || port <= 0 {
-			continue
-		}
-		argv := []string{command}
-		if profile := winText(entry["profile"]); profile != "" && profile != "default" {
-			argv = append(argv, "--profile", profile)
-		}
-		argv = append(argv, pyrepr.Str(entry["purpose"]))
-		if host := winText(entry["host"]); host != "" {
-			argv = append(argv, "--host", host)
-		}
-		commands = append(commands, append(argv, "--port", strconv.FormatInt(port, 10)))
-	}
-	return commands
-}
-
 // Text of a truthy value, empty for a falsy one
 func winText(v any) string {
 	if !pyrepr.Truthy(v) {
 		return ""
 	}
 	return pyrepr.Str(v)
-}
-
-// Relaunches the manual serves the venv guard stopped, once per token
-func relaunchStoppedServes(ctx context.Context, w io.Writer, token map[string]any) {
-	if !pyrepr.Truthy(token["pending"]) {
-		return
-	}
-	token["pending"] = false
-	var entries []map[string]any
-	switch list := token["entries"].(type) {
-	case []map[string]any:
-		entries = list
-	case []any:
-		for _, item := range list {
-			if entry, ok := item.(map[string]any); ok {
-				entries = append(entries, entry)
-			}
-		}
-	}
-	if len(entries) == 0 {
-		return
-	}
-	commands := serveRelaunchCommands(entries)
-	skipped := len(entries) - len(commands)
-	var failed [][]string
-	if len(commands) > 0 {
-		fmt.Fprintln(w, "  ⟲ Relaunching stopped serve/dashboard backend(s)")
-		failed = gateway.RespawnDashboardProcesses(ctx, w, commands)
-	}
-	if skipped > 0 || len(failed) > 0 {
-		fmt.Fprintln(w, "  ⚠ Some stopped backends could not be relaunched automatically; restart them manually (icebath serve --host <ip> --port <port>).")
-	}
-	recordUpdateStep(ctx, "serve_relaunch", len(failed) == 0 && skipped == 0,
-		fmt.Sprintf("relaunched=%d failed=%d skipped=%d", len(commands)-len(failed), len(failed), skipped))
-}
-
-// Whether a lower cased argv is a Desktop backend, the module entry shape running serve or dashboard
-func isBackendArgv(argvLow string) bool { return looksLikeDesktopControlPlane(argvLow) }
-
-// Exported form of the Desktop backend argv test for the dashboard cases outside this package
-func IsBackendArgv(argvLow string) bool { return isBackendArgv(argvLow) }
-
-// Current lower cased argv of a pid, the scanned command line when unreadable, false when it exited
-func liveArgvLow(pid int, cmdline string) (string, bool) {
-	argv, err := winCmdline(pid)
-	if errors.Is(err, proc.ErrNoSuchProcess) {
-		return "", false
-	}
-	if joined := strings.Join(argv, " "); err == nil && joined != "" {
-		cmdline = joined
-	}
-	return strings.ToLower(cmdline), true
-}
-
-// Orphaned backend root of a tree reap with the start fingerprint read at classification
-type backendRoot struct {
-	PID       int
-	StartTime int64
-}
-
-// Roots among the holders when every remaining holder is an orphaned backend or inside one's tree, false otherwise
-func orphanedDesktopBackendPids(matches []venvMatch) ([]backendRoot, bool) {
-	roots := []backendRoot{}
-	var remaining []int
-	for _, match := range matches {
-		low, alive := liveArgvLow(match.PID, match.Cmdline)
-		if !alive {
-			continue
-		}
-		if !isBackendArgv(low) {
-			remaining = append(remaining, match.PID)
-			continue
-		}
-		born, err := winBirth(match.PID)
-		if errors.Is(err, proc.ErrNoSuchProcess) {
-			continue
-		}
-		if err != nil {
-			return nil, false
-		}
-		live, err := parentIsLive(match.PID)
-		if err != nil && !errors.Is(err, proc.ErrNoSuchProcess) {
-			return nil, false
-		}
-		if err == nil && live {
-			remaining = append(remaining, match.PID)
-			continue
-		}
-		roots = append(roots, backendRoot{PID: match.PID, StartTime: int64(math.RoundToEven(born * 100))})
-	}
-	rootSet := map[int]bool{}
-	for _, root := range roots {
-		rootSet[root.PID] = true
-	}
-	for _, pid := range remaining {
-		ancestors, err := winParents(pid)
-		if errors.Is(err, proc.ErrNoSuchProcess) {
-			continue
-		}
-		if err != nil {
-			return nil, false
-		}
-		inside := false
-		for _, ancestor := range ancestors {
-			inside = inside || rootSet[ancestor]
-		}
-		if !inside {
-			return nil, false
-		}
-	}
-	return roots, true
-}
-
-// Holder pids the spawn ledger positively identifies as orphaned reapable backends
-func ledgerReapableBackendPids(matches []venvMatch) []int {
-	byPid := map[int]map[string]any{}
-	for _, entry := range winLedgerEntries() {
-		if pid, ok := winEntryPid(entry); ok {
-			byPid[pid] = entry
-		}
-	}
-	pids := []int{}
-	for _, match := range matches {
-		entry := byPid[match.PID]
-		purpose, _ := entry["purpose"].(string)
-		if len(entry) == 0 || !tools.ReapablePurposes[purpose] {
-			continue
-		}
-		if dead, known := winSpawnerIsDead(entry); known && dead {
-			pids = append(pids, match.PID)
-		}
-	}
-	return pids
-}
-
-// Backend pids safe to tree reap during a GUI updater hand off, false when another holder remains
-func handoffReapableBackendPids(matches []venvMatch) ([]int, bool) {
-	var roots []int
-	for _, match := range matches {
-		low, alive := liveArgvLow(match.PID, match.Cmdline)
-		if !alive {
-			continue
-		}
-		if !isBackendArgv(low) {
-			return nil, false
-		}
-		roots = append(roots, match.PID)
-	}
-	return roots, len(roots) > 0
-}
-
-// Force stops each pid with its child tree when it is still the icebath process it was, never failing
-func stopProcessTrees(ctx context.Context, roots []backendRoot) {
-	for _, root := range roots {
-		if !gateway.PidIsHermes(root.PID, root.StartTime) {
-			updateLog.DebugContext(ctx, fmt.Sprintf("Skipping taskkill of non-Hermes or changed PID %d", root.PID))
-			continue
-		}
-		if _, err := pysubprocess.RunWith(ctx, []string{"taskkill", "/PID", strconv.Itoa(root.PID), "/T", "/F"},
-			pysubprocess.Options{Attr: tools.WindowsHideAttr()}); err != nil {
-			updateLog.DebugContext(ctx, fmt.Sprintf("Could not stop process tree %d: %s", root.PID, launchErrorText(err)))
-		}
-	}
-}
-
-// Force stops plain pids with their child trees under the start time each has now
-func stopProcessTreesOf(ctx context.Context, pids []int) {
-	var roots []backendRoot
-	for _, pid := range pids {
-		start, ok := pyIntValue(gateway.GetProcessStartTime(pid))
-		if !ok {
-			updateLog.DebugContext(ctx, fmt.Sprintf("Skipping taskkill of PID %d: process identity unavailable", pid))
-			continue
-		}
-		roots = append(roots, backendRoot{PID: pid, StartTime: start})
-	}
-	stopProcessTrees(ctx, roots)
-}
-
-// True for a module entry command line of this install running serve or dashboard
-func looksLikeDesktopControlPlane(cmdline string) bool {
-	if !strings.Contains(strings.ToLower(cmdline), "icebath_cli.main") {
-		return false
-	}
-	subcommand, ok := hermesHolderSubcommand(cmdline)
-	return ok && backendPurposes[subcommand]
-}
-
-// True when Desktop currently supervises this install's control plane
-func desktopOwnsGatewayLifecycle(ctx context.Context) bool {
-	for _, entry := range winLedgerEntries() {
-		purpose, _ := entry["purpose"].(string)
-		if dead, known := winSpawnerIsDead(entry); backendPurposes[purpose] && known && !dead {
-			return true
-		}
-	}
-	for _, match := range winDetectHolders(ctx, nil) {
-		if !looksLikeDesktopControlPlane(match.Cmdline) {
-			continue
-		}
-		if live, err := parentIsLive(match.PID); err == nil && live {
-			return true
-		}
-	}
-	return false
 }

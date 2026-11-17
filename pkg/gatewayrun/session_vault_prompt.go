@@ -29,7 +29,7 @@ func vaultPromptScope(ctx context.Context, t *TurnRunner, a *agent.AIAgent) func
 		if !ok || live == nil {
 			return ""
 		}
-		return gateway.AskViewer(live.EventStream, sessionID, method, params, a.InterruptRequested, &timeout, true)
+		return gateway.AskViewer(live.EventStream, sessionID, method, params, a.InterruptRequested, &timeout)
 	}
 	unlockPrompt := func(backend, displayName string) string {
 		return ask("vault.unlock_prompt", pyjson.ObjectOf("backend", backend, "display_name", displayName), vaultUnlockTimeoutS)

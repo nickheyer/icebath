@@ -3,13 +3,11 @@ package tuiserver
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -21,10 +19,10 @@ import (
 	"github.com/nickheyer/icebath/pkg/tuigateway"
 )
 
-// Child side of a lease holder process, holding a desktop lease from the ready file until the release file
+// Child side of a lease holder process, holding a liveness tracked lease from the ready file until the release file
 func sessionLeaseHolderChild() {
 	fail := func(msg string) { os.Stderr.WriteString(msg + "\n"); os.Exit(1) }
-	lease, refusal, err := activesessions.TryAcquire(context.Background(), os.Getenv("SESSION_ID"), "desktop", map[string]any{}, nil, "", true)
+	lease, refusal, err := activesessions.TryAcquire(context.Background(), os.Getenv("SESSION_ID"), "tui", map[string]any{}, nil, "", true)
 	if err != nil || lease == nil || refusal != nil {
 		fail(fmt.Sprintf("acquire failed %v %v", err, refusal))
 	}
@@ -46,7 +44,7 @@ func sessionLeaseHolderChild() {
 	}
 }
 
-// Another process holding the desktop lease of one session in a home
+// Another process holding the liveness tracked lease of one session in a home
 type leaseHolder struct {
 	cmd     *exec.Cmd
 	out     bytes.Buffer
@@ -153,12 +151,6 @@ func assertRowOpen(t *testing.T, dbPath, sessionID string) {
 	}
 }
 
-// Desktop record of a profile session with no lease and no agent, as the automatic cleanup cases build it
-func desktopCleanupRecord(profileHome, sessionID string, lease any) *tuigateway.Session {
-	return tuigateway.NewSession(map[string]any{"active_session_lease": lease, "agent": nil, "history": []any{},
-		"profile_home": profileHome, "session_key": sessionID, "slash_worker": nil, "source": "desktop"})
-}
-
 // Agent double recording an interrupt request
 type takeoverAgent struct {
 	mu          sync.Mutex
@@ -177,11 +169,11 @@ func (a *takeoverAgent) wasInterrupted() bool {
 	return a.interrupted
 }
 
-// Runtime record of a desktop chat on a transport
+// Runtime record of a TUI chat on a transport
 func runtimeRecord(sessionKey string, transport tuigateway.Transport, running bool) *tuigateway.Session {
 	now := nowSeconds()
 	return tuigateway.NewSession(map[string]any{"agent": &takeoverAgent{}, "agent_ready": nil, "transport": transport,
-		"running": running, "last_active": now, "created_at": now, "source": "desktop", "session_key": sessionKey,
+		"running": running, "last_active": now, "created_at": now, "source": "tui", "session_key": sessionKey,
 		"history": []any{}, "active_session_lease": nil, "profile_home": nil})
 }
 
@@ -204,26 +196,11 @@ func breakRegistry(t *testing.T, h string) {
 	}
 }
 
-func TestOrphanGuardFailsClosedWhenRegistryIsUnavailable(t *testing.T) {
-	h, _ := ownershipHome(t)
-	breakRegistry(t, h)
-	var seen []bool
-	otherRuntimeLeaseGuard(context.Background(), "preserved-session", tuigateway.NewSession(map[string]any{"profile_home": nil}),
-		func(otherOwns bool) { seen = append(seen, otherOwns) })
-	if !slices.Equal(seen, []bool{true}) {
-		t.Fatalf("guard yielded %v", seen)
-	}
-}
-
-func TestDesktopClaimFailsClosedWhenRegistrySetupFails(t *testing.T) {
+func TestClaimFailsClosedWhenRegistrySetupFails(t *testing.T) {
 	h, _ := ownershipHome(t)
 	breakRegistry(t, h)
 	ctx := context.Background()
-	desktopLease, desktopRefusal := tuigateway.ClaimActiveSessionSlotRefusal(ctx, "desktop-session", "desktop-runtime", "desktop", "")
 	tuiLease, tuiRefusal := tuigateway.ClaimActiveSessionSlotRefusal(ctx, "tui-session", "tui-runtime", "tui", "")
-	if desktopLease != nil || desktopRefusal == nil || desktopRefusal.Message != tuigateway.SessionOwnershipUnavailable {
-		t.Fatalf("desktop claim %v %v", desktopLease, desktopRefusal)
-	}
 	if tuiLease != nil || tuiRefusal == nil || tuiRefusal.Message != tuigateway.SessionOwnershipUnavailable {
 		t.Fatalf("tui claim %v %v", tuiLease, tuiRefusal)
 	}
@@ -270,25 +247,6 @@ func TestServerReleaseRetriesLivenessLeaseBeforeDroppingReference(t *testing.T) 
 	}
 }
 
-func TestAutomaticCleanupPreservesCorruptRegistryWithoutOverwrite(t *testing.T) {
-	ownershipHome(t)
-	profileHome := filepath.Join(t.TempDir(), "profile-home")
-	statePath := filepath.Join(profileHome, "runtime", "active_sessions.json")
-	if err := os.MkdirAll(filepath.Dir(statePath), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	corrupt := "{not-json"
-	if err := os.WriteFile(statePath, []byte(corrupt), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	dbPath := storedRow(t, profileHome, "preserved-session", "desktop")
-	finalizeSession(context.Background(), desktopCleanupRecord(profileHome, "preserved-session", nil), "idle_timeout")
-	assertRowOpen(t, dbPath, "preserved-session")
-	if raw, err := os.ReadFile(statePath); err != nil || string(raw) != corrupt {
-		t.Fatalf("registry rewritten: %q %v", raw, err)
-	}
-}
-
 func TestOwnLiveLeaseIdsReportsLiveOwnersAndSkipsTheExcluded(t *testing.T) {
 	first, second := &activesessions.Lease{LeaseID: "first"}, &activesessions.Lease{LeaseID: "second"}
 	swapSessions(t, map[string]*tuigateway.Session{
@@ -302,108 +260,6 @@ func TestOwnLiveLeaseIdsReportsLiveOwnersAndSkipsTheExcluded(t *testing.T) {
 	if got := ownLiveLeaseIDs(first); len(got) != 1 || !got["second"] {
 		t.Fatalf("live ids excluding first %v", got)
 	}
-}
-
-// Moves every registry entry of a home back past the self orphan grace, an owner that vanished minutes ago
-func backdateRegistry(t *testing.T, registryHome string, seconds float64) {
-	t.Helper()
-	statePath := filepath.Join(registryHome, "runtime", "active_sessions.json")
-	raw, err := os.ReadFile(statePath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var data any
-	if err := json.Unmarshal(raw, &data); err != nil {
-		t.Fatal(err)
-	}
-	entries, isList := data.([]any)
-	if wrapped, isDict := data.(map[string]any); isDict {
-		entries, isList = wrapped["entries"].([]any)
-	}
-	if !isList || len(entries) == 0 {
-		t.Fatalf("registry %s", raw)
-	}
-	for _, entry := range entries {
-		e := entry.(map[string]any)
-		e["started_at"] = e["started_at"].(float64) - seconds
-	}
-	if raw, err = json.Marshal(data); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(statePath, raw, 0o644); err != nil {
-		t.Fatal(err)
-	}
-}
-
-func TestAutomaticCleanupReclaimsOwnOrphanLeaseNotTreatedAsSibling(t *testing.T) {
-	ownershipHome(t)
-	profileHome := filepath.Join(t.TempDir(), "profile-home")
-	sessionID := "own-orphan-session"
-	ownerLease, refusal := tuigateway.ClaimActiveSessionSlotRefusal(context.Background(), sessionID, "vanished-runtime", "desktop", profileHome)
-	if ownerLease == nil || refusal != nil {
-		t.Fatalf("claim %v %v", ownerLease, refusal)
-	}
-	backdateRegistry(t, profileHome, 60)
-	dbPath := storedRow(t, profileHome, sessionID, "desktop")
-	swapSessions(t, map[string]*tuigateway.Session{})
-	finalizeSession(context.Background(), desktopCleanupRecord(profileHome, sessionID, nil), "ws_orphan_reap")
-	assertRowOpen(t, dbPath, sessionID)
-	if entries := registryEntries(t, profileHome); len(entries) != 0 {
-		t.Fatalf("orphan lease kept %v", entries)
-	}
-}
-
-func TestAutomaticDesktopCleanupPreservesSiblingAndReleasesSoleOwnerLease(t *testing.T) {
-	ctx := context.Background()
-	ownershipHome(t)
-	profileHome := filepath.Join(t.TempDir(), "profile-home")
-	sessionID := "shared-profile-session"
-	dbPath := storedRow(t, profileHome, sessionID, "desktop")
-	child := spawnLeaseHolder(t, profileHome, sessionID)
-	reasons := []string{"ws_orphan_reap", "ws_disconnect", "idle_timeout", "lru_evict", "tui_shutdown"}
-	if len(automaticSessionEndReasons) != len(reasons) {
-		t.Fatalf("automatic reasons %v", automaticSessionEndReasons)
-	}
-	for _, reason := range reasons {
-		if !automaticSessionEndReasons[reason] {
-			t.Fatalf("%s is not an automatic reason", reason)
-		}
-	}
-	refused, refusal := tuigateway.ClaimActiveSessionSlotRefusal(ctx, sessionID, "local-runtime", "desktop", profileHome)
-	if refused != nil || refusal == nil || refusal.Reason != activesessions.SessionNotOwned {
-		t.Fatalf("second claim %v %v", refused, refusal)
-	}
-	if entries := registryEntries(t, profileHome); len(entries) != 1 {
-		t.Fatalf("registry %v", entries)
-	}
-	for _, reason := range reasons {
-		finalizeSession(ctx, desktopCleanupRecord(profileHome, sessionID, nil), reason)
-		assertRowOpen(t, dbPath, sessionID)
-		remaining := registryEntries(t, profileHome)
-		if len(remaining) != 1 || remaining[0]["session_id"] != sessionID {
-			t.Fatalf("%s left registry %v", reason, remaining)
-		}
-	}
-	finalizeSession(ctx, desktopCleanupRecord(profileHome, sessionID, nil), "tui_close")
-	if endedAt, endReason := readRealRow(t, dbPath, sessionID); endedAt == nil || endReason != "tui_close" {
-		t.Fatalf("explicit close did not end the row: %v %v", endedAt, endReason)
-	}
-	reaperExec(t, ledgerHandle(t, dbPath), "UPDATE sessions SET ended_at = NULL, end_reason = NULL WHERE id = ?", sessionID)
-	child.finish(t)
-	if entries := registryEntries(t, profileHome); len(entries) != 0 {
-		t.Fatalf("child lease left %v", entries)
-	}
-	for index, reason := range reasons {
-		soleLease, message := tuigateway.ClaimActiveSessionSlotRefusal(ctx, sessionID, fmt.Sprintf("sole-runtime-%d", index), "desktop", profileHome)
-		if soleLease == nil || message != nil {
-			t.Fatalf("sole claim %v %v", soleLease, message)
-		}
-		finalizeSession(ctx, desktopCleanupRecord(profileHome, sessionID, soleLease), reason)
-		if entries := registryEntries(t, profileHome); len(entries) != 0 {
-			t.Fatalf("%s kept the sole lease %v", reason, entries)
-		}
-	}
-	assertRowOpen(t, dbPath, sessionID)
 }
 
 func TestNewRuntimeTakesOverDetachedSiblingLeaseInSameProcess(t *testing.T) {
@@ -487,7 +343,7 @@ func TestTakeoverStaysWithinTheProfile(t *testing.T) {
 	if refusal := ensureActiveSessionSlot(ctx, "a", sibling); refusal != nil {
 		t.Fatalf("profile A claim %v", refusal)
 	}
-	holderB, message, err := activesessions.TryAcquire(ctx, key, "desktop", map[string]any{}, map[string]any{"live_session_id": "other-window"}, homeB, true)
+	holderB, message, err := activesessions.TryAcquire(ctx, key, "tui", map[string]any{}, map[string]any{"live_session_id": "other-window"}, homeB, true)
 	if err != nil || holderB == nil || message != nil {
 		t.Fatalf("profile B holder %v %v %v", holderB, message, err)
 	}

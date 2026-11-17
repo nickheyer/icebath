@@ -24,11 +24,5 @@ func TestOneParserReadsTheLoginSubjectForEveryCaller(t *testing.T) {
 		if label, ok := state.LoginLabel(bad); ok {
 			t.Fatalf("%v labelled %q", bad, label)
 		}
-		if text, isText := bad.(string); isText && structuredLoginSubject(text) {
-			t.Fatalf("%q read as a structured login", text)
-		}
-	}
-	if !structuredLoginSubject(subject) {
-		t.Fatalf("%q not read as a structured login", subject)
 	}
 }

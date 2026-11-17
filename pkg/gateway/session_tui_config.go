@@ -27,8 +27,6 @@ var statusbarModes = []string{"off", "top", "bottom"}
 
 var boolWords = map[string]bool{"on": true, "true": true, "yes": true, "off": false, "false": false, "no": false}
 
-var displayToggleKeys = map[string]bool{"display.message_reactions": true, "display.in_app_tips": true, "display.in_app_tours": true}
-
 var voiceChatModes = map[string]bool{"chained": true, "gpt-live": true}
 
 // Show and hide words of the reasoning command that toggle display rather than effort
@@ -637,7 +635,7 @@ func configSet(ctx context.Context, c *AuthorityConnection, ref SessionRef, para
 		return forwardOffThread(ctx, func() (map[string]any, error) { return setPersonality(ctx, c, value) })
 	case key == "approvals.mode" || key == "approval_mode":
 		return forwardOffThread(ctx, func() (map[string]any, error) { return setApprovalMode(ctx, c, value) })
-	case displayToggleKeys[key] || key == "voice.voice_chat_mode":
+	case key == "voice.voice_chat_mode":
 		return keyed(forwardOffThread(ctx, func() (map[string]any, error) {
 			return writeOwnerProfileConfig(ctx, c, func(cfg map[string]any) (map[string]any, error) { return setProfileLeaf(cfg, key, value) })
 		}))

@@ -418,7 +418,6 @@ func goRequest(c *gatewayClient, method string, params map[string]any) *pendingR
 func openExplicit(t *testing.T, url string) (*gatewayClient, *fakeDialer, *fakeClock, *fakeSocket) {
 	t.Helper()
 	t.Setenv("ICEBATH_TUI_GATEWAY_URL", url)
-	t.Setenv("ICEBATH_TUI_SIDECAR_URL", "")
 	c, d, k := newTestClient(t, nil)
 	c.start()
 	eventually(t, "the socket", func() bool { return d.count() == 1 })

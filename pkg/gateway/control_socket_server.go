@@ -300,7 +300,7 @@ func (s *GatewayControlServer) sessionTicket(request *pyjson.Object, peerSubject
 	params, isDict := paramsValue.(*pyjson.Object)
 	invalidParams := &PyError{Kind: "PermissionError", Msg: "invalid bootstrap parameters"}
 	if !isDict || !controlHasKeys(params, "profile_id", "instance_id", "purpose") ||
-		controlExtraKeys(params, "profile_id", "instance_id", "purpose", "scope", "subject", "restart_wait") {
+		controlExtraKeys(params, "profile_id", "instance_id", "purpose", "scope", "restart_wait") {
 		return nil, invalidParams
 	}
 	if restartWait, present := params.Get("restart_wait"); present && !pyEq(restartWait, "refuse") {
@@ -311,13 +311,7 @@ func (s *GatewayControlServer) sessionTicket(request *pyjson.Object, peerSubject
 		return nil, &PyError{Kind: "PermissionError", Msg: "stale runtime instance"}
 	}
 	subject := peerSubject
-	if named, present := params.Get("subject"); present {
-		text, isStr := named.(string)
-		if !isStr || text == "" || len([]rune(text)) > 256 || !structuredLoginSubject(text) {
-			return nil, &PyError{Kind: "PermissionError", Msg: "invalid bootstrap subject"}
-		}
-		subject = text
-	} else if len([]rune(subject)) > 256 {
+	if len([]rune(subject)) > 256 {
 		return nil, &PyError{Kind: "PermissionError", Msg: "invalid bootstrap subject"}
 	}
 	profileValue, _ := params.Get("profile_id")
@@ -374,9 +368,6 @@ func detectSupervisor() string {
 		if LaunchdJobLabel(environ) != "" || environ["LAUNCHD_SOCKET"] != "" {
 			return "launchd"
 		}
-	}
-	if os.Getenv("ICEBATH_DESKTOP_MANAGED") != "" {
-		return "desktop"
 	}
 	if slices.Contains(os.Args, "--external-supervisor") {
 		return "external"

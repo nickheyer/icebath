@@ -2,7 +2,7 @@ name: source-tray
 repo: https://github.com/aydnOktay/hermes-source-tray
 sha: e64f7d2ad56f922410071e2096a40ceab421a392
 description: Session source tray — URLs the Hermes agent opened via web_search,
-  web_extract, or browser_navigate. Desktop pane and /sources. No search backend
+  web_extract, or browser_navigate. Listed with /sources. No search backend
   of its own and no API keys.
 maintainer: aydnOktay
 tier: community

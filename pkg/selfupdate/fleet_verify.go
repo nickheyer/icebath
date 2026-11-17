@@ -21,9 +21,8 @@ import (
 )
 
 const (
-	serveOnlyReasonPrefix = "serve/dashboard "
-	gatewayOwedReason     = "gateways may still run pre-update code or were stopped without a successor"
-	gatewayRecovery       = "; recover with `icebath gateway restart`"
+	gatewayOwedReason = "gateways may still run pre-update code or were stopped without a successor"
+	gatewayRecovery   = "; recover with `icebath gateway restart`"
 )
 
 // Seconds the fleet probe keeps polling for a restarted gateway to publish its state
@@ -34,14 +33,12 @@ var (
 	fleetPrintLegacyUnits     = printLegacyUnitsWarning
 	fleetHasLegacyUnits       = gateway.HasLegacyHermesUnits
 	fleetFindLegacyUnits      = gateway.FindLegacyHermesUnits
-	fleetRefreshDashboard     = refreshDashboardAfterUpdate
 	fleetCollectSnapshot      = collectFleetSnapshot
 	fleetProbeExpected        = fleetProbeExpectedRuntimes
 	fleetPrintMatrix          = printFleetVersionMatrixTo
 	fleetSignalStaleSurvivors = signalStaleFleetSurvivors
 	fleetMatchOutcomes        = matchRuntimeOutcomes
 	fleetReportUnaccounted    = reportUnaccountedRuntimes
-	fleetDeferManualServe     = DeferManualServe
 	fleetRecordFollowup       = updaterecord.RecordFollowup
 	fleetFinalizeReceipt      = updaterecord.FinalizeUpdateReceipt
 	fleetAutoMigrate          = gatewayrun.MaybeAutoMigrateAfterUpdate
@@ -390,46 +387,6 @@ func namedGatewaysStillOwed(ctx context.Context) (bool, error) {
 	return !obsolete, err
 }
 
-// True for a serve or dashboard unit name, bare or with its service suffix
-func isServeUnit(name any) bool {
-	return isServeOrDashboardUnit(strings.TrimSuffix(pyrepr.Str(name), ".service") + ".service")
-}
-
-// Whether the restart phase itself left a gateway owed, false when every recorded failure is a serve unit
-func restartPhaseOwesGateway(restart *gatewayRestartOutcome) bool {
-	if !restart.Incomplete {
-		return false
-	}
-	if len(restart.PhaseErrors) > 0 || len(restart.FailedOrStaleUnits) == 0 {
-		return true
-	}
-	for _, unit := range restart.FailedOrStaleUnits {
-		if !isServeUnit(unit) {
-			return true
-		}
-	}
-	return false
-}
-
-// Whether a gateway is among the unaccounted outcomes, and the serve and dashboard pids among them
-func splitUnaccounted(outcomes []*pyjson.Object) (bool, map[int]bool) {
-	missedGateway, servePIDs := false, map[int]bool{}
-	for _, outcome := range outcomes {
-		if !pyrepr.Equal(rowValue(outcome, "outcome"), "unaccounted") {
-			continue
-		}
-		kind, isStr := rowValue(outcome, "kind").(string)
-		if !isStr || !serveKinds[kind] {
-			missedGateway = true
-			continue
-		}
-		if pid, ok := pyIntValue(rowValue(outcome, "pid")); ok {
-			servePIDs[int(pid)] = true
-		}
-	}
-	return missedGateway, servePIDs
-}
-
 // Comma joined decimal text of a pid list
 func joinPIDs(pids []int) string {
 	parts := make([]string, len(pids))
@@ -439,82 +396,19 @@ func joinPIDs(pids []int) string {
 	return strings.Join(parts, ", ")
 }
 
-// Reason of the gateway_restart follow-up naming what is owed, the gateway part first
-func owedRestartReason(restart *gatewayRestartOutcome, stopped []int, gatewayOwed bool, staleServes, downServes map[int]bool) string {
-	parts := []string{}
-	if gatewayOwed {
-		part := gatewayOwedReason
-		if len(stopped) > 0 {
-			part += fmt.Sprintf(" (stopped PIDs %s)", joinPIDs(stopped))
-		}
-		parts = append(parts, part+gatewayRecovery)
+// Reason of the gateway_restart follow-up naming the gateways owed and the pids stopped without a successor
+func owedRestartReason(stopped []int) string {
+	reason := gatewayOwedReason
+	if len(stopped) > 0 {
+		reason += fmt.Sprintf(" (stopped PIDs %s)", joinPIDs(stopped))
 	}
-	unitSet := map[string]bool{}
-	for _, unit := range restart.FailedOrStaleUnits {
-		if isServeUnit(unit) {
-			unitSet[strings.TrimSuffix(unit, ".service")] = true
-		}
-	}
-	if len(unitSet) > 0 {
-		units := make([]string, 0, len(unitSet))
-		for unit := range unitSet {
-			units = append(units, unit)
-		}
-		sort.Strings(units)
-		parts = append(parts, fmt.Sprintf("%sunit(s) %s were not restarted onto the new code; see the systemctl advice above", serveOnlyReasonPrefix, strings.Join(units, ", ")))
-	}
-	if len(downServes) > 0 {
-		parts = append(parts, fmt.Sprintf("%sprocess(es) %s were stopped during the update and not brought back; relaunch `icebath serve` / `icebath dashboard`", serveOnlyReasonPrefix, joinPIDs(sortedPIDs(downServes))))
-	}
-	stillStale := map[int]bool{}
-	for pid := range staleServes {
-		if !downServes[pid] {
-			stillStale[pid] = true
-		}
-	}
-	if len(stillStale) > 0 {
-		parts = append(parts, fmt.Sprintf("%sprocess(es) %s still run pre-update code; restart them as advised above", serveOnlyReasonPrefix, joinPIDs(sortedPIDs(stillStale))))
-	}
-	if len(parts) == 0 {
-		return gatewayOwedReason + gatewayRecovery
-	}
-	return strings.Join(parts, "; ")
+	return reason + gatewayRecovery
 }
 
 // Verifies the fleet after the restart phase, keeping the restart owed as a follow-up or clearing the obligation
 func verifyFleetAfterUpdate(ctx context.Context, w io.Writer, restart *gatewayRestartOutcome, plan *UpdatePlan, windowsGatewayResume any, updateComplete bool) error {
 	if err := bestEffort(ctx, "Legacy unit check during update failed: %s", func() error {
 		fleetPrintLegacyUnits(ctx, w)
-		return nil
-	}); err != nil {
-		return err
-	}
-
-	gatewayOwed := restartPhaseOwesGateway(restart)
-	attempted := map[string]bool{}
-	for _, unit := range restart.RestartedServices {
-		attempted[unit] = true
-	}
-	for _, unit := range restart.FailedOrStaleUnits {
-		attempted[unit] = true
-	}
-	dashboardsDown := fleetRefreshDashboard(ctx, w, attempted)
-	if len(dashboardsDown) > 0 {
-		restart.Incomplete = true
-	}
-	staleServesOwed := map[int]bool{}
-
-	var staleServeRows []any
-	staleServesKnown := false
-	if err := bestEffort(ctx, "Failed to check for surviving serve runtimes: %s", func() error {
-		rows, err := fleetSurvivingServeRuntimes(ctx, plan)
-		if err != nil {
-			return err
-		}
-		staleServeRows, staleServesKnown = rows, true
-		if len(rows) > 0 {
-			return fleetWarnStaleServes(w, rows)
-		}
 		return nil
 	}); err != nil {
 		return err
@@ -537,16 +431,12 @@ func verifyFleetAfterUpdate(ctx context.Context, w io.Writer, restart *gatewayRe
 		if unitsSettled, err = settleUnitsProvenCurrent(ctx, w, restart, fleetSnapshot); err != nil {
 			return err
 		}
-		if unitsSettled {
-			gatewayOwed = restartPhaseOwesGateway(restart)
-			restart.Incomplete = restart.Incomplete || len(dashboardsDown) > 0
-		}
 		if fleetPrintMatrix(w, fleetSnapshot) {
-			restart.Incomplete, gatewayOwed = true, true
+			restart.Incomplete = true
 			fleetSignalStaleSurvivors(ctx, w, fleetRowsAsAny(fleetSnapshot), restart, fleetDrainBudget(ctx))
 		} else if len(fleetSnapshot) == 0 && rowsExpected {
 			fmt.Fprintln(w, "\n⚠ Fleet version check returned no rows even though gateway runtimes were expected — verification incomplete.")
-			restart.Incomplete, gatewayOwed = true, true
+			restart.Incomplete = true
 		}
 		return nil
 	}); err != nil {
@@ -561,16 +451,8 @@ func verifyFleetAfterUpdate(ctx context.Context, w io.Writer, restart *gatewayRe
 		evidence := runtimeOutcomeEvidence{
 			RestartedServices: restart.RestartedServices, RelaunchedProfiles: restart.RelaunchedProfiles,
 			ExternallySupervisedProfiles: restart.ExternallySupervisedProfiles, KilledPIDs: restart.KilledPIDs,
-			FailedUnits: restart.FailedOrStaleUnits, FailedRespawnPIDs: dashboardsDown,
+			FailedUnits:         restart.FailedOrStaleUnits,
 			ExternalGatewayPIDs: map[int]bool{}, LiveGatewayPIDs: liveGatewayPidsFromFleet(fleetSnapshot),
-		}
-		if staleServesKnown {
-			evidence.StaleServePIDs = map[int]bool{}
-			for _, row := range staleServeRows {
-				if pid, ok := pyIntValue(rowValue(row, "pid")); ok {
-					evidence.StaleServePIDs[int(pid)] = true
-				}
-			}
 		}
 		for _, row := range fleetSnapshot {
 			if pid, ok := pyIntValue(rowValue(row, "pid")); ok && updaterecord.RowIsExternal(row) {
@@ -578,21 +460,8 @@ func verifyFleetAfterUpdate(ctx context.Context, w io.Writer, restart *gatewayRe
 			}
 		}
 		outcomes := fleetMatchOutcomes(plan, evidence)
-		for i, runtime := range plan.Runtimes {
-			if i >= len(outcomes) {
-				break
-			}
-			if pyrepr.Equal(rowValue(outcomes[i], "outcome"), "unaccounted") && fleetDeferManualServe(ctx, runtime.ToDict(), true) {
-				outcomes[i].Set("outcome", "deferred")
-			}
-		}
 		if fleetReportUnaccounted(w, outcomes) {
 			restart.Incomplete = true
-			missedGateway, missedServes := splitUnaccounted(outcomes)
-			gatewayOwed = gatewayOwed || missedGateway
-			for pid := range missedServes {
-				staleServesOwed[pid] = true
-			}
 		}
 		if active := updaterecord.CurrentReceipt(ctx); active != nil && active.Data != nil {
 			active.Data.Set("runtime_outcomes", fleetRowsAsAny(outcomes))
@@ -610,7 +479,7 @@ func verifyFleetAfterUpdate(ctx context.Context, w io.Writer, restart *gatewayRe
 			}
 			if owed {
 				fmt.Fprintln(w, "  ⚠ A gateway owed a restart by a previous update is still not serving this checkout.")
-				restart.Incomplete, gatewayOwed = true, true
+				restart.Incomplete = true
 			}
 			return nil
 		}); err != nil {
@@ -618,11 +487,11 @@ func verifyFleetAfterUpdate(ctx context.Context, w io.Writer, restart *gatewayRe
 		}
 	}
 	if len(restart.StoppedUnmappedPIDs) > 0 {
-		restart.Incomplete, gatewayOwed = true, true
+		restart.Incomplete = true
 	}
 	if restart.Incomplete {
 		stopped := sortedPIDs(restart.StoppedUnmappedPIDs)
-		fleetRecordFollowup(ctx, "gateway_restart", owedRestartReason(restart, stopped, gatewayOwed, staleServesOwed, dashboardsDown), updaterecord.FollowupRetryDefault)
+		fleetRecordFollowup(ctx, "gateway_restart", owedRestartReason(stopped), updaterecord.FollowupRetryDefault)
 		if err := bestEffort(ctx, "Fleet restart inventory not recorded: %s", func() error {
 			return recordOwedGatewayInventory(ctx, plan, stopped)
 		}); err != nil {

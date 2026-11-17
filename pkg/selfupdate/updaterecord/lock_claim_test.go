@@ -352,7 +352,7 @@ func TestLockUnwritableMarkerLocationRefusesAndSaysWhy(t *testing.T) {
 		t.Fatal("ran unlocked")
 	}
 	text := DescribeHolder(lock.Holder)
-	if !strings.Contains(text, "is not writable ([Errno 13] Permission denied") || !strings.Contains(text, "the update records itself there so the Desktop app, gateways, installers and other updaters wait for it") || !strings.Contains(text, "Make that path\n  writable") {
+	if !strings.Contains(text, "is not writable ([Errno 13] Permission denied") || !strings.Contains(text, "the update records itself there so gateways, installers and other updaters wait for it") || !strings.Contains(text, "Make that path\n  writable") {
 		t.Fatalf("%q", text)
 	}
 }

@@ -133,34 +133,6 @@ func drainManualGateway(h string) error {
 	return nil
 }
 
-// Refuses while a serve or dashboard backend recorded in the spawn ledger is still running
-func refuseBackendWriters(h string) error {
-	root, err := pypath.Resolve(home.RootOf(h))
-	if err != nil {
-		return err
-	}
-	ledger := filepath.Join(root, tools.LedgerFilename)
-	rows, ok := tools.ReadSpawnLedger(ledger)
-	if !ok {
-		return holderErrorf("cannot read backend ownership: %s", ledger)
-	}
-	for _, row := range rows {
-		purpose, _ := row.Get("purpose")
-		if purpose != "serve" && purpose != "dashboard" {
-			continue
-		}
-		rawPid, _ := row.Get("pid")
-		pid, isInt := jsonPyInt(rawPid)
-		if !isInt || pid <= 0 {
-			return holderErrorf("backend ownership contains an invalid PID")
-		}
-		if tools.EntryStillRunning(row.Vals) {
-			return holderErrorf("backend PID %d still owns %s; close its desktop/dashboard before retrying", pid, h)
-		}
-	}
-	return nil
-}
-
 // Python value of one sqlite column the way sqlite3.Row hands it back
 func sqliteColumnValue(v any) any {
 	switch x := v.(type) {
@@ -291,7 +263,7 @@ func quiescentHome(h string, body func() error) error {
 	if err != nil {
 		return err
 	}
-	for _, check := range []func(string) error{refuseBackendWriters, refuseMultiplexer, drainManualGateway} {
+	for _, check := range []func(string) error{refuseMultiplexer, drainManualGateway} {
 		if err := check(h); err != nil {
 			return err
 		}

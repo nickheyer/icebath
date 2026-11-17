@@ -163,7 +163,6 @@ func syncChecked(ctx context.Context, root string, check bool) (VenvSyncResult, 
 	if check {
 		return VenvSyncResult{State: "would-sync", OK: true}, nil
 	}
-	PublishStage("Updating Python dependencies")
 	if err := RefuseForeignOwnedVenv(ctx, root); err != nil {
 		return VenvSyncResult{}, err
 	}
@@ -719,17 +718,11 @@ func defaultFinishSourceUpdate(ctx context.Context, root string, current bool, p
 		}
 		sayLaunch("icebath: finishing an interrupted source update...")
 	}
-	desktopApp := filepath.Join(root, "apps", "desktop")
-	releases, _ := scandirNames(filepath.Join(desktopApp, "release"))
-	desktop := isRegular(filepath.Join(desktopApp, "dist", "index.html")) || len(releases) > 0
 	exe, err := runningExecutable()
 	if err != nil {
 		return err
 	}
 	argv := []string{exe, SourceCompletionEntry, "--source", root, "--finish-update"}
-	if desktop {
-		argv = append(argv, "--desktop")
-	}
 	env, err := activationEnvironment(ctx, root)
 	if err != nil {
 		return err

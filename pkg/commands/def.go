@@ -23,18 +23,17 @@ type Handler func(ctx context.Context, inv *Invocation) error
 
 // Def is one slash command with its metadata and bound handler
 type Def struct {
-	Name         string
-	Description  string
-	Category     string
-	Aliases      []string
-	ArgsHint     string
-	Subcommands  []string
-	CLIOnly      bool
-	BusyPolicy   BusyPolicy
-	BusyHandler  string
-	ArgumentMode string
-	Plugin       string
-	Handler      Handler
+	Name        string
+	Description string
+	Category    string
+	Aliases     []string
+	ArgsHint    string
+	Subcommands []string
+	CLIOnly     bool
+	BusyPolicy  BusyPolicy
+	BusyHandler string
+	Plugin      string
+	Handler     Handler
 	Meta
 }
 

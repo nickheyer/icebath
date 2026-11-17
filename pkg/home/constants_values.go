@@ -11,8 +11,8 @@ var IndicatorStyles = []string{"ascii", "emoji", "kaomoji", "unicode"}
 
 const DefaultIndicatorStyle = "kaomoji"
 
-// Size ceiling for a browser hosted attachment staged on the host before the base64 read back
-const WebappAttachmentMaxBytes = 16 * 1024 * 1024
+// Size ceiling for an attachment staged on the host before the base64 read back
+const AttachmentMaxBytes = 16 * 1024 * 1024
 
 // Root directories of the default home that hold local models and runtimes
 var LocalRuntimeRootDirs = map[string]bool{"models": true, "runtimes": true, "node": true}

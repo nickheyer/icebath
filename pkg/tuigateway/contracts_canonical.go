@@ -54,7 +54,7 @@ var SessionMutateParams = pydantic.NewModel("SessionMutateParams", ParamsConfig,
 	pydantic.Req("operation", pydantic.Str),
 	pydantic.Req("payload", pydantic.Dict(pydantic.Any)),
 	pydantic.Def("expected_generation", pydantic.Nullable(pydantic.Int), nil),
-).Described("``operation`` + ``payload`` are validated by ``hermes_state_mutations.validate_action``;\n``expected_generation`` is required for delete/rewind/reset/branch/model/compress/reasoning/workspace.\n``reasoning`` (``{effort}``) and ``workspace`` (``{cwd}``, refused ``session_busy`` mid-turn) rewrite\nthe session's frozen policy: session-scope ``/reasoning`` and Desktop's Move to project. ``edit_policy``\n(``{policy}``: ask / workspace_session / session) is an ACP session's edit approval (main's ACP modes).")
+).Described("``operation`` + ``payload`` are validated by ``hermes_state_mutations.validate_action``;\n``expected_generation`` is required for delete/rewind/reset/branch/model/compress/reasoning/workspace.\n``reasoning`` (``{effort}``) and ``workspace`` (``{cwd}``, refused ``session_busy`` mid-turn) rewrite\nthe session's frozen policy: session-scope ``/reasoning`` and a workspace move. ``edit_policy``\n(``{policy}``: ask / workspace_session / session) is an ACP session's edit approval (main's ACP modes).")
 
 var SessionMutateResult = pydantic.NewModel("SessionMutateResult", OpenConfig,
 	pydantic.Req("session_id", pydantic.Str),
@@ -136,7 +136,7 @@ var CanonicalSessionInfo = pydantic.NewModel("CanonicalSessionInfo", OpenConfig,
 	pydantic.Def("model", pydantic.Nullable(pydantic.Str), nil),
 	pydantic.Req("lazy", pydantic.Bool),
 	pydantic.Req("profile_id", pydantic.Str),
-	pydantic.Req("desktop_protocol", pydantic.Str),
+	pydantic.Req("gateway_protocol", pydantic.Str),
 	pydantic.Req("profile_name", pydantic.Str),
 	pydantic.Def("cwd", pydantic.Nullable(pydantic.Str), nil),
 	pydantic.Def("edit_approval_policy", pydantic.Nullable(pydantic.Literal("ask", "workspace_session", "session")), nil),

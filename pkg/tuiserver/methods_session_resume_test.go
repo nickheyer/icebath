@@ -131,7 +131,7 @@ func TestResumeMintedKeyClaimedByOtherProfileFailsClosed(t *testing.T) {
 	db := resumeDB(t)
 	tuigateway.SetSessionRecord("live-other-profile", tuigateway.NewSession(map[string]any{"history": []any{}, "last_active": 0.0,
 		"pending_title": "Bot Chat", "pending_hidden": true, "profile_home": "/tmp/other-profile", "running": false,
-		"session_key": mintedKey, "source": "desktop"}))
+		"session_key": mintedKey, "source": "tui"}))
 	if code := resumeErrCode(resumeCall(t, map[string]any{"session_id": mintedKey})); code != 4007 {
 		t.Fatalf("code %v", code)
 	}
@@ -191,7 +191,7 @@ func liveLazySession(t *testing.T) (string, *tuigateway.Session) {
 	}
 	sid := "live-lazy-1"
 	record := tuigateway.NewSession(map[string]any{"history": []any{}, "last_active": 0.0, "pending_title": "Bot Chat",
-		"pending_hidden": true, "profile_home": opsHome, "running": false, "session_key": "20260823_000000_abc123", "source": "desktop"})
+		"pending_hidden": true, "profile_home": opsHome, "running": false, "session_key": "20260823_000000_abc123", "source": "tui"})
 	tuigateway.SetSessionRecord(sid, record)
 	return sid, record
 }

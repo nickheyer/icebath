@@ -89,7 +89,7 @@ type RaftAdapter struct {
 
 	mu          sync.Mutex
 	bridgeToken string
-	runner      *gateway.WebAppRunner
+	runner      *gateway.HTTPAppRunner
 	bridge      *bridgeProcess
 }
 
@@ -162,7 +162,7 @@ func (a *RaftAdapter) Connect(ctx context.Context, isReconnect bool) (bool, erro
 		slog.Info("[raft] Auto-generated bridge token")
 	}
 	a.mu.Unlock()
-	app := gateway.NewWebApplication(int64(a.maxBodyBytes))
+	app := gateway.NewHTTPApp(int64(a.maxBodyBytes))
 	routes := []struct {
 		method, path string
 		handler      gateway.WebHandler
@@ -186,7 +186,7 @@ func (a *RaftAdapter) Connect(ctx context.Context, isReconnect bool) (bool, erro
 		}
 	}
 	host := a.host
-	runner, err := gateway.StartWebApp(ctx, app, &host, a.port, gateway.ListenOptions{})
+	runner, err := gateway.StartHTTPApp(ctx, app, &host, a.port, gateway.ListenOptions{})
 	if err != nil {
 		return false, err
 	}

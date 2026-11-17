@@ -50,7 +50,7 @@ func historyRow(row *pyjson.Object) bool {
 	return rowGet(row, "source") == "import" || LegacyHistoryRow(row)
 }
 
-// Owner identity of the row, None for a Desktop Nous account label
+// Owner identity of the row, None for a legacy Nous account label
 func ownerUser(row *pyjson.Object) (any, error) {
 	label, err := LegacyAccountLabel(row)
 	if err != nil || label {
@@ -59,7 +59,7 @@ func ownerUser(row *pyjson.Object) (any, error) {
 	return rowGet(row, "user_id"), nil
 }
 
-// Provider and user label Desktop stamps for an issuer less dashboard login subject
+// Provider and user label stored rows carry for an issuer less login subject
 func LoginLabel(subject any) (string, bool) {
 	parts, ok := parseAuthenticatedSubject(subject)
 	if !ok {

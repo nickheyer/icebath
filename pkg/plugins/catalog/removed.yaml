@@ -8,7 +8,7 @@
 # and a repo match would refuse that install too.
 removed:
 - name: or-picker
-  reason: "Folded into openrouter-picker. Installing the provider alone left the picker broken. Install openrouter-picker."
+  reason: "Folded into openrouter-picker, which is no longer in the catalog."
   date: "2026-09-28"
 - name: github-copilot
   reason: "Built into icebath: the copilot and copilot-acp providers ship with icebath itself, so there is nothing to install. Remove any installed copy with `icebath plugins remove github-copilot`; your Copilot logins and settings keep working."

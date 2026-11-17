@@ -998,7 +998,7 @@ func stdinIsInteractive(isatty bool, consoleModeOK *bool) bool {
 	return isatty && (consoleModeOK == nil || *consoleModeOK)
 }
 
-// Whether no human can answer a prompt, as dashboard spawned actions declare
+// Whether no human can answer a prompt, as ICEBATH_NONINTERACTIVE declares
 func setupIsNoninteractive() bool {
 	switch strings.ToLower(pystr.Strip(os.Getenv("ICEBATH_NONINTERACTIVE"))) {
 	case "1", "true", "yes", "on":

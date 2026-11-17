@@ -97,9 +97,6 @@ func auditInContainerLive() bool {
 	if _, err := os.Stat("/.dockerenv"); err == nil {
 		return true
 	}
-	if os.Getenv("ICEBATH_DESKTOP_CHILD_PID") != "" {
-		return false
-	}
 	data, err := os.ReadFile("/proc/1/cgroup")
 	if err != nil {
 		return false

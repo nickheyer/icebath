@@ -391,7 +391,7 @@ func launchTUIWith(ctx context.Context, l TUILaunch, deps tuiLaunchDeps) int {
 		return tuiLaunchExitCode(err, deps.stderr)
 	}
 	env["ICEBATH_CWD"] = cwd
-	if err := configureTUIAttachment(env, l.Resume, ""); err != nil {
+	if err := refuseOwnedTUIResume(env, l.Resume, ""); err != nil {
 		fmt.Fprintf(deps.stderr, "Error: %v\n", err)
 		return 1
 	}

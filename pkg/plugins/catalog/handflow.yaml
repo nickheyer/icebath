@@ -2,7 +2,7 @@ name: handflow
 repo: https://github.com/DECRUX9812/hermes-handflow
 sha: 6526ef75ffeb133d66472bc1899c87f34dcf9556
 subdir: ""
-description: Manus-style planning flow — the agent plans in steps and marks them as it works, with a live desktop pane.
+description: Manus-style planning flow — the agent plans in steps and marks them as it works.
 maintainer: DECRUX9812
 tier: community
 category: automation

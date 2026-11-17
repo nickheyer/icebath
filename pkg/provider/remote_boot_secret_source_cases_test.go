@@ -12,6 +12,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/config/remote"
+	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/testfakes/configplane"
 	"github.com/nickheyer/icebath/pkg/testfakes/configplane/remoteplane"
 )
@@ -223,7 +224,7 @@ func TestRoutedHydrationRefusesASourceThatSuppliesAProtectedName(t *testing.T) {
 	p.Profile("routed").Version = 1
 	p.Mu.Unlock()
 	for range 2 {
-		msg := sourceRefusal(t, func() { _, _, _ = ConfigProfileScope(context.Background(), "routed") })
+		msg := sourceRefusal(t, func() { _ = currentProfileScope(home.WithOverride(context.Background(), named)) })
 		if !strings.Contains(msg, "ICEBATH_PORTAL_BASE_URL") {
 			t.Fatalf("refusal %q", msg)
 		}

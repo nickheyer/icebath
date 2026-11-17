@@ -60,12 +60,9 @@ func (whatsAppCloudPlatformPlugin) Manifest() plugins.Manifest {
 			{Name: "WHATSAPP_CLOUD_ACCESS_TOKEN", Description: "System User permanent access token", Secret: true}}}
 }
 
-// Registers the WhatsApp Cloud platform entry with its factory, setup wizard and dashboard card
+// Registers the WhatsApp Cloud platform entry with its factory and setup wizard
 func (whatsAppCloudPlatformPlugin) Register(ctx *plugins.Context) error {
 	extra := map[string]any{
-		"dashboard_label":        "WhatsApp Cloud API",
-		"dashboard_description":  "Use Icebath via Meta's hosted WhatsApp Cloud API (no local bridge).",
-		"docs_url":               "https://hermes-agent.nousresearch.com/docs/user-guide/messaging/whatsapp-cloud",
 		"is_connected":           isConnected,
 		"config_connected_fn":    gateway.ConfigConnectedExtra("phone_number_id", "access_token"),
 		"setup_fn":               interactiveSetup,

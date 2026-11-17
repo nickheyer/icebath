@@ -169,12 +169,9 @@ func (blueBubblesPlatformPlugin) Manifest() plugins.Manifest {
 			{Name: "BLUEBUBBLES_PASSWORD", Description: "BlueBubbles server password (BlueBubbles Server → Settings → API)", Secret: true}}}
 }
 
-// Registers the BlueBubbles platform entry with its factory, setup, standalone sender and card
+// Registers the BlueBubbles platform entry with its factory, setup and standalone sender
 func (blueBubblesPlatformPlugin) Register(ctx *plugins.Context) error {
 	extra := map[string]any{
-		"dashboard_description":  "Use Icebath through iMessage via a BlueBubbles server.",
-		"docs_url":               "https://bluebubbles.app/",
-		"dashboard_env_vars":     []string{"BLUEBUBBLES_SERVER_URL", "BLUEBUBBLES_PASSWORD", "BLUEBUBBLES_ALLOWED_USERS"},
 		"is_connected":           isConnected,
 		"config_connected_fn":    gateway.ConfigConnectedExtra("server_url", "password"),
 		"setup_fn":               InteractiveSetup,

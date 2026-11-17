@@ -41,7 +41,6 @@ type Manager struct {
 	memoryHookRegistrations       map[hookSource][]*Registration
 	ownershipLedger               map[string][]*Registration
 	registrationOrder             []*Registration
-	persistentCarryover           []*Registration
 	hookTimeoutMu                 sync.Mutex
 	hookRunningCallbacks          map[hookGateKey]*struct{}
 	hookAbandoned                 map[hookSuppressionKey]map[hookGateKey]bool

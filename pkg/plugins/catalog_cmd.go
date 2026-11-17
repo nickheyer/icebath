@@ -46,17 +46,14 @@ var platformAliases = map[string]string{"windows": "win32", "macos": "darwin"}
 var noGitRevisionFiles = map[string]bool{"plugin.yaml": true, "plugin.yml": true, "plugin.json": true, "mcp.json": true,
 	"pyproject.toml": true, "package.json": true, "package-lock.json": true, "uv.lock": true}
 
-var noGitRevisionDirs = map[string]bool{"dashboard": true, "desktop": true, "skills": true, "sidecar": true, "node_modules": true}
+var noGitRevisionDirs = map[string]bool{"skills": true, "sidecar": true, "node_modules": true}
 
 var noGitRevisionExtensions = map[string]bool{".mjs": true, ".cjs": true, ".jsx": true, ".tsx": true}
 
-var surfaceKeys = []string{"capabilities", "tools", "hooks", "python_dependencies", "desktop", "requires_auth", "oauth"}
+var surfaceKeys = []string{"capabilities", "tools", "hooks", "python_dependencies", "requires_auth", "oauth"}
 
 var surfaceLabels = map[string]string{"capabilities": "host capabilities", "tools": "tools", "hooks": "hooks",
-	"python_dependencies": "Python dependencies", "desktop": "Desktop UI half",
-	"requires_auth": "your sign-in for", "oauth": "your OAuth sign-in for"}
-
-var presenceSurfaces = map[string]bool{"desktop": true}
+	"python_dependencies": "Python dependencies", "requires_auth": "your sign-in for", "oauth": "your OAuth sign-in for"}
 
 // Context whose home is h, for helpers that resolve the live catalog or lock metadata of that home
 func homeContext(h string) context.Context { return home.WithOverride(context.Background(), h) }
@@ -707,8 +704,8 @@ type RepinResult struct {
 	Warnings      []string
 }
 
-// Surfaces an installed tree exposes, host capabilities, tools, hooks, Python deps, sign ins and a Desktop half
-func pluginSurface(manifest map[string]any, tree string) (map[string]map[string]bool, error) {
+// Surfaces a plugin manifest exposes, host capabilities, tools, hooks, Python deps and sign ins
+func pluginSurface(manifest map[string]any) (map[string]map[string]bool, error) {
 	if manifest == nil {
 		manifest = map[string]any{}
 	}
@@ -741,41 +738,12 @@ func pluginSurface(manifest map[string]any, tree string) (map[string]map[string]
 		"capabilities": toSet(declaredCapabilitiesFromManifest(manifest, name)),
 		"tools":        list("provides_tools"), "hooks": list("provides_hooks", "hooks"),
 		"python_dependencies": list("python_dependencies"), "requires_auth": list("requires_auth"),
-		"oauth":   svc.OAuthSurface(manifest),
-		"desktop": desktopSurface(tree),
+		"oauth": svc.OAuthSurface(manifest),
 	}, nil
 }
 
-// Desktop entry the tree ships by the installers layout rule, root or desktop folder
-func desktopSurface(tree string) map[string]bool {
-	source := desktopSource(tree)
-	if source == "" {
-		return map[string]bool{}
-	}
-	rel, err := filepath.Rel(tree, filepath.Join(source, "plugin.js"))
-	if err != nil {
-		return map[string]bool{}
-	}
-	return map[string]bool{filepath.ToSlash(rel): true}
-}
-
-// Folder holding the desktop plugin of a package, the root or its desktop folder, empty when neither does
-func desktopSource(packageDir string) string {
-	for _, source := range []string{packageDir, filepath.Join(packageDir, "desktop")} {
-		if st, err := os.Stat(filepath.Join(source, "plugin.js")); err == nil && st.Mode().IsRegular() {
-			return source
-		}
-	}
-	return ""
-}
-
-func addedSurface(surface string, old, newSet map[string]bool) map[string]bool {
-	if presenceSurfaces[surface] {
-		if len(old) > 0 {
-			return map[string]bool{}
-		}
-		return newSet
-	}
+// Identifiers of the new set the old set lacks
+func addedSurface(old, newSet map[string]bool) map[string]bool {
 	out := map[string]bool{}
 	for k := range newSet {
 		if !old[k] {
@@ -789,7 +757,7 @@ func addedSurface(surface string, old, newSet map[string]bool) map[string]bool {
 func surfaceDelta(old, newSurface map[string]map[string]bool) map[string][]string {
 	delta := map[string][]string{}
 	for _, k := range surfaceKeys {
-		if added := sortedSet(addedSurface(k, old[k], newSurface[k])); len(added) > 0 {
+		if added := sortedSet(addedSurface(old[k], newSurface[k])); len(added) > 0 {
 			delta[k] = added
 		}
 	}
@@ -858,7 +826,7 @@ func repinCatalogPlugin(ctx context.Context, target string, sidecar map[string]a
 	if err != nil {
 		return nil, err
 	}
-	installedSurface, err := pluginSurface(installedManifest, target)
+	installedSurface, err := pluginSurface(installedManifest)
 	if err != nil {
 		return nil, err
 	}
@@ -953,7 +921,7 @@ func previewRepin(ctx context.Context, h, dir string, entry *PluginCatalogEntry,
 	if err != nil {
 		return err
 	}
-	surface, err := pluginSurface(manifest, previewTarget)
+	surface, err := pluginSurface(manifest)
 	if err != nil {
 		return err
 	}
@@ -1319,74 +1287,6 @@ func CmdValidate(ctx context.Context, path string, asJSON, installDeps bool, out
 		console.Print("[red bold]Validation failed.[/red bold]")
 	}
 	return &CommandExit{Code: report.ExitCode()}
-}
-
-// Catalog entries merged with local install state for the dashboard, matched by catalog name first
-func InstalledCatalogState(ctx context.Context, installed map[string]map[string]any, order []string) (map[string]any, error) {
-	h := home.Dir(ctx)
-	byCatalogName := map[string]map[string]any{}
-	for _, key := range order {
-		local := installed[key]
-		sidecar, err := catalogInstallRecord(h, orEmpty(local["dir"]))
-		if err != nil {
-			return nil, err
-		}
-		if sidecar != nil {
-			merged := map[string]any{}
-			for k, v := range local {
-				merged[k] = v
-			}
-			merged["sidecar"] = sidecar
-			byCatalogName[pyrepr.Str(sidecar["catalog_name"])] = merged
-		}
-	}
-	entries := []any{}
-	for _, entry := range LoadCatalogLive(ctx) {
-		local, ok := byCatalogName[entry.Name]
-		if !ok {
-			local, ok = installed[entry.Name]
-		}
-		var sidecar map[string]any
-		if ok {
-			sidecar, _ = local["sidecar"].(map[string]any)
-		}
-		var installedSha any
-		if sidecar != nil && jsonTruthy(sidecar["sha"]) {
-			installedSha = pyrepr.Str(sidecar["sha"])
-		}
-		row := entry.ToDict()
-		row["sha_short"] = entry.Sha[:min(7, len(entry.Sha))]
-		row["capability_summary"] = EntryCapabilitySummary(entry)
-		row["installed"] = ok
-		row["installed_sha"] = installedSha
-		row["update_available"] = installedSha != nil && !atCatalogPin(sidecar, entry.Sha)
-		row["runtime_status"] = nil
-		if ok {
-			row["runtime_status"] = local["runtime_status"]
-		}
-		config.SetMappingKeys(row, append(config.MappingKeys(entry.ToDict()), "sha_short", "capability_summary", "installed",
-			"installed_sha", "update_available", "runtime_status"))
-		entries = append(entries, row)
-	}
-	removed := []any{}
-	for _, r := range ResolvedRemovedEntries(ctx) {
-		gone := map[string]any{"name": r.Name, "repo": r.Repo, "reason": r.Reason, "date": r.Date}
-		config.SetMappingKeys(gone, []string{"name", "repo", "reason", "date"})
-		removed = append(removed, gone)
-	}
-	out := map[string]any{"entries": entries, "removed": removed, "generated_at": utcISONow()}
-	config.SetMappingKeys(out, []string{"entries", "removed", "generated_at"})
-	return out, nil
-}
-
-// Current UTC time as datetime isoformat with Z, microseconds only when nonzero
-func utcISONow() string {
-	now := time.Now().UTC()
-	text := now.Format("2006-01-02T15:04:05")
-	if us := now.Nanosecond() / 1000; us != 0 {
-		text += fmt.Sprintf(".%06d", us)
-	}
-	return text + "Z"
 }
 
 // Provenance fields of one installed plugin row with the current pin and update flag when the pins know it

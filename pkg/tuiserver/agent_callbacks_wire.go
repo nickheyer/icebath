@@ -66,7 +66,7 @@ func applyProjectWorkspace(taskID, path, _ string) {
 			info = sessionInfo(ctx, a, session)
 		} else {
 			info = map[string]any{"cwd": resolved, "branch": tuigateway.Branch(resolved),
-				"project": projectInfoForCwd(ctx, resolved), "lazy": true, "desktop_contract": desktopBackendContract}
+				"project": projectInfoForCwd(ctx, resolved), "lazy": true}
 		}
 		tuigateway.Emit(ctx, "session.info", sid, info)
 	}()

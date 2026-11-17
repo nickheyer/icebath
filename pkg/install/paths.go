@@ -159,26 +159,3 @@ func replaceFile(src, dest string) error {
 	_ = os.Remove(aside)
 	return nil
 }
-
-// Opens the bootstrap installer log under the home logs dir and routes slog there at the ICEBATH_BOOTSTRAP_LOG level
-func InitLogging() (io.Closer, error) {
-	dir := LogDir()
-	if err := os.MkdirAll(dir, 0o777); err != nil {
-		return nil, err
-	}
-	f, err := os.OpenFile(LogPath(), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o666)
-	if err != nil {
-		return nil, err
-	}
-	level := slog.LevelInfo
-	switch strings.ToLower(pystr.Strip(os.Getenv("ICEBATH_BOOTSTRAP_LOG"))) {
-	case "trace", "debug":
-		level = slog.LevelDebug
-	case "warn":
-		level = slog.LevelWarn
-	case "error":
-		level = slog.LevelError
-	}
-	slog.SetDefault(slog.New(slog.NewTextHandler(f, &slog.HandlerOptions{Level: level})))
-	return f, nil
-}

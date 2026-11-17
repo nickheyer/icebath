@@ -1,15 +1,5 @@
 #!/usr/bin/env bash
-# Icebath bootstrap: download the release archive for this platform, verify it
-# against the release checksums, unpack the binary and hand every flag to
-# `icebath install-self`, which owns the stages (manifest, stage protocol,
-# install dir, command publication, setup, gateway, update channel).
-#
-# Stage protocol kept for the setup app:
-#   --manifest            print the stage list as JSON
-#   --stage NAME [--json] run one stage
-#   --non-interactive     skip stages that need input
-#   --include-desktop     install the desktop app too
-#   --verbose             stream every child command's output
+# Downloads and verifies the icebath release for this platform, then hands every flag to icebath install-self
 set -u
 
 REPO_URL="${ICEBATH_REPO_URL:-https://github.com/nickheyer/icebath}"
@@ -21,7 +11,7 @@ FORWARD=()
 
 while [ $# -gt 0 ]; do
     case "$1" in
-        --branch|-Branch|--commit|-Commit|--channel|-Channel|--dir|--icebath-home|-IcebathHome|--stage|-Stage)
+        --branch|-Branch|--commit|-Commit|--channel|-Channel|--dir|--icebath-home|-IcebathHome)
             option="$1"
             if [ $# -lt 2 ] || [ -z "$2" ] || [[ "$2" == -* ]]; then
                 printf '%s needs a value\n' "$option" >&2
@@ -33,21 +23,16 @@ while [ $# -gt 0 ]; do
                 --channel|-Channel) CHANNEL="$2" ;;
                 --dir) INSTALL_DIR="$2" ;;
                 --icebath-home|-IcebathHome) ICEBATH_HOME="$2" ;;
-                --stage|-Stage) FORWARD+=(--stage "$2") ;;
             esac
             shift 2 ;;
-        --manifest|-Manifest) FORWARD+=(--manifest); shift ;;
-        --json|-Json) FORWARD+=(--json); shift ;;
         --non-interactive|-NonInteractive|--skip-setup) FORWARD+=(--non-interactive); shift ;;
         --skip-browser|--no-playwright|-SkipBrowser) FORWARD+=(--skip-browser); shift ;;
         --skip-computer-use|-SkipComputerUse) FORWARD+=(--skip-computer-use); shift ;;
-        --include-desktop|-IncludeDesktop) FORWARD+=(--include-desktop); shift ;;
         --verbose|-Verbose) FORWARD+=(--verbose); shift ;;
         -h|--help)
             echo "Usage: install.sh [--channel stable|main] [--branch NAME] [--commit SHA]"
             echo "                  [--dir PATH] [--icebath-home PATH]"
-            echo "                  [--manifest] [--stage NAME] [--json]"
-            echo "                  [--non-interactive] [--include-desktop] [--verbose]"
+            echo "                  [--non-interactive] [--verbose]"
             echo "                  [--skip-browser] [--skip-computer-use]"
             echo
             echo "  --channel       stable (default): the latest published release, then release"

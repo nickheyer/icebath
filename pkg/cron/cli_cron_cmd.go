@@ -653,7 +653,7 @@ func (s *Store) printSchedulerHost(ctx context.Context, w io.Writer) error {
 		}
 		pids = found
 	}
-	viaLock, viaMultiplexer, inProcess := false, false, false
+	viaLock, viaMultiplexer := false, false
 	if host == nil && len(pids) == 0 {
 		suppressPanic(func() {
 			ok, err := gateway.IsGatewayRuntimeLockActive(gateway.GatewayRuntimeLockPath(s.home))
@@ -671,9 +671,6 @@ func (s *Store) printSchedulerHost(ctx context.Context, w io.Writer) error {
 			profile, _ := gateway.ProfileNameForHome(s.home)
 			viaMultiplexer = gateway.NamedProfileServedByRunningMultiplexer(profile)
 		}
-		if !viaLock && !viaMultiplexer {
-			suppressPanic(func() { inProcess = tickerAgeIsFresh(s.TickerHeartbeatAge()) && s.TickerHeartbeatWriterAlive() })
-		}
 	}
 	switch {
 	case host != nil:
@@ -688,9 +685,6 @@ func (s *Store) printSchedulerHost(ctx context.Context, w io.Writer) error {
 	case viaMultiplexer:
 		say(w, "  Scheduler host: the host gateway (multiplexing this profile)")
 		s.printTickerHealth(w, nil, "icebath --profile default gateway restart")
-	case inProcess:
-		say(w, fmt.Sprintf("  Scheduler host: an in-process ticker (icebath serve / Desktop backend) ticking profile '%s'", active))
-		s.printTickerHealth(w, nil, "restart the icebath Desktop app (or its serve backend)")
 	case len(pids) > 0 || viaLock:
 		s.printTickerHealth(w, pids, "icebath gateway restart")
 	default:

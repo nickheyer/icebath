@@ -5,7 +5,7 @@ description: Local-only web dashboard for browsing and visualising Mnemosyne mem
   and consolidation history.
 maintainer: wysie
 tier: community
-category: desktop
+category: memory
 docs_url: https://github.com/wysie/mnemosyne-dashboard#readme
 capabilities:
   provides_tools:

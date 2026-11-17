@@ -32,7 +32,7 @@ description: "RetainDB — cloud memory API with hybrid search and 7 memory type
 requires_env:
   - RETAINDB_API_KEY
 config_keys:
-  - memory.retaindb  # base_url / project persisted by the dashboard
+  - memory.retaindb
 `
 
 const retaindbDefaultBaseURL = "https://api.retaindb.com"

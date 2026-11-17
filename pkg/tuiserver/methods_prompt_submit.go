@@ -85,42 +85,8 @@ func hostedImagePaths(v any) ([]string, bool) {
 	return paths, true
 }
 
-// Validates the hosted room turn proof an internal submit carries, nil when it holds
-func hostedSubmitError(rid any, session *tuigateway.Session, hostedTask, hostedCallback, hostedImages any) map[string]any {
-	if session.Get("source") != "bot_room" {
-		return rpcErr(rid, 4120, "hosted room turns require a bot_room session", nil)
-	}
-	task, isDict := hostedTask.(map[string]any)
-	_, callable := hostedTerminalHook(hostedCallback)
-	valid := isDict && callable
-	if valid && hostedImages != nil {
-		_, valid = hostedImagePaths(hostedImages)
-	}
-	if valid && len(task) != len(hostedTaskFields) {
-		valid = false
-	}
-	for _, field := range hostedTaskFields {
-		if !valid {
-			break
-		}
-		value, present := task[field]
-		if !present {
-			valid = false
-		} else if field == "execution_generation" {
-			_, valid = pyint.Instance(value)
-		} else {
-			s, isStr := value.(string)
-			valid = isStr && s != ""
-		}
-	}
-	if valid {
-		return nil
-	}
-	return rpcErr(rid, 4120, "invalid hosted room turn proof", nil)
-}
-
-// Fences direct prompts into a hosted room from older Desktop builds that only know the Group title
-func legacyGroupFenceError(ctx context.Context, rid any, session *tuigateway.Session, params map[string]any) map[string]any {
+// Fences direct prompts into a group session whose room a gateway hosts or a peer reserved
+func hostedGroupFenceError(ctx context.Context, rid any, session *tuigateway.Session, params map[string]any) map[string]any {
 	title := strOr(session.Get("title"))
 	roomID := ""
 	if strings.HasPrefix(title, "Group: ") {
@@ -168,12 +134,46 @@ func legacyGroupFenceError(ctx context.Context, rid any, session *tuigateway.Ses
 		if hosted {
 			owner = "its gateway"
 		}
-		return rpcErr(rid, 4122, fmt.Sprintf("This room is managed by %s. Update Hermes Desktop to continue it.", owner), nil)
+		return rpcErr(rid, 4122, fmt.Sprintf("This room is managed by %s. Send to it through the room.", owner), nil)
 	}
 	return nil
 }
 
-// Machine readable storage error data whose code lets a GUI pick a doctor or retry action
+// Validates the hosted room turn proof an internal submit carries, nil when it holds
+func hostedSubmitError(rid any, session *tuigateway.Session, hostedTask, hostedCallback, hostedImages any) map[string]any {
+	if session.Get("source") != "bot_room" {
+		return rpcErr(rid, 4120, "hosted room turns require a bot_room session", nil)
+	}
+	task, isDict := hostedTask.(map[string]any)
+	_, callable := hostedTerminalHook(hostedCallback)
+	valid := isDict && callable
+	if valid && hostedImages != nil {
+		_, valid = hostedImagePaths(hostedImages)
+	}
+	if valid && len(task) != len(hostedTaskFields) {
+		valid = false
+	}
+	for _, field := range hostedTaskFields {
+		if !valid {
+			break
+		}
+		value, present := task[field]
+		if !present {
+			valid = false
+		} else if field == "execution_generation" {
+			_, valid = pyint.Instance(value)
+		} else {
+			s, isStr := value.(string)
+			valid = isStr && s != ""
+		}
+	}
+	if valid {
+		return nil
+	}
+	return rpcErr(rid, 4120, "invalid hosted room turn proof", nil)
+}
+
+// Machine readable storage error data whose code lets a client pick a doctor or retry action
 func storageErrorData(failure state.StorageFailure, raw any) map[string]any {
 	return map[string]any{"code": failure.Code, "cause": failure.Cause, "details": state.StorageFailureDetails(raw, 200)}
 }
@@ -424,7 +424,7 @@ func promptSubmit(ctx context.Context, rid any, params map[string]any) map[strin
 	if internalHostedSubmit {
 		errResp = hostedSubmitError(rid, session, hostedTask, hostedCallback, hostedImages)
 	} else {
-		errResp = legacyGroupFenceError(ctx, rid, session, params)
+		errResp = hostedGroupFenceError(ctx, rid, session, params)
 	}
 	if errResp != nil {
 		return errResp
@@ -451,10 +451,6 @@ func promptSubmit(ctx context.Context, rid any, params map[string]any) map[strin
 	}
 	if s, isStr := text.(string); hasTruncation && isStr {
 		text = tuigateway.ExpandSkillInvocationForReplay(ctx, s, strOr(session.Get("session_key")))
-	}
-	turnIsolation := sessionUsesComputeHost(ctx, session, nil)
-	if internalHostedSubmit && turnIsolation {
-		return rpcErr(rid, 4121, "hosted room turns do not support isolated compute workers yet", nil)
 	}
 	sessionResumeLock.Lock()
 	if refusal := reattachRefusal(rid, sid, session); refusal != nil {
@@ -503,36 +499,6 @@ func promptSubmit(ctx context.Context, rid any, params map[string]any) map[strin
 	errResp, survivorFields := lockInSubmitTurn(ctx, rid, sid, session, text, params, hasTruncation, requestedRebindIDs, hostedTask, displayKind)
 	if errResp != nil {
 		return errResp
-	}
-	if turnIsolation {
-		if turnAuthor != nil {
-			logger().Debug(fmt.Sprintf("isolated compute turns carry no author yet; the turn from %s runs unattributed", pyrepr.Str(turnAuthor["id"])))
-		}
-		if failure := catchPanic(func() {
-			db, release := sessionDB(ctx, session)
-			defer release()
-			if db != nil {
-				panicIf(reopenIfFinalized(ctx, db, strOr(session.Get("session_key"))))
-			}
-		}); failure != nil {
-			logger().Debug("finalized-session reopen before isolated dispatch failed for "+sid, "error", failure)
-		}
-		isolated := submitPromptToComputeHost(ctx, rid, sid, session, text, nil, nil, displayKind, displayMetadata)
-		if isolated["error"] == nil {
-			if result, isDict := isolated["result"].(map[string]any); isDict {
-				for key, value := range survivorFields {
-					result[key] = value
-				}
-			}
-			return isolated
-		}
-		message := "unknown error"
-		if detail, isDict := isolated["error"].(map[string]any); isDict {
-			if m, present := detail["message"]; present {
-				message = pyrepr.Str(m)
-			}
-		}
-		logger().Warn(fmt.Sprintf("compute-host dispatch failed for session %s; falling back inline: %s", sid, message))
 	}
 	if errResp := persistSessionRowForSubmit(ctx, rid, session, text, displayKind); errResp != nil {
 		return errResp

@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/agent"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tools"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
@@ -246,39 +245,6 @@ func init() {
 	}
 }
 
-// Forwards a mutating slash command to the compute host, returning status and text of its ack
-func computeHostSlash(ctx context.Context, sid string, session *tuigateway.Session, name, command string) (string, string) {
-	routeName := "slash." + name
-	isCompress := name == "compress"
-	timeout := 30.0
-	var onLateAck func(*pyjson.Object)
-	if isCompress {
-		timeout = computeHostCompressWaitSeconds(ctx, nil)
-		onLateAck = func(late *pyjson.Object) {
-			adoptLateComputeHostCompressAck(ctx, sid, session, objectMap(late), routeName)
-		}
-	}
-	ack, err := sendComputeHostControl(ctx, sid, routeName, command, nil, true, timeout, onLateAck)
-	if errors.Is(err, ErrHostReplyTimeout) {
-		if isCompress {
-			return "pending", "compression still running in the background; the transcript will refresh when it finishes"
-		}
-		return "failed", "compute-host " + routeName + " failed: timed out"
-	}
-	if err != nil {
-		return "failed", "compute-host " + routeName + " failed: " + err.Error()
-	}
-	frame := objectMap(ack)
-	if frame["type"] == "control.error" || frame["type"] == "error" {
-		if truthy(frame["message"]) {
-			return "rejected", strOr(frame["message"])
-		}
-		return "rejected", "compute-host " + routeName + " failed"
-	}
-	applyComputeHostMetadataMirror(ctx, session, frame)
-	return "ok", strOr(frame["output"])
-}
-
 // Applies the side effects a worker slash command must also have on the live agent, returning any warning
 func mirrorSlashSideEffects(ctx context.Context, sid string, session *tuigateway.Session, command string) string {
 	trimmed := pystr.Strip(strings.TrimLeft(command, "/"))
@@ -291,14 +257,8 @@ func mirrorSlashSideEffects(ctx context.Context, sid string, session *tuigateway
 	if name == "compact" {
 		name = "compress"
 	}
-	if mutatesWhileRunning[name] {
-		if sessionUsesComputeHost(ctx, session, nil) {
-			_, text := computeHostSlash(ctx, sid, session, name, command)
-			return text
-		}
-		if truthy(session.Get("running")) {
-			return busyMessage(name, truthy(session.Get("_manual_compress_active")))
-		}
+	if mutatesWhileRunning[name] && truthy(session.Get("running")) {
+		return busyMessage(name, truthy(session.Get("_manual_compress_active")))
 	}
 	mirror, ok := slashMirrors[name]
 	if !ok {

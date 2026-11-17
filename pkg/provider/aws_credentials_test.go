@@ -186,6 +186,6 @@ func TestBedrockCredentialProbeWalksChainOnce(t *testing.T) {
 	}
 	walks = nil
 	if hasAWSCredentials(false) || len(walks) != 1 || walks[0] {
-		t.Fatalf("desktop probe walks %v", walks)
+		t.Fatalf("no metadata probe walks %v", walks)
 	}
 }

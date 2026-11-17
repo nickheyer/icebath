@@ -55,16 +55,13 @@ func main() {
 	if len(argv) > 0 && argv[0] == "pm" {
 		exit(runCLI(argv))
 	}
-	if code, ok := runBuildHelperVerb(argv); ok {
-		exit(code)
-	}
 	ensureBinLaunchers()
 	loadDotenv()
 	forceIPv4 := applyEarlyConfig()
 	if serverProcess(argv) {
 		applyMallocArenaMax()
 	}
-	setupLogging(argv)
+	setupLogging()
 	if forceIPv4 {
 		home.ApplyIPv4Preference(true)
 	}
@@ -86,7 +83,7 @@ func run(argv []string) int {
 	if problem := checkRuntime(pm.InstallRoot()); problem != "" {
 		fmt.Fprintln(os.Stderr, "⚠ "+problem)
 	}
-	for _, fast := range []func([]string) (bool, int){tryTermuxFastTUILaunch, tryTermuxFastCLILaunch, tryFastServeLaunch, tryFastChatLaunch} {
+	for _, fast := range []func([]string) (bool, int){tryTermuxFastTUILaunch, tryTermuxFastCLILaunch, tryFastChatLaunch} {
 		if handled, code := fast(argv); handled {
 			return code
 		}

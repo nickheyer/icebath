@@ -539,7 +539,7 @@ func guestHandoffRecordStatus(env PoolEnv, anonToken string) (map[string]any, er
 	return guestHandoffPublicView(record), nil
 }
 
-// A status with its user copy lines added, as the desktop reads it
+// A status with its user copy lines added
 func guestHandoffWireStatus(status map[string]any) map[string]any {
 	out := cloneMap(status)
 	out["lines"] = guestHandoffResultLines(status)

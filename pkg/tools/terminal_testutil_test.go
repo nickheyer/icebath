@@ -168,9 +168,6 @@ func (f *fakeSpawner) AddPendingWatcher(w map[string]any) {
 	f.pending = append(f.pending, w)
 	f.mu.Unlock()
 }
-func (f *fakeSpawner) RequestCloseTerminal(*Env, string) *pyjson.Object {
-	return Dict("status", "requested")
-}
 
 // Hermes shaped minimal config dict for the local backend
 func localTestConfig(cwd string, overrides map[string]any) map[string]any {

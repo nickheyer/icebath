@@ -216,7 +216,7 @@ type BlueBubblesAdapter struct {
 	mu                sync.Mutex
 	client            *http.Client
 	followClient      *http.Client
-	runner            *gateway.WebAppRunner
+	runner            *gateway.HTTPAppRunner
 	privateAPIEnabled bool
 	helperConnected   bool
 	guidOrder         *list.List
@@ -518,7 +518,7 @@ func (a *BlueBubblesAdapter) Connect(ctx context.Context, isReconnect bool) (boo
 		a.closeClient()
 		return false, nil
 	}
-	app := gateway.NewWebApplication(webhookMaxBodyBytes)
+	app := gateway.NewHTTPApp(webhookMaxBodyBytes)
 	if err := app.AddGet("/health", func(context.Context, *gateway.WebRequest) (*gateway.WebResponse, error) {
 		return okResponse(), nil
 	}); err != nil {

@@ -158,10 +158,6 @@ var smsAdapterClass = &gateway.AdapterClass{Name: "SmsAdapter", Traits: smsAdapt
 func (smsPlatformPlugin) Register(ctx *plugins.Context) error {
 	extra := map[string]any{
 		"standalone_send":        &gateway.StandaloneSendPolicy{TextDirect: true},
-		"dashboard_description":  "Send and receive text messages via Twilio.",
-		"docs_url":               "https://www.twilio.com/console",
-		"dashboard_env_vars":     []string{"TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN"},
-		"dashboard_required_env": []string{"TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN"},
 		"scoped_check_fn":        checkSMSRequirements,
 		"is_connected":           gateway.EnvIsConnected("TWILIO_ACCOUNT_SID"),
 		"cron_deliver_env_var":   "SMS_HOME_CHANNEL",

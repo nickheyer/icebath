@@ -130,9 +130,6 @@ func startupTimeout() time.Duration { return envMillis("ICEBATH_TUI_STARTUP_TIME
 // Explicit gateway WebSocket the TUI attaches to instead of the local owner, empty when unset
 func attachURLEnv() string { return strings.TrimFunc(os.Getenv("ICEBATH_TUI_GATEWAY_URL"), isJSSpace) }
 
-// Sidecar socket every event frame is mirrored to, empty when unset
-func sidecarURLEnv() string { return strings.TrimFunc(os.Getenv("ICEBATH_TUI_SIDECAR_URL"), isJSSpace) }
-
 // Whether a bootstrap failure is the verdict of a helper that cannot load icebath, which no retry fixes
 func isTerminalBootstrapFailure(message string) bool {
 	return terminalBootstrapLine(message) != ""
@@ -155,7 +152,7 @@ func localBootstrap(ctx context.Context, start, recover bool) (localGrant, error
 	return GatewayBootstrap(ctx, start, recover)
 }
 
-// Socket on a gateway or sidecar URL with no frame size cap, as a browser WebSocket reads
+// Socket on a gateway URL with no frame size cap
 func dialGatewaySocket(ctx context.Context, target string, protocols []string) (gateway.GatewaySocket, error) {
 	return gateway.DialGatewaySocket(ctx, target, protocols, 0)
 }
@@ -211,7 +208,7 @@ type unsettledCreate struct {
 	requestID any
 }
 
-// Shared gateway client with bootstrap, attach, readiness, heartbeat, reconnect and sidecar mirror
+// Shared gateway client with bootstrap, attach, readiness, heartbeat and reconnect
 type gatewayClient struct {
 	bootstrap func(ctx context.Context, start, recover bool) (localGrant, error)
 	dial      func(ctx context.Context, target string, protocols []string) (gateway.GatewaySocket, error)
@@ -219,14 +216,11 @@ type gatewayClient struct {
 	env       func(string) string
 	timeout   time.Duration
 
-	mu         sync.Mutex
-	conn       *gatewayConn
-	sidecar    gateway.GatewaySocket
-	sidecarGen int
-	attachURL  string
-	sidecarURL string
-	logs       []string
-	pending    map[*pendingCall]struct{}
+	mu        sync.Mutex
+	conn      *gatewayConn
+	attachURL string
+	logs      []string
+	pending   map[*pendingCall]struct{}
 
 	sink           func(tea.Msg)
 	backlog        []tea.Msg
@@ -534,15 +528,6 @@ func (c *gatewayClient) clearReadyTimerLocked() {
 	}
 }
 
-func (c *gatewayClient) closeSidecarLocked() {
-	c.sidecarGen++
-	if c.sidecar != nil {
-		sock := c.sidecar
-		c.sidecar = nil
-		go sock.Close()
-	}
-}
-
 // Closes the current socket generation, its late close then logged as stale
 func (c *gatewayClient) closeGatewaySocketLocked() {
 	conn := c.conn
@@ -638,7 +623,6 @@ func (c *gatewayClient) startReadyTimerLocked(python, cwd string) {
 func (c *gatewayClient) handleTransportExitLocked(code int, reason string) {
 	c.clearReadyTimerLocked()
 	c.ready = false
-	c.closeSidecarLocked()
 	reasonText := reason
 	if reasonText == "" {
 		reasonText = "none"
@@ -654,53 +638,6 @@ func (c *gatewayClient) handleTransportExitLocked(code int, reason string) {
 		return
 	}
 	c.pendingExit = &code
-}
-
-// Opens the sidecar mirror socket when ICEBATH_TUI_SIDECAR_URL names one
-func (c *gatewayClient) connectSidecarMirrorLocked() {
-	c.closeSidecarLocked()
-	target := c.sidecarURL
-	if target == "" {
-		return
-	}
-	if !constructibleWSURL(target) {
-		c.pushLogLocked(fmt.Sprintf("[sidecar] failed to connect %s (constructor error)", redactURL(target)))
-		return
-	}
-	gen := c.sidecarGen
-	go func() {
-		sock, err := c.dial(context.Background(), target, nil)
-		c.mu.Lock()
-		defer c.mu.Unlock()
-		if err != nil {
-			c.pushLogLocked("[sidecar] mirror connection error")
-			return
-		}
-		if c.sidecarGen != gen {
-			go sock.Close()
-			return
-		}
-		c.sidecar = sock
-		go func() {
-			for {
-				if _, err := sock.Recv(); err != nil {
-					c.mu.Lock()
-					if c.sidecar == sock {
-						c.sidecar = nil
-					}
-					c.mu.Unlock()
-					return
-				}
-			}
-		}()
-	}()
-}
-
-// Sends one raw event frame to the sidecar when it is open
-func (c *gatewayClient) mirrorLocked(raw string) {
-	if sock := c.sidecar; sock != nil && sock.Open() {
-		_ = sock.Send(raw)
-	}
 }
 
 // Starts holding a session's canonical frames while its resume is in flight, nil off the canonical wire
@@ -795,7 +732,7 @@ func (c *gatewayClient) hydrateSharedPrompts(result map[string]any) {
 	})
 }
 
-// Publishes a client side event and mirrors it to the sidecar as an event frame
+// Publishes a client side event as an event frame
 func (c *gatewayClient) publishLocalEvent(ev gatewayEventMsg) {
 	c.locked(func() { c.publishLocalEventLocked(ev) })
 }
@@ -804,9 +741,6 @@ func (c *gatewayClient) publishLocalEventLocked(ev gatewayEventMsg) {
 	params := map[string]any{"type": ev.Type, "payload": ev.Payload}
 	if ev.SessionID != "" {
 		params["session_id"] = ev.SessionID
-	}
-	if raw, err := json.Marshal(map[string]any{"jsonrpc": "2.0", "method": "event", "params": params}); err == nil {
-		c.mirrorLocked(string(raw))
 	}
 	ev.Params = params
 	c.publishLocked(ev)
@@ -921,12 +855,11 @@ func (c *gatewayClient) startAttachedGatewayLocked(target string, protocols []st
 			}
 			link := gateway.NewGatewayClient(sock)
 			link.SetFrameHooks(gateway.FrameHooks{
-				Inbound:   func(raw string, frame *pyjson.Object) { c.inbound(conn, raw, frame) },
+				Inbound:   func(_ string, frame *pyjson.Object) { c.inbound(conn, frame) },
 				Malformed: func(raw string) { c.malformed(conn, raw) },
 			})
 			conn.sock, conn.link, conn.open = sock, link.Start(), true
 			go c.pump(conn)
-			c.connectSidecarMirrorLocked()
 			if c.isCanonical {
 				c.describeThenReadyLocked(conn, map[string]any{})
 			}
@@ -944,8 +877,8 @@ func (c *gatewayClient) transportErrorLocked(conn *gatewayConn) {
 	c.publishLocked(gatewayEventMsg{Type: "gateway.stderr", Payload: map[string]any{"line": line}})
 }
 
-// Liveness, heartbeat acknowledgement and sidecar mirror of every frame the current socket reads
-func (c *gatewayClient) inbound(conn *gatewayConn, raw string, frame *pyjson.Object) {
+// Liveness and heartbeat acknowledgement of every frame the current socket reads
+func (c *gatewayClient) inbound(conn *gatewayConn, frame *pyjson.Object) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.conn != conn {
@@ -956,9 +889,6 @@ func (c *gatewayClient) inbound(conn *gatewayConn, raw string, frame *pyjson.Obj
 		if i := slices.Index(c.pings, id); i >= 0 {
 			c.pings = slices.Delete(c.pings, i, i+1)
 		}
-	}
-	if method, _ := frame.Vals["method"].(string); method == "event" {
-		c.mirrorLocked(raw)
 	}
 }
 
@@ -1145,10 +1075,8 @@ func (c *gatewayClient) startLocked() {
 	}
 	c.clearReconnectLocked()
 	c.attachURL = attachURLEnv()
-	c.sidecarURL = sidecarURLEnv()
 	c.resetStartupStateLocked()
 	c.closeGatewaySocketLocked()
-	c.closeSidecarLocked()
 	if c.attachURL != "" {
 		c.isCanonical = false
 		c.contract = nil
@@ -1474,7 +1402,6 @@ func (c *gatewayClient) kill(reason string) {
 		c.stopHeartbeatLocked()
 		c.lifecycleLocked(fmt.Sprintf("[lifecycle] GatewayClient.kill reason=%s (detach only)", reason))
 		c.closeGatewaySocketLocked()
-		c.closeSidecarLocked()
 		c.clearReadyTimerLocked()
 		c.detachLocked(errors.New(tr("libText.gateway.closed")))
 	})

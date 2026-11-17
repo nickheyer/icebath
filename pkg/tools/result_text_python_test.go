@@ -36,7 +36,6 @@ func TestToolResultTextMatchesJSONDumpsOfHermes(t *testing.T) {
 		{"extract_results_indent", jsonIndent(Dict("results", trimResults(pages))), "{\n  \"results\": [\n    {\n      \"url\": \"u\",\n      \"title\": \"t\",\n      \"content\": \"c \u00e9\",\n      \"error\": null\n    },\n    {\n      \"url\": \"v\",\n      \"title\": \"\",\n      \"content\": \"\",\n      \"error\": \"e\",\n      \"blocked_by_policy\": {\n        \"host\": \"h\",\n        \"rule\": \"r\",\n        \"source\": \"s\"\n      }\n    }\n  ]\n}"},
 		{"vision_duplicate_ascii", nativeTurnDuplicate(turnEnv, "https://x.test/a.png", nil), "{\"success\": true, \"already_in_context\": true, \"message\": \"This image is already attached natively to the current user message \\u2014 you can see it now. Answer with your built-in vision; pass a `region` to zoom into part of it.\"}"},
 		{"multi_select", JSON([]string{"a", "\u00e9"}), "[\"a\", \"\u00e9\"]"},
-		{"close_terminal_unavailable", JSON((&ProcessRegistry{}).RequestCloseTerminal(nil, "p1")), "{\"status\": \"error\", \"error\": \"close_terminal is only available in the icebath desktop app.\"}"},
 	}
 	for _, c := range cases {
 		if c.got != c.want {

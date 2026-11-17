@@ -497,54 +497,6 @@ func notificationPollerScopedLoop(ctx context.Context, stop *pythread.Event, sid
 	handle(ready, &deferred)
 }
 
-// Process output and tab close sinks plus the desktop tool emitter, wired once per process
-var desktopSinks struct {
-	mu    sync.Mutex
-	wired bool
-}
-
-// Live session id whose key owns a background process, empty when none
-func processOwnerSID(s *tools.ProcessSession) string {
-	if s == nil || s.SessionKey == "" {
-		return ""
-	}
-	sessionsLock.Lock()
-	defer sessionsLock.Unlock()
-	for _, live := range tuigateway.LiveSessions() {
-		if strOr(live.Session.Get("session_key")) == s.SessionKey {
-			return live.SID
-		}
-	}
-	return ""
-}
-
-// Wires process registry and desktop tool sinks to renderer events once
-func wireDesktopSinks(ctx context.Context) {
-	registry := tools.DefaultProcessRegistry()
-	if registry.OnOutput == nil {
-		registry.OnOutput = func(s *tools.ProcessSession, chunk string) {
-			tuigateway.Emit(ctx, "agent.terminal.output", processOwnerSID(s), map[string]any{"process_id": s.ID, "chunk": chunk})
-		}
-	}
-	if registry.OnClose == nil {
-		registry.OnClose = func(s *tools.ProcessSession, pid string) error {
-			tuigateway.Emit(ctx, "terminal.close", processOwnerSID(s), map[string]any{"process_id": pid})
-			return nil
-		}
-	}
-	desktopSinks.mu.Lock()
-	defer desktopSinks.mu.Unlock()
-	if !desktopSinks.wired {
-		suppress(func() {
-			tools.SetDesktopEmitter(func(_ *tools.Env, sid, event string, payload map[string]any) error {
-				tuigateway.Emit(ctx, event, sid, payload)
-				return nil
-			})
-			desktopSinks.wired = true
-		})
-	}
-}
-
 // Every poller started in this process with its stop, pruned of finished ones on each spawn
 var notificationPollers struct {
 	mu      sync.Mutex
@@ -559,7 +511,6 @@ type notificationPoller struct {
 
 // Starts the background notification poller of a session and returns its stop event
 func startNotificationPoller(ctx context.Context, sid string, session *tuigateway.Session) *pythread.Event {
-	wireDesktopSinks(ctx)
 	stop := &pythread.Event{}
 	done := make(chan struct{})
 	notificationPollers.mu.Lock()

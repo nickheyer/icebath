@@ -426,7 +426,7 @@ func cmdSnapshot(ctx context.Context, rid any, params map[string]any, session *t
 		"which hands the profile off the gateway for the restore.")
 }
 
-// Compresses the live session, relayed to the compute host when it owns the session
+// Compresses the live session
 func cmdCompress(ctx context.Context, rid any, params map[string]any, session *tuigateway.Session, name, arg string) map[string]any {
 	if session == nil {
 		return rpcErr(rid, 4001, "no active session to compress", nil)
@@ -435,22 +435,6 @@ func cmdCompress(ctx context.Context, rid any, params map[string]any, session *t
 		return busy
 	}
 	sid := strOr(params["session_id"])
-	if sessionUsesComputeHost(ctx, session, nil) {
-		command := "/" + name
-		if arg != "" {
-			command += " " + arg
-		}
-		status, text := computeHostSlash(ctx, sid, session, "compress", command)
-		switch status {
-		case "failed":
-			return rpcErr(rid, 5019, text, nil)
-		case "rejected":
-			return rpcErr(rid, 4009, text, nil)
-		case "pending":
-			return ok(rid, map[string]any{"type": "exec", "status": "pending", "output": text})
-		}
-		return execOut(rid, text)
-	}
 	a := sessionAgent(session)
 	var output string
 	var err error
@@ -514,14 +498,13 @@ func cmdMemory(ctx context.Context, rid any, params map[string]any, session *tui
 	return runPendingReview(ctx, rid, "memory", arg, session, memoryReviewUsage)
 }
 
+// Skills subcommands the session server runs, the write approval review verbs
+var skillsReviewSubcommands = []string{"pending", "approve", "reject", "diff", "approval"}
+
 // Skill write approval review subcommands, every hub subcommand falling through to the refusal
 func cmdSkills(ctx context.Context, rid any, params map[string]any, session *tuigateway.Session, name, arg string) map[string]any {
 	sub := pystr.SplitWhitespace(arg, -1)
-	var allowed []string
-	if c, found := ResolveCommand("skills"); found {
-		allowed = c.DesktopSubcommands
-	}
-	if len(sub) == 0 || !slices.Contains(allowed, pystr.Lower(sub[0])) {
+	if len(sub) == 0 || !slices.Contains(skillsReviewSubcommands, pystr.Lower(sub[0])) {
 		return nil
 	}
 	env := tools.ToolEnvFrom(ctx)

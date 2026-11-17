@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/provider/anonportaltest"
-	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 const anonWelcome = "https://welcome-api.nousresearch.com/v1"
@@ -225,7 +224,6 @@ func TestAnonPortalTestEnvLiteralsMatchProvider(t *testing.T) {
 		t.Fatalf("constants drifted %q %q %q", anonportaltest.AnonSecretEnv, anonportaltest.PreviewFullConnectorsEnv, anonportaltest.Welcome)
 	}
 	resetAnonPortalSeams(t)
-	t.Setenv(anonportaltest.DesktopEnv, "1")
 	portal := anonportaltest.Install(t)
 	env := modelsPoolEnv(context.Background())
 	if got := nousPortalEnvOverride(env); got != portal.URL {
@@ -236,9 +234,6 @@ func TestAnonPortalTestEnvLiteralsMatchProvider(t *testing.T) {
 	}
 	if got := env.Store.Home(); got != portal.Home {
 		t.Fatalf("store home %q want %q", got, portal.Home)
-	}
-	if tools.IsDesktopOwnedBackend(nil) {
-		t.Fatal("desktop marker survived Install")
 	}
 	state, err := EnsurePortalIdentity(env, PortalIdentityOptions{Explicit: true})
 	if err != nil || state == nil || portal.Creates() != 1 {
@@ -256,18 +251,23 @@ func TestAnonPortalTestEnvLiteralsMatchProvider(t *testing.T) {
 	}
 }
 
-// The env as work for the local Desktop app
-func anonDesktopEnv(env PoolEnv) PoolEnv {
-	env.Ctx = tools.WithServingLocalDesktop(env.ctx(), true)
-	return env
-}
-
-// A guest stamped with the welcome trial claim, minted through the fake portal on the desktop backend
+// A guest minted through the fake portal and stamped with the welcome trial claim in the profile store
 func anonClaimedTrial(t *testing.T, env PoolEnv) map[string]any {
 	t.Helper()
-	state, err := EnsurePortalIdentity(anonDesktopEnv(env), PortalIdentityOptions{Explicit: true, WelcomeClaim: true})
+	state, err := EnsurePortalIdentity(env, PortalIdentityOptions{Explicit: true})
 	if err != nil || state == nil {
-		t.Fatalf("claim: %v %v", state, err)
+		t.Fatalf("mint: %v %v", state, err)
+	}
+	state[WelcomeClaimFlag] = true
+	data, err := env.Store.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := env.Store.StoreProviderState(data, "nous", state, false); err != nil {
+		t.Fatal(err)
+	}
+	if err := env.Store.Save(data); err != nil {
+		t.Fatal(err)
 	}
 	return state
 }

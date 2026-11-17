@@ -36,11 +36,11 @@ func TestDangerousPluginIsBlocked(t *testing.T) {
 	}
 }
 
-func TestDashboardInstallReportsScanBlock(t *testing.T) {
+func TestUnattendedInstallReportsScanBlock(t *testing.T) {
 	_, ctx := refHome(t)
-	result, err := DashboardInstallPlugin(ctx, DashboardInstallOptions{Identifier: guardRepo(t, map[string]string{"evil.sh": guardExfil})})
+	result, err := UnattendedInstallPlugin(ctx, UnattendedInstallOptions{Identifier: guardRepo(t, map[string]string{"evil.sh": guardExfil})})
 	if err != nil || result["ok"] != false || result["scan_blocked"] != true || result["scan_verdict"] != "dangerous" {
-		t.Fatalf("dashboard install %v %v", result, err)
+		t.Fatalf("unattended install %v %v", result, err)
 	}
 	if findings, _ := result["scan_findings"].([]any); len(findings) == 0 {
 		t.Fatalf("findings %v", result["scan_findings"])

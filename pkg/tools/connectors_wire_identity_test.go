@@ -191,7 +191,7 @@ func TestWireA200WhoseBodyFailedIsAWarningWithTheRequestID(t *testing.T) {
 	legacyExecuteOrigins.Lock()
 	legacyExecuteOrigins.set["https://gw.test"] = true
 	legacyExecuteOrigins.Unlock()
-	rows, err := client.Execute(context.Background(), []PlannedCall{plan}, "", "")
+	rows, err := client.Execute(context.Background(), []PlannedCall{plan})
 	legacyExecuteOrigins.Lock()
 	delete(legacyExecuteOrigins.set, "https://gw.test")
 	legacyExecuteOrigins.Unlock()
@@ -203,7 +203,7 @@ func TestWireA200WhoseBodyFailedIsAWarningWithTheRequestID(t *testing.T) {
 	if !errors.As(err, &gerr) || gerr.RequestID != "junk-id" || gerr.Code != "INVALID_RESPONSE" {
 		t.Fatalf("schemas error %#v", err)
 	}
-	if _, err := client.Execute(context.Background(), []PlannedCall{plan}, "", ""); !errors.As(err, &gerr) {
+	if _, err := client.Execute(context.Background(), []PlannedCall{plan}); !errors.As(err, &gerr) {
 		t.Fatalf("execute error %#v", err)
 	}
 	want := []string{"WARN connector connectors.execute 200 CONNECTION_REQUIRED request_id=exec-id dispatch=call-3",

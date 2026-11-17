@@ -79,9 +79,6 @@ func (signalPlatformPlugin) Register(ctx *plugins.Context) error {
 	extra := map[string]any{
 		"target_ref_syntax_fn":   parseSendTarget,
 		"standalone_send":        &gateway.StandaloneSendPolicy{Label: "Signal", Media: true, EmptyListBetweenChunks: true, TextDirect: true},
-		"dashboard_description":  "Connect through a signal-cli REST bridge.",
-		"docs_url":               "https://github.com/bbernhard/signal-cli-rest-api",
-		"dashboard_env_vars":     []string{"SIGNAL_HTTP_URL", "SIGNAL_ACCOUNT", "SIGNAL_ALLOWED_USERS"},
 		"scoped_validate_config": validateConfig,
 		"is_connected":           isConnected,
 		"config_connected_fn":    gateway.ConfigConnectedExtra("http_url"),

@@ -110,15 +110,6 @@ var DiagnosticsShareNousResult = pydantic.NewModel("DiagnosticsShareNousResult",
 
 var _ = Method("diagnostics.share_nous", DiagnosticsShareNousParams, DiagnosticsShareNousResult, "Upload a force-redacted debug bundle to Nous-internal diagnostics storage.")
 
-var FreeTierChallengePayload = pydantic.NewModel("FreeTierChallengePayload", OpenConfig,
-	pydantic.Req("type", pydantic.Literal("browser")),
-	pydantic.Req("url", pydantic.Str),
-	pydantic.Req("required", pydantic.Bool),
-	pydantic.Req("expires_in", pydantic.Int),
-	pydantic.Req("message", pydantic.Str),
-	pydantic.Def("attempt", pydantic.Int, 0),
-).Described("``hermes_cli/anon_challenge.py::BrowserChallenge.as_payload``: the ``free_tier.challenge``\nevent, and ``free_tier.status``'s ``challenge`` field for a client that connected after it.")
-
 var FreeTierStatusResult = pydantic.NewModel("FreeTierStatusResult", ClosedConfig,
 	pydantic.Req("has_guest", pydantic.Bool),
 	pydantic.Req("enabled", pydantic.Bool),
@@ -130,35 +121,11 @@ var FreeTierStatusResult = pydantic.NewModel("FreeTierStatusResult", ClosedConfi
 	pydantic.Def("error_code", pydantic.Nullable(pydantic.Str), nil),
 	pydantic.Def("retryable", pydantic.Nullable(pydantic.Bool), nil),
 	pydantic.Def("retry_after", pydantic.Nullable(pydantic.Int), nil),
-	pydantic.Def("challenge", pydantic.Nullable(FreeTierChallengePayload), nil),
 	pydantic.Def("nudge_due_in", pydantic.Nullable(pydantic.Int), nil),
 	pydantic.Def("connector_nudge_due_in", pydantic.Nullable(pydantic.Int), nil),
 ).Described("``available`` = an identity exists AND the tier is on; whether inference runs on it is\n``setup.runtime_check.free_tier_route``'s question.")
 
 var _ = Method("free_tier.status", ProfileParams, FreeTierStatusResult, "Pure read of the focused profile's free-tier identity state (no network, no side effects).")
-
-var FreeTierChallengeResultParams = pydantic.Extend(ProfileParams, "FreeTierChallengeResultParams", ParamsConfig,
-	pydantic.Req("url", pydantic.Str),
-	pydantic.Def("attempt", pydantic.Int, 0),
-	pydantic.Req("outcome", pydantic.Literal("done", "failed", "closed", "timeout", "refused", "error", "unsupported")),
-)
-
-var FreeTierChallengeResult = pydantic.NewModel("FreeTierChallengeResult", ClosedConfig,
-	pydantic.Req("accepted", pydantic.Bool),
-)
-
-var _ = Method("free_tier.challenge_result", FreeTierChallengeResultParams, FreeTierChallengeResult, "Report a browser window outcome for the matching pending attempt; mint remains authoritative.")
-
-var FreeTierProvisionResult = pydantic.NewModel("FreeTierProvisionResult", ClosedConfig,
-	pydantic.Req("has_guest", pydantic.Bool),
-	pydantic.Req("enabled", pydantic.Bool),
-	pydantic.Def("error", pydantic.Nullable(pydantic.Str), nil),
-	pydantic.Def("error_code", pydantic.Nullable(pydantic.Str), nil),
-	pydantic.Def("retryable", pydantic.Nullable(pydantic.Bool), nil),
-	pydantic.Def("retry_after", pydantic.Nullable(pydantic.Int), nil),
-)
-
-var _ = Method("free_tier.provision", ProfileParams, FreeTierProvisionResult, "Explicit retry of the free-tier identity mint when the boot bootstrap could not create it.")
 
 var FreeTierAckNoticeResult = pydantic.NewModel("FreeTierAckNoticeResult", ClosedConfig,
 	pydantic.Req("acked", pydantic.Bool),
@@ -188,8 +155,7 @@ var _ = Method("shared_metrics.status", ProfileParams, SharedMetricsConsentResul
 var SharedMetricsSetParams = pydantic.Extend(ProfileParams, "SharedMetricsSetParams", ParamsConfig,
 	pydantic.Req("enabled", pydantic.Bool),
 	pydantic.Def("send", pydantic.Bool, false),
-	pydantic.Def("first_run", pydantic.Bool, false),
-).Described("``send`` is ignored unless ``enabled``; ``first_run`` marks the Desktop first-run answer.")
+).Described("``send`` is ignored unless ``enabled``.")
 
 var _ = Method("shared_metrics.set", SharedMetricsSetParams, SharedMetricsConsentResult, "Write both shared-metrics opt-ins at once (send requires collection) and reconcile consent windows.")
 
@@ -206,82 +172,15 @@ var _ = Method("shared_metrics.slash_command", SharedMetricsSlashCommandParams, 
 
 var SharedMetricsStartupLatencyParams = pydantic.Extend(ProfileParams, "SharedMetricsStartupLatencyParams", ParamsConfig,
 	pydantic.Req("elapsed_ms", pydantic.Float),
-	pydantic.Def("surface", pydantic.Nullable(pydantic.Literal("desktop_attach", "tui")), nil),
+	pydantic.Def("surface", pydantic.Nullable(pydantic.Literal("tui")), nil),
 	pydantic.Def("launch_id", pydantic.Nullable(pydantic.Str), nil),
-).Described("``elapsed_ms`` = the client's own launch (TUI process start / Desktop app start) to ready\n(TUI gateway ready / Desktop backend attached), measured once per launch by the client. The\nclient names its surface because a Desktop may attach to a URL/cloud backend where\n``ICEBATH_DESKTOP`` is unset; without it the backend falls back to its own client detection.\n``launch_id`` is an opaque per-launch token the backend latches on (never recorded), so a\nreconnect re-sending the same launch counts once while a new launch counts again.")
+).Described("``elapsed_ms`` = the TUI process start to its gateway ready, measured once per launch by the\nclient. Without ``surface`` the backend falls back to its own client detection.\n``launch_id`` is an opaque per-launch token the backend latches on (never recorded), so a\nreconnect re-sending the same launch counts once while a new launch counts again.")
 
 var SharedMetricsStartupLatencyResult = pydantic.NewModel("SharedMetricsStartupLatencyResult", ClosedConfig,
 	pydantic.Req("ok", pydantic.Bool),
 )
 
 var _ = Method("shared_metrics.startup_latency", SharedMetricsStartupLatencyParams, SharedMetricsStartupLatencyResult, "Record one client launch-to-ready latency (fire-and-forget; a no-op unless shared metrics are on).")
-
-var SharedMetricsUpdateRunParams = pydantic.Extend(ProfileParams, "SharedMetricsUpdateRunParams", ParamsConfig,
-	pydantic.Req("outcome", pydantic.Str),
-	pydantic.Def("failed_stage", pydantic.Nullable(pydantic.Str), nil),
-	pydantic.Def("mechanism", pydantic.Nullable(pydantic.Str), nil),
-	pydantic.Def("duration_ms", pydantic.Nullable(pydantic.Float), nil),
-	pydantic.Def("from_commit_date", pydantic.Nullable(pydantic.Float), nil),
-).Described("One Desktop PACKAGED self-update (electron-updater / App Installer / Store). Source-checkout\nhand-offs run ``icebath update`` and are counted from its receipt, never here. Raw words; the\nbackend buckets them: ``outcome`` success|failed|noop|refused, ``failed_stage``\ndownload|verify|apply|restart, ``mechanism`` the updater strategy kind, ``duration_ms`` wall\ntime, ``from_commit_date`` the updated-from build's commit time (epoch seconds) when known.")
-
-var SharedMetricsUpdateRunResult = pydantic.NewModel("SharedMetricsUpdateRunResult", ClosedConfig,
-	pydantic.Req("ok", pydantic.Bool),
-)
-
-var _ = Method("shared_metrics.update_run", SharedMetricsUpdateRunParams, SharedMetricsUpdateRunResult, "Count one Desktop packaged self-update outcome (fire-and-forget; a no-op unless shared metrics are on).")
-
-var SharedMetricsDesktopFeatureUseParams = pydantic.Extend(ProfileParams, "SharedMetricsDesktopFeatureUseParams", ParamsConfig,
-	pydantic.Req("area", pydantic.Str),
-).Described("``area`` is a Desktop surface id (``command_palette``, ``terminal_pane``, ``settings_<view>`` …);\nthe backend collapses anything outside its closed set to ``other``.")
-
-var _ = Method("shared_metrics.desktop_feature_use", SharedMetricsDesktopFeatureUseParams, OkResult, "Count one Desktop area used today (fire-and-forget; once per area per UTC day; a no-op unless on).")
-
-var SharedMetricsDesktopFrictionParams = pydantic.Extend(ProfileParams, "SharedMetricsDesktopFrictionParams", ParamsConfig,
-	pydantic.Req("kind", pydantic.Str),
-	pydantic.Req("detail", pydantic.Str),
-).Described("``kind`` notice_dismissed|error_toast|renderer_crash|backend_disconnect|slow_frame; ``detail`` a\nclosed code-defined word for that kind (notice id, error category, crash reason, drop reason, frame\nduration bucket), never message text.")
-
-var _ = Method("shared_metrics.desktop_friction", SharedMetricsDesktopFrictionParams, OkResult, "Count one Desktop friction event (fire-and-forget; capped per day; a no-op unless on).")
-
-var SharedMetricsDesktopOnboardingParams = pydantic.Extend(ProfileParams, "SharedMetricsDesktopOnboardingParams", ParamsConfig,
-	pydantic.Req("step", pydantic.Str),
-	pydantic.Req("event", pydantic.Str),
-).Described("``step`` a Desktop first-run step id; ``event`` reached|completed|abandoned.")
-
-var _ = Method("shared_metrics.desktop_onboarding", SharedMetricsDesktopOnboardingParams, OkResult, "Count one Desktop first-run step transition (fire-and-forget; once per step+event; a no-op unless on).")
-
-var SharedMetricsDesktopDislikeParams = pydantic.Extend(ProfileParams, "SharedMetricsDesktopDislikeParams", ParamsConfig,
-	pydantic.Req("signal", pydantic.Str),
-	pydantic.Def("target", pydantic.Str, ""),
-	pydantic.Def("setting", pydantic.Nullable(pydantic.Str), nil),
-).Described("``signal`` quick_close|cancelled|setting_off_default|rage_click|undo|feature_disabled; ``target`` a\nclosed code-defined id for that signal (area, flow, action, undo path, feature toggle); ``setting`` a\nconfig key for setting_off_default only (the value is never sent — the backend compares it to the\ndefault).")
-
-var _ = Method("shared_metrics.desktop_dislike", SharedMetricsDesktopDislikeParams, OkResult, "Count one Desktop dislike signal (fire-and-forget; capped per signal per day; a no-op unless on).")
-
-var SharedMetricsDesktopModeDay = pydantic.NewModel("SharedMetricsDesktopModeDay", ParamsConfig,
-	pydantic.Req("mode", pydantic.Literal("bots", "sessions")),
-	pydantic.Def("active_ms", pydantic.Float, 0),
-	pydantic.Def("messages_sent", pydantic.Int, 0),
-)
-
-var SharedMetricsDesktopActionDay = pydantic.NewModel("SharedMetricsDesktopActionDay", ParamsConfig,
-	pydantic.Req("action", pydantic.Str),
-	pydantic.Req("via", pydantic.Literal("click", "menu", "palette", "shortcut")),
-	pydantic.Req("count", pydantic.Int),
-)
-
-var SharedMetricsDesktopDailyParams = pydantic.Extend(ProfileParams, "SharedMetricsDesktopDailyParams", ParamsConfig,
-	pydantic.Req("day", pydantic.Str),
-	pydantic.Def("bot_count", pydantic.Int, 0),
-	pydantic.Fac("modes", pydantic.List(SharedMetricsDesktopModeDay), pydantic.NewList),
-	pydantic.Fac("actions", pydantic.List(SharedMetricsDesktopActionDay), pydantic.NewList),
-).Described("One finished UTC day of Desktop use, aggregated on the client. ``day`` (YYYY-MM-DD) only latches\na resend and is never recorded; the raw counts are bucketed by the backend.")
-
-var SharedMetricsDesktopDailyResult = pydantic.NewModel("SharedMetricsDesktopDailyResult", ClosedConfig,
-	pydantic.Req("recorded", pydantic.Bool),
-)
-
-var _ = Method("shared_metrics.desktop_daily", SharedMetricsDesktopDailyParams, SharedMetricsDesktopDailyResult, "Record one finished Desktop day (mode use + button presses); recorded=false keeps it for a retry.")
 
 var ModelOptionsParams = pydantic.Extend(ProfileParams, "ModelOptionsParams", ParamsConfig,
 	pydantic.Def("session_id", pydantic.Nullable(pydantic.Str), nil),

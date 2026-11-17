@@ -15,6 +15,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/state"
 )
 
 const (
@@ -31,7 +32,7 @@ var highConcurrencyWarned, legacyMaxAsyncWarned atomic.Bool
 
 // Surfaces with no human chat thread, matching gateway session_context NON_MESSAGING_SESSION_SURFACES
 var NonMessagingSessionSurfaces = map[string]bool{
-	"": true, "api_server": true, "cli": true, "codex": true, "desktop": true, "gateway": true, "kanban": true,
+	"": true, "api_server": true, "cli": true, "codex": true, state.ClientHistorySource: true, "gateway": true, "kanban": true,
 	"local": true, "msgraph_webhook": true, "tool": true, "tui": true, "webhook": true,
 }
 

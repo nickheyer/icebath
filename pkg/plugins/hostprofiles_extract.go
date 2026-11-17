@@ -67,9 +67,6 @@ func (m *Manager) hostForDir(dir string) (*PluginHost, error) {
 	return m.pluginHost()
 }
 
-// Exports hostForDir for the dashboard plugin api routes
-func (m *Manager) HostForPluginDir(dir string) (*PluginHost, error) { return m.hostForDir(dir) }
-
 // Digest of the cache version, this executable, the product version and every plugin file size and mtime
 func profileFingerprint(pluginDir string) (string, error) {
 	exe, err := os.Executable()

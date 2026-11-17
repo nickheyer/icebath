@@ -238,45 +238,18 @@ func TestSourceCheckExplicitAndCurrentBranchHealOnlyAfterConfirmedAbsence(t *tes
 
 func TestSourceCheckMainFollowsTheBranchWithoutReadingAChannelRecord(t *testing.T) {
 	f := scFixture(t)
-	branchPath := "/repos/fixture/fork/commits/desktop-choice"
+	branchPath := "/repos/fixture/fork/commits/chosen"
 	f.respond(branchPath, 200, f.head)
-	branchFile := filepath.Join(f.home, "desktop-update.json")
-	os.WriteFile(branchFile, []byte(`{"branch": "desktop-choice"}`), 0o644)
-	channel := "main"
-	status, err := CheckForUpdates(context.Background(), SourceCheckOptions{InstallRoot: f.linked, Home: f.home, Channel: &channel, BranchConfigPath: branchFile})
+	channel, branch := "main", "chosen"
+	status, err := CheckForUpdates(context.Background(), SourceCheckOptions{InstallRoot: f.linked, Home: f.home, Channel: &channel, Branch: &branch})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, failed := status.Get("error"); failed || scGet(t, status, "branch") != "desktop-choice" || scGet(t, status, "targetSha") != f.head {
+	if _, failed := status.Get("error"); failed || scGet(t, status, "branch") != "chosen" || scGet(t, status, "targetSha") != f.head {
 		t.Fatalf("status %v", status)
 	}
 	if asked := f.asked(); len(asked) != 1 || asked[0] != branchPath {
 		t.Fatalf("requests %v", asked)
-	}
-	data, _ := os.ReadFile(branchFile)
-	if !strings.Contains(string(data), `"desktop-choice"`) {
-		t.Fatalf("the Desktop branch setting changed %s", data)
-	}
-}
-
-func TestSourceCheckMainPrintsOneSelectableStatusLine(t *testing.T) {
-	f := scFixture(t)
-	f.respond("/repos/fixture/fork/commits/main", 200, f.head)
-	var stdout, stderr bytes.Buffer
-	code := SourceCheckMain(context.Background(), []string{"--install-root", f.root, "--home", f.home}, &stdout, &stderr)
-	var status map[string]any
-	if code != 0 || json.Unmarshal(stdout.Bytes(), &status) != nil || status["channelSelectable"] != true || status["behind"] != 0.0 {
-		t.Fatalf("exit %d stdout %s stderr %s", code, stdout.String(), stderr.String())
-	}
-	stdout.Reset()
-	stderr.Reset()
-	if code := SourceCheckMain(context.Background(), []string{"--home", f.home}, &stdout, &stderr); code != 2 ||
-		!strings.Contains(stderr.String(), "the following arguments are required: --install-root") {
-		t.Fatalf("missing root exit %d %s", code, stderr.String())
-	}
-	if code := SourceCheckMain(context.Background(), []string{"--install-root", f.root, "--home", f.home, "--channel", "Bad Name"}, &stdout, &stderr); code != 2 ||
-		!strings.Contains(stderr.String(), "argument --channel: invalid validate_name value: 'Bad Name'") {
-		t.Fatalf("invalid channel exit %d %s", code, stderr.String())
 	}
 }
 
@@ -409,7 +382,7 @@ func TestSourceCheckUnknownRuntimeVerdictExpiresButDefiniteVerdictDoesNot(t *tes
 	}
 }
 
-func TestSourceCheckInvalidConfigRefusesTheDesktopChannelProbe(t *testing.T) {
+func TestSourceCheckInvalidConfigRefusesTheChannelProbe(t *testing.T) {
 	root := newChSource(t).root
 	for _, content := range [][]byte{[]byte("update: ["), []byte("- not-a-mapping"), {0xff}} {
 		h := filepath.Join(t.TempDir(), "home")
@@ -418,10 +391,9 @@ func TestSourceCheckInvalidConfigRefusesTheDesktopChannelProbe(t *testing.T) {
 		os.WriteFile(config, content, 0o644)
 		t.Setenv("ICEBATH_HOME", h)
 		t.Setenv("ICEBATH_IGNORE_USER_CONFIG", "0")
-		var stdout, stderr strings.Builder
-		code := SourceCheckMain(context.Background(), []string{"--install-root", root, "--home", h}, &stdout, &stderr)
-		if code == 0 || strings.Contains(stdout.String(), `"channel": "main"`) || !strings.Contains(stderr.String(), "config") {
-			t.Fatalf("%q exited %d with %q %q", content, code, stdout.String(), stderr.String())
+		status, err := CheckForUpdates(context.Background(), SourceCheckOptions{InstallRoot: root, Home: h})
+		if err == nil || status != nil || !strings.Contains(err.Error(), "config") {
+			t.Fatalf("%q answered %v %v", content, status, err)
 		}
 		if after, _ := os.ReadFile(config); string(after) != string(content) {
 			t.Fatalf("config rewritten to %q", after)
@@ -598,22 +570,18 @@ func TestSourceCheckBareGitOffPathReadsThroughTheUpdatersGit(t *testing.T) {
 }
 
 func TestSourceCheckDynamicSourceChannelPreservesBranchPrecedence(t *testing.T) {
-	for _, selection := range []string{"explicit", "configured", "current", "detached"} {
+	for _, selection := range []string{"explicit", "current", "detached"} {
 		f := scFixture(t)
 		name := scUnique("branch-")
 		channelPath := "/releases/channels/" + name + ".json"
 		f.respond(channelPath, 200, scSourceChannel(name, "fixture/fork", "channel-default"))
-		branchFile := filepath.Join(f.home, "desktop-update.json")
-		if selection == "explicit" || selection == "configured" {
-			scWrite(t, branchFile, `{"branch": "desktop-choice"}`)
-		}
 		if selection == "detached" {
 			f.git(t, f.linked, "checkout", "--detach")
 		}
-		expected := map[string]string{"explicit": "explicit-choice", "configured": "desktop-choice", "current": "feature/gui", "detached": "channel-default"}[selection]
+		expected := map[string]string{"explicit": "explicit-choice", "current": "feature/gui", "detached": "channel-default"}[selection]
 		branchPath := "/repos/fixture/fork/commits/" + strings.ReplaceAll(expected, "/", "%2F")
 		f.respond(branchPath, 200, f.head)
-		opts := SourceCheckOptions{InstallRoot: f.linked, Home: f.home, Channel: &name, BranchConfigPath: branchFile}
+		opts := SourceCheckOptions{InstallRoot: f.linked, Home: f.home, Channel: &name}
 		if selection == "explicit" {
 			explicit := "explicit-choice"
 			opts.Branch = &explicit
@@ -635,7 +603,7 @@ func TestSourceCheckDynamicSourceChannelPreservesBranchPrecedence(t *testing.T) 
 	}
 }
 
-func TestSourceCheckChannelFailureNeverProbesOrHealsABranch(t *testing.T) {
+func TestSourceCheckChannelFailureNeverProbesABranch(t *testing.T) {
 	for _, c := range []struct{ name, failure string }{{"canary", "missing"}, {"", "missing"}, {"", "malformed"}, {"", "foreign"}, {"", "unpublished"}} {
 		f := scFixture(t)
 		name := c.name
@@ -656,23 +624,16 @@ func TestSourceCheckChannelFailureNeverProbesOrHealsABranch(t *testing.T) {
 		default:
 			body["policy"] = "preview"
 			delete(body, "delivery")
-			body["identity"] = map[string]any{"token": strings.Repeat("a", 16), "displayName": "Fixture", "appNamePascal": "Fixture",
-				"artifactNamePascal": "Fixture", "appId": "ai.fixture.preview", "msixAppIdWithOrg": "Fixture.Preview", "cliName": "fixture-preview",
-				"windowsExecutableName": "Fixture"}
+			body["identity"] = map[string]any{"token": strings.Repeat("a", 16), "displayName": "Fixture", "cliName": "fixture-preview"}
 		}
 		f.respond(channelPath, code, served)
 		f.respond("/repos/fixture/fork/commits/main", 200, f.head)
-		branchFile := filepath.Join(f.home, "desktop-update.json")
-		scWrite(t, branchFile, `{"branch": "deleted"}`)
-		status := scCheck(t, SourceCheckOptions{InstallRoot: f.linked, Home: f.home, Channel: &name, BranchConfigPath: branchFile})
+		status := scCheck(t, SourceCheckOptions{InstallRoot: f.linked, Home: f.home, Channel: &name})
 		if _, has := status.Get("targetSha"); scGet(t, status, "error") != "release-unavailable" || has || scGet(t, status, "behind") != nil {
 			t.Fatalf("%s %s status %v", c.name, c.failure, status)
 		}
 		if asked := f.asked(); len(asked) != 1 || asked[0] != channelPath {
 			t.Fatalf("%s %s asked %v", c.name, c.failure, asked)
-		}
-		if raw, _ := os.ReadFile(branchFile); string(raw) != `{"branch": "deleted"}` {
-			t.Fatalf("%s %s healed the branch file %s", c.name, c.failure, raw)
 		}
 	}
 }
@@ -696,29 +657,16 @@ func TestSourceCheckRunningRevisionIsNotAppliedToAnExplicitTarget(t *testing.T) 
 	}
 }
 
-func TestSourceCheckDeletedDesktopBranchIsPersistedOnlyAfterDefinitiveProbe(t *testing.T) {
+func TestSourceCheckDeletedBranchFallsBackToMainOnlyAfterDefinitiveProbe(t *testing.T) {
 	f := scFixture(t)
-	branchFile := filepath.Join(f.home, "desktop-update.json")
-	scWrite(t, branchFile, "\xef\xbb\xbf"+`{"branch": "deleted", "other": "café"}`)
+	deleted := "deleted"
 	f.git(t, f.root, "remote", "set-url", "origin", filepath.Join(f.home, "unreachable"))
-	if got := scGet(t, scCheck(t, SourceCheckOptions{InstallRoot: f.linked, Home: f.home, BranchConfigPath: branchFile}), "branch"); got != "deleted" {
+	if got := scGet(t, scCheck(t, SourceCheckOptions{InstallRoot: f.linked, Home: f.home, Branch: &deleted, Force: true}), "branch"); got != "deleted" {
 		t.Fatalf("unreachable origin branch %v", got)
 	}
-	if raw, _ := os.ReadFile(branchFile); !strings.Contains(string(raw), `"branch": "deleted"`) {
-		t.Fatalf("an indefinite probe healed %s", raw)
-	}
 	f.git(t, f.root, "remote", "set-url", "origin", f.root)
-	if got := scGet(t, scCheck(t, SourceCheckOptions{InstallRoot: f.linked, Home: f.home, BranchConfigPath: branchFile}), "branch"); got != "main" {
+	if got := scGet(t, scCheck(t, SourceCheckOptions{InstallRoot: f.linked, Home: f.home, Branch: &deleted, Force: true}), "branch"); got != "main" {
 		t.Fatalf("definitive absence branch %v", got)
-	}
-	raw, _ := os.ReadFile(branchFile)
-	decoded, err := pyjson.Loads(string(raw))
-	if err != nil || bytes.HasPrefix(raw, []byte("\xef\xbb\xbf")) {
-		t.Fatalf("healed file %q %v", raw, err)
-	}
-	obj, _ := decoded.(*pyjson.Object)
-	if obj == nil || obj.Len() != 2 || scGet(t, obj, "branch") != "main" || scGet(t, obj, "other") != "café" {
-		t.Fatalf("healed file %q", raw)
 	}
 }
 
@@ -740,26 +688,23 @@ func (f *scInstall) commitOn(t *testing.T, branch, message string) string {
 }
 
 func TestSourceCheckNeverPushedBranchKeepsItsPin(t *testing.T) {
-	for _, pinnedBy := range []string{"desktop", "current"} {
+	for _, pinnedBy := range []string{"explicit", "current"} {
 		f := scFixture(t)
 		f.bareOrigin(t)
 		f.git(t, f.root, "branch", "local-work")
 		f.commitOn(t, "local-work", "unpushed work")
-		branchFile := filepath.Join(f.home, "desktop-update.json")
-		if pinnedBy == "desktop" {
-			scWrite(t, branchFile, `{"branch": "local-work"}`)
+		opts := SourceCheckOptions{InstallRoot: f.root, Home: f.home}
+		if pinnedBy == "explicit" {
+			branch := "local-work"
+			opts.Branch = &branch
 		} else {
 			f.git(t, f.root, "checkout", "-q", "local-work")
 		}
-		status := scCheck(t, SourceCheckOptions{InstallRoot: f.root, Home: f.home, BranchConfigPath: branchFile})
+		status := scCheck(t, opts)
 		message, _ := scGet(t, status, "message").(string)
 		if _, has := status.Get("targetSha"); scGet(t, status, "branch") != "local-work" || scGet(t, status, "error") != "branch-local-only" ||
 			scGet(t, status, "localOnly") != true || !strings.Contains(message, "never been pushed") || has {
 			t.Fatalf("%s status %v", pinnedBy, status)
-		}
-		raw, err := os.ReadFile(branchFile)
-		if pinnedBy == "desktop" && string(raw) != `{"branch": "local-work"}` || pinnedBy == "current" && !os.IsNotExist(err) {
-			t.Fatalf("%s branch file %q %v", pinnedBy, raw, err)
 		}
 		if asked := f.asked(); len(asked) != 0 {
 			t.Fatalf("%s asked %v", pinnedBy, asked)
@@ -789,19 +734,17 @@ func TestSourceCheckDeletedRemoteBranchHealsOnlyWhenItsCommitsAreInMain(t *testi
 		if refs := f.git(t, f.root, "for-each-ref", "refs/remotes/origin/pushed"); refs != "" {
 			t.Fatalf("pruned ref survived %q", refs)
 		}
-		branchFile := filepath.Join(f.home, "desktop-update.json")
-		scWrite(t, branchFile, `{"branch": "pushed"}`)
-		status := scCheck(t, SourceCheckOptions{InstallRoot: f.root, Home: f.home, BranchConfigPath: branchFile})
-		raw, _ := os.ReadFile(branchFile)
+		pushed := "pushed"
+		status := scCheck(t, SourceCheckOptions{InstallRoot: f.root, Home: f.home, Branch: &pushed})
 		if merge == "unmerged" {
 			message, _ := scGet(t, status, "message").(string)
-			if scGet(t, status, "branch") != "pushed" || scGet(t, status, "error") != "branch-local-only" || !strings.Contains(message, "not in main") || !strings.Contains(string(raw), `"pushed"`) {
-				t.Fatalf("unmerged status %v file %s", status, raw)
+			if scGet(t, status, "branch") != "pushed" || scGet(t, status, "error") != "branch-local-only" || !strings.Contains(message, "not in main") {
+				t.Fatalf("unmerged status %v", status)
 			}
 			continue
 		}
-		if _, has := status.Get("error"); has || scGet(t, status, "branch") != "main" || scGet(t, status, "targetSha") != f.git(t, f.root, "rev-parse", "origin/main") || !strings.Contains(string(raw), `"main"`) {
-			t.Fatalf("%s status %v file %s", merge, status, raw)
+		if _, has := status.Get("error"); has || scGet(t, status, "branch") != "main" || scGet(t, status, "targetSha") != f.git(t, f.root, "rev-parse", "origin/main") {
+			t.Fatalf("%s status %v", merge, status)
 		}
 	}
 }
@@ -818,7 +761,7 @@ func TestSourceCheckInheritedGitTargetCannotRedirectAnExplicitInstall(t *testing
 }
 
 func TestSourceCheckSourceAdmissionIsStampOwnedNotPathOwned(t *testing.T) {
-	for _, mechanism := range []any{"external", "electron-updater", "app-installer", "microsoft-store", "self", nil} {
+	for _, mechanism := range []any{"external", "self", nil} {
 		f := scFixture(t)
 		distribution := "source"
 		if mechanism == "external" {
@@ -1003,17 +946,15 @@ func TestSourceCheckOfficialSSHHealingUsesPublicHTTPSWithoutRetargetingForks(t *
 			t.Fatal(err)
 		}
 		t.Setenv("GIT_SSH_COMMAND", "false")
-		branchFile := filepath.Join(f.home, "desktop-update.json")
-		scWrite(t, branchFile, `{"branch": "deleted"}`)
+		deleted := "deleted"
 		f.respond("/repos/"+c.repository+"/commits/main", 200, f.head)
-		status := scCheck(t, SourceCheckOptions{InstallRoot: f.linked, Home: f.home, BranchConfigPath: branchFile})
+		status := scCheck(t, SourceCheckOptions{InstallRoot: f.linked, Home: f.home, Branch: &deleted})
 		want := "deleted"
 		if c.heals {
 			want = "main"
 		}
-		raw, _ := os.ReadFile(branchFile)
-		if scGet(t, status, "branch") != want || !strings.Contains(string(raw), `"`+want+`"`) {
-			t.Fatalf("%s status %v file %s", c.repository, status, raw)
+		if scGet(t, status, "branch") != want {
+			t.Fatalf("%s status %v", c.repository, status)
 		}
 		if behind, ok := pyIntValue(scGet(t, status, "behind")); c.heals && (!ok || behind != 0) || !c.heals && scGet(t, status, "error") != "fetch-failed" {
 			t.Fatalf("%s status %v", c.repository, status)

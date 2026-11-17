@@ -4,7 +4,6 @@ import (
 	"context"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -61,27 +60,14 @@ func logsUpdateLogLine(t *testing.T) string {
 	return strings.TrimLeft(string(raw), " \t\n\r\v\f")
 }
 
-// Line of the desktop update hand-off shell log function
-func logsHandoffLogLine(t *testing.T) string {
-	t.Helper()
-	out, err := exec.Command("bash", "-c", `log() { echo "$(date +%Y-%m-%dT%H:%M:%S%z) $1"; }; log "update| → Checking if desktop app needs rebuilding..."`).Output()
-	if err != nil {
-		t.Fatal(err)
-	}
-	return strings.TrimRight(string(out), "\n")
-}
-
 // One line per log file entry from that file's real writer
 func logsFileSamples(t *testing.T) map[string]string {
 	return map[string]string{
 		"agent":   logsPythonLogLine(t, "run_agent"),
 		"errors":  logsPythonLogLine(t, "run_agent"),
 		"gateway": logsPythonLogLine(t, "gateway.run"),
-		"gui":     logsPythonLogLine(t, "hermes_cli.web_server"),
-		"desktop": "2026-09-28 13:18:46,062 [icebath] [boot] ready",
 		"mcp":     logsMCPOutputLine(t),
 		"update":  logsUpdateLogLine(t),
-		"handoff": logsHandoffLogLine(t),
 	}
 }
 

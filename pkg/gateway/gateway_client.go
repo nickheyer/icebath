@@ -590,7 +590,7 @@ func sessionTicketRequest(params *pyjson.Object) ([]byte, error) {
 }
 
 // Session ticket minted by the owner control socket for an endpoint, checked against its identity
-func sessionTicket(home string, endpoint *GatewayEndpoint, purpose, scope, subject string, refuseRestart bool) (string, error) {
+func sessionTicket(home string, endpoint *GatewayEndpoint, purpose, scope string, refuseRestart bool) (string, error) {
 	home = ControlHomeFor(home, endpoint)
 	if purpose == "" {
 		purpose = "interactive"
@@ -598,9 +598,6 @@ func sessionTicket(home string, endpoint *GatewayEndpoint, purpose, scope, subje
 	params := pyjson.ObjectOf("profile_id", endpoint.ProfileID, "instance_id", endpoint.InstanceID, "purpose", purpose)
 	if scope != "" {
 		params.Set("scope", scope)
-	}
-	if subject != "" {
-		params.Set("subject", subject)
 	}
 	if refuseRestart {
 		params.Set("restart_wait", "refuse")
@@ -681,7 +678,6 @@ func (s *wsSocket) Close() error {
 // Options of one gateway attach, the zero value ensuring this home's owner
 type ConnectGatewayOptions struct {
 	Endpoint *GatewayEndpoint
-	Subject  string
 	MaxSize  int64
 }
 
@@ -707,7 +703,7 @@ func ConnectGatewayWith(ctx context.Context, opts ConnectGatewayOptions) (*Gatew
 		if err != nil {
 			return nil, err
 		}
-		ticket, err := sessionTicket(profileHome, opts.Endpoint, "", "", opts.Subject, false)
+		ticket, err := sessionTicket(profileHome, opts.Endpoint, "", "", false)
 		if err != nil {
 			return nil, err
 		}
@@ -741,7 +737,7 @@ func ConnectGatewayWith(ctx context.Context, opts ConnectGatewayOptions) (*Gatew
 			}
 			return nil, &GatewayUnavailableError{Msg: fmt.Sprintf("Gateway %s: %s%s", result.State, reason, detail), State: result.State, ReasonCode: result.ReasonCode}
 		}
-		ticket, err := sessionTicket(profileHome, result.Endpoint, "", "", "", refusesRestartWait(ctx))
+		ticket, err := sessionTicket(profileHome, result.Endpoint, "", "", refusesRestartWait(ctx))
 		var discovery *DiscoveryError
 		if errors.As(err, &discovery) {
 			detail := discovery.BoundedDetail(500)

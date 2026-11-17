@@ -26,12 +26,6 @@ func init() {
 	sharedMetricsRegistry.scopedMethod("shared_metrics.set", sharedMetricsSet)
 	sharedMetricsRegistry.scopedMethod("shared_metrics.slash_command", sharedMetricsSlashCommand)
 	sharedMetricsRegistry.scopedMethod("shared_metrics.startup_latency", sharedMetricsStartupLatency)
-	sharedMetricsRegistry.scopedMethod("shared_metrics.update_run", sharedMetricsUpdateRun)
-	sharedMetricsRegistry.scopedMethod("shared_metrics.desktop_feature_use", sharedMetricsDesktopFeatureUse)
-	sharedMetricsRegistry.scopedMethod("shared_metrics.desktop_friction", sharedMetricsDesktopFriction)
-	sharedMetricsRegistry.scopedMethod("shared_metrics.desktop_onboarding", sharedMetricsDesktopOnboarding)
-	sharedMetricsRegistry.scopedMethod("shared_metrics.desktop_dislike", sharedMetricsDesktopDislike)
-	sharedMetricsRegistry.scopedMethod("shared_metrics.desktop_daily", sharedMetricsDesktopDaily)
 	sharedMetricsRegistry.install()
 }
 
@@ -39,17 +33,6 @@ func init() {
 func sharedMetricsConsent(cfg any) map[string]any {
 	answer := observability.ConsentState(cfg)
 	return map[string]any{"enabled": answer.Enabled, "send": answer.Send, "decided": answer.Decided, "reask": answer.Reask}
-}
-
-// Records the Desktop first run answer as the setup completed metric with the configured provider
-func sharedMetricsRecordSetupCompleted(ctx context.Context, cfg map[string]any) {
-	var providerName any
-	if model, isDict := cfg["model"].(map[string]any); isDict {
-		if text, isText := model["provider"].(string); isText && text != "" {
-			providerName = text
-		}
-	}
-	observability.RecordSetupCompleted(ctx, "desktop", providerName)
 }
 
 // Consent reading of the focused profile's raw config
@@ -109,64 +92,23 @@ func sharedMetricsSet(ctx context.Context, rid any, params map[string]any) map[s
 	}
 	observability.RecordSendConsentChange(ctx, send)
 	if !enabled {
-		observability.PurgeOnboardingLatches(ctx)
 		observability.PurgePendingReceipts(ctx, home.Dir(ctx))
-	}
-	if params["first_run"] == true {
-		sharedMetricsRecordSetupCompleted(ctx, cfg)
 	}
 	return ok(rid, sharedMetricsConsent(cfg))
 }
 
 // Counts one user typed slash command on the surface this backend serves
 func sharedMetricsSlashCommand(ctx context.Context, rid any, params map[string]any) map[string]any {
-	observability.RecordSlashCommand(ctx, relayString(params["command"]), resolveSessionPlatform())
+	observability.RecordSlashCommand(ctx, relayString(params["command"]), sessionPlatform)
 	return ok(rid, map[string]any{"ok": true})
 }
 
 // Records the client's launch to ready time once per launch id, its declared surface winning
 func sharedMetricsStartupLatency(ctx context.Context, rid any, params map[string]any) map[string]any {
-	var surface any = resolveSessionPlatform()
+	var surface any = sessionPlatform
 	if truthy(params["surface"]) {
 		surface = params["surface"]
 	}
 	observability.RecordRpcStartupLatency(ctx, surface, params["elapsed_ms"], params["launch_id"])
 	return ok(rid, map[string]any{"ok": true})
-}
-
-// Records one packaged Desktop self update run
-func sharedMetricsUpdateRun(ctx context.Context, rid any, params map[string]any) map[string]any {
-	observability.RecordDesktopUpdate(ctx, map[string]any{"outcome": params["outcome"], "failed_stage": params["failed_stage"],
-		"duration_ms": params["duration_ms"], "mechanism": params["mechanism"], "from_commit_date": params["from_commit_date"]})
-	return ok(rid, map[string]any{"ok": true})
-}
-
-// Records one Desktop area opened, latched once per UTC day
-func sharedMetricsDesktopFeatureUse(ctx context.Context, rid any, params map[string]any) map[string]any {
-	observability.RecordDesktopFeatureUse(ctx, params["area"])
-	return ok(rid, map[string]any{"ok": true})
-}
-
-// Records one Desktop friction event
-func sharedMetricsDesktopFriction(ctx context.Context, rid any, params map[string]any) map[string]any {
-	observability.RecordDesktopFriction(ctx, params["kind"], params["detail"])
-	return ok(rid, map[string]any{"ok": true})
-}
-
-// Records one Desktop first run step transition
-func sharedMetricsDesktopOnboarding(ctx context.Context, rid any, params map[string]any) map[string]any {
-	observability.RecordDesktopOnboarding(ctx, params["step"], params["event"])
-	return ok(rid, map[string]any{"ok": true})
-}
-
-// Records one Desktop dislike signal
-func sharedMetricsDesktopDislike(ctx context.Context, rid any, params map[string]any) map[string]any {
-	observability.RecordDesktopDislike(ctx, params["signal"], params["target"], params["setting"])
-	return ok(rid, map[string]any{"ok": true})
-}
-
-// Records one finished Desktop day, recorded true once it settled
-func sharedMetricsDesktopDaily(ctx context.Context, rid any, params map[string]any) map[string]any {
-	recorded := observability.RecordDesktopDaily(ctx, params["day"], params["modes"], params["actions"], params["bot_count"])
-	return ok(rid, map[string]any{"recorded": recorded})
 }

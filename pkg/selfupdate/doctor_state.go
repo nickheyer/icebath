@@ -296,59 +296,6 @@ func doctorMemoryStoreFlags(ctx context.Context, icebathHome string) (bool, bool
 	return memory.BuiltinMemoryStoreFlags(doctorMemoryConfig(ctx, icebathHome))
 }
 
-// Reports the unused legacy checkout under an embedded desktop install with its size, never a deletion command
-func doctorCheckLegacyDesktopCheckout(ctx context.Context, d *Doctor) {
-	if steward := SealedSteward(d.ProjectRoot); steward == nil || *steward != StewardDesktop {
-		return
-	}
-	checkout := filepath.Join(d.Home, "icebath-agent")
-	if _, err := os.Stat(filepath.Join(checkout, ".git")); err != nil {
-		return
-	}
-	doctorSection(d.W, "Legacy Desktop Checkout")
-	git := func(args ...string) *pysubprocess.Completed {
-		done, err := doctorSubprocessRun(ctx, append([]string{"git", "-C", checkout}, args...), pysubprocess.Options{Timeout: 10 * time.Second})
-		if err != nil {
-			return nil
-		}
-		return done
-	}
-	clean := func(done *pysubprocess.Completed, want string) bool {
-		return done != nil && done.Returncode == 0 && pystr.Strip(string(done.Stdout)) == want
-	}
-	status := git("status", "--porcelain")
-	branch := git("rev-parse", "--abbrev-ref", "HEAD")
-	stashes := git("stash", "list")
-	pristine := clean(status, "") && clean(branch, "main") && clean(stashes, "")
-	sizeNote := ""
-	var total int64
-	walkErr := filepath.WalkDir(checkout, func(path string, entry fs.DirEntry, err error) error {
-		if err != nil || entry.IsDir() {
-			return nil
-		}
-		info, statErr := os.Stat(path)
-		if statErr != nil {
-			return nil
-		}
-		if info.Mode().IsRegular() {
-			total += info.Size()
-		}
-		return nil
-	})
-	if walkErr == nil {
-		sizeNote = fmt.Sprintf(" (~%.1f GB)", float64(total)/1_000_000_000)
-	}
-	if pristine {
-		doctorCheckWarn(d.W, "Unused checkout at "+d.DisplayHome+"/icebath-agent"+sizeNote,
-			"(the desktop app runs embedded and does not use it; the tree is clean)")
-		fmt.Fprintln(d.W, "    Review it and decide whether to keep or remove it — doctor does not delete anything.")
-		return
-	}
-	doctorCheckInfo(d.W, "A checkout exists at "+d.DisplayHome+"/icebath-agent but holds local work "+
-		"(changes, a branch, or stashes). The desktop app does not use "+
-		"it; review it before you remove anything.")
-}
-
 // Text of a file decoded as UTF-8 with an optional signature
 func doctorReadText(path string) (string, error) {
 	raw, err := os.ReadFile(path)
@@ -369,10 +316,6 @@ func doctorWriteText(path, text string) error {
 // Reports the home, its expected subdirectories, SOUL.md and the enabled built in memory files
 func checkDirectoryStructure(ctx context.Context, d *Doctor, shouldFix bool) (*Finding, error) {
 	return doctorCheck(func(f *Finding) error {
-		func() {
-			defer func() { _ = recover() }()
-			doctorCheckLegacyDesktopCheckout(ctx, d)
-		}()
 		w, dhh, icebathHome := d.W, d.DisplayHome, d.Home
 		if err := doctorEnsureDir(w, f, shouldFix, icebathHome, dhh+" directory exists", "Created "+dhh+" directory", dhh+" not found"); err != nil {
 			return err
@@ -749,8 +692,8 @@ func doctorStateDBWAL(ctx context.Context, d *Doctor, f *Finding, shouldFix bool
 				return err
 			}
 			if held {
-				doctorCheckWarn(d.W, title, "(normal while Desktop or the gateway is running, or state.db cannot be "+
-					"inspected — checkpoint only with them stopped)")
+				doctorCheckWarn(d.W, title, "(normal while the gateway is running, or state.db cannot be "+
+					"inspected — checkpoint only with it stopped)")
 				f.Issues = append(f.Issues, skip)
 				return nil
 			}
@@ -806,8 +749,8 @@ func doctorRetiredWALHolders(d *Doctor, f *Finding, stateDBPath string) bool {
 	doctorCheckWarn(d.W, fmt.Sprintf("%s/state.db: %d process(es) still hold a retired WAL generation (%s)", d.DisplayHome, len(pids), rendered),
 		"(every new session refuses to open until they exit; health/stats probes skipped)")
 	f.Issues = append(f.Issues, "state.db retired WAL generation held by "+rendered+doctorHostGatewayNote()+" — stop the host "+
-		"gateway, dashboard and cron writers among them ('icebath "+home.ProfileCLISelector(d.Home)+"gateway "+
-		"stop' stops the ONE host process serving every profile, quit the Desktop app), do not "+
+		"gateway and cron writers among them ('icebath "+home.ProfileCLISelector(d.Home)+"gateway "+
+		"stop' stops the ONE host process serving every profile), do not "+
 		"delete the WAL yourself, then rerun 'icebath doctor'")
 	return true
 }

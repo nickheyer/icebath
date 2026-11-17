@@ -236,7 +236,7 @@ func historyRows(history []any) []map[string]any {
 	return out
 }
 
-// Persists a seeded desktop branch child at create, leaving the first prompt to retry a failed seed
+// Persists a seeded branch child at create, leaving the first prompt to retry a failed seed
 func seedBranchRow(ctx context.Context, record *tuigateway.Session, key, parentSessionID string, history []any, source, profileHome string) {
 	failure := catchPanic(func() {
 		db, release := sessionDB(ctx, record)
@@ -322,7 +322,6 @@ func createdSessionInfo(ctx context.Context, record *tuigateway.Session, overrid
 	info["branch"] = tuigateway.Branch(cwd)
 	info["project"] = projectInfoForCwd(ctx, cwd)
 	info["lazy"] = true
-	info["desktop_contract"] = desktopBackendContract
 	info["profile_name"] = responseProfileName(ctx, profile)
 	return info
 }
@@ -416,7 +415,7 @@ func createSession(ctx context.Context, rid any, params map[string]any, copyPare
 			return rpcErr(rid, 4008, "send a message first", nil)
 		}
 	}
-	explicitCwd, sessionCwdValue, remoteCwd, err := resolveCreateCwd(ctx, params, source, profileHomeDir)
+	explicitCwd, sessionCwdValue, remoteCwd, err := resolveCreateCwd(ctx, params, profileHomeDir)
 	panicIf(err)
 	enableGatewayPrompts()
 	modelOverride, reasoningOverride, serviceTierOverride, err := createOverrides(params)

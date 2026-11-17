@@ -1014,12 +1014,6 @@ func CountDBHolders(dbPath string) (int, bool) {
 	return len(pids), true
 }
 
-// Safety predicate for the narrow Desktop holder reap
-func isInactiveOrphanDesktopHolder(ppid int, ageSeconds, minAgeSeconds float64, ephemeralBackend bool, connectionStatuses []string) bool {
-	return (ppid == 0 || ppid == 1) && ageSeconds >= minAgeSeconds && ephemeralBackend &&
-		!slices.Contains(connectionStatuses, "ESTABLISHED")
-}
-
 // Unique pids proven to hold the database or one of its sidecars, in first seen order
 func concreteStateDBHolderPIDs(dbPath string, holders []Holder) ([]int, error) {
 	abs, err := pyAbspath(dbPath)

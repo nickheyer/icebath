@@ -477,28 +477,6 @@ func GetNousAuthStatusLocal(env PoolEnv) map[string]any {
 	return status
 }
 
-// Values the dashboard status probe reports as nous_session_valid
-const (
-	NousSessionValid    = "valid"
-	NousSessionTerminal = "terminal"
-	NousSessionUnknown  = "unknown"
-)
-
-// GetNousSessionValidity classifies the bootstrap session from local state only, terminal solely on a quarantine marker
-func GetNousSessionValidity(env PoolEnv) string {
-	state, err := env.Store.GetProviderAuthState("nous")
-	if err != nil || len(state) == 0 {
-		return NousSessionUnknown
-	}
-	if nousTerminalQuarantineMarker(state) != nil {
-		return NousSessionTerminal
-	}
-	if nousStateInvokeJWTStatus(state, state["access_token"]) == "" {
-		return NousSessionValid
-	}
-	return NousSessionUnknown
-}
-
 // Hostname of the Portal URL for failure copy, the production host when unparseable
 func nousPortalHost(portalURL string) string {
 	if portalURL == "" {

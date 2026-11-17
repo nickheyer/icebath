@@ -478,7 +478,7 @@ func (m *Manager) trackToolOverridePolicy(mf *Manifest, moduleName string) {
 			tools.Default.RestorePluginOverridePolicy(moduleName, current, r, scope)
 			return nil
 		}, nil)
-		m.trackRegistration(mf, "tool_override_policy", moduleName, lease.Dispose, false)
+		m.trackRegistration(mf, "tool_override_policy", moduleName, lease.Dispose)
 	})
 }
 
@@ -615,7 +615,7 @@ func (m *Manager) registerPortableMCP(mf *Manifest, pkg *AgentPluginPackage) (er
 		}
 	}
 	for _, name := range registered {
-		m.trackRegistration(mf, "portable_mcp", name, func() error { release(name); return nil }, false)
+		m.trackRegistration(mf, "portable_mcp", name, func() error { release(name); return nil })
 	}
 	return nil
 }

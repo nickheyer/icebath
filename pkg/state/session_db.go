@@ -1342,11 +1342,6 @@ func (c *sessionCore) foreignStateDBHolders() ([]Holder, error) {
 // Foreign processes holding this store for callers outside this package
 func (c *sessionCore) ForeignStateDBHolders() ([]Holder, error) { return c.foreignStateDBHolders() }
 
-// Terminates inactive orphan desktop backends among holders of this store
-func (c *sessionCore) reapInactiveOrphanDesktopHolders(holders []Holder, minAgeSeconds float64) ([]int, error) {
-	return reapInactiveOrphanDesktopHolders(c.path, holders, minAgeSeconds)
-}
-
 // Why this handle must not checkpoint or run in file repair, false when it may
 func (c *sessionCore) quarantineReason() (string, bool) {
 	c.corruptMu.Lock()

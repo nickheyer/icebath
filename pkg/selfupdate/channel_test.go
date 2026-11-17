@@ -96,22 +96,6 @@ func TestChannelInstallIDIsPathDerivedAndMatchesStateKey(t *testing.T) {
 	}
 }
 
-func TestChannelBundleKeepsBakedSubscription(t *testing.T) {
-	root := t.TempDir()
-	chStamp(t, root, map[string]any{"payload": "bundled", "source": "channel-build", "updateMechanism": "electron-updater",
-		"tag": nil, "channelBuild": map[string]any{"channel": "r2-preview"}})
-	if got, err := DefaultChannel(root); err != nil || got != "r2-preview" {
-		t.Fatalf("default %q %v", got, err)
-	}
-	if got, err := ResolveUpdateChannel(chConfigFor(root, "stable"), root); err != nil || got != "r2-preview" {
-		t.Fatalf("resolve %q %v", got, err)
-	}
-	chStamp(t, root, map[string]any{"payload": "bundled", "source": "channel-build", "channelBuild": "x"})
-	if _, err := DefaultChannel(root); err == nil || err.Error() != "Channel bundle has no baked subscription" {
-		t.Fatalf("got %v", err)
-	}
-}
-
 func TestChannelMultiInstallIsolation(t *testing.T) {
 	dir := t.TempDir()
 	a, b := filepath.Join(dir, "a"), filepath.Join(dir, "b")
@@ -127,22 +111,14 @@ func TestChannelMultiInstallIsolation(t *testing.T) {
 }
 
 func TestChannelPolicy(t *testing.T) {
-	cases := []struct{ mechanism, tag, payload, record, expected string }{
-		{"self", "", "", "", "main"},
-		{"self", "v1.2.3-canary.20260818", "", "", "main"},
-		{"", "", "", "", "main"},
-		{"self", "", "", "canary", "canary"},
-		{"self", "", "", "yolo", "yolo"},
-		{"electron-updater", "v1.2.3", "", "", "stable"},
-		{"electron-updater", "v1.2.3+canary.20260819T171926Z", "", "stable", "canary"},
-		{"app-installer", "v1.2.3+canary.20260819T171926Z", "", "", "canary"},
-		{"microsoft-store", "v1.2.3+canary.20260819T171926Z", "", "", "canary"},
-		{"electron-updater", "v1.2.3-canary.20260818", "", "", "stable"},
-		{"electron-updater", "", "", "canary", "stable"},
-		{"external", "v1.2.3", "bundled", "main", "stable"},
-		{"external", "v1.2.3", "light", "main", "stable"},
-		{"external", "v1.2.4+canary.20260911T125822Z", "bundled", "main", "canary"},
-		{"external", "v1.2.4+canary.20260911T125822Z", "light", "main", "canary"},
+	cases := []struct{ mechanism, tag, record, expected string }{
+		{"self", "", "", "main"},
+		{"self", "v1.2.3-canary.20260818", "", "main"},
+		{"", "", "", "main"},
+		{"self", "", "canary", "canary"},
+		{"self", "", "yolo", "yolo"},
+		{"external", "v1.2.3", "", "main"},
+		{"external", "v1.2.4+canary.20260911T125822Z", "", "main"},
 	}
 	for _, tc := range cases {
 		root := t.TempDir()
@@ -150,9 +126,6 @@ func TestChannelPolicy(t *testing.T) {
 			stamp := map[string]any{"updateMechanism": tc.mechanism, "tag": nil}
 			if tc.tag != "" {
 				stamp["tag"] = tc.tag
-			}
-			if tc.payload != "" {
-				stamp["payload"] = tc.payload
 			}
 			chStamp(t, root, stamp)
 		}
@@ -163,7 +136,7 @@ func TestChannelPolicy(t *testing.T) {
 		if got, err := ResolveUpdateChannel(cfg, root); err != nil || got != tc.expected {
 			t.Fatalf("%+v resolved %q %v", tc, got, err)
 		}
-		if tc.record == "" || tc.mechanism != "self" {
+		if tc.record == "" {
 			if got, _ := DefaultChannel(root); got != tc.expected {
 				t.Fatalf("%+v default %q", tc, got)
 			}
@@ -218,7 +191,7 @@ func TestChannelSetResolveRoundTrip(t *testing.T) {
 }
 
 func TestChannelOwnedInstallsRefuseWrites(t *testing.T) {
-	for _, mechanism := range []string{"external", "electron-updater", "app-installer", "microsoft-store"} {
+	for _, mechanism := range []string{"external"} {
 		h := chHome(t)
 		root := filepath.Join(filepath.Dir(h), "os-owned-tree")
 		chStamp(t, root, map[string]any{"schemaVersion": 2, "updateMechanism": mechanism})
@@ -274,7 +247,7 @@ func TestChannelMetadataArgs(t *testing.T) {
 	for _, tc := range []struct{ mechanism, channel, message string }{
 		{"self", "../bogus", "Invalid channel name"},
 		{"external", "stable", "owned by"},
-		{"app-installer", "canary", "owned by"},
+		{"external", "canary", "owned by"},
 	} {
 		chStamp(t, root, map[string]any{"schemaVersion": 2, "updateMechanism": tc.mechanism})
 		var out bytes.Buffer

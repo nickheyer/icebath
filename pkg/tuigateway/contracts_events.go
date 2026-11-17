@@ -45,19 +45,7 @@ var SetupReadyPayload = pydantic.NewModel("SetupReadyPayload", OpenConfig,
 	pydantic.Req("finished_at", pydantic.Float),
 ).Described("``hermes_cli/free_tier_bootstrap.py::SetupRecord.as_payload``.")
 
-var OnboardingOutcome = pydantic.Enum("OnboardingOutcome", "done", "done", "skipped", "skipped", "replaced", "replaced", "deleted", "deleted")
-
-var OnboardingEndedPayload = pydantic.NewModel("OnboardingEndedPayload", ClosedConfig,
-	pydantic.Req("run_id", pydantic.Str),
-	pydantic.Req("stored_session_id", pydantic.Str),
-	pydantic.Req("outcome", OnboardingOutcome),
-).Described("``agent/onboarding_record.py::_transition``: the run ``run_id`` stopped being in progress.\n``stored_session_id`` is its chat at the compression tip. ``done``: the first-task card was answered;\n``skipped``: Skip setup; ``replaced``: a rerun opened a new run; ``deleted``: its chat was deleted.")
-
-var _ = Event("onboarding.ended", OnboardingEndedPayload, "A first-run onboarding run ended; sent to every connected window.")
-
-var _ = Event("setup.ready", SetupReadyPayload, "The free-tier bootstrap finished (broadcast); the desktop's setup gate reads the record.")
-
-var _ = Event("free_tier.challenge", FreeTierChallengePayload, "The account service wants a browser challenge cleared before the free-tier token exchange (broadcast); the desktop loads ``url`` in a hidden window.")
+var _ = Event("setup.ready", SetupReadyPayload, "The free-tier bootstrap finished (broadcast) with its setup record.")
 
 var ErrorPayload = pydantic.NewModel("ErrorPayload", ClosedConfig,
 	pydantic.Req("message", pydantic.Str),
@@ -181,7 +169,7 @@ var MessageCompletePayload = pydantic.NewModel("MessageCompletePayload", ClosedC
 	pydantic.Def("error_surface", pydantic.Nullable(ErrorSurface), nil),
 	pydantic.Def("partial", pydantic.Nullable(pydantic.Bool), nil),
 	pydantic.Def("persisted_turn", pydantic.Nullable(PersistedTurn), nil),
-).Described("``prompt_turn._complete_turn_payload`` / ``session_auto_continue._emit_terminal_turn_error`` /\n``agent_callbacks._mirror_subagent_to_child`` (child watch mirror: ``text`` only) /\n``compute_host_bridge`` (``text`` + ``status``).")
+).Described("``prompt_turn._complete_turn_payload`` / ``session_auto_continue._emit_terminal_turn_error`` /\n``agent_callbacks._mirror_subagent_to_child`` (child watch mirror: ``text`` only).")
 
 var _ = Event("message.complete", MessageCompletePayload, "The turn ended: final text, usage and outcome.")
 
@@ -317,7 +305,7 @@ var NotificationShowPayload = pydantic.NewModel("NotificationShowPayload", Close
 	pydantic.Def("key", pydantic.Nullable(pydantic.Str), nil),
 	pydantic.Def("id", pydantic.Nullable(pydantic.Str), nil),
 	pydantic.Def("detail", pydantic.Nullable(pydantic.Str), nil),
-).Described("``agent/credits_tracker.py::AgentNotice`` via notice_callback, and ``server._await_agent_ready``'s\nslow-build notice. ``level``: info | warn | error | success; ``kind``: sticky | ttl | agent.\n``detail``: the full text behind a short ``text`` (the low-disk auto-prune question): Desktop shows\nit in the toast's expandable body, the Ink TUI prints it into the transcript.")
+).Described("``agent/credits_tracker.py::AgentNotice`` via notice_callback, and ``server._await_agent_ready``'s\nslow-build notice. ``level``: info | warn | error | success; ``kind``: sticky | ttl | agent.\n``detail``: the full text behind a short ``text`` (the low-disk auto-prune question): the TUI prints\nit into the transcript.")
 
 var NotificationClearPayload = pydantic.NewModel("NotificationClearPayload", ClosedConfig,
 	pydantic.Req("key", pydantic.Str),
@@ -326,15 +314,6 @@ var NotificationClearPayload = pydantic.NewModel("NotificationClearPayload", Clo
 var _ = Event("notification.show", NotificationShowPayload, "Show / replace a keyed out-of-band notice (toast or status bar).")
 
 var _ = Event("notification.clear", NotificationClearPayload, "Withdraw the notice with this key.")
-
-var TipShowPayload = pydantic.NewModel("TipShowPayload", ClosedConfig,
-	pydantic.Req("selector", pydantic.Str),
-	pydantic.Req("text", pydantic.Str),
-	pydantic.Def("title", pydantic.Nullable(pydantic.Str), nil),
-	pydantic.Def("side", pydantic.Nullable(pydantic.Str), nil),
-).Described("``tools/tip_tool.py``.")
-
-var _ = Event("tip.show", TipShowPayload, "Point at a desktop element with a one-line tip bubble.")
 
 var _ = Event("session.info", SessionLiveInfo, "Live session settings snapshot (``server._session_info``); also the ``info`` of create/resume/activate.")
 
@@ -389,16 +368,6 @@ var SideAgentCompletePayload = pydantic.NewModel("SideAgentCompletePayload", Clo
 var _ = Event("background.complete", SideAgentCompletePayload, "A /background side agent finished.")
 
 var _ = Event("btw.complete", SideAgentCompletePayload, "A /btw side question was answered.")
-
-var _ = Event("preview.restart.complete", SideAgentCompletePayload, "The hidden preview-restart agent finished.")
-
-var PreviewRestartProgressPayload = pydantic.NewModel("PreviewRestartProgressPayload", ClosedConfig,
-	pydantic.Req("task_id", pydantic.Str),
-	pydantic.Req("text", pydantic.Str),
-	pydantic.Def("level", pydantic.Nullable(pydantic.Str), nil),
-).Described("``methods_prompt`` restart body + ``agent_callbacks._preview_restart_callbacks``.")
-
-var _ = Event("preview.restart.progress", PreviewRestartProgressPayload, "Progress line from the preview-restart agent.")
 
 var SubagentOutputTailEntry = pydantic.NewModel("SubagentOutputTailEntry", ClosedConfig,
 	pydantic.Req("tool", pydantic.Str),
@@ -476,46 +445,6 @@ var _ = Event("moa.aggregating", MoaAggregatingPayload, "The MoA aggregator star
 var _ = Event("moa.progress", MoaProgressPayload, "MoA reference fan-out progress (n/total).")
 
 var _ = Event("moa.phase", MoaPhasePayload, "MoA phase transition (currently only ``aggregator``).")
-
-var PreviewOpenPayload = pydantic.NewModel("PreviewOpenPayload", ClosedConfig,
-	pydantic.Req("url", pydantic.Str),
-	pydantic.Def("label", pydantic.Str, ""),
-).Described("``tools/open_preview_tool.py``.")
-
-var PreviewClosePayload = pydantic.NewModel("PreviewClosePayload", ClosedConfig,
-	pydantic.Def("url", pydantic.Str, ""),
-).Described("``tools/preview_tool.py`` / ``tools/close_preview_tool.py``; ``url`` '' closes every tab.")
-
-var _ = Event("preview.open", PreviewOpenPayload, "Open a URL / file in the desktop preview pane.")
-
-var _ = Event("preview.close", PreviewClosePayload, "Close the preview pane or one tab.")
-
-var PaneRevealPayload = pydantic.NewModel("PaneRevealPayload", OpenConfig,
-	pydantic.Req("pane", pydantic.Str),
-).Described("``tools/focus_pane_tool.py``.")
-
-var _ = Event("pane.reveal", PaneRevealPayload, "Focus / reveal a named desktop pane.")
-
-var MessageReactionPayload = pydantic.NewModel("MessageReactionPayload", ClosedConfig,
-	pydantic.Req("row_id", pydantic.Int),
-	pydantic.Req("reactions", pydantic.List(MessageReaction)),
-	pydantic.Req("role", pydantic.Str),
-).Described("``tools/react_to_message_tool.py``.")
-
-var _ = Event("message.reaction", MessageReactionPayload, "The agent reacted to a message; paint it live.")
-
-var TerminalOutputPayload = pydantic.NewModel("TerminalOutputPayload", ClosedConfig,
-	pydantic.Req("process_id", pydantic.Str),
-	pydantic.Req("chunk", pydantic.Str),
-).Described("``session_notifications`` process_registry.on_output.")
-
-var TerminalClosePayload = pydantic.NewModel("TerminalClosePayload", ClosedConfig,
-	pydantic.Req("process_id", pydantic.Str),
-)
-
-var _ = Event("agent.terminal.output", TerminalOutputPayload, "Output chunk from an agent-owned background process.")
-
-var _ = Event("terminal.close", TerminalClosePayload, "An agent-owned background process closed.")
 
 var BrowserProgressPayload = pydantic.NewModel("BrowserProgressPayload", ClosedConfig,
 	pydantic.Req("message", pydantic.Str),
@@ -597,5 +526,3 @@ var _ = Event("projects.changed", ChangeSignalPayload, "projects.db moved; refet
 var _ = Event("pairing.changed", ChangeSignalPayload, "Pairing state moved; refetch pairing.")
 
 var _ = Event("skills.changed", ChangeSignalPayload, "A skill root moved (installed/removed elsewhere); refetch commands.catalog from the gateway.")
-
-var _ = Event("bot_relay.outbox.pending", ChangeSignalPayload, "A bot-relay outbox envelope is queued; drain it.")

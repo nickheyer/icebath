@@ -121,11 +121,6 @@ func (wecomPlatformPlugin) Register(ctx *plugins.Context) error {
 	extra := map[string]any{
 		"target_ref_syntax_fn":   gateway.ParseNonempty,
 		"standalone_send":        &gateway.StandaloneSendPolicy{TextDirect: true},
-		"dashboard_label":        "WeCom (group bot)",
-		"dashboard_description":  "Send-only WeCom group bot via webhook.",
-		"docs_url":               "https://developer.work.weixin.qq.com/document/path/91770",
-		"dashboard_env_vars":     []string{"WECOM_BOT_ID", "WECOM_SECRET"},
-		"dashboard_required_env": []string{"WECOM_BOT_ID"},
 		"is_connected":           isConnected,
 		"validate_config":        isConnected,
 		"setup_fn":               InteractiveSetup,
@@ -154,12 +149,6 @@ func (wecomPlatformPlugin) Register(ctx *plugins.Context) error {
 		return err
 	}
 	callbackExtra := map[string]any{
-		"dashboard_label":       "WeCom (app)",
-		"dashboard_description": "Two-way WeCom integration via callback app.",
-		"docs_url":              "https://developer.work.weixin.qq.com/document/path/90930",
-		"dashboard_env_vars": []string{"WECOM_CALLBACK_CORP_ID", "WECOM_CALLBACK_CORP_SECRET", "WECOM_CALLBACK_AGENT_ID",
-			"WECOM_CALLBACK_TOKEN", "WECOM_CALLBACK_ENCODING_AES_KEY"},
-		"dashboard_required_env": []string{"WECOM_CALLBACK_CORP_ID", "WECOM_CALLBACK_CORP_SECRET", "WECOM_CALLBACK_AGENT_ID"},
 		"ensure_deps_fn":         ensureWeComCallbackRequirements,
 		"is_connected":           callbackIsConnected,
 		"validate_config":        callbackIsConnected,
@@ -174,11 +163,13 @@ func (wecomPlatformPlugin) Register(ctx *plugins.Context) error {
 	}
 	_, err := ctx.RegisterPlatform(plugins.PlatformSpec{
 		Name: "wecom_callback", Label: "WeCom Callback (self-built apps)",
-		AdapterFactory: gateway.AdapterFactory(func(fctx context.Context, cfg *gateway.PlatformConfig) (any, error) { return buildCallbackAdapter(fctx, cfg) }),
-		Check:          checkWeComCallbackRequirements,
-		RequiredEnv:    []string{"WECOM_CALLBACK_CORP_ID", "WECOM_CALLBACK_CORP_SECRET"},
-		InstallHint:    installHint,
-		Extra:          callbackExtra,
+		AdapterFactory: gateway.AdapterFactory(func(fctx context.Context, cfg *gateway.PlatformConfig) (any, error) {
+			return buildCallbackAdapter(fctx, cfg)
+		}),
+		Check:       checkWeComCallbackRequirements,
+		RequiredEnv: []string{"WECOM_CALLBACK_CORP_ID", "WECOM_CALLBACK_CORP_SECRET"},
+		InstallHint: installHint,
+		Extra:       callbackExtra,
 	})
 	if err != nil {
 		return fmt.Errorf("wecom_callback: %w", err)

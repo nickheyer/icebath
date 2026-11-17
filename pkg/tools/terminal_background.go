@@ -63,7 +63,6 @@ type processSpawner interface {
 	AnyRunning(pred func(*ProcessSession) bool) bool
 	ArmHeartbeat(s *ProcessSession, seconds int) int
 	AddPendingWatcher(watcher map[string]any)
-	RequestCloseTerminal(env *Env, sessionID string) *pyjson.Object
 }
 
 // registryAdapter exposes the process wide registry through the spawner surface
@@ -95,10 +94,6 @@ func (a registryAdapter) ArmHeartbeat(s *ProcessSession, seconds int) int {
 
 func (a registryAdapter) AddPendingWatcher(watcher map[string]any) {
 	a.r.PendingWatchers = append(a.r.PendingWatchers, watcher)
-}
-
-func (a registryAdapter) RequestCloseTerminal(env *Env, sessionID string) *pyjson.Object {
-	return a.r.RequestCloseTerminal(env, sessionID)
 }
 
 // Registry seam, the process wide registry by default

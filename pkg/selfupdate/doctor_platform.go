@@ -25,7 +25,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyfs"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pysounddevice"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
 	"github.com/nickheyer/icebath/pkg/media"
 	"github.com/nickheyer/icebath/pkg/plugins"
@@ -371,16 +370,14 @@ func doctorCheckS6Supervision(ctx context.Context, d *Doctor, issues *[]string) 
 	}
 	doctorSection(d.W, "s6 Supervision")
 	mgr := doctorNewS6Manager()
-	for _, static := range []string{"main-icebath", "dashboard"} {
-		up, err := mgr.IsRunning(static)
-		if err != nil {
-			return err
-		}
-		if up {
-			doctorCheckOK(d.W, static+": up", "")
-		} else {
-			doctorCheckInfo(d.W, static+": down (expected if not enabled via env)")
-		}
+	up, err := mgr.IsRunning("main-icebath")
+	if err != nil {
+		return err
+	}
+	if up {
+		doctorCheckOK(d.W, "main-icebath: up", "")
+	} else {
+		doctorCheckInfo(d.W, "main-icebath: down (expected if not enabled via env)")
 	}
 	return doctorReportHostGatewaySlot(d.W, mgr, issues)
 }
@@ -511,68 +508,6 @@ func doctorPlatformPathExists(path string) bool {
 	return err == nil
 }
 
-const doctorTCCCdhashDetail = "the desktop bundle's designated requirement is cdhash-pinned (pre-#73681 build) — rebuilds invalidate " +
-	"all permission grants. Run `icebath update` to get the stable identifier-pinned signing identity, " +
-	"then re-grant permissions once."
-
-var doctorTCCStableDetail = map[bool]string{
-	true:  "(certificate-anchored DR; grants survive rebuilds)",
-	false: "(identifier-pinned DR; grants survive rebuilds — for the strongest anchor, see `icebath desktop --setup-tcc-identity`)",
-}
-
-// Reports whether TCC grants of a locally built desktop bundle survive rebuilds, silent off macOS or without a bundle
-func doctorCheckMacosTCCGrants(ctx context.Context, d *Doctor) {
-	app := ""
-	if doctorSysPlatform == "darwin" {
-		app = doctorDesktopAppBundle(d)
-	}
-	if app == "" {
-		return
-	}
-	dr, ok := doctorMacosDesktopDR(ctx, app)
-	if !ok || dr == "" {
-		doctorCheckWarn(d.W, "macOS TCC grant check", "(could not read code-signing requirement of the desktop bundle)")
-		return
-	}
-	if strings.Contains(strings.ToLower(dr), "cdhash") {
-		doctorCheckWarn(d.W, "macOS TCC grants will reset after every update", doctorTCCCdhashDetail)
-		return
-	}
-	doctorCheckOK(d.W, "macOS TCC signing identity is stable", doctorTCCStableDetail[strings.Contains(strings.ToLower(dr), "certificate")])
-	doctorCheckInfo(d.W, "If macOS still re-prompts for permissions (toggle shows ON): the stored grant is stale — run "+
-		"`tccutil reset ScreenCapture ai.icebath` (repeat per affected service), toggle it ON in "+
-		"System Settings, then fully quit & relaunch Icebath once.")
-}
-
-// Newest locally built desktop bundle under apps/desktop/release, empty when none exists
-var doctorDesktopAppBundle = func(d *Doctor) string {
-	matches, _ := filepath.Glob(filepath.Join(d.ProjectRoot, "apps", "desktop", "release", "mac*", "Icebath.app"))
-	best, bestTime := "", time.Time{}
-	for _, candidate := range matches {
-		info, err := os.Stat(candidate)
-		if err != nil || !info.IsDir() {
-			continue
-		}
-		if best == "" || info.ModTime().After(bestTime) {
-			best, bestTime = candidate, info.ModTime()
-		}
-	}
-	return best
-}
-
-// Designated requirement text of a bundle, false when codesign is missing, fails or hangs
-var doctorMacosDesktopDR = func(ctx context.Context, app string) (string, bool) {
-	codesign := doctorWhich("codesign")
-	if codesign == "" {
-		return "", false
-	}
-	done, err := doctorSubprocessRun(ctx, []string{codesign, "-d", "--requirements", "-", app}, pysubprocess.Options{Timeout: 15 * time.Second})
-	if err != nil || done.Returncode != 0 {
-		return "", false
-	}
-	return strings.ToValidUTF8(string(done.Stdout), "�") + strings.ToValidUTF8(string(done.Stderr), "�"), true
-}
-
 // Reports the interpreter TCC anchor and installs it with fix, silent off macOS and for unmanaged interpreters
 func doctorCheckMacosTCCAnchor(ctx context.Context, d *Doctor, shouldFix bool) error {
 	return doctorWarnOnError(d.W, "macOS TCC anchor check failed", "", nil, func() error {
@@ -664,7 +599,7 @@ func doctorVersionLess(v [3]int, major, minor int) bool {
 	return v[0] < major || (v[0] == major && v[1] < minor)
 }
 
-// Reports the interpreter, the linked SQLite, the runtime venv and the macOS TCC anchors and grants
+// Reports the interpreter, the linked SQLite, the runtime venv, the macOS TCC anchor and Full Disk Access
 func checkPythonEnvironment(ctx context.Context, d *Doctor, shouldFix bool) (*Finding, error) {
 	return doctorCheck(func(f *Finding) error {
 		py, err := doctorRuntimePython(ctx)
@@ -733,11 +668,7 @@ func checkPythonEnvironment(ctx context.Context, d *Doctor, shouldFix bool) (*Fi
 		if err := doctorCheckMacosTCCAnchor(ctx, d, shouldFix); err != nil {
 			return err
 		}
-		if err := CheckMacosFullDiskAccess(d.W); err != nil {
-			return err
-		}
-		doctorCheckMacosTCCGrants(ctx, d)
-		return nil
+		return CheckMacosFullDiskAccess(d.W)
 	})
 }
 
@@ -809,51 +740,6 @@ func doctorCheckWindowsGatewayAutostart(ctx context.Context, d *Doctor, shouldFi
 		f.ManualIssues = append(f.ManualIssues, warnings...)
 	}
 	return nil
-}
-
-// Argv that loads the dashboard web surface in a child process and exits
-var doctorDashboardProbeArgv = dashboardImportProbeArgv
-
-// Loads the dashboard web surface in a child process so a crash on load lands in the report
-func checkWebDashboardImport(ctx context.Context, d *Doctor, shouldFix bool) (*Finding, error) {
-	return doctorCheck(func(f *Finding) error {
-		argv, err := doctorDashboardProbeArgv(ctx, d.ProjectRoot)
-		if err != nil {
-			return err
-		}
-		env := []string{}
-		for _, entry := range os.Environ() {
-			if !strings.HasPrefix(entry, pm.EnvDisableLazyInstalls+"=") {
-				env = append(env, entry)
-			}
-		}
-		env = append(env, pm.EnvDisableLazyInstalls+"=1")
-		repair := "Repair the dashboard dependencies: `icebath pm repair`, then restart Icebath"
-		done, err := doctorSubprocessRun(ctx, argv, pysubprocess.Options{Dir: d.ProjectRoot, Env: env, Timeout: 120 * time.Second})
-		if err != nil {
-			var expired *pysubprocess.TimeoutExpired
-			if !errors.As(err, &expired) {
-				return err
-			}
-			doctorFailAndIssue(d.W, "Dashboard web surface", "(import probe timed out)", repair, &f.Issues)
-			return nil
-		}
-		stderr := pystr.Strip(strings.ToValidUTF8(string(done.Stderr), "\ufffd"))
-		switch {
-		case done.Returncode == 0:
-			doctorCheckOK(d.W, "Dashboard web surface", "(imports cleanly)")
-		case strings.Contains(stderr, "Web UI requires fastapi and uvicorn"):
-			doctorCheckWarn(d.W, "Dashboard web surface", "(optional web extra not installed)")
-		default:
-			detail := fmt.Sprintf("(exited with code %d)", done.Returncode)
-			if stderr != "" {
-				lines := pystr.Splitlines(stderr, false)
-				detail = lines[len(lines)-1]
-			}
-			doctorFailAndIssue(d.W, "Dashboard web surface", detail, repair, &f.Issues)
-		}
-		return nil
-	})
 }
 
 // Reports systemd linger, s6 supervision and Windows autostart of the gateway

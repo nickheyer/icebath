@@ -56,9 +56,9 @@ func TestSessionCwdRecordWinsOverProcessCwd(t *testing.T) {
 		}
 	}
 	t.Chdir(launch)
-	tools.RecordSessionCwd(env, "desktop:123", workspace)
-	t.Cleanup(func() { tools.ClearSessionCwd(env, "desktop:123") })
-	prompt := buildInitPromptForCwd(env, "", "", keyOf("desktop:123"))
+	tools.RecordSessionCwd(env, "tui:123", workspace)
+	t.Cleanup(func() { tools.ClearSessionCwd(env, "tui:123") })
+	prompt := buildInitPromptForCwd(env, "", "", keyOf("tui:123"))
 	if !strings.Contains(prompt, "for the project at: "+workspace) || strings.Contains(prompt, launch) {
 		t.Fatalf("prompt %q", prompt[:200])
 	}
@@ -74,9 +74,9 @@ func TestStaleRecordFallsBackToProcessCwd(t *testing.T) {
 	t.Chdir(launch)
 	t.Setenv("TERMINAL_CWD", "")
 	os.Unsetenv("TERMINAL_CWD")
-	tools.RecordSessionCwd(env, "desktop:123", filepath.Join(tmp, "deleted-project"))
-	t.Cleanup(func() { tools.ClearSessionCwd(env, "desktop:123") })
-	if prompt := buildInitPromptForCwd(env, "", "", keyOf("desktop:123")); !strings.Contains(prompt, "for the project at: "+launch) {
+	tools.RecordSessionCwd(env, "tui:123", filepath.Join(tmp, "deleted-project"))
+	t.Cleanup(func() { tools.ClearSessionCwd(env, "tui:123") })
+	if prompt := buildInitPromptForCwd(env, "", "", keyOf("tui:123")); !strings.Contains(prompt, "for the project at: "+launch) {
 		t.Fatalf("prompt %q", prompt[:200])
 	}
 }
@@ -84,9 +84,9 @@ func TestStaleRecordFallsBackToProcessCwd(t *testing.T) {
 func TestExplicitCwdWinsOverSessionRecord(t *testing.T) {
 	env := initTestEnv(t)
 	tmp := t.TempDir()
-	tools.RecordSessionCwd(env, "desktop:123", filepath.Join(tmp, "other"))
-	t.Cleanup(func() { tools.ClearSessionCwd(env, "desktop:123") })
-	if prompt := buildInitPromptForCwd(env, tmp, "", keyOf("desktop:123")); !strings.Contains(prompt, "for the project at: "+tmp) {
+	tools.RecordSessionCwd(env, "tui:123", filepath.Join(tmp, "other"))
+	t.Cleanup(func() { tools.ClearSessionCwd(env, "tui:123") })
+	if prompt := buildInitPromptForCwd(env, tmp, "", keyOf("tui:123")); !strings.Contains(prompt, "for the project at: "+tmp) {
 		t.Fatalf("prompt %q", prompt[:200])
 	}
 }
@@ -119,9 +119,9 @@ func TestStaleExplicitCwdFallsThroughToTheSessionRecord(t *testing.T) {
 	if err := os.MkdirAll(workspace, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	tools.RecordSessionCwd(env, "desktop:123", workspace)
-	t.Cleanup(func() { tools.ClearSessionCwd(env, "desktop:123") })
-	prompt := buildInitPromptForCwd(env, gone, "", keyOf("desktop:123"))
+	tools.RecordSessionCwd(env, "tui:123", workspace)
+	t.Cleanup(func() { tools.ClearSessionCwd(env, "tui:123") })
+	prompt := buildInitPromptForCwd(env, gone, "", keyOf("tui:123"))
 	if !strings.Contains(prompt, "for the project at: "+workspace) || strings.Contains(prompt, gone) {
 		t.Fatalf("prompt %q", prompt[:200])
 	}

@@ -37,9 +37,8 @@ func scriptAllInput(t *testing.T, answers ...string) {
 
 func TestUpgradeHermesModelSignsAConnectorFreeTierInInsteadOfRefusing(t *testing.T) {
 	_, env := installAnonPortal(t)
-	desktop := anonDesktopEnv(env)
-	state, err := EnsurePortalIdentity(desktop, PortalIdentityOptions{Explicit: true})
-	if err != nil || !guestWithoutFreeTierIn(desktop, state) {
+	state, err := EnsurePortalIdentity(env, PortalIdentityOptions{Explicit: true})
+	if err != nil || !guestWithoutFreeTierIn(env, state) {
 		t.Fatalf("guest without free tier %v %v", state, err)
 	}
 	logins := 0
@@ -48,7 +47,7 @@ func TestUpgradeHermesModelSignsAConnectorFreeTierInInsteadOfRefusing(t *testing
 		return true
 	})
 	var out bytes.Buffer
-	if err := modelFlowNous(&ModelFlowRun{Ctx: desktop.ctx(), Env: desktop, Out: &out, Config: map[string]any{}}); err != nil {
+	if err := modelFlowNous(&ModelFlowRun{Ctx: env.ctx(), Env: env, Out: &out, Config: map[string]any{}}); err != nil {
 		t.Fatal(err)
 	}
 	if logins != 1 || strings.Contains(out.String(), UpgradeHint) {

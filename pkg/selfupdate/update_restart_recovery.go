@@ -10,7 +10,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
-	"runtime"
 	"slices"
 	"sort"
 	"strings"
@@ -18,7 +17,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/proc"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
@@ -26,24 +24,18 @@ import (
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
-// Hidden entry restarting supervised gateway profiles and serve units from a fresh process
+// Hidden entry restarting supervised gateway profiles from a fresh process
 const UpdateRestartRecoveryEntry = "update-restart-recovery"
 
 const (
-	restartRecoveryEnv         = "ICEBATH_UPDATE_RESTART_RECOVERY"
-	recoveryProfileTimeout     = 90 * time.Second
-	recoveryVerifyTimeout      = 15 * time.Second
-	recoveryUnitRestartTimeout = 60 * time.Second
-	recoveryUnitSettleAttempts = 10
-	recoveryUnitSettleDelay    = time.Second
+	restartRecoveryEnv     = "ICEBATH_UPDATE_RESTART_RECOVERY"
+	recoveryProfileTimeout = 90 * time.Second
+	recoveryVerifyTimeout  = 15 * time.Second
 )
 
 var (
-	recoveryGatewayMarkers   = []string{"_ICEBATH_GATEWAY", "ICEBATH_GATEWAY", "ICEBATH_GATEWAY_MODE"}
-	recoverySupervisorRe     = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,31}$`)
-	recoveryUnitRe           = regexp.MustCompile(`^icebath-(serve|dashboard)(-[a-z0-9][a-z0-9_-]{0,63})?\.service$`)
-	recoveryServeUnitPattern = []string{"icebath-serve*", "icebath-dashboard*"}
-	recoveryScopeLabels      = []string{"user", "system"}
+	recoveryGatewayMarkers = []string{"_ICEBATH_GATEWAY", "ICEBATH_GATEWAY", "ICEBATH_GATEWAY_MODE"}
+	recoverySupervisorRe   = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,31}$`)
 )
 
 // Finished recovery command with its exit status and decoded stdout
@@ -59,11 +51,8 @@ type recoveryRunOptions struct {
 	DevNull  bool
 }
 
-// Recovery command runner and settle sleep, replaced by hermes tests
-var (
-	recoveryRun   = runRecoveryCommand
-	recoverySleep = time.Sleep
-)
+// Recovery command runner, replaced by hermes tests
+var recoveryRun = runRecoveryCommand
 
 // Runs argv capturing text output, nil when it cannot start or outlives its timeout
 func runRecoveryCommand(argv []string, timeout time.Duration, o recoveryRunOptions) *recoveryCompleted {
@@ -181,7 +170,7 @@ func systemdVerifiedActive(profile string) bool {
 		return false
 	}
 	for _, unit := range systemdUnitCandidates(profile) {
-		if recoveryUnitIsActive([]string{systemctl, "--user"}, unit, true) {
+		if recoveryUnitIsActive([]string{systemctl, "--user"}, unit) {
 			return true
 		}
 	}
@@ -298,146 +287,10 @@ func restartProfiles(ctx context.Context, profiles []string, supervisors map[str
 	return pyjson.ObjectOf("verified", verified, "relaunch_attempted", attempted, "failed", failed, "covered", coveredMap), nil
 }
 
-// Labelled systemctl argvs of the user and system scopes, none off Linux or without systemctl
-func systemctlScopes() [][2]any {
-	systemctl, err := exec.LookPath("systemctl")
-	if err != nil || systemctl == "" || runtime.GOOS != "linux" {
-		return nil
-	}
-	return [][2]any{{"user", []string{systemctl, "--user"}}, {"system", []string{systemctl}}}
-}
-
-// Serve and dashboard units systemd lists in one scope, validated by exact name
-func listedServeUnits(scope []string) []string {
-	var units []string
-	for _, pattern := range recoveryServeUnitPattern {
-		result := recoveryRun(append(slices.Clone(scope), "list-units", pattern, "--plain", "--no-legend", "--no-pager"), recoveryVerifyTimeout, recoveryRunOptions{})
-		if result == nil {
-			continue
-		}
-		for _, line := range pystr.Splitlines(result.Stdout, false) {
-			parts := pystr.SplitWhitespace(line, -1)
-			if len(parts) > 0 && recoveryUnitRe.MatchString(parts[0]) && !slices.Contains(units, parts[0]) {
-				units = append(units, parts[0])
-			}
-		}
-	}
-	return units
-}
-
-// Main pid systemd reports for a unit, zero when absent or unreadable
-func recoveryUnitMainPid(scope []string, unit string) int {
-	result := recoveryRun(append(slices.Clone(scope), "show", unit, "--property=MainPID", "--value"), recoveryVerifyTimeout, recoveryRunOptions{})
-	if !recoverySucceeded(result) {
-		return 0
-	}
-	text := recoveryStdout(result)
-	if text == "" {
-		return 0
-	}
-	n, ok := pyint.Parse(text)
-	if !ok || !n.IsInt64() {
-		return 0
-	}
-	return int(n.Int64())
-}
-
-// True when systemd reports the unit active, requiring a zero exit when asked
-func recoveryUnitIsActive(scope []string, unit string, requireRC0 bool) bool {
+// True when systemd exits zero reporting the unit active
+func recoveryUnitIsActive(scope []string, unit string) bool {
 	result := recoveryRun(append(slices.Clone(scope), "is-active", unit), recoveryVerifyTimeout, recoveryRunOptions{})
-	if result == nil || (requireRC0 && !recoverySucceeded(result)) {
-		return false
-	}
-	return recoveryStdout(result) == "active"
-}
-
-// True once an active unit runs a main pid other than the one before its restart
-func serveUnitReplaced(scope []string, unit string, previousPid int) bool {
-	for attempt := range recoveryUnitSettleAttempts {
-		if attempt > 0 {
-			recoverySleep(recoveryUnitSettleDelay)
-		}
-		if recoveryUnitIsActive(scope, unit, false) {
-			if current := recoveryUnitMainPid(scope, unit); current > 0 && current != previousPid {
-				return true
-			}
-		}
-	}
-	return false
-}
-
-// Scope label and base unit of a skip entry in its mapping or scope slash unit shape
-func splitSkipEntry(entry any) (string, string) {
-	var scope, unit string
-	if obj, ok := pyjson.AsObject(entry); ok {
-		if v := obj.GetOr("scope", nil); pyrepr.Truthy(v) {
-			scope = pyrepr.Str(v)
-		}
-		if v := obj.GetOr("unit", nil); pyrepr.Truthy(v) {
-			unit = pyrepr.Str(v)
-		}
-	} else {
-		var sep bool
-		scope, unit, sep = strings.Cut(pyrepr.Str(entry), "/")
-		if !sep {
-			scope, unit = "", scope
-		}
-	}
-	return scope, strings.TrimSuffix(unit, ".service")
-}
-
-// Settled units split into scope qualified and legacy bare entries
-func normalizedSkips(skipUnits []any) (map[[2]string]bool, map[string]bool) {
-	qualified, legacy := map[[2]string]bool{}, map[string]bool{}
-	for _, entry := range skipUnits {
-		scope, base := splitSkipEntry(entry)
-		if base == "" {
-			continue
-		}
-		if slices.Contains(recoveryScopeLabels, scope) {
-			qualified[[2]string{scope, base}] = true
-		} else {
-			legacy[base] = true
-		}
-	}
-	return qualified, legacy
-}
-
-// Restarts every active serve and dashboard unit systemd lists and proves each came back on a new pid
-func restartServeUnits(skipUnits []any) *pyjson.Object {
-	skippedQualified, skippedLegacy := normalizedSkips(skipUnits)
-	outcomes := map[[2]string]bool{}
-	seen := map[[2]string]bool{}
-	for _, pair := range systemctlScopes() {
-		label, scope := pair[0].(string), pair[1].([]string)
-		for _, unit := range listedServeUnits(scope) {
-			base := strings.TrimSuffix(unit, ".service")
-			target := [2]string{label, base}
-			if seen[target] || skippedQualified[target] || skippedLegacy[base] {
-				continue
-			}
-			seen[target] = true
-			if !recoveryUnitIsActive(scope, unit, false) {
-				continue
-			}
-			previous := recoveryUnitMainPid(scope, unit)
-			outcomes[target] = previous > 0 &&
-				recoverySucceeded(recoveryRun(append(slices.Clone(scope), "--no-ask-password", "restart", unit), recoveryUnitRestartTimeout, recoveryRunOptions{})) &&
-				serveUnitReplaced(scope, unit, previous)
-		}
-	}
-	var verified, failed []string
-	for target, ok := range outcomes {
-		name := target[0] + "/" + target[1]
-		if ok {
-			verified = append(verified, name)
-		} else {
-			failed = append(failed, name)
-		}
-	}
-	sort.Strings(verified)
-	sort.Strings(failed)
-	return pyjson.ObjectOf("verified", stringsAny(verified), "failed", stringsAny(failed))
+	return recoverySucceeded(result) && recoveryStdout(result) == "active"
 }
 
 func stringsAny(values []string) []any {
@@ -448,11 +301,11 @@ func stringsAny(values []string) []any {
 	return out
 }
 
-// Validated profiles, supervisors, serve flag and skip units of a recovery payload, a ValueError text when malformed
-func parseRecoveryPayload(text string) ([]string, map[string]string, bool, []any, error) {
+// Validated profiles and supervisors of a recovery payload, a ValueError text when malformed
+func parseRecoveryPayload(text string) ([]string, map[string]string, error) {
 	decoded, err := pyjson.Loads(text)
 	if err != nil {
-		return nil, nil, false, nil, err
+		return nil, nil, err
 	}
 	payload, ok := decoded.(*pyjson.Object)
 	if !ok {
@@ -460,13 +313,13 @@ func parseRecoveryPayload(text string) ([]string, map[string]string, bool, []any
 	}
 	rawProfiles, ok := payload.GetOr("profiles", nil).([]any)
 	if !ok {
-		return nil, nil, false, nil, &pm.PyError{Class: "ValueError", Message: "recovery payload must contain a profiles list"}
+		return nil, nil, &pm.PyError{Class: "ValueError", Message: "recovery payload must contain a profiles list"}
 	}
 	profiles := make([]string, 0, len(rawProfiles))
 	for _, p := range rawProfiles {
 		name, isStr := p.(string)
 		if !isStr || !home.ProfileIDRe.MatchString(name) {
-			return nil, nil, false, nil, &pm.PyError{Class: "ValueError", Message: "recovery profiles contain an invalid profile id"}
+			return nil, nil, &pm.PyError{Class: "ValueError", Message: "recovery profiles contain an invalid profile id"}
 		}
 		profiles = append(profiles, name)
 	}
@@ -474,64 +327,20 @@ func parseRecoveryPayload(text string) ([]string, map[string]string, bool, []any
 	if raw := payload.GetOr("supervisors", nil); raw != nil {
 		obj, isObj := raw.(*pyjson.Object)
 		if !isObj {
-			return nil, nil, false, nil, &pm.PyError{Class: "ValueError", Message: "recovery supervisors map is invalid"}
+			return nil, nil, &pm.PyError{Class: "ValueError", Message: "recovery supervisors map is invalid"}
 		}
 		for _, profile := range obj.Keys {
 			supervisor, isStr := obj.Vals[profile].(string)
 			if !isStr || !home.ProfileIDRe.MatchString(profile) || !recoverySupervisorRe.MatchString(supervisor) {
-				return nil, nil, false, nil, &pm.PyError{Class: "ValueError", Message: "recovery supervisors map is invalid"}
+				return nil, nil, &pm.PyError{Class: "ValueError", Message: "recovery supervisors map is invalid"}
 			}
 			supervisors[profile] = supervisor
 		}
 	}
-	recoverServe := false
-	skipUnits := []any{}
-	if raw := payload.GetOr("serve_units", nil); raw != nil {
-		block, isObj := raw.(*pyjson.Object)
-		if !isObj {
-			return nil, nil, false, nil, &pm.PyError{Class: "ValueError", Message: "recovery serve_units block is invalid"}
-		}
-		recoverServe = pyrepr.Truthy(block.GetOr("recover", nil))
-		rawSkip := block.GetOr("skip", nil)
-		if !pyrepr.Truthy(rawSkip) {
-			rawSkip = []any{}
-		}
-		skips, isList := rawSkip.([]any)
-		if !isList {
-			return nil, nil, false, nil, &pm.PyError{Class: "ValueError", Message: "recovery serve_units skip list is invalid"}
-		}
-		for _, entry := range skips {
-			if _, isStr := entry.(string); !isStr {
-				if _, isObj := entry.(*pyjson.Object); !isObj {
-					return nil, nil, false, nil, &pm.PyError{Class: "ValueError", Message: "recovery serve_units skip list is invalid"}
-				}
-			}
-		}
-		for _, entry := range skips {
-			if obj, isObj := entry.(*pyjson.Object); isObj {
-				unit, unitIsStr := obj.GetOr("unit", nil).(string)
-				if !unitIsStr {
-					return nil, nil, false, nil, &pm.PyError{Class: "ValueError", Message: "recovery serve_units skip list is invalid"}
-				}
-				if _, scopeIsStr := obj.GetOr("scope", nil).(string); !scopeIsStr {
-					entry = pyjson.ObjectOf("unit", unit)
-				}
-			}
-			scope, base := splitSkipEntry(entry)
-			if (scope != "" && !slices.Contains(recoveryScopeLabels, scope)) || !recoveryUnitRe.MatchString(base+".service") {
-				continue
-			}
-			if scope != "" {
-				skipUnits = append(skipUnits, scope+"/"+base)
-			} else {
-				skipUnits = append(skipUnits, base)
-			}
-		}
-	}
-	return profiles, supervisors, recoverServe, skipUnits, nil
+	return profiles, supervisors, nil
 }
 
-// Restarts the payload's profiles and serve units and prints the outcome JSON, the child exit status
+// Restarts the payload's profiles and prints the outcome JSON, the child exit status
 func UpdateRestartRecoveryMain(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	prog := "icebath " + UpdateRestartRecoveryEntry
 	usage := "usage: " + prog + " [-h]\n"
@@ -565,10 +374,8 @@ func UpdateRestartRecoveryMain(ctx context.Context, args []string, stdin io.Read
 	var result *pyjson.Object
 	var profiles []string
 	var supervisors map[string]string
-	var recoverServe bool
-	var skipUnits []any
 	if err == nil {
-		profiles, supervisors, recoverServe, skipUnits, err = parseRecoveryPayload(text)
+		profiles, supervisors, err = parseRecoveryPayload(text)
 	}
 	if err == nil {
 		result, err = restartProfiles(ctx, profiles, supervisors)
@@ -576,22 +383,15 @@ func UpdateRestartRecoveryMain(ctx context.Context, args []string, stdin io.Read
 			fmt.Fprintf(stderr, "%s: %s\n", launchErrorClass(err), launchErrorText(err))
 			return 1
 		}
-		if recoverServe {
-			result.Set("serve_units", restartServeUnits(skipUnits))
-		} else {
-			result.Set("serve_units", pyjson.ObjectOf("verified", []any{}, "failed", []any{}))
-		}
 	}
 	if err != nil {
-		body, _ := pyjson.Dumps(pyjson.ObjectOf("error", err.Error(), "verified", []any{}, "relaunch_attempted", []any{},
-			"failed", []any{}, "serve_units", pyjson.ObjectOf("verified", []any{}, "failed", []any{})))
+		body, _ := pyjson.Dumps(pyjson.ObjectOf("error", err.Error(), "verified", []any{}, "relaunch_attempted", []any{}, "failed", []any{}))
 		fmt.Fprintln(stdout, body)
 		return 2
 	}
 	body, _ := pyjson.Dumps(result, pyjson.SortKeys(true))
 	fmt.Fprintln(stdout, body)
-	serveFailed := rowValue(result.GetOr("serve_units", nil), "failed")
-	if pyrepr.Truthy(result.GetOr("failed", nil)) || pyrepr.Truthy(serveFailed) {
+	if pyrepr.Truthy(result.GetOr("failed", nil)) {
 		return 1
 	}
 	return 0

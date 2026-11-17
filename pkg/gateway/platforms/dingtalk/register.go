@@ -142,9 +142,6 @@ var dingtalkAdapterClass = &gateway.AdapterClass{Name: "DingTalkAdapter", Traits
 func (dingtalkPlatformPlugin) Register(ctx *plugins.Context) error {
 	extra := map[string]any{
 		"standalone_send":        &gateway.StandaloneSendPolicy{TextDirect: true},
-		"dashboard_description":  "Connect Icebath to DingTalk groups (钉钉).",
-		"docs_url":               "https://open.dingtalk.com/document/orgapp/the-robot-development-process",
-		"dashboard_env_vars":     []string{"DINGTALK_CLIENT_ID", "DINGTALK_CLIENT_SECRET"},
 		"ensure_deps_fn":         EnsureDingTalkDeps,
 		"is_connected":           isConnected,
 		"scoped_validate_config": isConnected,

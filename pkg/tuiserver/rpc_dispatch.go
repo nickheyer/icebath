@@ -254,7 +254,7 @@ func Dispatch(ctx context.Context, req any, transport tuigateway.Transport) map[
 	}
 	ctx = tuigateway.BindTransport(ctx, t)
 	if frame := frameObject(req); frame != nil && tuigateway.IsResponseFrame(frame) {
-		if !tuigateway.ResolveResponse(frame, t) && !relayComputeHostResponse(ctx, frame) {
+		if !tuigateway.ResolveResponse(frame, t) {
 			logger().Debug(fmt.Sprintf("dropping response for unknown server request id=%s", pyrepr.Repr(frame.GetOr("id", nil))))
 		}
 		return nil

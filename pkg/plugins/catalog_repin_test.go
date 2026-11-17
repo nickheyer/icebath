@@ -37,7 +37,7 @@ func TestUrlInstallOfAnArchivedHandoffRepoIsRepinnedToItsCatalogEntry(t *testing
 		seen["reviewed_pin"] = opts.ReviewedPin
 		return realScan(h, pluginDir, identifier, opts)
 	}
-	result, err := DashboardUpdateUserPlugin(w.ctx, "cat-plugin", false, false)
+	result, err := UnattendedUpdateUserPlugin(w.ctx, "cat-plugin", false, false)
 	if err != nil || result["ok"] != true || result["unchanged"] != false || catHead(t, target) != w.sha1 {
 		t.Fatalf("update %v %v", result, err)
 	}
@@ -69,7 +69,7 @@ func TestRepinKeepsLocalFilesBacksUpEditsAndFollowsManifestRename(t *testing.T) 
 	}
 	c6Write(t, filepath.Join(w.repo, "plugin.yaml"), "name: cat-plugin-v2\nversion: 2.0.0\ndescription: d\n")
 	w.pin = c6Commit(t, w.repo, "rename")
-	result, err := DashboardUpdateUserPlugin(w.ctx, "cat-plugin", false, false)
+	result, err := UnattendedUpdateUserPlugin(w.ctx, "cat-plugin", false, false)
 	newTarget := filepath.Join(w.pluginsDir, "cat-plugin-v2")
 	if err != nil || result["ok"] != true || result["name"] != "cat-plugin-v2" || catHead(t, newTarget) != w.pin {
 		t.Fatalf("update %v %v", result, err)

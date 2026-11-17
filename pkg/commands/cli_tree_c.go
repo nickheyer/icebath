@@ -9,7 +9,7 @@ func (c *CLI) addTreeC(root *cobra.Command) {
 	c.addPets(root)
 
 	journey := c.newCmd(root, "journey", "Timeline of learned skills + memories over time",
-		"A terminal rendition of the desktop Star Map / Memory Graph: a timeline bar chart of learned skills and memories over time (oldest at top, newest at bottom) plus a playable constellation scrubber. Mirrors the TUI `/journey` overlay and the desktop panel.", "learning", "memory-graph")
+		"A terminal timeline of learned skills and memories: a bar chart over time (oldest at top, newest at bottom) plus a playable constellation scrubber. Mirrors the TUI `/journey` overlay.", "learning", "memory-graph")
 	ff(journey, "reveal", "", 1.0, "Render the timeline built up to this point (0=oldest, 1=now).")
 	bf(journey, "play", "", "Animate the build-up over time (Ctrl-C to stop).")
 	inf(journey, "fps", "", 12, "Animation frames per second for --play (default 12).")
@@ -52,7 +52,7 @@ func (c *CLI) addTreeC(root *cobra.Command) {
 	c.pos(tEnable, pMany("names").withMetavar("NAME").withHelp("Toolset name or MCP tool in server:tool form"))
 	sf(tEnable, "platform", "", "cli", "Platform to apply to (default: cli)")
 	tPost := c.newCmd(tools, "post-setup", "Run a provider's post-setup install hook (npm/pip/binary)",
-		"Run the install/bootstrap hook a tool backend declares — the\nsame step `icebath tools` runs after you pick a provider that\nneeds extra dependencies (browser Chromium, Lightpanda, cua-driver,\nKittenTTS, ddgs, xAI, Codex). Stable,\nnon-interactive target the dashboard spawns to drive backend\nsetup. Keys: chromium, lightpanda, cua_driver, kittentts,\nddgs, xai_grok, openai_codex.")
+		"Run the install/bootstrap hook a tool backend declares — the\nsame step `icebath tools` runs after you pick a provider that\nneeds extra dependencies (browser Chromium, Lightpanda, cua-driver,\nKittenTTS, ddgs, xAI, Codex). Keys: chromium, lightpanda, cua_driver, kittentts,\nddgs, xai_grok, openai_codex.")
 	c.pos(tPost, p("post_setup_key").withMetavar("KEY").withHelp("Post-setup hook key (e.g. chromium, cua_driver, kittentts)"))
 
 	c.addComputerUse(root)
@@ -144,15 +144,15 @@ func (c *CLI) addTreeC(root *cobra.Command) {
 	bf(update, "gateway", "", "Gateway mode: use file-based IPC for prompts instead of stdin (used internally by /update)")
 	bf(update, "check", "", "Check whether an update is available without installing anything")
 	bf(update, "plan", "", "Show the update plan and exit without changing anything: install kind (git/docker/nix), every running Icebath service across all profiles with its supervisor and running code version, and how each will be restarted. Read-only; safe on a live fleet.")
-	bf(update, "list-venv-holders", "", "Print the processes the Windows venv-holder guard would refuse on as a JSON list [{pid, exe, argv, kind}] and exit: 0 when the venv is free, 3 when holders are present. Read-only; kind is gateway / backend (Desktop serve) / icebath:<subcommand> / python, so a scheduled update can stop exactly those PIDs instead of looping. Always [] off Windows.")
+	bf(update, "list-venv-holders", "", "Print the processes the Windows venv-holder guard would refuse on as a JSON list [{pid, exe, argv, kind}] and exit: 0 when the venv is free, 3 when holders are present. Read-only; kind is gateway / icebath:<subcommand> / python, so a scheduled update can stop exactly those PIDs instead of looping. Always [] off Windows.")
 	bf(update, "no-backup", "", "Skip ALL pre-update backups for this run (both the quick state snapshot and the full zip; overrides updates.pre_update_backup)")
 	bf(update, "backup", "", "Force a FULL pre-update backup (quick state snapshot + ICEBATH_HOME zip) for this run, regardless of updates.pre_update_backup")
 	bf(update, "yes", "y", "Run without blocking on prompts: accepts the config-migration and stash-restore prompts, skips the fork-upstream prompt without adding a remote. API-key entry is skipped; run 'icebath config migrate' separately for those.")
-	bf(update, "keep-stash", "", "Do NOT re-apply local changes after the update. Uncommitted changes are still stashed so the update can proceed, but they stay parked in git stash instead of being restored onto the updated code. Used by the desktop updater so local source edits never silently ride along across updates.")
+	bf(update, "keep-stash", "", "Do NOT re-apply local changes after the update. Uncommitted changes are still stashed so the update can proceed, but they stay parked in git stash instead of being restored onto the updated code, so local source edits never ride along across updates.")
 	sf(update, "branch", "", "", "Update against this branch instead of the default (main). If the local checkout is on a different branch, icebath will switch to the requested branch first (auto-stashing any uncommitted changes).")
 	bf(update, "switch-branch", "", "With updates.parked_branch_strategy: update_in_place configured, override it for this run: switch to the update target and update THERE instead of merging the target into the checked-out branch. The branch is left exactly as it was — no merge commit is written into its history. Use on long-lived feature branches where an update-driven merge commit would pollute the branch. No effect under the default strategy (switch), which already switches. Still refuses to touch a dirty tree.")
 	bf(update, "force", "", "Windows: proceed with the update even when another icebath.exe is detected. The concurrent process will likely cause WinError 32 warnings. Does NOT bypass the venv-process guard (see --force-venv).")
-	bf(update, "force-venv", "", "Windows: mutate the venv even while other processes are running from its interpreter (desktop backend, gateway, terminals). Those processes keep native .pyd files locked, so the dependency sync will likely fail partway and strand the install half-updated. Use only if you know the detected holders are false positives.")
+	bf(update, "force-venv", "", "Windows: mutate the venv even while other processes are running from its interpreter (gateway, terminals). Those processes keep native .pyd files locked, so the dependency sync will likely fail partway and strand the install half-updated. Use only if you know the detected holders are false positives.")
 	sf(update, "set-channel", "", "", "Persist the update channel for THIS install (recorded per install in config.yaml under update.installs). Names are resolved from the release archive, not a built-in list. Official source checkouts default to 'stable' (the latest published vX.Y.Z release, exact commit); 'main' follows the source branch. Package channels are baked into their identities.")
 	bf(update, "install-id", "", "Print this install's id and path (the id keys its per-install channel record in config.yaml) and exit.")
 	sf(update, "channel", "", "", "Track CHANNEL for this run only (transient override; --set-channel persists). 'stable' and 'canary' select published releases, 'main' the branch tip. Source installs only.")
@@ -160,14 +160,10 @@ func (c *CLI) addTreeC(root *cobra.Command) {
 
 	uninstall := c.newCmd(root, "uninstall", "Uninstall Icebath Agent", "Remove Icebath Agent from your system. Can keep configs/data for reinstall.")
 	bf(uninstall, "full", "", "Full uninstall - remove everything including configs and data")
-	bf(uninstall, "gui", "", "Uninstall only the desktop Chat GUI, leaving the agent intact")
-	bf(uninstall, "data", "", "Remove only the active Icebath home's user data, leaving installed code intact — the one mode that works on Nix / bundled-app / Docker installs")
-	uninstall.MarkFlagsMutuallyExclusive("full", "gui", "data")
-	bf(uninstall, "gui-summary", "", "Print a JSON summary of installed GUI/agent artifacts and exit (used by the desktop app to gate uninstall options)")
+	bf(uninstall, "data", "", "Remove only the active Icebath home's user data, leaving installed code intact — the one mode that works on Nix / Docker installs")
+	uninstall.MarkFlagsMutuallyExclusive("full", "data")
 	yesFlag(uninstall, "Skip confirmation prompts")
 	bf(uninstall, "dry-run", "", "Print what uninstall would remove without changing anything")
-	sf(uninstall, "desktop-userdata", "", "", "")
-	hide(uninstall, "desktop-userdata")
 
 	acp := c.newCmd(root, "acp", "Run Icebath Agent as an ACP (Agent Client Protocol) server", "Start Icebath Agent in ACP mode for editor integration (VS Code, Zed, JetBrains)")
 	acceptHooks(acp)
@@ -191,69 +187,16 @@ func (c *CLI) addTreeC(root *cobra.Command) {
 		return c.Completion(shell, cmd.OutOrStdout())
 	}
 
-	serverRuntime := func(cmd *cobra.Command) {
-		inf(cmd, "port", "", 9119, "Port (default 9119, 0 for auto-assign by OS)")
-		sf(cmd, "host", "", "127.0.0.1", "Host (default 127.0.0.1)")
-		bf(cmd, "insecure", "", "DEPRECATED / NO-OP. Formerly bypassed auth on a non-loopback bind. As of the June 2026 hardening it no longer disables authentication — a public bind always requires an auth provider (password or OAuth). Bind 127.0.0.1 + tunnel to keep it local.")
-		bf(cmd, "skip-build", "", "Skip the web UI build step and serve the existing dist directly. Useful for non-interactive contexts (Windows Scheduled Tasks, CI) where npm may not be available. Pre-build with: cd web && npm run build")
-		bf(cmd, "isolated", "", "When launched from a named profile, run a dedicated server scoped to that profile instead of routing to the machine-level server. Default behavior is unified: profile launches attach to (or start) ONE machine-level server and preselect the profile.")
-		sf(cmd, "open-profile", "", "", "")
-		hide(cmd, "open-profile")
-		bf(cmd, "stop", "", "Stop all running Icebath web server processes and exit")
-		bf(cmd, "status", "", "List running Icebath web server processes and exit")
-	}
-	dashboard := c.newCmd(root, "dashboard", "Start the web UI dashboard", "Launch the Icebath Agent web dashboard for managing config, API keys, and sessions")
-	serverRuntime(dashboard)
-	bf(dashboard, "no-open", "", "Don't open browser automatically")
-	register := c.newCmd(dashboard, "register", "Register a self-hosted dashboard with Nous Portal (writes the OAuth client ID to .env)",
-		"Register this install as a self-hosted dashboard with your Nous Portal account. Creates an OAuth client, writes ICEBATH_DASHBOARD_OAUTH_CLIENT_ID into ~/.icebath/.env, and prints how to engage the login gate. Requires being logged in (icebath setup).")
-	sf(register, "name", "", "", "Human-readable label for the dashboard (default: an auto-generated name)")
-	sf(register, "redirect-uri", "", "", "Optional public HTTPS OAuth redirect URI for the dashboard, e.g. https://icebath.example.com/auth/callback. Omit for localhost-only use.")
-	sf(register, "portal-url", "", "", "Override the Nous Portal base URL for registration (default: the portal you logged into). The access token must be valid at this portal. Also settable via ICEBATH_DASHBOARD_PORTAL_URL. Mainly for testing against a staging/preview portal.")
-	serve := c.newCmd(root, "serve", "Start the Icebath backend server (headless; powers the desktop app and remote backends)",
-		"Run the Icebath backend server — the JSON-RPC/WebSocket gateway the desktop app and remote clients connect to. Headless: it never opens a browser UI.")
-	serverRuntime(serve)
-	serve.Flags().Bool("no-open", true, "")
-	hide(serve, "no-open")
-	sf(serve, "ssh-session-token-file", "", "", "Read a one-shot Desktop SSH session token from PATH")
-	sf(serve, "ssh-owner-nonce", "", "", "Identify a Desktop-owned SSH backend process")
-
-	webapp := c.newCmd(root, "webapp", "Open the Icebath Desktop workspace in a browser",
-		"Open the Icebath Desktop workspace in a browser. The gateway serves it when webapp.enabled is true in config.yaml; this command builds the bundle when needed, starts the gateway and opens a one-use sign-in link.")
-	bf(webapp, "no-open", "", "Print the one-use link instead of opening a browser")
-	bf(webapp, "force-build", "", "Rebuild the Webapp bundle even when its build receipt is current")
-	bf(webapp, "skip-build", "", "Use the existing Webapp bundle as is")
-	bf(webapp, "build-only", "", "Build the Webapp bundle and stop")
-	bf(webapp, "status", "", "Show whether the gateway is serving the Webapp")
-	bf(webapp, "sign-out", "", "Sign out every Webapp tab (each needs a new link from icebath webapp)")
-	webapp.MarkFlagsMutuallyExclusive("build-only", "status", "sign-out")
-
-	desktop := c.newCmd(root, "desktop", "Build and launch the native desktop app",
-		"Launch the Icebath Electron desktop app. By default this installs workspace Node dependencies, builds the current OS's unpacked Electron app, then launches that packaged artifact.", "gui")
-	bf(desktop, "source", "", "Launch via `electron .` against apps/desktop/dist instead of the packaged app")
-	bf(desktop, "build-only", "", "Build the desktop app but do not launch it (used by the installer's --update flow)")
-	bf(desktop, "fake-boot", "", "Enable deterministic desktop boot delays for validating startup UI")
-	bf(desktop, "ignore-existing", "", "Skip the installed Icebath runtime (~/.icebath/icebath-agent) so no local backend starts and Desktop offers connect or install instead. --icebath-root and the bundled runtime still win; a runtime installed during this launch is used.")
-	sf(desktop, "icebath-root", "", "", "Override the Icebath source root used by Desktop (sets ICEBATH_DESKTOP_ICEBATH_ROOT)")
-	sf(desktop, "cwd", "", "", "Initial project directory for Desktop chat sessions (sets ICEBATH_DESKTOP_CWD)")
-	bf(desktop, "skip-build", "", "Skip npm install/package and launch the existing unpacked app from apps/desktop/release")
-	bf(desktop, "local", "", "Show the local-models UI in the desktop app (models pane, quickstart, picker rows)")
-	bf(desktop, "force-build", "", "Force a full rebuild even if the content stamp matches")
-	bf(desktop, "setup-tcc-identity", "", "macOS only: create/import a self-signed code-signing certificate in the login keychain and point desktop.macos_signing_identity at it, then re-sign the packaged app. Makes macOS TCC grants (Full Disk Access, Accessibility, Files and Folders, microphone) survive rebuilds with a certificate-anchored identity. Idempotent — safe to re-run after updates.")
-	sf(desktop, "identity", "", "Icebath Local Signing", "Certificate name to create/use for --setup-tcc-identity (default: Icebath Local Signing)")
-	bf(desktop, "install-apparmor-profile", "", "Linux only: install an AppArmor profile (sudo) that lets the packaged app use Chromium's user-namespace sandbox on hosts with kernel.apparmor_restrict_unprivileged_userns=1 (Ubuntu 23.10+), then exit. Survives rebuilds of the same checkout.")
-	bf(desktop, "close-preview", "", "Close the preview pane and exit its fullscreen (out-of-band escape hatch when the pane captured all input)")
-
 	logs := c.newCmd(root, "logs", "View and filter Icebath log files",
-		"View, tail, and filter agent.log / errors.log / gateway.log / gui.log / desktop.log / update.log / desktop-update-handoff.log")
-	c.epilog(logs, "Examples:\n    icebath logs                    Show last 50 lines of agent.log\n    icebath logs -f                 Follow agent.log in real time\n    icebath logs errors             Show last 50 lines of errors.log\n    icebath logs gateway -n 100     Show last 100 lines of gateway.log\n    icebath logs gui -f             Follow gui.log in real time\n    icebath logs desktop -f         Follow desktop.log (Electron app boot/backend)\n    icebath logs update             Show last 50 lines of update.log (icebath update mirror)\n    icebath logs handoff            Show last 50 lines of desktop-update-handoff.log\n    icebath logs --level WARNING    Only show WARNING and above\n    icebath logs --session abc123   Filter by session ID\n    icebath logs --component tools  Only show tool-related lines\n    icebath logs --since 1h         Lines from the last hour\n    icebath logs --since 30m -f     Follow, starting from 30 min ago\n    icebath logs list               List available log files with sizes")
+		"View, tail, and filter agent.log / errors.log / gateway.log / update.log")
+	c.epilog(logs, "Examples:\n    icebath logs                    Show last 50 lines of agent.log\n    icebath logs -f                 Follow agent.log in real time\n    icebath logs errors             Show last 50 lines of errors.log\n    icebath logs gateway -n 100     Show last 100 lines of gateway.log\n    icebath logs update             Show last 50 lines of update.log (icebath update mirror)\n    icebath logs --level WARNING    Only show WARNING and above\n    icebath logs --session abc123   Filter by session ID\n    icebath logs --component tools  Only show tool-related lines\n    icebath logs --since 1h         Lines from the last hour\n    icebath logs --since 30m -f     Follow, starting from 30 min ago\n    icebath logs list               List available log files with sizes")
 	c.pos(logs, pOptChoice("log_name", "agent"))
 	inf(logs, "lines", "n", 50, "Number of lines to show (default: 50)")
 	bf(logs, "follow", "f", "Follow the log in real time (like tail -f)")
 	sf(logs, "level", "", "", "Minimum log level to show (DEBUG, INFO, WARNING, ERROR)")
 	sf(logs, "session", "", "", "Filter lines containing this session ID substring")
 	sf(logs, "since", "", "", "Show lines since TIME ago (e.g. 1h, 30m, 2d)")
-	sf(logs, "component", "", "", "Filter by component: gateway, agent, tools, cli, cron, gui")
+	sf(logs, "component", "", "", "Filter by component: gateway, agent, tools, cli, cron")
 
 	promptSize := c.newCmd(root, "prompt-size", "Show a byte breakdown of the system prompt + tool schemas",
 		"Report the fixed prompt budget for a fresh session: system prompt total, skills index, memory, user profile, and tool-schema JSON. Runs offline (no API call).")
@@ -319,7 +262,7 @@ func (c *CLI) addCurator(root *cobra.Command) {
 
 func (c *CLI) addPets(root *cobra.Command) {
 	pets := c.helpCmd(root, "pets", "Browse, install, and select petdex animated pets",
-		"Petdex (https://github.com/crafter-station/petdex) is a public gallery of animated sprite pets for coding agents. Install one and Icebath shows it reacting to agent activity across the CLI, TUI, and desktop app.", 0)
+		"Petdex (https://github.com/crafter-station/petdex) is a public gallery of animated sprite pets for coding agents. Install one and Icebath shows it reacting to agent activity across the CLI and TUI.", 0)
 	list := c.newCmd(pets, "list", "Browse the petdex gallery", "")
 	c.pos(list, pOpt("query"))
 	bf(list, "installed", "", "Only show installed pets")
@@ -362,12 +305,12 @@ func (c *CLI) addComputerUse(root *cobra.Command) {
 	jsonFlag(pStatus, "Emit the normalized permission payload as JSON.")
 	c.newCmd(perms, "grant", "Request the grants (opens the dialog attributed to CuaDriver)", "")
 	screen := c.helpCmd(cu, "screen", "Bot Desktop: the headless screen this profile's computer_use drives (Linux)",
-		"On a headless Linux gateway host Icebath gives each profile its own Xfce screen\n(TigerVNC Xvnc on a private Unix socket). The agent's computer_use and headed\nbrowser act on it; Icebath Desktop shows it live and lets a human take over for\nlogins, 2FA or CAPTCHAs, then hand control back.\n\n`install` adds the system packages (apt/dnf/pacman); `start`/`stop` manage this\nprofile's screen; `status` shows display, control holder and socket.", 0)
+		"On a headless Linux gateway host Icebath gives each profile its own Xfce screen\n(TigerVNC Xvnc on a private Unix socket). The agent's computer_use and headed\nbrowser act on it.\n\n`install` adds the system packages (apt/dnf/pacman); `start`/`stop` manage this\nprofile's screen; `status` shows display, control holder and socket.", 0)
 	sStatus := c.newCmd(screen, "status", "Show whether this profile's screen is installed/running and who holds control", "")
 	jsonFlag(sStatus, "Emit the status payload as JSON.")
 	c.newCmd(screen, "start", "Start this profile's screen", "")
 	stop := c.newCmd(screen, "stop", "Stop this profile's screen (hands control back to the agent first)", "")
-	bf(stop, "force", "", "Stop even while a human holds control from Icebath Desktop")
+	bf(stop, "force", "", "Stop even while a human holds control of the screen")
 	inst := c.newCmd(screen, "install", "Install TigerVNC + Xfce core via the host package manager", "")
 	bf(inst, "yes", "y", "Do not ask before running the package manager")
 }
@@ -429,12 +372,12 @@ func (c *CLI) addSessions(root *cobra.Command) {
 	bf(prune, "include-archived", "", "Also delete archived sessions (excluded by default)")
 	bf(prune, "include-pinned", "", "Also delete pinned sessions (excluded by default — pin is a keep flag)")
 	bf(prune, "never-active", "", "Instead of ended sessions, delete keyed gateway rows that were opened and never used (no messages, tokens, tool calls or title) and are older than AGE (default 30 days). Ordinary prune can never reach these — it only ever selects ended sessions")
-	bf(prune, "force", "", "With no gateway running: run even while another Icebath process (Desktop, dashboard, cron) holds state.db — rewriting the store under a live writer can leave every agent refusing turns until all writers are stopped. With the gateway running, prune always goes through it")
+	bf(prune, "force", "", "With no gateway running: run even while another Icebath process (cron) holds state.db — rewriting the store under a live writer can leave every agent refusing turns until all writers are stopped. With the gateway running, prune always goes through it")
 	archive := c.newCmd(sessions, "archive", "Bulk-archive (soft-hide) sessions matching filters — no deletion", "")
 	filterArgs(archive, "Only archive sessions older than AGE (duration like '5h'/'2d', bare number of days, or ISO timestamp)")
-	bf(archive, "include-open", "", "Also archive never-ended sessions, e.g. Desktop chats")
+	bf(archive, "include-open", "", "Also archive never-ended sessions")
 	optimize := c.newCmd(sessions, "optimize", "Reclaim disk space: merge FTS5 segments + VACUUM (no data change)", "")
-	bf(optimize, "force", "", "Run even while another Icebath process (gateway, Desktop, dashboard, cron) holds state.db — rewriting the store under a live writer can leave every agent refusing turns until all writers are stopped")
+	bf(optimize, "force", "", "Run even while another Icebath process (gateway, cron) holds state.db — rewriting the store under a live writer can leave every agent refusing turns until all writers are stopped")
 	clean := c.newCmd(sessions, "clean-markers", "Permanently clear stale tool-call marker content left by sessions from before #78148",
 		"Before the #78148 fix, a local tool-call template could persist a bare bracketed marker (e.g. \"[memory]\") as an assistant turn's content instead of real text. This is already repaired in memory on every session load, so running this is optional — it rewrites the affected rows once, in place, so long-lived sessions stop re-scanning/re-repairing the same rows on every resume. Only the content column is touched; tool_calls and every other column on the row are left untouched.")
 	bf(clean, "dry-run", "", "Report the affected row count without writing")
@@ -443,13 +386,13 @@ func (c *CLI) addSessions(root *cobra.Command) {
 		"Rebuild the full-text search index in the compact v23 external-content layout. On large databases this reclaims a large fraction of state.db (the old layout stored duplicate copies of every message and indexed tool output). Runs foreground with progress for every phase (refusing while a gateway or other Icebath process holds state.db, pacing itself if one opens it mid-run) and VACUUMs at the end. Safe to interrupt and re-run — it resumes where it left off. No conversation data is changed; only the search index is rebuilt.")
 	bf(optStorage, "no-vacuum", "", "Skip the final VACUUM (index is rebuilt but freed pages aren't returned to the OS until a later VACUUM)")
 	bf(optStorage, "yes", "y", "Skip the disk-space confirmation prompt")
-	bf(optStorage, "force", "", "Run even while another Icebath process (gateway, Desktop, dashboard, cron) holds state.db — rewriting the store under a live writer can leave every agent refusing turns until all writers are stopped; the rebuild then paces itself so that process stays responsive (much slower)")
+	bf(optStorage, "force", "", "Run even while another Icebath process (gateway, cron) holds state.db — rewriting the store under a live writer can leave every agent refusing turns until all writers are stopped; the rebuild then paces itself so that process stays responsive (much slower)")
 	repair := c.newCmd(sessions, "repair", "Repair a malformed state.db schema so hidden sessions reappear",
-		"Recover a state.db whose schema is malformed (e.g. 'table messages_fts already exists'), which makes Desktop/Dashboard show no sessions. A backup is made first; sessions and messages are preserved and the FTS search index is rebuilt if needed.")
+		"Recover a state.db whose schema is malformed (e.g. 'table messages_fts already exists'), which makes session listings come back empty. A backup is made first; sessions and messages are preserved and the FTS search index is rebuilt if needed.")
 	bf(repair, "check-only", "", "Only report whether the database opens cleanly; do not modify it")
 	bf(repair, "no-backup", "", "Skip the timestamped backup copy (not recommended)")
 	journal := c.newCmd(sessions, "set-journal-mode", "Convert state.db between journal_mode=WAL and DELETE offline (every holder stopped)",
-		"Switch the on-disk journal mode of the session store. Icebath never live-downgrades a WAL database at startup (other processes may hold uncheckpointed commits), so `database.journal_mode: delete` cannot self-apply to an existing WAL store. Run this with the gateway, dashboard and every CLI stopped: it refuses while any process holds the file, switches the mode, and verifies the file header.")
+		"Switch the on-disk journal mode of the session store. Icebath never live-downgrades a WAL database at startup (other processes may hold uncheckpointed commits), so `database.journal_mode: delete` cannot self-apply to an existing WAL store. Run this with the gateway and every CLI stopped: it refuses while any process holds the file, switches the mode, and verifies the file header.")
 	c.pos(journal, pChoice("mode", "delete", "wal").withHelp("Target journal mode"))
 	sf(journal, "db", "", "", "Convert another Icebath SQLite store (e.g. kanban.db) instead of the profile's state.db")
 	bf(journal, "force", "", "Proceed when the holder scan itself fails (cannot prove the store is quiet) after stopping every Icebath process yourself; a process the scan does find is still refused")
@@ -493,10 +436,10 @@ func (c *CLI) addSessions(root *cobra.Command) {
 	af(discard, "admission", "", "Discard only this unknown admission (repeatable; default: every unknown admission)")
 	yesFlag(discard, "Do not ask for confirmation (required when stdin is not a TTY)")
 	adopt := c.newCmd(sessions, "adopt", "Bring this profile's pre-gateway chats under its gateway (run on the host)",
-		"Chats written before the gateway owned sessions become gateway sessions the first time a native client on this host opens them. This adopts them all at once, so remote clients such as the Webapp can continue them. Run it as the gateway's OS user; use `icebath -p <profile> sessions adopt` for another profile.")
+		"Chats written before the gateway owned sessions become gateway sessions the first time a native client on this host opens them. This adopts them all at once, so remote clients can continue them. Run it as the gateway's OS user; use `icebath -p <profile> sessions adopt` for another profile.")
 	bf(adopt, "dry-run", "", "Only count what would be adopted")
 	pin := c.newCmd(sessions, "pin", "Pin session(s) — durable keep flag, exempt from auto-archive",
-		"Set the durable 'keep' flag on one or more sessions. Pinned sessions are exempt from the sessions.auto_archive stale sweep and always appear in listings. The same flag drives the Desktop sidebar's Pinned section — pin from either surface, both see it.")
+		"Set the durable 'keep' flag on one or more sessions. Pinned sessions are exempt from the sessions.auto_archive stale sweep and always appear in listings.")
 	c.pos(pin, pMany("session_ids").withHelp("Session ID(s) or unique prefix(es) to pin"))
 	unpin := c.newCmd(sessions, "unpin", "Remove the pin (durable keep flag) from session(s)", "")
 	c.pos(unpin, pMany("session_ids").withHelp("Session ID(s) or unique prefix(es) to unpin"))

@@ -67,9 +67,9 @@ func ugChurnRepo(t *testing.T) string {
 	ugEnv(t)
 	repo := t.TempDir()
 	ugGit(t, repo, "init", "-q")
-	ugWrite(t, filepath.Join(repo, "package.json"), `{"workspaces": ["apps/*", "ui-tui"]}`)
+	ugWrite(t, filepath.Join(repo, "package.json"), `{"workspaces": ["packages/*", "ui-tui"]}`)
 	ugWrite(t, filepath.Join(repo, "package-lock.json"), "lock v1\n")
-	for _, rel := range []string{"apps/desktop", "ui-tui", "vendor/foo"} {
+	for _, rel := range []string{"packages/bridge", "ui-tui", "vendor/foo"} {
 		ugWrite(t, filepath.Join(repo, filepath.FromSlash(rel), "package.json"), "{}\n")
 	}
 	ugGit(t, repo, "add", ".")
@@ -92,8 +92,8 @@ func ugStillDirtyAfterCleanup(t *testing.T, repo string, dirty ...string) []stri
 
 func TestDirtyWorkspaceManifestPreservesRootLock(t *testing.T) {
 	repo := ugChurnRepo(t)
-	got := ugStillDirtyAfterCleanup(t, repo, "apps/desktop/package.json", "package-lock.json")
-	if want := []string{"apps/desktop/package.json", "package-lock.json"}; !slices.Equal(got, want) {
+	got := ugStillDirtyAfterCleanup(t, repo, "packages/bridge/package.json", "package-lock.json")
+	if want := []string{"package-lock.json", "packages/bridge/package.json"}; !slices.Equal(got, want) {
 		t.Fatalf("dirty = %v, want %v", got, want)
 	}
 }
@@ -108,7 +108,7 @@ func TestManifestOutsideWorkspaceGraphDoesNotProtectRootLock(t *testing.T) {
 
 func TestUnsupportedWorkspacesGlobStillDiscardsRootLockChurn(t *testing.T) {
 	repo := ugChurnRepo(t)
-	ugWrite(t, filepath.Join(repo, "package.json"), `{"workspaces": "apps/*"}`)
+	ugWrite(t, filepath.Join(repo, "package.json"), `{"workspaces": "packages/*"}`)
 	ugGit(t, repo, "commit", "-qam", "string workspaces")
 	got := ugStillDirtyAfterCleanup(t, repo, "vendor/foo/package.json", "package-lock.json")
 	if want := []string{"vendor/foo/package.json"}; !slices.Equal(got, want) {

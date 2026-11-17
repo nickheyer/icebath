@@ -453,7 +453,7 @@ CREATE INDEX IF NOT EXISTS idx_sessions_effective_activity
 -- CLI/TUI listings match gateway rows stored as source='local' by created_source,
 -- before LIMIT. created_source is reconciled onto legacy DBs, so this index lives
 -- here rather than in SCHEMA_SQL. A source-only index would walk every local row
--- (Desktop and TUI included) to find one surface.
+-- (TUI included) to find one surface.
 CREATE INDEX IF NOT EXISTS idx_sessions_local_created_started
     ON sessions(created_source, started_at DESC)
     WHERE source = 'local';

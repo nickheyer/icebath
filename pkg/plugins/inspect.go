@@ -34,7 +34,7 @@ type inspectionSlot struct {
 	finishedAt time.Time
 }
 
-var agentPayloadFiles = []string{"__init__.py", filepath.Join("dashboard", "manifest.json")}
+var agentPayloadFiles = []string{"__init__.py"}
 
 // Manifest of a small regular file that parses to a mapping, empty otherwise
 func readInspectedManifest(path string, loads func(string) (any, error)) map[string]any {
@@ -92,7 +92,7 @@ func isDirectory(path string) bool {
 	return err == nil && info.IsDir()
 }
 
-// Whether a plugin.yaml folder ships a package, dashboard or manifest only language pack the agent loads
+// Whether a plugin.yaml folder ships a package or manifest only language pack the agent loads
 func yamlShipsAgentPayload(root string, manifest map[string]any) bool {
 	if slices.ContainsFunc(agentPayloadFiles, func(rel string) bool { return isRegularFile(filepath.Join(root, rel)) }) {
 		return true
@@ -100,7 +100,7 @@ func yamlShipsAgentPayload(root string, manifest map[string]any) bool {
 	return jsonTruthy(manifest["provides_locales"]) && isDirectory(filepath.Join(root, "locales"))
 }
 
-// Agent and desktop halves a source tree ships and the agent half name, read as text only
+// Whether a source tree ships an agent plugin and its name, read as text only
 func detectComponents(root, fallbackName string) map[string]any {
 	yamlPath := ""
 	for _, n := range []string{"plugin.yaml", "plugin.yml"} {
@@ -112,7 +112,6 @@ func detectComponents(root, fallbackName string) map[string]any {
 	yamlManifest := readInspectedManifest(yamlPath, inspectYAMLLoads)
 	portable := filepath.Join(root, "plugin.json")
 	agent := (yamlPath != "" && yamlShipsAgentPayload(root, yamlManifest)) || isRegularFile(portable)
-	desktop := isRegularFile(filepath.Join(root, "plugin.js")) || isRegularFile(filepath.Join(root, "desktop", "plugin.js"))
 	var agentName any
 	if agent {
 		name := inspectManifestName(yamlManifest)
@@ -124,32 +123,18 @@ func detectComponents(root, fallbackName string) map[string]any {
 		}
 		agentName = name
 	}
-	return map[string]any{"agent": agent, "desktop": desktop, "agent_name": agentName}
-}
-
-// Last real segment of the subdirectory, else the repository name
-func desktopFolderName(gitURL, subdir string) string {
-	var parts []string
-	for _, p := range strings.Split(strings.ReplaceAll(subdir, "\\", "/"), "/") {
-		if p != "" && p != "." && p != "desktop" {
-			parts = append(parts, p)
-		}
-	}
-	if len(parts) > 0 {
-		return parts[len(parts)-1]
-	}
-	return repoNameFromURL(gitURL)
+	return map[string]any{"agent": agent, "agent_name": agentName}
 }
 
 func inspectFailure(message string, warnings []string, insecure bool) map[string]any {
-	return map[string]any{"ok": false, "agent": false, "desktop": false, "warnings": warnings, "insecure": insecure, "error": message}
+	return map[string]any{"ok": false, "agent": false, "warnings": warnings, "insecure": insecure, "error": message}
 }
 
 func inspectionKey(ctx context.Context, identifier, catalogName string) [3]string {
 	return [3]string{home.Dir(ctx), catalogName, identifier}
 }
 
-// Which halves a source ships at the commit read, joining a running or recent read of the same request
+// Whether a source ships an agent plugin at the commit read, joining a running or recent read of the same request
 func InspectPluginSource(ctx context.Context, identifier, catalogName string) (map[string]any, error) {
 	key := inspectionKey(ctx, identifier, catalogName)
 	now := time.Now()
@@ -234,20 +219,17 @@ func inspectSource(ctx context.Context, identifier, catalogName string) (map[str
 	if err != nil {
 		return nil, err
 	}
-	if found["agent"] != true && found["desktop"] != true {
-		return inspectFailure("No agent or desktop plugin artifacts found in this repository.", warnings, insecure), nil
+	if found["agent"] != true {
+		return inspectFailure("No agent plugin artifacts found in this repository.", warnings, insecure), nil
 	}
-	result := map[string]any{"ok": true, "desktop_name": nil, "sha": sha, "warnings": warnings, "insecure": insecure}
+	result := map[string]any{"ok": true, "sha": sha, "warnings": warnings, "insecure": insecure}
 	for k, v := range found {
 		result[k] = v
-	}
-	if found["desktop"] == true {
-		result["desktop_name"] = desktopFolderName(gitURL, subdir)
 	}
 	return result, nil
 }
 
-// Clones a source into a temporary directory outside every profile and detects its halves
+// Clones a source into a temporary directory outside every profile and detects its agent plugin
 func inspectClonedTree(ctx context.Context, identifier, gitURL, revision, subdir string, names []string) (map[string]any, string, error) {
 	if err := inspectRaiseIfRemoved(ctx, append([]string{identifier, gitURL}, names...)...); err != nil {
 		return nil, "", err

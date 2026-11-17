@@ -20,45 +20,6 @@ var tryInstallLibatomic = TryInstallLibatomic
 // Managed interpreter signing on macOS, replaced by tests
 var signManagedPython = SignManagedPython
 
-// Dmgbuild is the build only DMG supplier, pinned as release plus bundle revision with its paired Python
-type Dmgbuild struct {
-	BinaryPackage
-}
-
-func newDmgbuild() *Dmgbuild {
-	gaps := map[string]string{}
-	for _, target := range AllTargets {
-		if !strings.HasPrefix(target, "darwin-") {
-			gaps[target] = "DMG creation requires macOS"
-		}
-	}
-	p := &Dmgbuild{BinaryPackage{
-		BasePackage: BasePackage{Name: "dmgbuild", Internal: true, OffPath: true, Gaps: gaps},
-		BinaryRel:   map[string]string{"posix": "dmgbuild"},
-		NoFlatten:   true,
-		NoProbe:     true,
-	}}
-	p.bind(p)
-	return p
-}
-
-func (p *Dmgbuild) FetchURL(version, target string) (string, error) {
-	release, revision := partition(version, "+")
-	arch, ok := map[string]string{"darwin-arm64": "arm64", "darwin-x64": "x86_64"}[target]
-	if !ok {
-		return "", keyError(target)
-	}
-	return "https://github.com/electron-userland/electron-builder-binaries/releases/download/" +
-		fmt.Sprintf("dmg-builder@%s/dmgbuild-bundle-%s-%s.tar.gz", release, arch, revision), nil
-}
-
-func (p *Dmgbuild) Verify(entry, target string) string {
-	if reason := p.BinaryPackage.Verify(entry, target); reason != "" {
-		return reason
-	}
-	return p.BinaryReason(filepath.Join(entry, "python", "bin", "python3"), entry, target)
-}
-
 // Uv is astral's prebuilt uv everywhere upstream builds it and the termux main repo deb on bionic
 type Uv struct {
 	bionicDebArm

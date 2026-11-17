@@ -605,8 +605,6 @@ type ProcessRegistry struct {
 	globalWatchSuppressedDuringTrip int
 	// OnOutput streams live output chunks from reader goroutines to a driver installed sink
 	OnOutput func(s *ProcessSession, chunk string)
-	// OnClose drops a read only terminal tab without killing the process
-	OnClose             func(s *ProcessSession, processID string) error
 	heartbeatRunning    bool
 	completionsRestored bool
 	jobsOutliveHost     bool
@@ -2363,20 +2361,6 @@ func (r *ProcessRegistry) submitStdinDict(env *Env, sessionID, data string) *pyj
 		}
 	}
 	return r.writeStdinDict(env, sessionID, data+enter)
-}
-
-// RequestCloseTerminal asks the desktop GUI to close the process's read only terminal tab
-func (r *ProcessRegistry) RequestCloseTerminal(env *Env, sessionID string) *pyjson.Object {
-	if r.OnClose == nil {
-		return Dict("status", "error", "error", "close_terminal is only available in the icebath desktop app.")
-	}
-	if err := r.OnClose(r.Get(env, sessionID), sessionID); err != nil {
-		return Dict("status", "error", "error", err.Error())
-	}
-	return Dict(
-		"status", "ok", "closed", sessionID,
-		"note", "Closed the read-only terminal tab. The process was not killed; its output remains available and the user can reopen the tab from the status stack.",
-	)
 }
 
 // Ordered dict form of the exported method result, keys in the order hermes inserts them

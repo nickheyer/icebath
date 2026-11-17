@@ -9,7 +9,6 @@ import (
 // Core owned keys read at runtime but absent from the defaults, mapped to their reader
 var CoreRuntimeKeys = map[string]string{
 	"computer_use.backend": "plugins/computer_use/__init__.py configured_backend_name() (unset = cua)",
-	"dashboard.kanban":     "plugins/kanban/dashboard/plugin_api.py (bundled dashboard tab preferences)",
 }
 
 // Config keys one active plugin manifest declares

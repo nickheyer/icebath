@@ -100,7 +100,7 @@ func compareInt64(a, b int64) int {
 	return 0
 }
 
-// Session columns whose change drives Desktop projections, activity stamps excluded so heartbeats stay silent
+// Session columns whose change fires sessions.changed, activity stamps excluded so heartbeats stay silent
 var sessionSignatureFields = []string{
 	"id", "source", "session_key", "display_name", "model", "parent_session_id",
 	"started_at", "ended_at", "end_reason", "message_count", "tool_call_count",
@@ -351,36 +351,6 @@ func pairingRoots(h string) []string {
 	return roots
 }
 
-// Newest bot relay outbox envelope mtime ever seen, monotone so a drain never fires a spurious pending
-var botRelayOutboxSeen = struct {
-	sync.Mutex
-	ns int64
-}{}
-
-// Monotone newest mtime across pending bot relay outbox envelopes, nil before any was seen
-func botRelayOutboxSig(ctx context.Context) any {
-	h := watcherHome(ctx)
-	root := h
-	if filepath.Base(filepath.Dir(h)) == "profiles" {
-		root = filepath.Dir(filepath.Dir(h))
-	}
-	botRelayOutboxSeen.Lock()
-	defer botRelayOutboxSeen.Unlock()
-	outbox := filepath.Join(root, "bot_relay", "outbox")
-	if entries, err := os.ReadDir(outbox); err == nil {
-		for _, entry := range entries {
-			if strings.HasSuffix(entry.Name(), ".json") {
-				ns, _ := watcherMtimeNS(filepath.Join(outbox, entry.Name()))
-				botRelayOutboxSeen.ns = max(botRelayOutboxSeen.ns, ns)
-			}
-		}
-	}
-	if botRelayOutboxSeen.ns == 0 {
-		return nil
-	}
-	return botRelayOutboxSeen.ns
-}
-
 // Skill roots stat signature of every scope a session resolved commands in
 func skillsSig(ctx context.Context) any {
 	return skills.NewScope(home.Dir(ctx), nil).PublishedScopesSignature(ctx)
@@ -469,7 +439,6 @@ var changeWatches = []changeWatch{
 	{"projects.changed", 2.0, projectsSig, emptyChangePayload},
 	{"pairing.changed", 2.0, pairingSig, emptyChangePayload},
 	{"skills.changed", 2.0, skillsSig, emptyChangePayload},
-	{"bot_relay.outbox.pending", 1.0, botRelayOutboxSig, emptyChangePayload},
 }
 
 // Minimum seconds between two broadcasts of a bursty event, its trailing edge kept

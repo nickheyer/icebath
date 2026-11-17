@@ -120,7 +120,9 @@ func runStoreRg(t *testing.T, env map[string]string) string {
 		t.Fatalf("rg is not on %q", path)
 	}
 	cmd := exec.Command(rg, "--version")
-	cmd.Env = doctorEnvList(env)
+	for k, v := range env {
+		cmd.Env = append(cmd.Env, k+"="+v)
+	}
 	out, err := cmd.Output()
 	if err != nil {
 		t.Fatal(err)

@@ -302,7 +302,7 @@ func (a *APIServerAdapter) handleRoomMemberCapabilities(ctx context.Context, req
 	return jsonResponse(out, http.StatusOK, nil), nil
 }
 
-// Renews dispatch access within the grant's status horizon without a Desktop or broad gateway key
+// Renews dispatch access within the grant's status horizon without a broad gateway key
 func (a *APIServerAdapter) handleRoomMemberGrantRefresh(ctx context.Context, request *gateway.WebRequest) (*gateway.WebResponse, error) {
 	body, errResp := readJSONBody(request)
 	if errResp != nil {

@@ -28,7 +28,6 @@ type pendingServerRequest struct {
 	events    *SessionEvents
 	method    string
 	params    *pyjson.Object
-	replay    bool
 	value     string
 	result    *pyjson.Object
 	qids      []string
@@ -138,8 +137,8 @@ func ResolveServerRequest(frame *pyjson.Object, sessionOK func(sessionID string,
 }
 
 // Sends a one string request to the session's viewers and waits for its value, empty when unanswered
-func AskViewer(events *SessionEvents, sessionID, method string, params *pyjson.Object, cancelled func() bool, timeout *float64, replay bool) string {
-	pending := askServerRequest(events, sessionID, method, params, cancelled, timeout, nil, replay)
+func AskViewer(events *SessionEvents, sessionID, method string, params *pyjson.Object, cancelled func() bool, timeout *float64) string {
+	pending := askServerRequest(events, sessionID, method, params, cancelled, timeout, nil)
 	if pending == nil {
 		return ""
 	}
@@ -148,23 +147,11 @@ func AskViewer(events *SessionEvents, sessionID, method string, params *pyjson.O
 
 // The same round trip for a structured answer, a batch when qids are given, nil when unanswered
 func AskViewerResult(events *SessionEvents, sessionID, method string, params *pyjson.Object, cancelled func() bool, timeout *float64, qids []string) *pyjson.Object {
-	pending := askServerRequest(events, sessionID, method, params, cancelled, timeout, qids, true)
+	pending := askServerRequest(events, sessionID, method, params, cancelled, timeout, qids)
 	if pending == nil {
 		return nil
 	}
 	return pending.result
-}
-
-// Whether a request of the method is open on this live session's stream
-func ServerRequestWaiting(events *SessionEvents, sessionID, method string) bool {
-	serverRequests.Lock()
-	defer serverRequests.Unlock()
-	for _, p := range serverRequests.open {
-		if p.sessionID == sessionID && p.events == events && p.method == method {
-			return true
-		}
-	}
-	return false
 }
 
 // Requests still waiting on this live session's stream, oldest first, as their frames carried them
@@ -174,7 +161,7 @@ func OpenServerRequests(events *SessionEvents, sessionID string) []*pyjson.Objec
 	out := []*pyjson.Object{}
 	for _, id := range serverRequests.order {
 		p := serverRequests.open[id]
-		if p.sessionID != sessionID || p.events != events || !p.replay {
+		if p.sessionID != sessionID || p.events != events {
 			continue
 		}
 		params := p.params.Copy()
@@ -184,23 +171,6 @@ func OpenServerRequests(events *SessionEvents, sessionID string) []*pyjson.Objec
 		out = append(out, pyjson.ObjectOf("id", id, "method", p.method, "params", params))
 	}
 	return out
-}
-
-// Settles every open request of the method on this stream with no answer, the count returned
-func WithdrawServerRequests(events *SessionEvents, sessionID, method string) int {
-	serverRequests.Lock()
-	var settled []*pendingServerRequest
-	for _, id := range slices.Clone(serverRequests.order) {
-		p := serverRequests.open[id]
-		if p.sessionID == sessionID && p.events == events && p.method == method {
-			settled = append(settled, popServerRequest(id))
-		}
-	}
-	serverRequests.Unlock()
-	for _, p := range settled {
-		p.set()
-	}
-	return len(settled)
 }
 
 // Error for a clarify.lock naming a question the batch never asked
@@ -239,7 +209,7 @@ func LockAnswer(requestID, questionID string, answer any, sessionOK func(session
 }
 
 // Sends the request frame and waits for an answer, an interrupt or the timeout, with the cancel teardown
-func askServerRequest(events *SessionEvents, sessionID, method string, params *pyjson.Object, cancelled func() bool, timeout *float64, qids []string, replay bool) *pendingServerRequest {
+func askServerRequest(events *SessionEvents, sessionID, method string, params *pyjson.Object, cancelled func() bool, timeout *float64, qids []string) *pendingServerRequest {
 	if len(events.Fanout.Transports()) == 0 {
 		return nil
 	}
@@ -257,7 +227,7 @@ func askServerRequest(events *SessionEvents, sessionID, method string, params *p
 		}
 	}
 	pending := &pendingServerRequest{done: make(chan struct{}), sessionID: sessionID, events: events, method: method,
-		params: framed, replay: replay, locked: pyjson.NewObject()}
+		params: framed, locked: pyjson.NewObject()}
 	if len(qids) > 0 {
 		pending.qids = slices.Clone(qids)
 	}

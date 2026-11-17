@@ -98,9 +98,6 @@ func (a *SessionAuthority) Attach(ctx context.Context, actor Principal, ref Sess
 			return SubscriptionSnapshot{}, err
 		}
 	}
-	if err := keepFromDiscard(ctx, a, ref.SessionID); err != nil {
-		return SubscriptionSnapshot{}, err
-	}
 	if err := a.Authorize(ctx, actor, ref, "session:read"); err != nil {
 		return SubscriptionSnapshot{}, err
 	}

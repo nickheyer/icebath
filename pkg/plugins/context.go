@@ -105,8 +105,8 @@ func (c *Context) State(ctx context.Context) *PluginState {
 }
 
 // Records host owned cleanup for one registration of this plugin
-func (c *Context) track(kind, key string, release func() error, persistent bool) *Registration {
-	return c.manager.trackRegistration(c.manifest, kind, key, release, persistent)
+func (c *Context) track(kind, key string, release func() error) *Registration {
+	return c.manager.trackRegistration(c.manifest, kind, key, release)
 }
 
 // Appends a callback under a key, warning on unknown keys, and leases its removal
@@ -121,7 +121,7 @@ func trackCallback[T any](c *Context, kind, key string, entry *T, mapping map[st
 	handle := c.track(kind, key, func() error {
 		removeCallback(c.manager, mapping, key, entry)
 		return nil
-	}, false)
+	})
 	logDebug(fmt.Sprintf("Plugin %s registered %s: %s", c.manifest.Name, kind, key))
 	return handle
 }

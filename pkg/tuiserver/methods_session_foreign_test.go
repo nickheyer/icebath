@@ -26,7 +26,6 @@ func TestForeignRpcPreviewImportAndProfileIsolation(t *testing.T) {
 	t.Setenv("HOME", tmp)
 	t.Setenv("CLAUDE_CONFIG_DIR", "")
 	t.Setenv("ICEBATH_HOME", filepath.Join(tmp, "icebath-home"))
-	t.Setenv("ICEBATH_DESKTOP", "")
 	folder := filepath.Join(tmp, ".claude", "projects", "project")
 	if err := os.MkdirAll(folder, 0o755); err != nil {
 		t.Fatal(err)

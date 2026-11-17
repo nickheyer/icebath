@@ -311,37 +311,9 @@ func FormatBannerVersionLabel(ctx context.Context) string {
 // Version label of the install, its channel or its revisions, or the version or channel lookup error
 func BannerVersionLabel(ctx context.Context) (string, error) {
 	root := pm.RepoRoot()
-	stamp := pm.ReadInstallStamp(root)
-	stampValue := func(key string) any {
-		if stamp == nil {
-			return nil
-		}
-		v, _ := stamp.Get(key)
-		return v
-	}
 	info, err := updaterecord.GetVersionInfo()
 	if err != nil {
 		return "", err
-	}
-	if stampValue("distribution") == "desktop-app" {
-		label := "Icebath Agent v" + info.DerivedVersion
-		if stampValue("source") == "commit-build" {
-			commit := ""
-			if c := stampValue("commit"); pyrepr.Truthy(c) {
-				commit = pyrepr.Str(c)
-			}
-			return label + " · commit-build · " + pystr.Slice(commit, 0, 12), nil
-		}
-		if tag := stampValue("tag"); pyrepr.Truthy(tag) {
-			if selfupdate.IsCanaryTag(tag) {
-				return label + " · canary", nil
-			}
-			return label + " · stable", nil
-		}
-		if stampValue("payload") == "bootstrap" {
-			return label + " · installer", nil
-		}
-		return label, nil
 	}
 	base := fmt.Sprintf("Icebath Agent v%s (%s)", info.DerivedVersion, ReleaseDate)
 	cfg := quiet(func() (any, error) {

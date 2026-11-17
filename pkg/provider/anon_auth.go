@@ -19,7 +19,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 const (
@@ -173,9 +172,6 @@ func hasGuest(env PoolEnv) bool { return isGuestState(currentNousState(env)) }
 
 // HasGuest reports whether the stored Nous state is a guest session
 func HasGuest(env PoolEnv) bool { return hasGuest(env) }
-
-// The activity is work for the Desktop app on this machine
-func onLocalDesktopBackend(env PoolEnv) bool { return tools.ServesLocalDesktopNow(env.ctx()) }
 
 // A guest stamped with the welcome trial claim while guests stay allowed carries inference
 func freeInferenceActive(env PoolEnv, state map[string]any) bool {
@@ -593,8 +589,8 @@ func sharedIdentityKey(state map[string]any) any {
 	return state["refresh_token"]
 }
 
-// Mints under the caller's locks, persisting the identity before any exchange with the claim stamped
-func mintLocked(env PoolEnv, client *http.Client, portal string, authStore AuthData, welcomeClaim bool) (map[string]any, error) {
+// Mints under the caller's locks, persisting the identity before any exchange
+func mintLocked(env PoolEnv, client *http.Client, portal string, authStore AuthData) (map[string]any, error) {
 	minted, err := mintGuest(env, client, portal)
 	if err != nil {
 		return nil, err
@@ -604,8 +600,7 @@ func mintLocked(env PoolEnv, client *http.Client, portal string, authStore AuthD
 		"anon_token": minted["token"], "client_id": AnonClientID,
 		"portal_base_url": strings.TrimRight(portal, "/"),
 		"user_id":         minted["user_id"], "org_id": minted["org_id"],
-		"idle_ttl_days":  minted["idle_ttl_days"],
-		WelcomeClaimFlag: welcomeClaim,
+		"idle_ttl_days": minted["idle_ttl_days"],
 	}
 	if err := env.Store.StoreProviderState(authStore, "nous", state, false); err != nil {
 		return nil, err
@@ -766,7 +761,7 @@ func noteMintFailure(env PoolEnv, err error) *MintFailure {
 }
 
 // Adopts the shared identity, keeps the profile's own, or mints under the profile then shared locks
-func reconcileAndProvision(env PoolEnv, timeout time.Duration, force, welcomeClaim bool) (map[string]any, *MintFailure, error) {
+func reconcileAndProvision(env PoolEnv, timeout time.Duration, force bool) (map[string]any, *MintFailure, error) {
 	portal := anonPortalBaseURL(env)
 	unlock, err := env.Store.Lock(AuthLockTimeout)
 	if err != nil {
@@ -812,7 +807,7 @@ func reconcileAndProvision(env PoolEnv, timeout time.Duration, force, welcomeCla
 	}
 	verify := resolveOAuthVerify(env, nil, "", nil)
 	client := nousHTTPClientFn(env, timeout, verify)
-	state, err := mintLocked(env, client, portal, authStore, welcomeClaim)
+	state, err := mintLocked(env, client, portal, authStore)
 	if err != nil {
 		classified := classifyMintError(err)
 		return nil, noteMintFailure(env, classified), classified
@@ -822,10 +817,9 @@ func reconcileAndProvision(env PoolEnv, timeout time.Duration, force, welcomeCla
 
 // PortalIdentityOptions are the inputs of an explicit Nous identity provision
 type PortalIdentityOptions struct {
-	Explicit     bool
-	Timeout      time.Duration
-	Force        bool
-	WelcomeClaim bool
+	Explicit bool
+	Timeout  time.Duration
+	Force    bool
 }
 
 // EnsurePortalIdentity makes sure the profile has a Nous identity, minting a guest only when no store holds one
@@ -842,7 +836,7 @@ func EnsurePortalIdentity(env PoolEnv, opts PortalIdentityOptions) (map[string]a
 	if failure := mintFailureForProfile(env); failure != nil && !opts.Force && len(currentNousState(env)) == 0 && anonMonotonic().Before(failure.NotBefore) {
 		return nil, nil
 	}
-	state, noted, err := reconcileAndProvision(env, opts.Timeout, opts.Force, opts.WelcomeClaim)
+	state, noted, err := reconcileAndProvision(env, opts.Timeout, opts.Force)
 	if err != nil {
 		classified := classifyMintError(err)
 		if noted == nil {

@@ -51,7 +51,7 @@ func (r *GatewayRunner) hmwaFirstContactNotes(ctx context.Context, source *gatew
 	humanPlatform := source.Platform != "" && source.Platform != gateway.PlatformLocal && source.Platform != gateway.PlatformWebhook
 	if humanPlatform && source.ChatType == "dm" && !r.asyncStore().Store().HasAnySessions(ctx) {
 		configPath := filepath.Join(home.Dir(ctx), "config.yaml")
-		if note := tools.FirstContactTurnNote(ctx, gateway.LoadGatewayConfigMap(ctx, ""), configPath, true, false, false); note != nil && *note != "" {
+		if note := tools.FirstContactTurnNote(ctx, gateway.LoadGatewayConfigMap(ctx, ""), configPath, true, false); note != nil && *note != "" {
 			*turnSidecarNotes = append(*turnSidecarNotes, *note)
 		}
 	}

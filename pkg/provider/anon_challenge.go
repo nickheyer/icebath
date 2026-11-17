@@ -20,7 +20,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pywebbrowser"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
-	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 const (
@@ -129,16 +128,10 @@ func isPrintableString(s string) bool {
 	return true
 }
 
-// Which surface this process is, desktop then gateway then the desktop spawned backend else cli
+// Which surface this process is, gateway when it owns the runtime lock else cli
 func clientSurface(env PoolEnv) string {
-	if tools.ServesLocalDesktopNow(env.ctx()) {
-		return "desktop"
-	}
 	if hooks := freeTierGatewayHooks(); hooks.OwnsRuntimeLock != nil && hooks.OwnsRuntimeLock() {
 		return "gateway"
-	}
-	if tools.IsDesktopOwnedBackend(nil) {
-		return "desktop"
 	}
 	return "cli"
 }
@@ -425,7 +418,7 @@ func resetChallengeForTests() {
 	challengeOpened = map[string]bool{}
 }
 
-// Broadcasts the challenge to connected desktop clients, false when no gateway server is loaded or it failed
+// Broadcasts the challenge to connected clients, false when no gateway server is loaded or it failed
 func announceChallenge(env PoolEnv, challenge BrowserChallenge) bool {
 	hooks := freeTierGatewayHooks()
 	if hooks.BroadcastGlobal == nil {
@@ -472,9 +465,6 @@ func presentChallengeInTerminal(env PoolEnv, challenge BrowserChallenge) {
 
 // Gets the challenge URL in front of something that can load it for the current surface
 func presentChallenge(env PoolEnv, challenge BrowserChallenge) {
-	if clientSurface(env) == "desktop" && announceChallengeFn(env, challenge) {
-		return
-	}
 	if !challenge.Required || isBackgroundCaller(env.ctx()) {
 		return
 	}
@@ -535,9 +525,7 @@ func waitForChallenge(env PoolEnv, exc *AnonChallengeRequiredError) bool {
 		}
 		if status == "needs_interaction" && !toldInteractive {
 			toldInteractive = true
-			if clientSurface(env) != "desktop" {
-				fmt.Fprintln(challengeStderr, "  Finish the quick check in your browser to continue.")
-			}
+			fmt.Fprintln(challengeStderr, "  Finish the quick check in your browser to continue.")
 		}
 	}
 	challengeGiveUp(env)
@@ -586,14 +574,9 @@ func runWithChallenge(env PoolEnv, fn func() (string, error)) (string, error) {
 	return "", err
 }
 
-// Announces an optional challenge of a successful exchange to a desktop client, clearing a settled one
+// Clears the pending browser challenge once a successful exchange carries none
 func noteOptionalChallenges(env PoolEnv, payload map[string]any, portalBaseURL string) {
-	challenge := parseBrowserChallenge(env, payload, portalBaseURL)
-	if challenge == nil {
+	if parseBrowserChallenge(env, payload, portalBaseURL) == nil {
 		clearPendingChallenge(env)
-		return
-	}
-	if !challenge.Required && clientSurface(env) == "desktop" {
-		announceChallengeFn(env, recordChallenge(env, *challenge, false))
 	}
 }

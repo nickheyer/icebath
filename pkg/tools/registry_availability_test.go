@@ -97,7 +97,7 @@ func TestCheckToolAvailabilitySurvivesRaisingCheck(t *testing.T) {
 }
 
 func TestMixedToolsetAvailableWhenGeneralToolPasses(t *testing.T) {
-	r, env := availabilityRegistry(t, Def{Name: "read_terminal", Toolset: "terminal", Check: func(*Env) bool { return false }},
+	r, env := availabilityRegistry(t, Def{Name: "terminal_probe", Toolset: "terminal", Check: func(*Env) bool { return false }},
 		Def{Name: "terminal", Toolset: "terminal", Check: func(*Env) bool { return true }}, Def{Name: "process", Toolset: "terminal"})
 	available, unavailable := r.CheckToolAvailability(context.Background(), env)
 	if !reflect.DeepEqual(available, []string{"terminal"}) || len(unavailable) != 0 || !r.IsToolsetAvailable(context.Background(), env, "terminal") ||
@@ -107,7 +107,7 @@ func TestMixedToolsetAvailableWhenGeneralToolPasses(t *testing.T) {
 }
 
 func TestMixedToolsetUnavailableWhenEveryToolIsGated(t *testing.T) {
-	r, env := availabilityRegistry(t, Def{Name: "read_terminal", Toolset: "terminal", Check: func(*Env) bool { return false }},
+	r, env := availabilityRegistry(t, Def{Name: "terminal_probe", Toolset: "terminal", Check: func(*Env) bool { return false }},
 		Def{Name: "terminal", Toolset: "terminal", Check: func(*Env) bool { return false }})
 	available, unavailable := r.CheckToolAvailability(context.Background(), env)
 	if len(available) != 0 || !reflect.DeepEqual(unavailableNames(unavailable), []string{"terminal"}) {

@@ -84,7 +84,6 @@ func TestLanguagesAndCatalogServePackLayersPerSurface(t *testing.T) {
 	}{
 		{map[string]any{"approval": map[string]any{"denied": "Odrzucono"}}, ""},
 		{map[string]any{"status": map[string]any{"ready": "Gotowy"}}, "tui"},
-		{map[string]any{"settings": map[string]any{"title": "Ustawienia"}}, "desktop"},
 	} {
 		if _, err := pc.RegisterLocale("pl", reg.messages, "Polski", false, reg.surface); err != nil {
 			t.Fatal(err)
@@ -101,7 +100,7 @@ func TestLanguagesAndCatalogServePackLayersPerSurface(t *testing.T) {
 	if ids[0] != "en" || !slices.Equal(ids[1:], sorted) {
 		t.Fatalf("ids %v", ids)
 	}
-	wantPL := map[string]any{"id": "pl", "endonym": "Polski", "rtl": false, "source": "plugin:hermes-lang-pl", "surfaces": []any{"core", "tui", "desktop"}}
+	wantPL := map[string]any{"id": "pl", "endonym": "Polski", "rtl": false, "source": "plugin:hermes-lang-pl", "surfaces": []any{"core", "tui"}}
 	wantAR := map[string]any{"id": "ar", "endonym": "العربية", "rtl": true, "source": "bundled", "surfaces": []any{"core", "tui"}}
 	for _, want := range []map[string]any{wantPL, wantAR} {
 		if !slices.ContainsFunc(rows, func(row map[string]any) bool { return reflect.DeepEqual(row, want) }) {
@@ -116,10 +115,6 @@ func TestLanguagesAndCatalogServePackLayersPerSurface(t *testing.T) {
 	tui := resultOf(t, callMethod(t, "i18n.catalog", map[string]any{"lang": "PL", "surface": "tui"}))
 	if !reflect.DeepEqual(tui, map[string]any{"lang": "pl", "surface": "tui", "messages": map[string]any{"status.ready": "Gotowy"}}) {
 		t.Fatalf("tui %v", tui)
-	}
-	desktop := resultOf(t, callMethod(t, "i18n.catalog", map[string]any{"lang": "pl", "surface": "desktop"}))
-	if !reflect.DeepEqual(desktop["messages"], map[string]any{"settings.title": "Ustawienia"}) {
-		t.Fatalf("desktop %v", desktop)
 	}
 	de := resultOf(t, callMethod(t, "i18n.catalog", map[string]any{"lang": "de"}))
 	if !reflect.DeepEqual(de["messages"], map[string]any{"approval.denied": "Overlay-DE"}) {
@@ -168,9 +163,9 @@ func TestFailedPluginDiscoveryStillAnswersWithBundledLanguages(t *testing.T) {
 	if rows := languageRows(t); !slices.ContainsFunc(rows, func(row map[string]any) bool { return reflect.DeepEqual(row, want) }) {
 		t.Fatalf("missing %v in %v", want, rows)
 	}
-	got := resultOf(t, callMethod(t, "i18n.catalog", map[string]any{"lang": "ko", "surface": "desktop"}))["messages"]
+	got := resultOf(t, callMethod(t, "i18n.catalog", map[string]any{"lang": "ko", "surface": "tui"}))["messages"]
 	if !reflect.DeepEqual(got, map[string]any{}) {
-		t.Fatalf("desktop %v", got)
+		t.Fatalf("tui %v", got)
 	}
 }
 
@@ -181,7 +176,7 @@ func TestColdGatewayServesAnInstalledPackBeforeAnyAgentExists(t *testing.T) {
 	plugin := filepath.Join(h, "plugins", "hermes-lang-ko")
 	writeTestFile(t, filepath.Join(plugin, "plugin.yaml"), "name: hermes-lang-ko\nversion: 1.0.0\ndescription: Korean pack\nprovides_locales:\n- id: ko\n  endonym: 한국어\n")
 	writeTestFile(t, filepath.Join(plugin, "locales", "ko.yaml"), "{}\n")
-	writeTestFile(t, filepath.Join(plugin, "locales", "ko.desktop.yaml"), "settings:\n  appearance:\n    modelPricingTitle: 모델 가격\n")
+	writeTestFile(t, filepath.Join(plugin, "locales", "ko.tui.yaml"), "status:\n  ready: 준비됨\n")
 	writeTestFile(t, filepath.Join(h, "config.yaml"), "plugins:\n  enabled:\n  - hermes-lang-ko\n")
 	t.Setenv("HOME", filepath.Join(root, "os-home"))
 	t.Setenv("ICEBATH_HOME", h)
@@ -199,11 +194,11 @@ func TestColdGatewayServesAnInstalledPackBeforeAnyAgentExists(t *testing.T) {
 			ko = row
 		}
 	}
-	if ko == nil || ko["source"] != "plugin:hermes-lang-ko" || !slices.Contains(ko["surfaces"].([]any), any("desktop")) {
+	if ko == nil || ko["source"] != "plugin:hermes-lang-ko" || !slices.Contains(ko["surfaces"].([]any), any("tui")) {
 		t.Fatalf("ko row %v", ko)
 	}
-	desktop := resultOf(t, callMethod(t, "i18n.catalog", map[string]any{"lang": "ko", "surface": "desktop"}))
-	if !reflect.DeepEqual(desktop["messages"], map[string]any{"settings.appearance.modelPricingTitle": "모델 가격"}) {
-		t.Fatalf("desktop %v", desktop)
+	tui := resultOf(t, callMethod(t, "i18n.catalog", map[string]any{"lang": "ko", "surface": "tui"}))
+	if !reflect.DeepEqual(tui["messages"], map[string]any{"status.ready": "준비됨"}) {
+		t.Fatalf("tui %v", tui)
 	}
 }

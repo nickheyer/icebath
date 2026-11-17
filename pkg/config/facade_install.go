@@ -237,7 +237,7 @@ const dockerUpdateMessage = "✗ ``icebath update`` doesn't apply inside the Doc
 	"\n" +
 	"  docker pull ghcr.io/nickheyer/icebath:latest\n" +
 	"  # then restart whatever started the container, e.g.:\n" +
-	"  docker compose up -d --force-recreate gateway dashboard\n" +
+	"  docker compose up -d --force-recreate gateway\n" +
 	"  # or, for ad-hoc runs, exit the current container and `docker run` again\n" +
 	"\n" +
 	"Verify the new version after restart:\n" +

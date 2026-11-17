@@ -49,8 +49,6 @@ var (
 	dotenvPublished = map[string]dotenvRecord{}
 	dotenvPasses    int
 
-	spawnCredentialKeys = map[string]bool{"ICEBATH_DASHBOARD_SESSION_TOKEN": true}
-
 	// Seams for the updater skip, the external source pass and the terminal bridge, replaced in tests
 	skipExternalSecretSourcesFn  = pm.ShouldSkipExternalSecretSources
 	applyExternalSecretSourcesFn = ApplyExternalSecretSources
@@ -87,22 +85,6 @@ func clearKnownKeysMissingFromDotenv(path string) {
 			_ = os.Unsetenv(key)
 		}
 	}
-}
-
-// Values dotenv loads last wrote to the name matched case insensitively
-func DotenvPublishedValues(name string) []string {
-	folded := strings.ToUpper(name)
-	dotenvMu.Lock()
-	defer dotenvMu.Unlock()
-	seen := map[string]bool{}
-	var out []string
-	for key, rec := range dotenvPublished {
-		if strings.ToUpper(key) == folded && !seen[rec.value] {
-			seen[rec.value] = true
-			out = append(out, rec.value)
-		}
-	}
-	return out
 }
 
 // Names the administrator managed .env loaded into the process
@@ -226,9 +208,6 @@ func loadDotenvWithFallback(path string, override bool, loadPass int, managed bo
 		}
 		rec, recorded := dotenvPublished[a.name]
 		ours := recorded && present && current == rec.value
-		if spawnCredentialKeys[a.name] && current != "" && !ours {
-			continue
-		}
 		next := dotenvRecord{baseline: current, hadBaseline: present, value: a.value, pass: loadPass}
 		if ours {
 			next.baseline, next.hadBaseline = rec.baseline, rec.hadBaseline

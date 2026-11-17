@@ -79,7 +79,7 @@ func consentPythonDeps(ctx context.Context, pluginName string, deps []string, co
 	return true, nil
 }
 
-// Python requirements of an installed tree for dashboard details, a read failure added to the warnings
+// Python requirements of an installed tree for the install result, a read failure added to the warnings
 func pythonDependencySummary(target string, warnings *[]string) []string {
 	declaration, err := pm.ReadPythonDeclaration(target)
 	var deps []string

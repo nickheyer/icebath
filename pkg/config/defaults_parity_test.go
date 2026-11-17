@@ -339,28 +339,6 @@ curator.interval_hours
 curator.min_idle_hours
 curator.prune_builtins
 curator.stale_after_days
-dashboard.basic_auth.password
-dashboard.basic_auth.password_hash
-dashboard.basic_auth.secret
-dashboard.basic_auth.session_ttl_seconds
-dashboard.basic_auth.username
-dashboard.compute_host_heartbeat_secs
-dashboard.compute_host_respawn_max
-dashboard.drain_auth.min_secret_chars
-dashboard.drain_auth.scope
-dashboard.oauth.client_id
-dashboard.oauth.portal_url
-dashboard.public_url
-dashboard.session_token_auth.enabled
-dashboard.show_token_analytics
-dashboard.startup_orphan_sweep
-dashboard.theme
-dashboard.trusted_proxies
-dashboard.turn_isolation
-dashboard.ws_orphan_activity_stale_s
-dashboard.ws_orphan_reap_grace_s
-dashboard.ws_ping_interval
-dashboard.ws_ping_timeout
 database.journal_mode
 database.journal_size_limit
 database.wal_autocheckpoint
@@ -387,22 +365,6 @@ delegation.reasoning_effort
 delegation.request_overrides
 delegation.subagent_auto_approve
 delegation.surface_child_process_notifications
-desktop.auto_continue.enabled
-desktop.auto_continue.freshness_minutes
-desktop.auto_continue.max_attempts
-desktop.disable_gpu
-desktop.electron_flags
-desktop.font_family
-desktop.macos_signing_identity
-desktop.manage_launcher_entry
-desktop.ozone_platform_hint
-desktop.password_store
-desktop.renderer_accessibility
-desktop.renderer_max_old_space_mb
-desktop.repo_scan_enabled
-desktop.repo_scan_exclude_paths
-desktop.repo_scan_roots
-desktop.ssh_path
 discord.allow_any_attachment
 discord.allowed_channels
 discord.approval_mentions
@@ -950,10 +912,6 @@ web.keyless_fallback
 web.keyless_rescue
 web.provider_tier
 web.search_backend
-webapp.enabled
-webapp.host
-webapp.port
-webapp.public_url
 whatsapp
 worktrees.archive_dirty
 worktrees.archive_max_file_mb
@@ -1023,8 +981,8 @@ func TestDefaultsRootsAreKnownAndContainerSlotsFollowThem(t *testing.T) {
 			t.Errorf("container slot %s is missing", path)
 		}
 	}
-	if Defaults()["_config_version"] != 53 || Version != 53 {
-		t.Errorf("schema version %v, want 53", Defaults()["_config_version"])
+	if Defaults()["_config_version"] != 54 || Version != 54 {
+		t.Errorf("schema version %v, want 54", Defaults()["_config_version"])
 	}
 }
 

@@ -34,7 +34,7 @@ func turnMarkerLogger() *slog.Logger { return slog.Default().With("logger", "tui
 
 // Interrupted turns journal of a profile home
 func turnMarkerPath(home string) string {
-	return filepath.Join(home, "desktop", "interrupted_turns.json")
+	return filepath.Join(home, "interrupted_turns.json")
 }
 
 // Cross process lock beside the journal so sibling backends never resurrect a cleared marker

@@ -304,18 +304,10 @@ func TestGatewayServicesInstallAndRunnerRef(t *testing.T) {
 	}
 }
 
-func TestGetenvAndEnvValueRules(t *testing.T) {
+func TestGetenv(t *testing.T) {
 	t.Setenv("ICEBATH_TEST_GETENV", "v")
 	ctx := context.Background()
 	if Getenv(ctx, "ICEBATH_TEST_GETENV", "d") != "v" || Getenv(ctx, "ICEBATH_TEST_GETENV_UNSET", "d") != "d" {
 		t.Fatal("getenv")
-	}
-	e := NewPlatformEntry("x", "X", nil, nil)
-	rule := EnvValueRule{Check: func(v string) bool { return strings.HasPrefix(v, "U") }, Message: "expected a member id"}
-	if err := e.SetKeywords(map[string]any{"env_value_rules": map[string]EnvValueRule{"X_ID": rule}}); err != nil {
-		t.Fatal(err)
-	}
-	if got := e.EnvValueRules["X_ID"]; got.Message != "expected a member id" || !got.Check("U1") || got.Check("1") {
-		t.Fatalf("%+v", got)
 	}
 }

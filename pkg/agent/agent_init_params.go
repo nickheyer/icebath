@@ -23,9 +23,7 @@ func copyCallbackParams(a *AIAgent, o AIAgentOptions) {
 	a.toolProgressCallback, a.toolStartCallback, a.toolCompleteCallback = o.ToolProgressCallback, o.ToolStartCallback, o.ToolCompleteCallback
 	a.toolResultMetadataCallback = o.ToolResultMetadataCallback
 	a.thinkingCallback, a.reasoningCallback, a.clarifyCallback = o.ThinkingCallback, o.ReasoningCallback, o.ClarifyCallback
-	a.readTerminalCallback, a.readPreviewCallback, a.drivePreviewCallback = o.ReadTerminalCallback, o.ReadPreviewCallback, o.DrivePreviewCallback
-	a.readWindowBelowCallback, a.connectionCallback, a.tourCallback, a.themeCallback = o.ReadWindowBelowCallback, o.ConnectionCallback, o.TourCallback, o.ThemeCallback
-	a.setupBeatCallback, a.stepCallback, a.streamDeltaCallback = o.SetupBeatCallback, o.StepCallback, o.StreamDeltaCallback
+	a.connectionCallback, a.stepCallback, a.streamDeltaCallback = o.ConnectionCallback, o.StepCallback, o.StreamDeltaCallback
 	a.interimAssistantCallback = o.InterimAssistantCallback
 	a.statusCallback, a.noticeCallback, a.noticeClearCallback = o.StatusCallback, o.NoticeCallback, o.NoticeClearCallback
 	a.eventCallback, a.reactionCallback, a.toolGenCallback = o.EventCallback, o.ReactionCallback, o.ToolGenCallback

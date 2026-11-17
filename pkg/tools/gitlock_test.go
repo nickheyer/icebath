@@ -17,35 +17,13 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
-	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
 )
 
-// Installs a plain git runner as the updater runner and the serve obligation hooks the process wiring assigns
+// Installs a plain git runner as the updater runner the process wiring assigns
 func installGitlockDoubles() {
 	GitlockRunGit = func(ctx context.Context, gitCmd, args []string, o pysubprocess.Options) (*pysubprocess.Completed, error) {
 		return gitlockSubprocessRun(ctx, append(slices.Clone(gitCmd), args...), o)
 	}
-	isReminder := func(row any) bool {
-		m, ok := row.(map[string]any)
-		return ok && (m["kind"] == "serve" || m["kind"] == "dashboard") && m["supervisor"] == "manual-serve"
-	}
-	rows := func(v any) []any {
-		items, _ := v.([]any)
-		return items
-	}
-	updaterecord.SetServeObligationHooks(updaterecord.ServeObligationHooks{
-		IsReminderRow: isReminder,
-		RetainReceiptManualServes: func(_ context.Context, receipt map[string]any) []any {
-			pending := []any{}
-			plan, _ := receipt["plan"].(map[string]any)
-			for _, row := range slices.Concat(rows(plan["runtimes"]), rows(receipt["pending_manual_serves"]), rows(receipt["carried_manual_serves"])) {
-				if isReminder(row) {
-					pending = append(pending, row)
-				}
-			}
-			return pending
-		},
-	})
 }
 
 // Environment of the fixture git calls, global and system config ignored

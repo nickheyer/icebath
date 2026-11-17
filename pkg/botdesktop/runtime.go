@@ -792,18 +792,6 @@ func IsRunning(env *tools.Env) (bool, error) {
 	return published["DISPLAY"] != "", err
 }
 
-// Stream carrying the RFB bytes of a sandbox hosted screen
-func OpenRFBStream(env *tools.Env) (*tools.StreamProcess, error) {
-	e, err := TerminalEnvironment(env, false)
-	if err != nil {
-		return nil, err
-	}
-	if e == nil {
-		return nil, errors.New("the sandbox hosting this screen is not running")
-	}
-	return SandboxOpenRFBStream(e, ProfileName(env))
-}
-
 // Configured screen geometry, 1440x900 by default
 func Geometry(env *tools.Env) (string, error) {
 	cfg, err := botDesktopSection(env)

@@ -1,25 +1,12 @@
-# Icebath bootstrap for Windows: download the release archive for this
-# machine, verify it against the release checksums, unpack icebath.exe and
-# hand every option to `icebath install-self`, which owns the stages.
-#
-# Stage protocol kept for the setup app:
-#   -Manifest             print the stage list as JSON
-#   -Stage NAME [-Json]   run one stage
-#   -NonInteractive       skip stages that need input
-#   -IncludeDesktop       install the desktop app too
+# Downloads and verifies the icebath release for this machine, then hands every option to icebath install-self
 param(
     [string]$Branch = "",
     [string]$Commit = "",
     [string]$Channel = $(if ($env:ICEBATH_INSTALL_CHANNEL) { $env:ICEBATH_INSTALL_CHANNEL } else { "" }),
     [string]$IcebathHome = $(if ($env:ICEBATH_HOME) { $env:ICEBATH_HOME } else { "$env:LOCALAPPDATA\icebath" }),
     [string]$InstallDir = $(if ($env:ICEBATH_INSTALL_DIR) { $env:ICEBATH_INSTALL_DIR } elseif ($env:ICEBATH_HOME) { "$env:ICEBATH_HOME\icebath-agent" } else { "$env:LOCALAPPDATA\icebath\icebath-agent" }),
-    [switch]$Manifest,
-    [string]$Stage,
-    [switch]$ProtocolVersion,
     [switch]$NonInteractive,
     [switch]$SkipSetup,
-    [switch]$Json,
-    [switch]$IncludeDesktop,
     [switch]$SkipBrowser,
     [switch]$SkipComputerUse,
     [switch]$ShowResolvedPaths
@@ -90,12 +77,7 @@ try {
     if ($Branch) { $forward += @("--branch", $Branch) }
     if ($Commit) { $forward += @("--commit", $Commit) }
     if ($Channel) { $forward += @("--channel", $Channel) }
-    if ($Stage) { $forward += @("--stage", $Stage) }
-    if ($Manifest) { $forward += "--manifest" }
-    if ($ProtocolVersion) { $forward += "--protocol-version" }
-    if ($Json) { $forward += "--json" }
     if ($NonInteractive -or $SkipSetup) { $forward += "--non-interactive" }
-    if ($IncludeDesktop) { $forward += "--include-desktop" }
     if ($SkipBrowser) { $forward += "--skip-browser" }
     if ($SkipComputerUse) { $forward += "--skip-computer-use" }
     if ($ShowResolvedPaths) { $forward += "--show-resolved-paths" }

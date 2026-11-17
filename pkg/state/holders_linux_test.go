@@ -410,7 +410,7 @@ func TestHeldStoreRefusalNamesHoldersAndIncompleteScans(t *testing.T) {
 		"  PID 555 (icebath gateway run): state.db",
 		"  cannot prove the database is quiet (holder scan incomplete: uninspectable holder: icebath gateway run)",
 		"Rewriting the database under a live writer is how every agent ends up refusing turns with the retired state.db-wal error. Nothing is lost.",
-		"Stop them first (`icebath gateway stop`, quit the Desktop app, pause cron), then re-run.",
+		"Stop them first (`icebath gateway stop`, quit the TUI, pause cron), then re-run.",
 		"Override with --force if you accept the risk.",
 		"Recovery guide: " + StorageRecoveryDocsURL,
 	}, "\n")

@@ -64,7 +64,7 @@ func Main(ctx context.Context, argv []string, stdout, stderr io.Writer) int {
 	setenvDefault("ICEBATH_AGENT", "true")
 	bestEffort(func() (bool, error) { return gateway.ApplyMallocArenaMax(nil), nil }, "")
 	bestEffort(func() (bool, error) {
-		tools.RegisterSelf(ctx, "gateway", "", nil)
+		tools.RegisterSelf(ctx, "gateway", "")
 		return tools.AttachSelfToKillOnCloseJob(), nil
 	}, "")
 	bestEffort(func() (bool, error) { gateway.ArmStartupWatchdog(ctx); return true, nil }, "")

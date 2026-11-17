@@ -31,7 +31,6 @@ func TestMain(m *testing.M) {
 	hermetic.BlockExternalDNS()
 	selfupdate.DispatchCustodyLauncher()
 	home.DispatchScratchPruneEntry(context.Background())
-	DispatchUninstallModuleEntry(context.Background())
 	TryAcquireActiveSession = func(ctx context.Context, sessionID, surface string, cfg map[string]any, metadata map[string]any) (ActiveSessionLease, *activesessions.Refusal, error) {
 		return &fakeLease{}, nil, nil
 	}

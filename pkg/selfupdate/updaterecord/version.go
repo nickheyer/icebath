@@ -28,7 +28,7 @@ var buildTagRE = regexp.MustCompile(`^(v[0-9][0-9.]*)((?:\+canary\.[0-9TZ]+)|(?:
 
 var stampSources = []string{"commit-build", "ci", "docker", "fallback", "git", "local", "nix"}
 
-var stampDistributions = []string{"docker", "nix", "desktop-app"}
+var stampDistributions = []string{"docker", "nix"}
 
 type VersionInfo struct {
 	BaseVersion    string
@@ -176,9 +176,6 @@ func stampVersionInfo() (*VersionInfo, error) {
 	if mechanism, ok := data.Vals["updateMechanism"].(string); !ok || !slices.Contains(mechanisms, mechanism) {
 		return nil, &StampError{Msg: fmt.Sprintf("install-stamp.json at %s is missing a valid 'updateMechanism' (one of %s). The build lane that wrote this stamp must pass --update-mechanism to scripts/write_install_stamp.py (or bake the field directly).",
 			path, strings.Join(mechanisms, ", "))}
-	}
-	if payload, _ := data.Vals["payload"].(string); payload == "light" {
-		return nil, &StampError{Msg: fmt.Sprintf("install-stamp.json at %s marks this artifact as 'light' (no agent runtime). No Python process can legitimately run from a light artifact — this build is mispackaged.", path)}
 	}
 	commitValue := data.Vals["commit"]
 	if !pyrepr.Truthy(commitValue) {

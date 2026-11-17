@@ -379,10 +379,6 @@ func (weixinPlatformPlugin) Register(ctx *plugins.Context) error {
 	extra := map[string]any{
 		"target_ref_syntax_fn":   gateway.RegexGroupsParser(sendTargetRE, false),
 		"standalone_send":        &gateway.StandaloneSendPolicy{Label: "Weixin", Media: true},
-		"dashboard_label":        "Weixin / WeChat (Personal)",
-		"dashboard_description":  "Connect a personal WeChat account through Tencent's iLink Bot API.",
-		"docs_url":               "https://hermes-agent.nousresearch.com/docs/user-guide/messaging/weixin/",
-		"dashboard_env_vars":     []string{"WEIXIN_ACCOUNT_ID", "WEIXIN_TOKEN", "WEIXIN_BASE_URL"},
 		"is_connected":           isConnected,
 		"config_connected_fn":    configConnected,
 		"setup_fn":               InteractiveSetup,

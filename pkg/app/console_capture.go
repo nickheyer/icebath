@@ -51,7 +51,7 @@ var consoleRuntimeErrorClasses = map[string]bool{
 	"SystemctlUnavailableError": true, "TeamsMeetingArtifactNotFoundError": true, "TeamsMeetingError": true, "TeamsMeetingNotFoundError": true, "TeamsMeetingPermissionError": true, "TeamsPipelineArtifactNotFoundError": true,
 	"TeamsPipelineError": true, "TeamsPipelineRetryableError": true, "TeamsPipelineSinkError": true, "TelephonyError": true, "ToolGatewayError": true, "TraceRedactionError": true,
 	"TranscriptReadError": true, "TransportError": true, "TurnBusyError": true, "UnscopedSecretError": true, "UntrackableConnectionError": true, "UserSystemdUnavailableError": true,
-	"WakeNotAccepted": true, "WakeWordInUse": true, "WeComStreamExpiredError": true, "WebappAccessError": true, "WebappBuildError": true, "WorkerPersistenceError": true,
+	"WakeNotAccepted": true, "WakeWordInUse": true, "WeComStreamExpiredError": true, "WorkerPersistenceError": true,
 	"_CronSchedulerRegistrationError": true, "_DoctorLoadError": true, "_ExecApprovalDeclined": true, "_ExternalWorkerPostHandoffError": true, "_GateAuthError": true, "_ImpersonationLeak": true,
 	"_LoopUnavailable": true, "_NoStreamConsumer": true, "_PollingLifecycleAbort": true, "_PollingStallError": true, "_ProviderAuthResolutionError": true, "_RangeError": true,
 	"_Refused": true, "_RelayPluginConfigurationLoadError": true, "_SQLiteBackupRestarted": true, "_SQLiteBackupTimeout": true, "_SQLiteSnapshotError": true, "_SiblingStillBusy": true,

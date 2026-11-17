@@ -14,7 +14,7 @@ import (
 
 // Published shared listener application of a secondary's adapter with its forwarding base and callback URL
 type SharedIngress struct {
-	App  *WebApplication
+	App  *HTTPApp
 	Base string
 	URL  string
 }
@@ -85,16 +85,16 @@ func SharedListenerBase(runner any) string {
 }
 
 // Starts the app on host and port, or in shared listener mode publishes it for prefix forwarding and returns nil
-func BindListener(ctx context.Context, adapter PlatformAdapter, app *WebApplication, host *string, port int, ingressPath string, opts ListenOptions) (*WebAppRunner, error) {
+func BindListener(ctx context.Context, adapter PlatformAdapter, app *HTTPApp, host *string, port int, ingressPath string, opts ListenOptions) (*HTTPAppRunner, error) {
 	if SharedIngressProfile(adapter) != "" {
 		PublishSharedIngress(ctx, adapter, app, ingressPath)
 		return nil, nil
 	}
-	return StartWebApp(ctx, app, host, port, opts)
+	return StartHTTPApp(ctx, app, host, port, opts)
 }
 
 // Freezes the app, exposes it to the default listener and records the profile prefixed callback URL
-func PublishSharedIngress(ctx context.Context, adapter PlatformAdapter, app *WebApplication, ingressPath string) {
+func PublishSharedIngress(ctx context.Context, adapter PlatformAdapter, app *HTTPApp, ingressPath string) {
 	b := adapter.Base()
 	profile := SharedIngressProfile(adapter)
 	app.Freeze()
@@ -125,7 +125,7 @@ func PublishSharedIngress(ctx context.Context, adapter PlatformAdapter, app *Web
 // Shared listener adapter and its app for one served named profile
 type SharedIngressApp struct {
 	Adapter PlatformAdapter
-	App     *WebApplication
+	App     *HTTPApp
 }
 
 // Every shared listener app of a named served profile, nothing for default or an unknown profile
@@ -161,7 +161,7 @@ func DispatchProfileIngress(ctx context.Context, runner any, profile, tail strin
 	}
 	relURL := &url.URL{Path: "/" + strings.TrimLeft(tail, "/"), RawQuery: request.RelURL.RawQuery, Fragment: request.RelURL.Fragment}
 	forwarded := request.Clone(relURL, request.ClientMaxSize)
-	var chosen *WebApplication
+	var chosen *HTTPApp
 	for _, candidate := range candidates {
 		_, _, refusal := candidate.App.Resolve(forwarded)
 		if refusal != nil && refusal.Status == http.StatusNotFound {

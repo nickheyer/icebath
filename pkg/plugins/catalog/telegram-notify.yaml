@@ -8,7 +8,7 @@ description: >-
   and automatic/smart-approval noise. Outbound-only, no input channel. Disclosure — enabled by default once installed and
   reuses the core Telegram gateway's TELEGRAM_BOT_TOKEN and TELEGRAM_HOME_CHANNEL when present,
   so each main-agent turn's final answer (up to 3,200 chars) and approval-request command text
-  (up to 700 chars) from CLI, Desktop and eligible gateway platforms are sent to api.telegram.org for
+  (up to 700 chars) from CLI and eligible gateway platforms are sent to api.telegram.org for
   delivery to that one chat; Telegram-origin lifecycle and approval-prompt copies (and, when
   notify_on_approval_response is enabled, Telegram-origin approval-response copies) are suppressed
   because the core Telegram gateway already delivers them in that chat; token and state are

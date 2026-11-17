@@ -46,7 +46,7 @@ func TestScenarioPluginsManageHubAndDesktopHalves(t *testing.T) {
 			cleanup = r
 		}
 	}
-	s.HasJSON(cleanup, `{"name": "disk-cleanup", "source": "bundled", "status": "not enabled", "portable": false, "has_desktop_half": false, "servers": [], "tools": []}`)
+	s.HasJSON(cleanup, `{"name": "disk-cleanup", "source": "bundled", "status": "not enabled", "portable": false, "servers": [], "tools": []}`)
 
 	s.HasJSON(call(map[string]any{"action": "toggle"}), `{"error": {"code": 4019, "message": "plugins.toggle requires a 'key' or 'name'"}}`)
 	s.HasJSON(call(map[string]any{"action": "settings", "key": "disk-cleanup", "values": map[string]any{"nope": 1}}),

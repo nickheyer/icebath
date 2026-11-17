@@ -9,7 +9,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
-	"github.com/nickheyer/icebath/pkg/tools"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
 )
 
@@ -31,8 +30,7 @@ func cwdInfo(ctx context.Context, session *tuigateway.Session, cwd string, branc
 	if branch != nil {
 		current = *branch
 	}
-	return map[string]any{"cwd": cwd, "branch": current, "project": projectInfoForCwd(ctx, cwd), "lazy": true,
-		"desktop_contract": desktopBackendContract}
+	return map[string]any{"cwd": cwd, "branch": current, "project": projectInfoForCwd(ctx, cwd), "lazy": true}
 }
 
 // Live sessions of this process in registry order
@@ -191,16 +189,8 @@ func sessionDelete(ctx context.Context, rid any, params map[string]any) map[stri
 	if root == "" {
 		root = home.Dir(ctx)
 	}
-	var deleteErr error
-	deleted, err := tools.DeleteOnboardingChat(ctx, db, target, func() bool {
-		removed, err := db.DeleteSession(ctx, target, state.DeleteSessionOptions{SessionsDir: filepath.Join(root, "sessions"),
-			ExcludeActiveWriteGuards: true})
-		deleteErr = err
-		return err == nil && removed
-	})
-	if err == nil {
-		err = deleteErr
-	}
+	deleted, err := db.DeleteSession(ctx, target, state.DeleteSessionOptions{SessionsDir: filepath.Join(root, "sessions"),
+		ExcludeActiveWriteGuards: true})
 	if err != nil {
 		var guard *state.SessionActiveWriteGuardError
 		if errors.As(err, &guard) {

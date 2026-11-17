@@ -28,5 +28,4 @@ capabilities:
   provides_middleware: []
   # Local CLI authentication requires no environment credential. External-token
   # mode optionally uses the profile secret T3_ORCHESTRATION_TOKEN. The optional
-  # operator Desktop readiness probe uses HERMES_DASHBOARD_SESSION_TOKEN.
   requires_env: []

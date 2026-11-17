@@ -404,8 +404,8 @@ func splitKeep(re *regexp.Regexp, text string) []string {
 	return append(parts, text[last:])
 }
 
-// WebApplication is an aiohttp web.Application, an ordered router with a body cap that freezes once served
-type WebApplication struct {
+// Ordered aiohttp style router with a body cap that freezes once served
+type HTTPApp struct {
 	ClientMaxSize int64
 	Middlewares   []WebMiddleware
 	State         map[string]any
@@ -419,15 +419,15 @@ type WebApplication struct {
 type WebMiddleware func(ctx context.Context, request *WebRequest, handler WebHandler) (*WebResponse, error)
 
 // Application with the given client body cap, the aiohttp default of 1 MiB when zero
-func NewWebApplication(clientMaxSize int64) *WebApplication {
+func NewHTTPApp(clientMaxSize int64) *HTTPApp {
 	if clientMaxSize == 0 {
 		clientMaxSize = 1024 * 1024
 	}
-	return &WebApplication{ClientMaxSize: clientMaxSize, State: map[string]any{}, index: map[string][]*webResource{}}
+	return &HTTPApp{ClientMaxSize: clientMaxSize, State: map[string]any{}, index: map[string][]*webResource{}}
 }
 
 // Resource for the path, the last one reused when it has the same path
-func (a *WebApplication) addResource(path string) (*webResource, error) {
+func (a *HTTPApp) addResource(path string) (*webResource, error) {
 	if path != "" && !strings.HasPrefix(path, "/") {
 		return nil, errors.New("ValueError: path should be started with / or be empty")
 	}
@@ -464,7 +464,7 @@ func (res *webResource) addRoute(method string, handler WebHandler) error {
 }
 
 // Registers a handler for a method and path
-func (a *WebApplication) AddRoute(method, path string, handler WebHandler) error {
+func (a *HTTPApp) AddRoute(method, path string, handler WebHandler) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	res, err := a.addResource(path)
@@ -475,7 +475,7 @@ func (a *WebApplication) AddRoute(method, path string, handler WebHandler) error
 }
 
 // Registers a GET handler and its HEAD twin
-func (a *WebApplication) AddGet(path string, handler WebHandler) error {
+func (a *HTTPApp) AddGet(path string, handler WebHandler) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	res, err := a.addResource(path)
@@ -489,12 +489,12 @@ func (a *WebApplication) AddGet(path string, handler WebHandler) error {
 }
 
 // Registers a POST handler
-func (a *WebApplication) AddPost(path string, handler WebHandler) error {
+func (a *HTTPApp) AddPost(path string, handler WebHandler) error {
 	return a.AddRoute(http.MethodPost, path, handler)
 }
 
 // Freezes the router so no resource can be added and empty plain paths serve the root
-func (a *WebApplication) Freeze() {
+func (a *HTTPApp) Freeze() {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.frozen = true
@@ -506,14 +506,14 @@ func (a *WebApplication) Freeze() {
 }
 
 // Whether the router is frozen
-func (a *WebApplication) Frozen() bool {
+func (a *HTTPApp) Frozen() bool {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	return a.frozen
 }
 
 // Handler and match info routing the request, else the 404 or 405 HTTP exception of the router
-func (a *WebApplication) Resolve(request *WebRequest) (WebHandler, map[string]string, *WebHTTPError) {
+func (a *HTTPApp) Resolve(request *WebRequest) (WebHandler, map[string]string, *WebHTTPError) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	allowed := map[string]bool{}
@@ -558,7 +558,7 @@ func (a *WebApplication) Resolve(request *WebRequest) (WebHandler, map[string]st
 }
 
 // Routes and runs the request like Application._handle, the router's HTTP exception raised as an error
-func (a *WebApplication) Handle(ctx context.Context, request *WebRequest) (*WebResponse, error) {
+func (a *HTTPApp) Handle(ctx context.Context, request *WebRequest) (*WebResponse, error) {
 	handler, info, refusal := a.Resolve(request)
 	if refusal != nil {
 		handler = func(context.Context, *WebRequest) (*WebResponse, error) { return nil, refusal }
@@ -627,9 +627,9 @@ type ListenOptions struct {
 	AccessLog    AccessLog
 }
 
-// WebAppRunner is an aiohttp AppRunner with its started TCP sites
-type WebAppRunner struct {
-	app       *WebApplication
+// Started TCP sites of one served application, the aiohttp AppRunner
+type HTTPAppRunner struct {
+	app       *HTTPApp
 	accessLog *slog.Logger
 	servers   []*http.Server
 	listeners []net.Listener
@@ -639,7 +639,7 @@ type WebAppRunner struct {
 }
 
 // Bound addresses of the started sites
-func (rn *WebAppRunner) Addrs() []net.Addr {
+func (rn *HTTPAppRunner) Addrs() []net.Addr {
 	out := make([]net.Addr, 0, len(rn.listeners))
 	for _, l := range rn.listeners {
 		out = append(out, l.Addr())
@@ -648,7 +648,7 @@ func (rn *WebAppRunner) Addrs() []net.Addr {
 }
 
 // Port of the first started site, zero when none is bound
-func (rn *WebAppRunner) Port() int {
+func (rn *HTTPAppRunner) Port() int {
 	for _, l := range rn.listeners {
 		if tcp, ok := l.Addr().(*net.TCPAddr); ok {
 			return tcp.Port
@@ -658,7 +658,7 @@ func (rn *WebAppRunner) Port() int {
 }
 
 // Serves one wire request through the application and writes the access log line
-func (rn *WebAppRunner) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (rn *HTTPAppRunner) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	started := time.Now()
 	request := NewWebRequest(r, rn.app.ClientMaxSize)
 	request.writer = w
@@ -669,7 +669,7 @@ func (rn *WebAppRunner) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 // Access log line in the aiohttp default format
-func (rn *WebAppRunner) logAccess(request *WebRequest, resp *WebResponse, started time.Time) {
+func (rn *HTTPAppRunner) logAccess(request *WebRequest, resp *WebResponse, started time.Time) {
 	if rn.accessLog == nil || !rn.accessLog.Enabled(context.Background(), slog.LevelInfo) {
 		return
 	}
@@ -728,13 +728,13 @@ func listenHosts(ctx context.Context, host *string) ([]string, error) {
 }
 
 // Starts the application on every address of host and port and returns its runner
-func StartWebApp(ctx context.Context, app *WebApplication, host *string, port int, opts ListenOptions) (*WebAppRunner, error) {
+func StartHTTPApp(ctx context.Context, app *HTTPApp, host *string, port int, opts ListenOptions) (*HTTPAppRunner, error) {
 	hosts, err := listenHosts(ctx, host)
 	if err != nil {
 		return nil, err
 	}
 	runCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
-	rn := &WebAppRunner{app: app, ctx: runCtx, cancel: cancel}
+	rn := &HTTPAppRunner{app: app, ctx: runCtx, cancel: cancel}
 	if !opts.AccessLog.Disabled {
 		rn.accessLog = opts.AccessLog.Logger
 		if rn.accessLog == nil {
@@ -776,7 +776,7 @@ func pyAddrRepr(host string, port int) string {
 }
 
 // Stops the sites, waits up to the aiohttp 60 second shutdown timeout for handlers and then cancels them
-func (rn *WebAppRunner) Cleanup(ctx context.Context) error {
+func (rn *HTTPAppRunner) Cleanup(ctx context.Context) error {
 	shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 60*time.Second)
 	defer cancel()
 	var firstErr error

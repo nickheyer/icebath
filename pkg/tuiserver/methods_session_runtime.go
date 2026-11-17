@@ -75,24 +75,16 @@ func tryGetSession(ctx context.Context, db *state.DB, key string) map[string]any
 	return out
 }
 
-// Status text of a session, the compute host mirror outranking a stale in process agent
+// Status text of a session from its live agent
 func sessionStatus(ctx context.Context, rid any, params map[string]any, session *tuigateway.Session) map[string]any {
 	key := strOr(session.Get("session_key"))
 	if key == "" {
 		key = strOr(params["session_id"])
 	}
-	mirror := metadataMirror(session)
-	liveAgent := sessionAgent(session)
-	var a *agent.AIAgent
-	if !truthy(session.Get("_compute_host_active")) {
-		a = liveAgent
-	}
-	model, providerName := strOr(mirror["model"]), strOr(mirror["provider"])
-	if model == "" && liveAgent != nil {
-		model = liveAgent.Model()
-	}
-	if providerName == "" && liveAgent != nil {
-		providerName = liveAgent.Provider()
+	a := sessionAgent(session)
+	model, providerName := "", ""
+	if a != nil {
+		model, providerName = a.Model(), a.Provider()
 	}
 	fields := StatusReport.Fields(ctx, key, a, statusRow(ctx, session, params, key), model, providerName,
 		sessionUsageSnapshot(ctx, session)["total"], truthy(session.Get("running")), strOr(session.Get("profile_home")))
@@ -169,80 +161,6 @@ func sessionUndo(ctx context.Context, rid any, params map[string]any, session *t
 	return ok(rid, map[string]any{"removed": removed})
 }
 
-// session.save for a turn isolated session whose transcript file the host owns
-func saveViaComputeHost(ctx context.Context, rid any, params map[string]any) map[string]any {
-	raw, err := sendComputeHostControl(ctx, strOr(params["session_id"]), "session.save", "", nil, true, 30.0, nil)
-	if err != nil {
-		return rpcErr(rid, 5011, "compute-host session save failed: "+err.Error(), nil)
-	}
-	ack := objectMap(raw)
-	code := 5011
-	if n, convErr := pyint.Int64(ack["code"]); convErr == nil && truthy(ack["code"]) {
-		code = int(n)
-	}
-	if resp := computeHostAckError(rid, ack, code, "compute-host session save failed"); resp != nil {
-		return resp
-	}
-	result, isDict := ack["result"].(map[string]any)
-	if !isDict {
-		return rpcErr(rid, 5011, "compute-host session save returned an invalid response", nil)
-	}
-	return ok(rid, result)
-}
-
-// session.compress for a turn isolated session, forwarding /compress to the host
-func compressViaComputeHost(ctx context.Context, rid any, params map[string]any, session *tuigateway.Session) map[string]any {
-	sid := strOr(params["session_id"])
-	focusTopic := strParam(params, "focus_topic", "")
-	command := "/compress"
-	if focusTopic != "" {
-		command += " " + focusTopic
-	}
-	raw, err := sendComputeHostControl(ctx, sid, "session.compress", command, nil, true, computeHostCompressWaitSeconds(ctx, nil),
-		func(late *pyjson.Object) {
-			adoptLateComputeHostCompressAck(ctx, sid, session, objectMap(late), "session.compress")
-		})
-	if errors.Is(err, ErrHostReplyTimeout) {
-		return ok(rid, map[string]any{"status": "pending", "turn_isolation": true,
-			"message": "compression still running in the background; the transcript will refresh when it finishes"})
-	}
-	if err != nil {
-		return rpcErr(rid, 5019, "compute-host compress failed: "+err.Error(), nil)
-	}
-	ack := objectMap(raw)
-	if resp := computeHostAckError(rid, ack, 4009, "compute-host compress failed"); resp != nil {
-		return resp
-	}
-	applyComputeHostMetadataMirror(ctx, session, ack)
-	if hostResult, isDict := ack["result"].(map[string]any); isDict {
-		result := copyDict(hostResult)
-		result["turn_isolation"] = true
-		return ok(rid, result)
-	}
-	hostInfo, isDict := ack["session_info"].(map[string]any)
-	if !isDict {
-		hostInfo = map[string]any{}
-	}
-	hostAck := map[string]any{}
-	for key, value := range ack {
-		if key != "messages" {
-			hostAck[key] = value
-		}
-	}
-	messages := []any{}
-	if list, isList := ack["messages"].([]any); isList {
-		converted, convErr := tuigateway.HistoryToMessages(ctx, list, strOr(session.Get("profile_home")), false)
-		panicIf(convErr)
-		messages = converted
-	}
-	usage, isDict := hostInfo["usage"].(map[string]any)
-	if !isDict {
-		usage = map[string]any{}
-	}
-	return ok(rid, map[string]any{"status": "compressed", "turn_isolation": true, "host_ack": hostAck, "info": hostInfo,
-		"messages": messages, "usage": usage})
-}
-
 // In process session.compress pinning the compressing status, then the before and after summary with messages
 func compressLive(ctx context.Context, rid any, sid string, session *tuigateway.Session, focusTopic string) map[string]any {
 	unlock := lockHistory(session)
@@ -292,16 +210,9 @@ func compressLive(ctx context.Context, rid any, sid string, session *tuigateway.
 		"before_tokens": beforeTokens, "after_tokens": afterTokens, "summary": summary, "usage": usage, "info": info, "messages": wire})
 }
 
-// Manual compression of a live session through the compute host or in process
+// Manual compression of a live session in process
 func sessionCompress(ctx context.Context, rid any, params map[string]any) map[string]any {
-	session, errResp := sessNowait(ctx, params, rid)
-	if errResp != nil {
-		return errResp
-	}
-	if sessionUsesComputeHost(ctx, session, nil) {
-		return compressViaComputeHost(ctx, rid, params, session)
-	}
-	session, errResp = sess(ctx, params, rid)
+	session, errResp := sess(ctx, params, rid)
 	if errResp != nil {
 		return errResp
 	}
@@ -341,9 +252,6 @@ func sessionCompress(ctx context.Context, rid any, params map[string]any) map[st
 
 // Saves the session as JSON under the session's profile home, from the stored row else the in memory history
 func sessionSave(ctx context.Context, rid any, params map[string]any, session *tuigateway.Session) map[string]any {
-	if sessionUsesComputeHost(ctx, session, nil) {
-		return saveViaComputeHost(ctx, rid, params)
-	}
 	var data *pyjson.Object
 	var loadErr error
 	if failure := catchPanic(func() {

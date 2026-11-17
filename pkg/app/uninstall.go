@@ -8,7 +8,6 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"regexp"
 	"runtime"
 	"slices"
 	"strings"
@@ -21,18 +20,13 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyfs"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyplatform"
-	"github.com/nickheyer/icebath/pkg/internal/pyplist"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pyshlex"
 	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
 	"github.com/nickheyer/icebath/pkg/profiles/manage"
 	"github.com/nickheyer/icebath/pkg/selfupdate"
 )
-
-// Hidden entry the desktop app runs for a non interactive uninstall outside the tree it deletes
-const UninstallModuleEntry = "__icebath_uninstall__"
 
 // Platform remover of the gateway service and the warning label shown when it fails
 type gatewayServiceRemover struct {
@@ -42,7 +36,6 @@ type gatewayServiceRemover struct {
 
 // Uninstall steps and probes the uninstall cases replace the way the Python cases monkeypatch them
 var (
-	uninstallNegativeNumber       = regexp.MustCompile(`^-\d+$|^-\d*\.\d+$`)
 	uninstallProjectRoot          = config.GetProjectRoot
 	uninstallIsWindows            = func() bool { return runtime.GOOS == "windows" }
 	uninstallIsDefaultHome        = isDefaultIcebathHome
@@ -53,11 +46,8 @@ var (
 	uninstallWrapperStep          = removeWrapperScript
 	uninstallNodeSymlinksStep     = removeNodeSymlinks
 	uninstallLegacyRuntimeStep    = removeLegacyRuntimeTrees
-	uninstallDashboardJobsStep    = removeDashboardLaunchdJobs
-	uninstallMacosCacheDirs       = macosCacheLeftoverDirs
 	uninstallRmtreeIfExists       = rmtreeIfExists
 	uninstallRmtreeStep           = rmtreeStep
-	uninstallGUIStep              = uninstallGUI
 	uninstallRmtree               = pyshutil.Rmtree
 	uninstallNodeSymlinkDirs      = nodeSymlinkCandidateDirs
 	uninstallFindGatewayPids      = func(ctx context.Context) ([]int, error) { return gateway.FindGatewayPIDsFor(ctx, nil, false) }
@@ -65,10 +55,8 @@ var (
 		return gateway.KillGatewayProcesses(ctx, w, false, nil, false)
 	}
 	uninstallRunCommand            = runUninstallCommand
-	uninstallLaunchdPlistDirs      = gateway.LaunchdPlistDirs
 	uninstallLaunchdGatewayPlist   = gateway.GetLaunchdPlistPath
 	uninstallRunDataMode           = RunDataUninstall
-	uninstallRunGUIMode            = RunGUIUninstall
 	uninstallRunAgentMode          = RunUninstall
 	uninstallGatewayServiceRemover = map[string]gatewayServiceRemover{
 		"Linux":   {removeSystemdGateway, "Could not check systemd gateway services"},
@@ -80,9 +68,9 @@ var (
 // Both gateway LaunchAgent naming schemes, the current label and the one older builds installed
 var launchdGatewayPlistPatterns = []string{"ai.icebath.gateway*.plist", "io.nousresearch.icebath-agent.gateway*.plist"}
 
-func uninstallInfo(w io.Writer, msg string)    { guiLog(w, "→", cliui.Cyan, msg) }
-func uninstallSuccess(w io.Writer, msg string) { guiLog(w, "✓", cliui.Green, msg) }
-func uninstallWarn(w io.Writer, msg string)    { guiLog(w, "⚠", cliui.Yellow, msg) }
+func uninstallInfo(w io.Writer, msg string)    { uninstallLine(w, "→", cliui.Cyan, msg) }
+func uninstallSuccess(w io.Writer, msg string) { uninstallLine(w, "✓", cliui.Green, msg) }
+func uninstallWarn(w io.Writer, msg string)    { uninstallLine(w, "⚠", cliui.Yellow, msg) }
 
 // str of an exception an uninstall step raised, OSError text for filesystem failures
 func uninstallErrText(err error) string {
@@ -133,7 +121,7 @@ func codeRemovalRefusal() (string, bool) {
 	if steward == nil {
 		return "", false
 	}
-	return selfupdate.StewardUninstallMessage(*steward, nil), true
+	return selfupdate.StewardUninstallMessage(*steward), true
 }
 
 // Prints the steward refusal and reports true when code removal is forbidden
@@ -150,10 +138,10 @@ func refuseIfStewardOwned(w io.Writer) bool {
 
 // Shell rc files under the user home that might carry PATH entries
 func findShellConfigs() []string {
-	h := guiUserHome()
+	h := uninstallUserHome()
 	var out []string
 	for _, name := range []string{".bashrc", ".bash_profile", ".profile", ".zshrc", ".zprofile"} {
-		if p := filepath.Join(h, name); guiExists(p) {
+		if p := filepath.Join(h, name); uninstallPathExists(p) {
 			out = append(out, p)
 		}
 	}
@@ -220,12 +208,12 @@ func removePathFromShellConfigs(ctx context.Context, w io.Writer) []string {
 
 // Removes each icebath wrapper script on PATH whose text proves it is ours
 func removeWrapperScript(w io.Writer) []string {
-	h := guiUserHome()
+	h := uninstallUserHome()
 	local := filepath.Join(h, ".local", "bin")
 	var removed []string
 	for _, wrapper := range []string{filepath.Join(local, "icebath"), filepath.Join(local, "icebath-acp"), filepath.Join(local, "icebath-agent"),
 		"/usr/local/bin/icebath", "/usr/local/bin/icebath-acp", "/usr/local/bin/icebath-agent"} {
-		if !guiExists(wrapper) {
+		if !uninstallPathExists(wrapper) {
 			continue
 		}
 		err := func() error {
@@ -254,8 +242,8 @@ func removeWrapperScript(w io.Writer) []string {
 
 // Directories the installer may have placed node, npm and npx symlinks in
 func nodeSymlinkCandidateDirs() []string {
-	dirs := []string{filepath.Join(guiUserHome(), ".local", "bin")}
-	if guiSysPlatform() == "linux" {
+	dirs := []string{filepath.Join(uninstallUserHome(), ".local", "bin")}
+	if uninstallPlatform() == "linux" {
 		dirs = append(dirs, "/usr/local/bin")
 	}
 	return dirs
@@ -349,7 +337,7 @@ func removeSystemdGateway(ctx context.Context, w io.Writer) (bool, error) {
 		if err != nil {
 			return removedAny, err
 		}
-		if !guiExists(unitPath) {
+		if !uninstallPathExists(unitPath) {
 			continue
 		}
 		belongs, err := gateway.SystemdUnitBelongsToCurrentHome(ctx, scope.system)
@@ -502,7 +490,7 @@ func splitUserPath(pathValue string, markers []string) (kept, removed []string) 
 func removePortableToolingWindows(w io.Writer, h string) []string {
 	var targets []string
 	for _, sub := range []string{"git", "node", "gateway-service"} {
-		if t := filepath.Join(h, sub); guiExists(t) {
+		if t := filepath.Join(h, sub); uninstallPathExists(t) {
 			targets = append(targets, t)
 		}
 	}
@@ -516,26 +504,26 @@ func removePortableToolingWindows(w io.Writer, h string) []string {
 
 // XDG cache dir always removable and XDG data dir removable only on a full uninstall, else preserved
 func xdgLeftoverPaths(fullUninstall bool) (removable, preserved []string) {
-	h := guiUserHome()
+	h := uninstallUserHome()
 	cache := filepath.Join(h, ".cache", "icebath")
 	data := filepath.Join(h, ".local", "share", "icebath")
-	if guiExists(cache) {
+	if uninstallPathExists(cache) {
 		removable = append(removable, cache)
 	}
-	if guiExists(data) && fullUninstall {
+	if uninstallPathExists(data) && fullUninstall {
 		removable = append(removable, data)
 	}
-	if guiExists(data) && !fullUninstall {
+	if uninstallPathExists(data) && !fullUninstall {
 		preserved = append(preserved, data)
 	}
 	return removable, preserved
 }
 
 // Removes icebath named macOS Library entries and the XDG leftovers outside the home and checkout
-func removeDesktopAppLeftovers(w io.Writer, fullUninstall bool) []string {
+func removeAppLeftovers(w io.Writer, fullUninstall bool) []string {
 	var targets []string
-	if guiSysPlatform() == "darwin" {
-		library := filepath.Join(guiUserHome(), "Library")
+	if uninstallPlatform() == "darwin" {
+		library := filepath.Join(uninstallUserHome(), "Library")
 		for _, parent := range []string{"Caches", "Logs", "WebKit", "HTTPStorages", "Saved Application State"} {
 			parentDir := filepath.Join(library, parent)
 			if st, err := os.Stat(parentDir); err != nil || !st.IsDir() {
@@ -556,7 +544,7 @@ func removeDesktopAppLeftovers(w io.Writer, fullUninstall bool) []string {
 	targets = append(targets, removable...)
 	var existing []string
 	for _, t := range targets {
-		if guiExists(t) {
+		if uninstallPathExists(t) {
 			existing = append(existing, t)
 		}
 	}
@@ -698,7 +686,7 @@ func uninstallProfile(ctx context.Context, w io.Writer, profile manage.ProfileIn
 			uninstallWarn(w, fmt.Sprintf("  Could not run gateway %s for '%s': %s", subcmd, name, uninstallErrText(err)))
 		}
 	}
-	if alias := profile.AliasPath; alias != "" && guiExists(alias) {
+	if alias := profile.AliasPath; alias != "" && uninstallPathExists(alias) {
 		if err := pypath.Unlink(alias); err != nil {
 			uninstallWarn(w, fmt.Sprintf("  Could not remove alias %s: %s", alias, uninstallErrText(err)))
 		} else {
@@ -711,11 +699,7 @@ func uninstallProfile(ctx context.Context, w io.Writer, profile manage.ProfileIn
 // Erases this home's data while the installed runtimes and sibling profiles stay, exit 1 when it cannot
 func RunDataUninstall(ctx context.Context, ns map[string]any, w io.Writer) (int, error) {
 	h := home.Dir(ctx)
-	userdata := desktopUserdataDir()
-	if raw := ns["desktop_userdata"]; pyrepr.Truthy(raw) {
-		userdata = pypath.PathStr(pyrepr.Str(raw))
-	}
-	plan, err := planDataRemoval(ctx, h, uninstallProjectRoot(), &userdata)
+	plan, err := planDataRemoval(ctx, h, uninstallProjectRoot())
 	if err != nil {
 		uninstallWarn(w, dataErrText(err))
 		return 1, nil
@@ -739,7 +723,7 @@ func RunDataUninstall(ctx context.Context, ns map[string]any, w io.Writer) (int,
 		fmt.Fprintln(w, "Dry run: no data or processes changed.")
 		return 0, nil
 	}
-	if !nsTruthy(ns, "yes") && !guiConfirmYes(w, "to remove this home's data") {
+	if !nsTruthy(ns, "yes") && !uninstallConfirmYes(w, "to remove this home's data") {
 		return 0, nil
 	}
 	var removed []string
@@ -786,16 +770,13 @@ func RunUninstall(ctx context.Context, ns map[string]any, w io.Writer) (int, err
 		return 0, nil
 	}
 	fmt.Fprintln(w)
-	guiPrintBox(w, "│            ☤ Icebath Agent Uninstaller                 │", cliui.Magenta)
+	uninstallBox(w, "│            ☤ Icebath Agent Uninstaller                 │", cliui.Magenta)
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, cliui.Color("Current Installation:", cliui.Cyan, cliui.Bold))
 	fmt.Fprintf(w, "  Code:    %s\n", projectRoot)
 	fmt.Fprintf(w, "  Config:  %s\n", filepath.Join(h, "config.yaml"))
 	fmt.Fprintf(w, "  Secrets: %s\n", filepath.Join(h, ".env"))
 	fmt.Fprintf(w, "  Data:    %s, %s, %s\n", filepath.Join(h, "cron"), filepath.Join(h, "sessions"), filepath.Join(h, "logs"))
-	if userdata := desktopUserdataDir(); guiExists(userdata) {
-		fmt.Fprintf(w, "  Desktop: %s  (app data - kept by 'Keep data', removed by 'Full uninstall')\n", userdata)
-	}
 	fmt.Fprintln(w)
 	if len(named) > 0 {
 		fmt.Fprintln(w, cliui.Color("Other profiles detected:", cliui.Cyan, cliui.Bold))
@@ -857,7 +838,7 @@ func RunUninstall(ctx context.Context, ns map[string]any, w io.Writer) (int, err
 		fmt.Fprintln(w, "This will remove the Icebath code but keep your configuration and data.")
 	}
 	fmt.Fprintln(w)
-	if !guiConfirmYes(w, "to confirm") {
+	if !uninstallConfirmYes(w, "to confirm") {
 		return 0, nil
 	}
 	uninstallPerform(ctx, w, projectRoot, h, fullUninstall, removeProfiles, named)
@@ -873,22 +854,11 @@ func printUninstallDryRun(ctx context.Context, w io.Writer, projectRoot, h strin
 	fmt.Fprintln(w, "  • Gateway services and standalone gateway processes")
 	fmt.Fprintln(w, "  • Icebath PATH entries from shell configs / Windows User PATH")
 	fmt.Fprintln(w, "  • Icebath wrapper scripts and Icebath-managed node/npm/npx symlinks")
-	fmt.Fprintln(w, "  • Desktop Chat GUI artifacts")
 	fmt.Fprintf(w, "  • Code checkout: %s\n", projectRoot)
-	userdata := desktopUserdataDir()
 	if !fullUninstall {
 		fmt.Fprintf(w, "  • Keep Icebath config/data: %s\n", h)
-		if guiExists(userdata) {
-			fmt.Fprintf(w, "  • Keep desktop app data: %s\n", userdata)
-		}
 	} else {
 		fmt.Fprintf(w, "  • Icebath config/data: %s\n", h)
-		if guiSysPlatform() == "darwin" {
-			fmt.Fprintln(w, "  • macOS: dashboard/serve launchd jobs, Electron + setup caches")
-		}
-		if guiExists(userdata) {
-			fmt.Fprintf(w, "  • Desktop app data: %s\n", userdata)
-		}
 		var profiles []manage.ProfileInfo
 		if uninstallIsDefaultHome(h) {
 			profiles = uninstallDiscoverProfiles(ctx, w)
@@ -917,7 +887,7 @@ func removeStep(w io.Writer, label string, remove func() []string, successFmt, n
 
 // Removes an existing tree with the shared success line, a warning when it cannot
 func rmtreeStep(w io.Writer, p, indent string, fully bool) {
-	if !guiExists(p) {
+	if !uninstallPathExists(p) {
 		return
 	}
 	if err := uninstallRmtree(p); err != nil {
@@ -934,84 +904,15 @@ func rmtreeStep(w io.Writer, p, indent string, fully bool) {
 	uninstallSuccess(w, indent+"Removed "+p)
 }
 
-// Electron and setup cache dirs macOS writes outside the home that the desktop data removal never reaches
-func macosCacheLeftoverDirs() []string {
-	caches := filepath.Join(guiUserHome(), "Library", "Caches")
-	return []string{filepath.Join(caches, "Icebath"), filepath.Join(caches, "ai.icebath"),
-		filepath.Join(caches, "icebath-setup"), filepath.Join(caches, "ai.icebath.setup")}
-}
-
 // Removes an existing tree reporting true, false when nothing is there
 func rmtreeIfExists(p string) (bool, error) {
-	if !guiExists(p) {
+	if !uninstallPathExists(p) {
 		return false, nil
 	}
 	if err := uninstallRmtree(p); err != nil {
 		return false, err
 	}
 	return true, nil
-}
-
-// Boots out and deletes every macOS launchd job that runs a dashboard or serve backend
-func removeDashboardLaunchdJobs(w io.Writer) []string {
-	if guiSysPlatform() != "darwin" {
-		return nil
-	}
-	uid := os.Getuid()
-	var removed []string
-	for _, entry := range uninstallLaunchdPlistDirs() {
-		kind, dir := entry[0], entry[1]
-		plists, err := pypath.Glob(dir, "*.plist")
-		if err != nil {
-			continue
-		}
-		slices.SortFunc(plists, pathCompare)
-		for _, plistPath := range plists {
-			raw, err := os.ReadFile(plistPath)
-			if err != nil {
-				continue
-			}
-			doc, err := pyplist.Load(raw)
-			if err != nil {
-				continue
-			}
-			data, isDict := doc.(*pyplist.Dict)
-			if !isDict || data == nil {
-				continue
-			}
-			label := ""
-			if v, _ := data.Get("Label"); pyrepr.Truthy(v) {
-				label = pystr.Strip(pyrepr.Str(v))
-			}
-			rawArgs, _ := data.Get("ProgramArguments")
-			args, isList := rawArgs.([]any)
-			if label == "" || !isList || len(args) == 0 {
-				continue
-			}
-			argv := make([]string, len(args))
-			for i, a := range args {
-				argv[i] = pyrepr.Str(a)
-			}
-			if _, _, _, ok := gateway.ParseDashboardRuntime(pyshlex.Join(argv)); !ok {
-				continue
-			}
-			domains := []string{fmt.Sprintf("gui/%d", uid), fmt.Sprintf("user/%d", uid)}
-			if kind == "daemon" {
-				domains = []string{"system"}
-			}
-			for _, domain := range domains {
-				if err := uninstallRunCommand([]string{"launchctl", "bootout", domain + "/" + label}, 90*time.Second); err != nil {
-					uninstallWarn(w, fmt.Sprintf("Could not boot out %s/%s: %s", domain, label, uninstallErrText(err)))
-				}
-			}
-			if err := pypath.Unlink(plistPath); err != nil {
-				uninstallWarn(w, fmt.Sprintf("Could not remove %s: %s", plistPath, uninstallErrText(err)))
-				continue
-			}
-			removed = append(removed, plistPath)
-		}
-	}
-	return removed
 }
 
 // Reinstall command per platform, keyed by whether this is Windows
@@ -1063,12 +964,8 @@ func performUninstall(ctx context.Context, w io.Writer, projectRoot, h string, f
 			removeStep(w, step.label, step.remove, step.successFmt, step.noneMsg)
 		}
 	}
-	uninstallInfo(w, "Removing desktop Chat GUI artifacts...")
-	if len(uninstallGUIStep(w, h, fullUninstall)) == 0 {
-		uninstallInfo(w, "No desktop GUI artifacts found")
-	}
 	uninstallInfo(w, "Removing app caches and leftovers outside the install...")
-	if leftovers := removeDesktopAppLeftovers(w, fullUninstall); len(leftovers) > 0 {
+	if leftovers := removeAppLeftovers(w, fullUninstall); len(leftovers) > 0 {
 		for _, p := range leftovers {
 			uninstallSuccess(w, "Removed "+p)
 		}
@@ -1095,29 +992,17 @@ func performUninstall(ctx context.Context, w io.Writer, projectRoot, h string, f
 				uninstallProfile(ctx, w, prof)
 			}
 		}
-		if guiSysPlatform() == "darwin" {
-			removeStep(w, "Removing dashboard/serve launchd jobs...", func() []string { return uninstallDashboardJobsStep(w) },
-				"Removed {}", "No dashboard/serve launchd jobs found")
-		}
-		if guiSysPlatform() == "darwin" {
-			removeStep(w, "Removing Electron and setup caches...",
-				func() []string { return removeEach(w, uninstallMacosCacheDirs(), uninstallRmtreeIfExists) },
-				"Removed {}", "No Electron or setup caches found")
-		}
 		uninstallInfo(w, "Removing configuration and data...")
 		uninstallRmtreeStep(w, h, "", true)
 	} else {
 		uninstallInfo(w, "Keeping configuration and data in "+h)
 	}
 	fmt.Fprintln(w)
-	guiPrintBox(w, "│              ✓ Uninstall Complete!                      │", cliui.Green)
+	uninstallBox(w, "│              ✓ Uninstall Complete!                      │", cliui.Green)
 	fmt.Fprintln(w)
 	if !fullUninstall {
 		fmt.Fprintln(w, cliui.Color("Your configuration and data have been preserved:", cliui.Cyan))
 		fmt.Fprintf(w, "  %s/\n", h)
-		if userdata := desktopUserdataDir(); guiExists(userdata) {
-			fmt.Fprintf(w, "  %s  (desktop app data)\n", userdata)
-		}
 		_, preserved := xdgLeftoverPaths(false)
 		for _, p := range preserved {
 			fmt.Fprintf(w, "  %s/\n", p)
@@ -1139,144 +1024,17 @@ func performUninstall(ctx context.Context, w io.Writer, projectRoot, h string, f
 	fmt.Fprintln(w)
 }
 
-// Dispatches icebath uninstall to the summary, data, GUI or agent path, gating on a terminal only when it prompts
+// Dispatches icebath uninstall to the data or agent path, gating on a terminal only when it prompts
 func CmdUninstall(ctx context.Context, ns map[string]any, w io.Writer, requireTTY func(commandName string)) (int, error) {
-	if nsTruthy(ns, "gui_summary") {
-		return PrintGUIInstallSummary(ctx, w)
-	}
 	prompting := !nsTruthy(ns, "yes") && !nsTruthy(ns, "dry_run")
-	switch {
-	case nsTruthy(ns, "data"):
+	if nsTruthy(ns, "data") {
 		if prompting {
 			requireTTY("uninstall --data")
 		}
 		return uninstallRunDataMode(ctx, ns, w)
-	case nsTruthy(ns, "gui"):
-		if prompting {
-			requireTTY("uninstall --gui")
-		}
-		return uninstallRunGUIMode(ctx, ns, w)
 	}
 	if prompting {
 		requireTTY("uninstall")
 	}
 	return uninstallRunAgentMode(ctx, ns, w)
-}
-
-// Namespace the module entry hands the run functions for one mode, always non interactive
-func uninstallModeNamespace(mode string, desktopUserdata any) map[string]any {
-	return map[string]any{"gui": mode == "gui", "gui_summary": false, "full": mode == "full", "data": mode == "data",
-		"yes": true, "desktop_userdata": desktopUserdata}
-}
-
-// Argparse of the uninstall module entry, the mode, the desktop data override and an exit code when rejected
-func parseUninstallModuleArgs(argv []string, stdout, stderr io.Writer) (string, any, int, bool) {
-	const prog = "icebath " + UninstallModuleEntry
-	const usage = "usage: " + prog + " [-h] --mode {gui,lite,full,data}\n"
-	fail := func(msg string) (string, any, int, bool) {
-		fmt.Fprintf(stderr, "%s%s: error: %s\n", usage, prog, msg)
-		return "", nil, 2, true
-	}
-	mode := ""
-	var desktopUserdata any
-	modes := []string{"gui", "lite", "full", "data"}
-	for i := 0; i < len(argv); i++ {
-		arg := argv[i]
-		name, value, hasValue := strings.Cut(arg, "=")
-		if !strings.HasPrefix(arg, "--") || len(name) < 3 {
-			if arg == "-h" {
-				name = "--help"
-			} else {
-				return fail("unrecognized arguments: " + strings.Join(argv[i:], " "))
-			}
-		}
-		var matched []string
-		for _, option := range []string{"--help", "--mode", "--desktop-userdata"} {
-			if option == name {
-				matched = []string{option}
-				break
-			}
-			if strings.HasPrefix(option, name) {
-				matched = append(matched, option)
-			}
-		}
-		if len(matched) > 1 {
-			return fail(fmt.Sprintf("ambiguous option: %s could match %s", name, strings.Join(matched, ", ")))
-		}
-		if len(matched) == 0 {
-			return fail("unrecognized arguments: " + strings.Join(argv[i:], " "))
-		}
-		option := matched[0]
-		if option == "--help" {
-			fmt.Fprint(stdout, usage+"\noptions:\n  -h, --help            show this help message and exit\n"+
-				"  --mode {gui,lite,full,data}\n                        gui = Chat GUI only; lite = GUI + agent, keep data;\n"+
-				"                        full = everything; data = user data only, keep code\n")
-			return "", nil, 0, true
-		}
-		if !hasValue {
-			if i+1 >= len(argv) || uninstallModuleOptionLike(argv[i+1]) {
-				return fail("argument " + option + ": expected one argument")
-			}
-			i++
-			value = argv[i]
-		}
-		if option == "--mode" {
-			if !slices.Contains(modes, value) {
-				return fail(fmt.Sprintf("argument --mode: invalid choice: '%s' (choose from gui, lite, full, data)", value))
-			}
-			mode = value
-			continue
-		}
-		desktopUserdata = pypath.PathStr(value)
-	}
-	if mode == "" {
-		return fail("the following arguments are required: --mode")
-	}
-	if desktopUserdata != nil && mode != "data" {
-		return fail("--desktop-userdata requires --mode data")
-	}
-	return mode, desktopUserdata, 0, false
-}
-
-// Whether argparse reads the word as an option, negative numbers and words with a space reading as values
-func uninstallModuleOptionLike(word string) bool {
-	if !strings.HasPrefix(word, "-") || word == "-" {
-		return false
-	}
-	name, _, _ := strings.Cut(word, "=")
-	for _, option := range []string{"-h", "--help", "--mode", "--desktop-userdata"} {
-		if name == option || (strings.HasPrefix(name, "--") && len(name) > 2 && strings.HasPrefix(option, name)) {
-			return true
-		}
-	}
-	return !uninstallNegativeNumber.MatchString(word) && !strings.Contains(word, " ")
-}
-
-// Runs one uninstall mode non interactively for the desktop app, the exit code the run ends with
-func UninstallModuleMain(ctx context.Context, argv []string, stdout, stderr io.Writer) int {
-	mode, desktopUserdata, code, done := parseUninstallModuleArgs(argv, stdout, stderr)
-	if done {
-		return code
-	}
-	ns := uninstallModeNamespace(mode, desktopUserdata)
-	run := uninstallRunAgentMode
-	switch {
-	case ns["data"] == true:
-		run = uninstallRunDataMode
-	case ns["gui"] == true:
-		run = uninstallRunGUIMode
-	}
-	code, err := run(ctx, ns, stdout)
-	if err != nil {
-		fmt.Fprintln(stderr, uninstallErrText(err))
-		return 1
-	}
-	return code
-}
-
-// Runs the uninstall module entry and exits when this process was started as one
-func DispatchUninstallModuleEntry(ctx context.Context) {
-	if len(os.Args) > 1 && os.Args[1] == UninstallModuleEntry {
-		os.Exit(UninstallModuleMain(ctx, os.Args[2:], os.Stdout, os.Stderr))
-	}
 }

@@ -104,7 +104,7 @@ func DependencyBlockedSummaries(ctx context.Context, m *Manager) []map[string]an
 // Restart line of each process kind that can report a dependency gap
 var restartLines = map[string]string{
 	"gateway": "  icebath gateway restart",
-	"backend": "  quit and reopen the Icebath desktop app (or restart icebath dashboard)",
+	"backend": "  quit and reopen the icebath terminal UI",
 }
 
 // What to do when running processes lack the dependencies of a plugin, one restart line per reporting process
@@ -119,7 +119,7 @@ func dependencyRestartHint(ctx context.Context, missing, processes []string) (st
 	}
 	deps, restart := strings.Join(missing, ", "), strings.Join(lines, "\n")
 	if InstalledInSelectedEnvironment(ctx, missing) {
-		return fmt.Sprintf("Its Python dependencies (%s) were installed after the running gateway or dashboard "+
+		return fmt.Sprintf("Its Python dependencies (%s) were installed after the running gateway or terminal UI "+
 			"started, and a running process never switches dependency environments. Restart them to "+
 			"load the plugin:\n%s", deps, restart), nil
 	}

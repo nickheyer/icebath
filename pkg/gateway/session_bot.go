@@ -4,13 +4,11 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"slices"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
 )
-
-// Local surfaces a legacy session row can carry as its source or created source
-var legacyLocalSources = map[string]bool{"cli": true, "tui": true, "gui": true, "desktop": true, "oneshot": true, "tool": true, "acp": true}
 
 // Python str of a row field, empty for a missing or falsy value
 func botRowText(row *pyjson.Object, key string) string {
@@ -50,7 +48,7 @@ func releaseSupersededBotChat(ctx context.Context, db SessionStoreDB, store *Ses
 		return nil
 	}
 	title, _ := row.Get("title")
-	if title != "Bot Chat" || !legacyLocalSources[botRowCreatedSource(row)] {
+	if title != "Bot Chat" || !slices.Contains(state.LegacyLocalSources(), botRowCreatedSource(row)) {
 		return nil
 	}
 	source, _ := row.Get("source")

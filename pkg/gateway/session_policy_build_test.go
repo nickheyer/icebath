@@ -56,15 +56,12 @@ func TestPolicySelectsSurfaceAndRefusesBadCreateFields(t *testing.T) {
 	for _, source := range []string{"cli", "tui", "gui"} {
 		policies = append(policies, mustBuildPolicy(t, ctx, map[string]any{"source": source, "cwd": t.TempDir(), "model": source}, cfg))
 	}
-	if policies[2].Platform != "desktop" || !slices.Contains(policies[2].Toolsets, "desktop_ui") {
-		t.Fatalf("gui policy %q %v", policies[2].Platform, policies[2].Toolsets)
+	if policies[2].Platform != "tui" || !slices.Equal(policies[2].Toolsets, policies[1].Toolsets) {
+		t.Fatalf("gui history policy %q %v, tui %v", policies[2].Platform, policies[2].Toolsets, policies[1].Toolsets)
 	}
-	if !slices.Contains(policies[2].Toolsets, "catalog") {
-		t.Fatalf("gui toolsets %v lack catalog", policies[2].Toolsets)
-	}
-	for _, p := range policies[:2] {
-		if slices.Contains(p.Toolsets, "desktop_ui") || slices.Contains(p.Toolsets, "catalog") {
-			t.Fatalf("%s toolsets %v carry a desktop surface", p.Source, p.Toolsets)
+	for _, p := range policies {
+		if slices.Contains(p.Toolsets, "catalog") {
+			t.Fatalf("%s toolsets %v carry the catalog toolset", p.Source, p.Toolsets)
 		}
 	}
 	cfg["platform_toolsets"].(map[string]any)["cli"] = []any{}
@@ -72,8 +69,7 @@ func TestPolicySelectsSurfaceAndRefusesBadCreateFields(t *testing.T) {
 		t.Fatalf("frozen cli toolsets %v lost terminal", policies[0].Toolsets)
 	}
 	for _, params := range []map[string]any{{"source": "cron"}, {"toolsets": []any{"not-a-toolset"}}, {"cwd": "."},
-		{"provider": 12}, {"skills": "x"}, {"skills": []any{}}, {"pass_session_id": 1},
-		{"toolsets": []any{"desktop_ui"}, "source": "cli"}} {
+		{"provider": 12}, {"skills": "x"}, {"skills": []any{}}, {"pass_session_id": 1}} {
 		refusedInvalid(t, ctx, params, map[string]any{})
 	}
 }
@@ -349,9 +345,9 @@ func TestSurfaceToolsetsStillFoldInOverThePosture(t *testing.T) {
 		t.Fatalf("tui toolsets %v", tui.Toolsets)
 	}
 	gui := postureCreate(t, ctx, map[string]any{"source": "gui", "cwd": project}, focusConfig(), false).Toolsets
-	for _, name := range []string{"coding", "desktop_ui", "catalog"} {
+	for _, name := range []string{"coding", "project"} {
 		if !slices.Contains(gui, name) {
-			t.Fatalf("gui toolsets %v lack %s", gui, name)
+			t.Fatalf("gui history toolsets %v lack %s", gui, name)
 		}
 	}
 }

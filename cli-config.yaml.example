@@ -7,7 +7,7 @@
 # Schema version of this file. The installers copy it to seed config.yaml, and
 # `icebath update` uses it to know which one-time migrations the file already
 # has. icebath manages it: do not copy it into another config.
-_config_version: 53
+_config_version: 54
 
 # =============================================================================
 # Database Configuration
@@ -40,8 +40,8 @@ database:
 # hard limit and never lowers an already higher soft limit. Set to 0, false, or
 # null to disable the adjustment. Default: 4096.
 #
-# malloc_arena_max caps glibc malloc arenas in the gateway / `icebath serve`
-# process (Linux/glibc only; child commands keep glibc's default). An explicit
+# malloc_arena_max caps glibc malloc arenas in the gateway process
+# (Linux/glibc only; child commands keep glibc's default). An explicit
 # MALLOC_ARENA_MAX (exported or in .env) wins. 0, false, or null = glibc default
 # (8 per CPU core). Default: 4.
 runtime:
@@ -51,7 +51,7 @@ runtime:
 # =============================================================================
 # Attachments
 # =============================================================================
-# Where the TUI/Desktop gateway stages session file attachments (file uploads and
+# Where the TUI gateway stages session file attachments (file uploads and
 # pasted text). Read per profile: a session bound to profile X follows X's own
 # config.yaml, so each agent's attachments stay with its workspace.
 #   hermes-home  (default) <profile home>/attachments — the directory container
@@ -414,7 +414,7 @@ model:
 # First-class review tasks are dispatched automatically by default. The worker
 # is spawned with the bundled sdlc-review skill and can approve, request changes
 # back to the original implementer, or escalate a genuine external blocker.
-# Disable this only when every review is performed manually from the dashboard.
+# Disable this only when every review is performed manually.
 kanban:
   review_dispatch: true
 
@@ -437,8 +437,6 @@ cron:
 terminal:
   backend: "local"
   cwd: "."  # For local backend: "." = current directory. Ignored for remote backends unless a backend documents otherwise.
-  # Desktop xterm font. Install the font locally; Nerd Fonts render Powerlevel10k glyphs.
-  # font_family: "MesloLGS NF"  # Also accepts a CSS stack; blank uses bundled JetBrains Mono.
   timeout: 180
   # HOME policy for tool subprocesses:
   #   auto    - default: host uses your real HOME; containers use ICEBATH_HOME/home
@@ -612,7 +610,7 @@ terminal:
 #   # Language servers only load code a project ships (its .venv interpreter,
 #   # node_modules TypeScript, svelte.config.js, cargo/Gradle/mix build files)
 #   # in the git worktree of the directory you launched icebath in or opened
-#   # the session in (icebath -w, a Desktop project, terminal.cwd), or under a
+#   # the session in (icebath -w, terminal.cwd), or under a
 #   # directory listed here. In other checkouts, such as a repository the agent
 #   # cloned, only servers that run no project code start (pinned to
 #   # icebath-side tools) and the npx tsc / rustfmt lint fallbacks are skipped.
@@ -646,7 +644,7 @@ browser:
 # =============================================================================
 # Soft warnings are enabled by default. They append guidance to repeated failed
 # or non-progressing tool results but still let the tool execute. Hard stops stay
-# opt-in for CLI/TUI/Desktop/ACP sessions, but default on for unattended
+# opt-in for CLI/TUI/ACP sessions, but default on for unattended
 # gateway/cron sessions where nobody is present to interrupt a model that
 # ignores loop warnings.
 tool_loop_guardrails:
@@ -1051,8 +1049,8 @@ memory:
 # Conversations persist across inactivity and daily boundaries. Use /new or
 # /reset explicitly; context compression manages long conversations.
 
-# Maximum number of simultaneously active chat sessions across CLI, TUI,
-# dashboard chat, and messaging gateway. Set to null, 0, or omit to allow
+# Maximum number of simultaneously active chat sessions across CLI, TUI
+# and messaging gateway. Set to null, 0, or omit to allow
 # unlimited concurrent sessions. When the limit is reached, new sessions get a
 # clean error while existing active sessions keep their normal behavior. This
 # top-level key takes precedence over gateway.max_concurrent_sessions. The cap
@@ -1070,7 +1068,7 @@ group_sessions_per_user: true
 # Native Hosted-Room Discussion Limits
 # =============================================================================
 # Shared ceilings per discussion across all members, applied to all native hosted
-# rooms (not Desktop renderer/mirrored rooms). Positive integers only: no 0,
+# rooms (not mirrored rooms). Positive integers only: no 0,
 # unlimited, null, booleans, strings, or floats; an invalid value is logged and
 # the defaults apply. Omitted keys keep these defaults.
 # Set in the root owner's config.yaml beside shared-state.db, not a member's
@@ -1100,13 +1098,11 @@ hosted_rooms:
 # of the file's pages are reclaimable — a dense database never pays for a full
 # rewrite to reclaim a few MB.
 #
-# A CLI/TUI/Desktop session left with no viewer (a killed terminal, a dropped
+# A CLI/TUI session left with no viewer (a killed terminal, a dropped
 # connection, a gateway restart) is ended by the gateway orphan_end_grace_s
 # seconds later, once its running turn settles. It stays resumable, and a viewer
 # that comes back within the grace keeps it open. 0 never ends it. After a
 # restart it also waits out the rest of 6h since the session's last activity.
-# It replaces dashboard.ws_orphan_reap_grace_s / startup_orphan_sweep for these
-# sessions; while it is unset, their opt-outs (0 / false) still turn it off.
 #
 # Uncomment to change the defaults shown; auto_prune: true bounds the file,
 # auto_prune: false keeps every ended session and silences the low-disk prompt.
@@ -1119,8 +1115,7 @@ hosted_rooms:
 #   orphan_end_grace_s: 300
 
 # Optional direct endpoint for autonomous Bot Mode rooms spanning gateways.
-# Leave unset for the safe default: Desktop coordinates cross-gateway rooms and
-# same-gateway rooms can still continue on their own. Set this only to the
+# Leave unset for the safe default: same-gateway rooms continue on their own. Set this only to the
 # public HTTPS base URL that another trusted icebath gateway can reach. The API
 # server key authorizes the initial invitation; scoped grants are signed by a
 # separate installation-private secret and survive API-key rotation. Disbanding
@@ -1136,19 +1131,6 @@ hosted_rooms:
 # The equivalent environment override is ICEBATH_ROOM_LINK_URL. After changing
 # it, restart the gateway and reopen New Group Chat > Advanced; icebath will
 # re-check the selected gateways automatically.
-
-# Startup sweep of session rows orphaned by a dead gateway process.
-# The normal disconnect cleanup runs on an in-process grace timer, so a
-# gateway restart (update, crash, systemd) leaves those rows permanently
-# "active". On every gateway boot — stdio TUI *and* the desktop/dashboard
-# WS sidecar — tui/desktop/subagent rows whose start time AND newest
-# message are both older than the session TTL (ICEBATH_TUI_SESSION_TTL_S,
-# default 6h) are closed with end_reason "startup_orphan_reap".
-# Messaging-platform sessions (Telegram, Discord, ...) are never touched;
-# live in-memory sessions are excluded; swept sessions stay resumable.
-#
-# dashboard:
-#   startup_orphan_sweep: true
 
 # ─────────────────────────────────────────────────────────────────────────────
 # API Server — per-client model routing
@@ -1328,7 +1310,7 @@ agent:
   # After the agent edits code without fresh passing verification, nudge it to
   # verify before finishing. Off by default (false). Set true to force it on
   # everywhere, or "auto" for the surface-aware mode: on for interactive
-  # coding surfaces (CLI, TUI, desktop) and programmatic callers, off on
+  # coding surfaces (CLI, TUI) and programmatic callers, off on
   # conversational messaging surfaces (Telegram, Discord, etc.) where the
   # verification summary would reach a human as chat noise. The
   # ICEBATH_VERIFY_ON_STOP env var (1/0) takes precedence.
@@ -1391,7 +1373,7 @@ agent:
 
   # OpenAI Daybreak (Trusted Access for Cyber) on the ChatGPT/Codex
   # subscription. Sent only on models your account's Codex catalog lists for
-  # it; Desktop shows the switch on those models. Grants no access itself.
+  # it. Grants no access itself.
   daybreak: false
 
   # Custom personalities (use with /personality command).
@@ -1529,7 +1511,7 @@ platform_toolsets:
 #       # opt-in works even though Slack text tool_progress defaults to off.
 #       native_task_cards: false
 #       # Slack user IDs whose Web-API posts (user token, e.g. your own
-#       # dashboard/mobile front-end) count as human instead of being dropped
+#       # web or mobile front-end) count as human instead of being dropped
 #       # as app traffic. Narrower than allow_bots: all. Users only — never apps.
 #       api_human_users: ["U0AAAAAAA", "U0BBBBBBB"]
 #       # Suppress automatic link-preview cards without removing clickable links.
@@ -1819,13 +1801,9 @@ stt:
 # hermes_cli/config_defaults.py — only capture placement is documented here.
 # wake_word:
 #   enabled: false
-#   capture: "auto"    # auto | local | client
-#                      # auto: backend PortAudio mic when one exists; a remote
-#                      #       desktop on a mic-less (headless/VPS) backend
-#                      #       streams its own mic via the wake.feed RPC.
+#   capture: "auto"    # auto | local
+#                      # auto: backend PortAudio mic when one exists.
 #                      # local: always the backend mic (wake_word.input_device).
-#                      # client: always desktop-streamed PCM (detection stays
-#                      #         on the backend).
 
 # Image generation. Each provider plugin reads its own ``image_gen.<name>``
 # block; deepinfra discovers models live from
@@ -1956,7 +1934,7 @@ display:
   #   false: Full ASCII banner with tool/skill summary (default)
   compact: false
 
-  # Tool progress display level (CLI, gateway, and the TUI/Desktop tool feed)
+  # Tool progress display level (CLI, gateway, and the TUI tool feed)
   #   off:     Silent — no tool activity shown, just the final response
   #   new:     Show a tool indicator only when the tool changes (skip repeats)
   #   all:     Show every tool call with a short preview (default)
@@ -2001,9 +1979,7 @@ display:
 
   # Natural mid-turn assistant updates.
   # On gateway platforms, when true, completed assistant status messages are
-  # sent as separate chat messages. On the Desktop app, when true, mid-turn
-  # assistant narration streamed between tool calls is kept in the transcript
-  # instead of the bubble collapsing to only the final message on completion.
+  # sent as separate chat messages.
   # Independent of tool_progress and gateway streaming.
   #   true:  Keep/send mid-turn assistant updates (default; off on platforms
   #          that cannot edit messages)
@@ -2288,88 +2264,6 @@ updates:
   #             installs where local source edits should not persist
   non_interactive_local_changes: "stash"
 
-
-# =============================================================================
-# Web Dashboard
-# =============================================================================
-# OAuth gate configuration for `icebath dashboard --host <non-loopback>`.
-# The bundled Nous Portal plugin reads these on startup; settings here are
-# the canonical surface. Each can be overridden by an environment variable:
-#
-#   dashboard.oauth.client_id   <-  ICEBATH_DASHBOARD_OAUTH_CLIENT_ID
-#   dashboard.oauth.portal_url  <-  ICEBATH_DASHBOARD_PORTAL_URL
-#   dashboard.public_url        <-  ICEBATH_DASHBOARD_PUBLIC_URL
-#
-# Env wins when set to a non-empty value. This is what Fly.io's platform-
-# secret injection uses to push per-deploy client_ids without needing to
-# bake a config.yaml into the image. Empty env values are treated as unset
-# so a provisioned-but-not-populated secret can't shadow a valid entry here.
-#
-# Local dev / on-prem deploys should typically set these via config.yaml
-# (the ~/.icebath/.env file is reserved for API keys and secrets).
-#
-# dashboard:
-#   oauth:
-#     client_id: ""    # agent:{instance_id}; Portal provisions this at deploy
-#     portal_url: ""   # blank → default https://portal.nousresearch.com
-#
-#   # Force the absolute base URL the OAuth callback (and any other public
-#   # URL the dashboard hands to external systems) is built from. Set this
-#   # for deploys behind reverse proxies that don't reliably forward
-#   # X-Forwarded-Host / X-Forwarded-Proto / X-Forwarded-Prefix (manual
-#   # nginx setups, on-prem ingresses, custom-domain Fly deploys without
-#   # full proxy header chains).
-#   #
-#   # When set, the value is the complete authority: scheme + host +
-#   # optional path prefix (e.g. "https://example.com/hermes"). The OAuth
-#   # callback URL becomes "<public_url>/auth/callback" — X-Forwarded-Prefix
-#   # is IGNORED on this code path because the operator has explicitly
-#   # declared the public URL and we no longer need to guess.
-#   #
-#   # Leave empty to use the existing proxy-header reconstruction (the
-#   # default — works on Fly.io out of the box).
-#   #
-#   #   public_url: "https://example.com/hermes"
-#   #
-#   # Reverse proxies connecting from another container or host are not
-#   # trusted by default. Add only the proxy's exact IP address, or a bounded
-#   # CIDR for a dedicated proxy network, so X-Forwarded-Proto and
-#   # X-Forwarded-For can be honored. Loopback is always trusted. Wildcards
-#   # and /0 networks are rejected.
-#   #
-#   #   trusted_proxies:
-#   #     - "172.20.0.5"
-#   #     # - "172.20.0.0/24"  # dedicated network, if the IP is dynamic
-#
-# -----------------------------------------------------------------------------
-# Self-hosted OIDC dashboard auth (generic OpenID Connect — Authentik,
-# Keycloak, Zitadel, Authelia, Auth0, Okta, Google, …). Use this INSTEAD of the
-# nous block above when gating the dashboard with your own identity provider.
-# Each setting can be overridden by an environment variable:
-#
-#   dashboard.oauth.self_hosted.issuer         <-  ICEBATH_DASHBOARD_OIDC_ISSUER
-#   dashboard.oauth.self_hosted.client_id      <-  ICEBATH_DASHBOARD_OIDC_CLIENT_ID
-#   dashboard.oauth.self_hosted.scopes         <-  ICEBATH_DASHBOARD_OIDC_SCOPES
-#   dashboard.oauth.self_hosted.client_secret  <-  ICEBATH_DASHBOARD_OIDC_CLIENT_SECRET
-#
-# dashboard:
-#   oauth:
-#     provider: self-hosted
-#     self_hosted:
-#       issuer: "https://auth.example.com/application/o/hermes/"  # required
-#       client_id: "icebath-dashboard"                             # required
-#       scopes: "openid profile email"                            # optional
-#
-#       # OPTIONAL — set ONLY if your IDP registered the client as
-#       # *confidential* (Authentik / Keycloak often default to this). When
-#       # set, icebath authenticates the client at the token endpoint
-#       # (client_secret_basic or client_secret_post, auto-selected from the
-#       # IDP's discovery doc) IN ADDITION to PKCE. Leave unset for a public
-#       # (PKCE-only) client — the common case.
-#       #
-#       # This is a CREDENTIAL: prefer setting ICEBATH_DASHBOARD_OIDC_CLIENT_SECRET
-#       # in ~/.icebath/.env over putting it here in config.yaml.
-#       #   client_secret: ""
 
 # =============================================================================
 # External secret sources

@@ -88,15 +88,11 @@ func (slackPlatformPlugin) Manifest() plugins.Manifest {
 			{Name: "SLACK_APP_TOKEN", Description: "Slack app-level token for Socket Mode (xapp-..., scope connections:write)", URL: "https://api.slack.com/apps", Secret: true}}}
 }
 
-// Registers the Slack platform entry with its factory, setup, YAML bridge, standalone sender and card
+// Registers the Slack platform entry with its factory, setup, YAML bridge and standalone sender
 func (slackPlatformPlugin) Register(ctx *plugins.Context) error {
-	var card gateway.PlatformEntry
-	applyDashboardCard(&card)
 	extra := map[string]any{
-		"target_ref_syntax_fn":  parseSendTarget,
-		"standalone_send":       &gateway.StandaloneSendPolicy{Label: "Slack", Media: true, Captionable: true, EmptyListBetweenChunks: true},
-		"dashboard_description": card.DashboardDescription, "docs_url": card.DocsURL,
-		"dashboard_env_vars": card.DashboardEnvVars, "env_value_rules": card.EnvValueRules,
+		"target_ref_syntax_fn":   parseSendTarget,
+		"standalone_send":        &gateway.StandaloneSendPolicy{Label: "Slack", Media: true, Captionable: true, EmptyListBetweenChunks: true},
 		"ensure_deps_fn":         checkSlackRequirements,
 		"is_connected":           gateway.EnvIsConnected("SLACK_BOT_TOKEN"),
 		"setup_fn":               InteractiveSetup,

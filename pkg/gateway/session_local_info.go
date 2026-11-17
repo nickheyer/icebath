@@ -189,7 +189,7 @@ func localSessionInfo(ctx context.Context, a *SessionAuthority, ref SessionRef) 
 		return nil, err
 	}
 	info := pyjson.ObjectOf("source", source, "model", model, "lazy", agent == nil, "profile_id", a.ProfileID,
-		"desktop_protocol", CanonicalGatewayProtocol, "profile_name", servedProfileName(a.ProfileID))
+		"gateway_protocol", CanonicalGatewayProtocol, "profile_name", servedProfileName(a.ProfileID))
 	if policy != nil {
 		info.Set("cwd", policy.Cwd)
 		if policy.Source == "acp" {

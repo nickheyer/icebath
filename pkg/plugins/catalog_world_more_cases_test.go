@@ -21,16 +21,16 @@ func catWorldRemoved(t *testing.T, w *catWorldT, reason string) {
 	t.Cleanup(SwapCatalogDir(dir))
 }
 
-func TestKillListBlocksCliDashboardAndTuiPaths(t *testing.T) {
+func TestKillListBlocksCliAndUnattendedPaths(t *testing.T) {
 	w := catWorld(t)
 	catWorldRemoved(t, w, "malware")
-	res, err := DashboardInstallPlugin(w.ctx, DashboardInstallOptions{CatalogName: "cat-plugin"})
+	res, err := UnattendedInstallPlugin(w.ctx, UnattendedInstallOptions{CatalogName: "cat-plugin"})
 	if err != nil || !strings.Contains(pyStrOr(res["error"]), "malware") {
-		t.Fatalf("dashboard catalog install %v %v", res, err)
+		t.Fatalf("unattended catalog install %v %v", res, err)
 	}
-	res, err = DashboardInstallPlugin(w.ctx, DashboardInstallOptions{Identifier: "file://" + filepath.ToSlash(w.repo)})
+	res, err = UnattendedInstallPlugin(w.ctx, UnattendedInstallOptions{Identifier: "file://" + filepath.ToSlash(w.repo)})
 	if err != nil || !strings.Contains(pyStrOr(res["error"]), "malware") {
-		t.Fatalf("dashboard url install %v %v", res, err)
+		t.Fatalf("unattended url install %v %v", res, err)
 	}
 	target := filepath.Join(w.pluginsDir, "cat-plugin")
 	if _, err := os.Stat(target); !os.IsNotExist(err) {
@@ -61,9 +61,7 @@ func TestUpdateOfASubdirInstallKeepsFilesTheUserCreatedOrEdited(t *testing.T) {
 			c6Write(t, filepath.Join(src, "plugin.yaml"), "name: sub-plugin\nversion: 1.0.0\ndescription: d\n")
 			c6Write(t, filepath.Join(src, "helper.py"), "def register(ctx):\n    pass\n")
 			c6Write(t, filepath.Join(src, "config.yaml.example"), "endpoint: default\n")
-			c6Write(t, filepath.Join(src, "desktop", "plugin.js"), "export default { id: \"v1\" }\n")
 			c6Write(t, filepath.Join(src, "server.js"), "console.log('v1')\n")
-			c6Write(t, filepath.Join(src, "dashboard", "manifest.json"), "{}")
 			c6Write(t, filepath.Join(src, "hooks", "run.cjs"), "module.exports = 1\n")
 			c6Git(t, mono, "init", "-q")
 			pin := c6Commit(t, mono, "v1")
@@ -89,14 +87,14 @@ func TestUpdateOfASubdirInstallKeepsFilesTheUserCreatedOrEdited(t *testing.T) {
 			c6Write(t, filepath.Join(target, "data", "state.json"), "{}")
 			c6Write(t, filepath.Join(src, "plugin.yaml"), "name: sub-plugin\nversion: 2.0.0\ndescription: d\n")
 			c6Write(t, filepath.Join(src, "config.yaml.example"), "endpoint: new-default\n")
-			for _, gone := range []string{"desktop", "server.js", "dashboard", "hooks"} {
+			for _, gone := range []string{"server.js", "hooks"} {
 				if err := os.RemoveAll(filepath.Join(src, gone)); err != nil {
 					t.Fatal(err)
 				}
 			}
 			pin = c6Commit(t, mono, "v2")
-			if res, err := DashboardUpdateUserPlugin(w.ctx, "sub-plugin", false, false); err != nil || res["ok"] != true {
-				t.Fatalf("dashboard update %v %v", res, err)
+			if res, err := UnattendedUpdateUserPlugin(w.ctx, "sub-plugin", false, false); err != nil || res["ok"] != true {
+				t.Fatalf("unattended update %v %v", res, err)
 			}
 			if b, _ := os.ReadFile(filepath.Join(target, "plugin.yaml")); !strings.Contains(string(b), "version: 2.0.0") {
 				t.Fatalf("plugin.yaml not updated: %s", b)
@@ -107,7 +105,7 @@ func TestUpdateOfASubdirInstallKeepsFilesTheUserCreatedOrEdited(t *testing.T) {
 			if b, _ := os.ReadFile(filepath.Join(target, "data", "state.json")); string(b) != "{}" {
 				t.Fatalf("data/state.json = %q", b)
 			}
-			for _, gone := range []string{"desktop", "server.js", "dashboard", filepath.Join("hooks", "run.cjs")} {
+			for _, gone := range []string{"server.js", filepath.Join("hooks", "run.cjs")} {
 				if _, err := os.Lstat(filepath.Join(target, gone)); !os.IsNotExist(err) {
 					t.Fatalf("%s survived the update: %v", gone, err)
 				}
@@ -138,8 +136,8 @@ func TestRepinKeepsAWhollyIgnoredDataDirInAGitCheckout(t *testing.T) {
 	c6Write(t, filepath.Join(target, "node_modules", "x", "index.js"), "module.exports = 1")
 	c6Write(t, filepath.Join(w.repo, "helper.py"), "def register(ctx):\n    pass  # v3\n")
 	w.pin = c6Commit(t, w.repo, "v3")
-	if res, err := DashboardUpdateUserPlugin(w.ctx, "cat-plugin", false, false); err != nil || res["unchanged"] != false {
-		t.Fatalf("dashboard update %v %v", res, err)
+	if res, err := UnattendedUpdateUserPlugin(w.ctx, "cat-plugin", false, false); err != nil || res["unchanged"] != false {
+		t.Fatalf("unattended update %v %v", res, err)
 	}
 	if got := catHead(t, target); got != w.pin {
 		t.Fatalf("head %s, want %s", got, w.pin)
@@ -160,7 +158,7 @@ func TestRepinKeepsAWhollyIgnoredDataDirInAGitCheckout(t *testing.T) {
 	}
 	c6Write(t, filepath.Join(w.repo, "helper.py"), "def register(ctx):\n    pass  # v4\n")
 	w.pin = c6Commit(t, w.repo, "v4")
-	res, err := DashboardUpdateUserPlugin(w.ctx, "cat-plugin", false, false)
+	res, err := UnattendedUpdateUserPlugin(w.ctx, "cat-plugin", false, false)
 	if err != nil || res["ok"] != false || !strings.Contains(pyStrOr(res["error"]), "data/link.yaml") {
 		t.Fatalf("symlinked update %v %v", res, err)
 	}
@@ -182,14 +180,13 @@ func TestRepinThatWidensThePluginRequiresConsentOnEverySurface(t *testing.T) {
 		t.Fatal(err)
 	}
 	c6Write(t, filepath.Join(w.repo, "plugin.yaml"), "name: cat-plugin\nversion: 3.0.0\ndescription: d\nprovides_tools: [shell_out]\n")
-	c6Write(t, filepath.Join(w.repo, "desktop", "plugin.js"), "export default {}\n")
 	wide := c6Commit(t, w.repo, "widen")
 	w.pin = wide
-	res, err := DashboardUpdateUserPlugin(w.ctx, "cat-plugin", false, false)
+	res, err := UnattendedUpdateUserPlugin(w.ctx, "cat-plugin", false, false)
 	if err != nil || res["ok"] != false || res["consent_required"] != true {
 		t.Fatalf("widening update %v %v", res, err)
 	}
-	want := map[string][]string{"tools": {"shell_out"}, "desktop": {"desktop/plugin.js"}}
+	want := map[string][]string{"tools": {"shell_out"}}
 	if !reflect.DeepEqual(res["delta"], want) {
 		t.Fatalf("delta %#v, want %#v", res["delta"], want)
 	}
@@ -207,7 +204,7 @@ func TestRepinThatWidensThePluginRequiresConsentOnEverySurface(t *testing.T) {
 	if got := catHead(t, target); got != w.sha1 {
 		t.Fatalf("declined update moved head to %s", got)
 	}
-	if res, err := DashboardUpdateUserPlugin(w.ctx, "cat-plugin", true, false); err != nil || res["unchanged"] != false {
+	if res, err := UnattendedUpdateUserPlugin(w.ctx, "cat-plugin", true, false); err != nil || res["unchanged"] != false {
 		t.Fatalf("consented update %v %v", res, err)
 	}
 	if got := catHead(t, target); got != wide {

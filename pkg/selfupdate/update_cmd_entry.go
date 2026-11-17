@@ -24,22 +24,6 @@ type UpdateInvocation struct {
 	Stdout, Stderr io.Writer
 }
 
-// Installs the reminder row predicate and the manual serve retention every receipt finalize applies
-func installServeObligationHooks() {
-	updaterecord.SetServeObligationHooks(updaterecord.ServeObligationHooks{
-		IsReminderRow: IsReminderRow,
-		RetainReceiptManualServes: func(ctx context.Context, receipt map[string]any) []any {
-			rows, err := RetainReceiptManualServes(ctx, receipt)
-			if err != nil {
-				panic(err)
-			}
-			return rows
-		},
-	})
-}
-
-func init() { installServeObligationHooks() }
-
 // Directory names the bytecode sweep never descends into
 var bytecodeSweepSkips = map[string]bool{"venv": true, ".venv": true, "node_modules": true, ".git": true, ".worktrees": true}
 

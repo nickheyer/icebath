@@ -276,7 +276,7 @@ func LocalVoiceEnabled(sessionID any) (*bool, error) {
 	return nil, nil
 }
 
-// The session's own voice mode so Ink mirrors the gateway state
+// The session's own voice mode so the TUI mirrors the gateway state
 func voiceSetting(c *AuthorityConnection, ref SessionRef) (map[string]any, error) {
 	if ref.SessionID == "" {
 		return nil, runtimeRefusal("invalid_params")

@@ -46,7 +46,7 @@ var lineageCTESQL = `
               )`
 
 var (
-	sessionSurfaces      = map[string]string{"cli": "cli", "tui": "tui", "gui": "desktop", "acp": "acp", "tool": "cli", "oneshot": "cli"}
+	sessionSurfaces      = map[string]string{"cli": "cli", "tui": "tui", "gui": "tui", "acp": "acp", "tool": "cli", "oneshot": "cli"}
 	keepStoredLabel      = setOf("tool", "oneshot")
 	createdNotASurface   = setOf("", "local", "unknown")
 	nonContinuationChild = nonContinuationChildSQL("", "?")

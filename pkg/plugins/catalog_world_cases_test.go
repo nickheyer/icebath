@@ -70,11 +70,6 @@ func TestInTreeSidecarCannotForgeCatalogProvenance(t *testing.T) {
 	if fields := noErr(CatalogRowFields(w.h, target, CatalogPins(w.ctx), nil)); len(fields) != 0 {
 		t.Fatalf("row fields %v", fields)
 	}
-	state := noErr(InstalledCatalogState(w.ctx, map[string]map[string]any{"evil-plugin": {"dir": target, "runtime_status": nil}}, []string{"evil-plugin"}))
-	entries, _ := state["entries"].([]any)
-	if len(entries) == 0 || entries[0].(map[string]any)["installed"] != false {
-		t.Fatalf("state %v", state)
-	}
 	real, _, _, err := installCatalogEntry(w.ctx, GetLiveCatalogEntry(w.ctx, "cat-plugin"), CatalogInstallOptions{})
 	if err != nil || noErr(catalogAnnotation(w.h, real)) != "catalog:community@"+w.sha1[:8] {
 		t.Fatalf("real catalog install %v %q", err, noErr(catalogAnnotation(w.h, real)))
@@ -93,7 +88,7 @@ func TestRefInstallRecordsInstalledShaSoUpdateIsOffered(t *testing.T) {
 	if fields := noErr(CatalogRowFields(w.h, target, CatalogPins(w.ctx), nil)); fields["update_available"] != true {
 		t.Fatalf("row fields %v", fields)
 	}
-	result, err := DashboardUpdateUserPlugin(w.ctx, "cat-plugin", false, false)
+	result, err := UnattendedUpdateUserPlugin(w.ctx, "cat-plugin", false, false)
 	if err != nil || result["unchanged"] != false || catHead(t, target) != w.sha1 {
 		t.Fatalf("update %v %v", result, err)
 	}
@@ -124,11 +119,7 @@ func TestAnnotatedTagPinKeepsReviewedTrustAndReadsAsAtPin(t *testing.T) {
 	if fields := noErr(CatalogRowFields(w.h, target, CatalogPins(w.ctx), nil)); fields["update_available"] != false {
 		t.Fatalf("row fields %v", fields)
 	}
-	state := noErr(InstalledCatalogState(w.ctx, map[string]map[string]any{"cat-plugin": {"dir": target, "runtime_status": nil}}, []string{"cat-plugin"}))
-	if entries, _ := state["entries"].([]any); len(entries) == 0 || entries[0].(map[string]any)["update_available"] != false {
-		t.Fatalf("state %v", state)
-	}
-	if result, err := DashboardUpdateUserPlugin(w.ctx, "cat-plugin", false, false); err != nil || result["unchanged"] != true {
+	if result, err := UnattendedUpdateUserPlugin(w.ctx, "cat-plugin", false, false); err != nil || result["unchanged"] != true {
 		t.Fatalf("update %v %v", result, err)
 	}
 	w.pin = w.sha2

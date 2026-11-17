@@ -224,8 +224,7 @@ func executeWithFiles(ctx context.Context, env *Env, client *ConnectorClient, pl
 		runnableSlots = append(runnableSlots, slot)
 	}
 	if len(runnable) > 0 {
-		returnTo, op := ReturnToArgs(env, "")
-		remote, err := client.Execute(ctx, runnable, returnTo, op)
+		remote, err := client.Execute(ctx, runnable)
 		if err != nil {
 			return nil, err
 		}

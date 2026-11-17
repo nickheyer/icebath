@@ -1,7 +1,6 @@
 package observability_test
 
 import (
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -9,7 +8,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/observability"
 	_ "github.com/nickheyer/icebath/pkg/provider"
-	"github.com/nickheyer/icebath/pkg/selfupdate"
+	_ "github.com/nickheyer/icebath/pkg/selfupdate"
 )
 
 func strPtr(s string) *string { return &s }
@@ -23,24 +22,6 @@ func TestSourceCheckoutChannelFollowsItsBranchNeverItsRemote(t *testing.T) {
 		observability.WithVersionBranchForTest(t, c.branch)
 		if got, err := observability.ReleaseChannel(map[string]any{}); err != nil || got != c.channel {
 			t.Fatalf("branch %v read %s %v want %s", c.branch, got, err, c.channel)
-		}
-	}
-}
-
-func TestPackagedBuildChannelIsItsBakedChannelNotItsBranch(t *testing.T) {
-	for _, c := range []struct{ tag, channel string }{{"v0.13.0", "stable"}, {"v0.13.0+canary.20260927T120000Z", "main"}} {
-		if c.channel == "main" && !selfupdate.IsCanaryTag(c.tag) {
-			t.Fatalf("%s is not a canary tag", c.tag)
-		}
-		root := t.TempDir()
-		stamp, _ := json.Marshal(map[string]any{"updateMechanism": "electron-updater", "tag": c.tag})
-		if err := os.WriteFile(filepath.Join(root, "install-stamp.json"), stamp, 0o600); err != nil {
-			t.Fatal(err)
-		}
-		observability.WithProjectRootForTest(t, root)
-		observability.WithVersionBranchForTest(t, strPtr("feat/x"))
-		if got, err := observability.ReleaseChannel(map[string]any{}); err != nil || got != c.channel {
-			t.Fatalf("%s read %s %v want %s", c.tag, got, err, c.channel)
 		}
 	}
 }

@@ -2,9 +2,10 @@ package provider
 
 import (
 	"encoding/json"
-	"github.com/nickheyer/icebath/pkg/state"
 	"reflect"
 	"testing"
+
+	"github.com/nickheyer/icebath/pkg/state"
 )
 
 func TestDropsReplayItemIDsExportReadsTheProfileFlag(t *testing.T) {

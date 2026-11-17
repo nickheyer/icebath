@@ -46,7 +46,6 @@ func disableGatewayHome(t *testing.T, sharedRoot bool, answer, shared map[string
 	next.GatewayRunningPid = func(string, bool) (int, bool, error) { return gatewayPid, gatewayPid != 0, nil }
 	next.InstalledGatewayServiceKind = func(context.Context) (string, bool, error) { return "", false, nil }
 	next.RefreshPluginSessions = func(context.Context, string, string, string) error { return nil }
-	next.HostRendezvous = &fakeRendezvous{}
 	next.ReloadGatewayPlugins = fakeGateway(answer, shared, &w.calls)
 	InstallServices(&next)
 	return w

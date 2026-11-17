@@ -3,16 +3,9 @@
 # goreleaser binary from <context>/<os>/<arch>/icebath.
 ARG BINARY_SOURCE=source
 ARG GO_IMAGE=golang:1.27-trixie
-ARG NODE_IMAGE=node:26-trixie-slim
 ARG RUNTIME_IMAGE=debian:trixie-slim
 
-FROM ${NODE_IMAGE} AS node
-
 FROM ${GO_IMAGE} AS build-source
-COPY --from=node /usr/local/bin/node /usr/local/bin/node
-COPY --from=node /usr/local/lib/node_modules /usr/local/lib/node_modules
-RUN ln -s ../lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm && \
-    ln -s ../lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN --mount=type=cache,target=/root/go/pkg/mod go mod download
@@ -20,10 +13,8 @@ COPY . .
 ARG VERSION=dev
 RUN --mount=type=cache,target=/root/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
-    --mount=type=cache,target=/root/.npm \
     set -eu; \
-    go run ./cmd/icebath-build web; \
-    CGO_ENABLED=0 go build -tags webdist,goolm -trimpath -ldflags "-s -w -X main.version=${VERSION}" \
+    CGO_ENABLED=0 go build -tags goolm -trimpath -ldflags "-s -w -X main.version=${VERSION}" \
         -o /out/icebath ./cmd/icebath; \
     CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o /out/icebath-init ./cmd/icebath-init
 
@@ -75,11 +66,11 @@ RUN set -eu; \
 # read-only tool store; image-tools links them onto PATH and pins Chromium.
 ENV ICEBATH_RUNTIME_DIR=/opt/icebath/tools
 RUN set -eu; \
-    ICEBATH_HOME=/tmp/icebath-build-home /opt/icebath/icebath pm install chromium ffmpeg ripgrep; \
-    ICEBATH_HOME=/tmp/icebath-build-home /opt/icebath/icebath container-stage image-tools; \
+    ICEBATH_HOME=/tmp/icebath-image-home /opt/icebath/icebath pm install chromium ffmpeg ripgrep; \
+    ICEBATH_HOME=/tmp/icebath-image-home /opt/icebath/icebath container-stage image-tools; \
     ffmpeg -version >/dev/null; ffprobe -version >/dev/null; rg --version >/dev/null; \
     "$(cat /etc/icebath/chromium-executable-path)" --version; \
-    rm -rf /tmp/icebath-build-home; \
+    rm -rf /tmp/icebath-image-home; \
     chmod -R a+rX,go-w /opt/icebath
 
 # Install method and provenance stamps live beside the code, never in the
@@ -113,12 +104,11 @@ ENV PATH="/opt/icebath:/command:/opt/data/.local/bin:${PATH}"
 # Login shells re-read /etc/profile, which resets PATH; this re-adds the dirs above.
 COPY --chmod=0644 docker/profile-icebath-path.sh /etc/profile.d/icebath.sh
 VOLUME [ "/opt/data" ]
-EXPOSE 9119
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
     CMD [ "/opt/icebath/icebath-init", "container-health" ]
 
 # /init bootstraps the volume as root (UID/GID remap, ownership, seeding),
-# supervises the dashboard and per-profile gateway services, then runs the
+# supervises the per-profile gateway services, then runs the
 # command as the icebath user and exits with its status:
 #   docker run <image>                 -> icebath
 #   docker run <image> gateway run     -> icebath gateway run

@@ -77,7 +77,7 @@ func TestUpdateKeepsTheInstalledPinWhenTheNewPinNeedsANewerIcebath(t *testing.T)
 	w := catWorld(t)
 	RunningVersion = "0.30.0"
 	const refusal = "cat-plugin needs Icebath >=0.31; this is 0.30.0."
-	installed, err := DashboardInstallPlugin(w.ctx, DashboardInstallOptions{CatalogName: "cat-plugin"})
+	installed, err := UnattendedInstallPlugin(w.ctx, UnattendedInstallOptions{CatalogName: "cat-plugin"})
 	if err != nil || installed["ok"] != true {
 		t.Fatalf("install %v %v", installed, err)
 	}
@@ -95,9 +95,9 @@ func TestUpdateKeepsTheInstalledPinWhenTheNewPinNeedsANewerIcebath(t *testing.T)
 	if !found {
 		t.Fatalf("printed %s", out.String())
 	}
-	dashboard, err := DashboardUpdateUserPlugin(w.ctx, "cat-plugin", false, false)
-	if err != nil || dashboard["ok"] != false || !strings.Contains(dashboard["error"].(string), refusal) {
-		t.Fatalf("dashboard %v %v", dashboard, err)
+	unattended, err := UnattendedUpdateUserPlugin(w.ctx, "cat-plugin", false, false)
+	if err != nil || unattended["ok"] != false || !strings.Contains(unattended["error"].(string), refusal) {
+		t.Fatalf("unattended %v %v", unattended, err)
 	}
 	plan := PlanUpdateAll(RunChecks(w.ctx, w.pluginsDir, RunChecksOptions{}))
 	if len(plan.Movable) != 0 || len(plan.Skipped) != 1 || plan.Skipped[0].Row.Name != "cat-plugin" ||
@@ -108,7 +108,7 @@ func TestUpdateKeepsTheInstalledPinWhenTheNewPinNeedsANewerIcebath(t *testing.T)
 		t.Fatal("the installed pin moved")
 	}
 	RunningVersion = "0.31.0"
-	moved, err := DashboardUpdateUserPlugin(w.ctx, "cat-plugin", false, false)
+	moved, err := UnattendedUpdateUserPlugin(w.ctx, "cat-plugin", false, false)
 	if err != nil || moved["unchanged"] != false || catHead(t, target) != w.sha2 {
 		t.Fatalf("update after upgrade %v %v", moved, err)
 	}
@@ -157,14 +157,14 @@ func TestTheCatalogNameYouInstalledWithWorksForEveryLaterVerb(t *testing.T) {
 	if got := getDisabledSet(w.h); len(got) != 1 || !got["renamed-plugin"] {
 		t.Fatalf("disabled %v", got)
 	}
-	if res, err := DashboardSetAgentPluginEnabled(w.ctx, "cat-plugin", true); err != nil || res["name"] != "renamed-plugin" {
-		t.Fatalf("dashboard enable %v %v", res, err)
+	if res, err := SetAgentPluginEnabled(w.ctx, "cat-plugin", true); err != nil || res["name"] != "renamed-plugin" {
+		t.Fatalf("unattended enable %v %v", res, err)
 	}
-	if res, err := DashboardUpdateUserPlugin(w.ctx, "cat-plugin", false, false); err != nil || res["ok"] != true {
-		t.Fatalf("dashboard update %v %v", res, err)
+	if res, err := UnattendedUpdateUserPlugin(w.ctx, "cat-plugin", false, false); err != nil || res["ok"] != true {
+		t.Fatalf("unattended update %v %v", res, err)
 	}
-	if res, err := DashboardRemoveUserPlugin(w.ctx, "cat-plugin"); err != nil || res["ok"] != true {
-		t.Fatalf("dashboard remove %v %v", res, err)
+	if res, err := UnattendedRemoveUserPlugin(w.ctx, "cat-plugin"); err != nil || res["ok"] != true {
+		t.Fatalf("unattended remove %v %v", res, err)
 	}
 	if _, err := os.Stat(target); !os.IsNotExist(err) || getEnabledSet(w.h)["renamed-plugin"] {
 		t.Fatalf("remove left %v %v", err, getEnabledSet(w.h))

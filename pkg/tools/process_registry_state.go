@@ -1148,7 +1148,7 @@ func delegationModelNotFoundNotice(env *Env, results []map[string]any) []string 
 	lines := []string{
 		fmt.Sprintf("⚠ SUBAGENT MODEL REJECTED: the configured Subagent Model %q was rejected by provider %q (HTTP 400: not a valid model ID).", model, provider),
 		"Every task in this batch failed for this reason before doing any work.",
-		"Check Settings → Advanced → Subagent Model (or: icebath config get delegation.model).",
+		"Check it with `icebath config get delegation.model`.",
 	}
 	if DelegationFallbackChain != nil && len(DelegationFallbackChain(cfg)) == 0 {
 		lines = append(lines, "No fallback chain is configured, so no failover was attempted.")

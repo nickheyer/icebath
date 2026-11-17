@@ -16,7 +16,7 @@ var localAutoPruneNotified = struct {
 	shown map[string]float64
 }{shown: map[string]float64{}}
 
-// One sticky auto prune notice per profile per snooze window for a desktop or TUI local session
+// One sticky auto prune notice per profile per snooze window for a TUI local session
 func publishLocalAutoPruneNotice(ctx context.Context, a *SessionAuthority, ref SessionRef) {
 	live, ok := a.live(ref.SessionID)
 	if !ok || live.Source == nil || live.Source.Platform != PlatformLocal {

@@ -2,23 +2,16 @@ package gateway
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
-	"io"
 	"io/fs"
 	"log/slog"
 	"math"
 	"math/big"
-	"net"
-	"net/http"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"sync"
-	"time"
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/config"
@@ -26,23 +19,18 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/proc"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 const (
 	HostProtocolVersion = 1
-	HostIdentityPath    = "/api/host/identity"
-	HostProbeTimeout    = 2 * time.Second
 	roleGateway         = "gateway"
 	RoleGateway         = roleGateway
-	RoleServe           = "serve"
-	RoleDesktopServe    = "desktop-serve"
 	legacyBootSlackS    = 120.0
 )
 
-var hostRoles = []string{roleGateway, RoleServe, RoleDesktopServe}
+var hostRoles = []string{roleGateway}
 
 // Outcome of a host lock claim, an unopenable lock never reading as contention
 type HostLockOutcome string
@@ -55,18 +43,15 @@ const (
 
 // A published host role owner whose profiles are the served set, not the launch profile
 type HostRecord struct {
-	Role             string
-	PID              int
-	CreateTime       *float64
-	Host             string
-	Port             *int
-	ProtocolVersion  int
-	TokenFingerprint string
-	Profiles         []string
-	UpdatedAt        string
-	Home             string
-	StartTime        *int64
-	BootEpoch        string
+	Role            string
+	PID             int
+	CreateTime      *float64
+	ProtocolVersion int
+	Profiles        []string
+	UpdatedAt       string
+	Home            string
+	StartTime       *int64
+	BootEpoch       string
 }
 
 // Seams the rendezvous tests replace to simulate foreign owners, unreadable epochs and racing unlinks
@@ -102,14 +87,7 @@ func (r *HostRecord) ToJSON() *pyjson.Object {
 		o.Set("startTime", nil)
 	}
 	o.Set("bootEpoch", r.BootEpoch)
-	o.Set("host", r.Host)
-	if r.Port != nil {
-		o.Set("port", int64(*r.Port))
-	} else {
-		o.Set("port", nil)
-	}
 	o.Set("protocolVersion", int64(r.ProtocolVersion))
-	o.Set("tokenFingerprint", r.TokenFingerprint)
 	ps := make([]any, len(r.Profiles))
 	for i, p := range r.Profiles {
 		ps[i] = p
@@ -172,15 +150,9 @@ func HostRecordFromJSON(payload any) *HostRecord {
 	}
 	get := func(key string) any { v, _ := obj.Get(key); return v }
 	r.BootEpoch = strOrEmpty(get("bootEpoch"))
-	r.Host = strOrEmpty(get("host"))
-	if n, ok := jsonPyInt(get("port")); ok && n.Sign() > 0 && n.Cmp(big.NewInt(65535)) <= 0 {
-		p := int(n.Int64())
-		r.Port = &p
-	}
 	if n, ok := jsonPyInt(get("protocolVersion")); ok && n.IsInt64() {
 		r.ProtocolVersion = int(n.Int64())
 	}
-	r.TokenFingerprint = strOrEmpty(get("tokenFingerprint"))
 	if list, ok := get("profiles").([]any); ok {
 		r.Profiles = []string{}
 		for _, p := range list {
@@ -229,19 +201,6 @@ func HostRecordPath(role string) string {
 
 func HostLockPath(role string) string {
 	return filepath.Join(HostStateDir(), "host-"+validatedRole(role)+".lock")
-}
-
-func HostTokenPath(role string) string {
-	return filepath.Join(HostStateDir(), "host-"+validatedRole(role)+".token")
-}
-
-// Short non reversible handle of a session token, safe to publish in the record
-func HostTokenFingerprint(token string) string {
-	if token == "" {
-		return ""
-	}
-	sum := sha256.Sum256([]byte(token))
-	return hex.EncodeToString(sum[:])[:16]
 }
 
 // Creation time of pid, this process when zero, nil when unknowable
@@ -355,19 +314,6 @@ func HostLivenessIsProven(r *HostRecord) bool {
 	return m != nil && *m
 }
 
-// Address to dial for the record, a wildcard bind reached over loopback
-func HostDialHost(r *HostRecord) string {
-	h := r.Host
-	if h == "" {
-		h = "127.0.0.1"
-	}
-	switch h {
-	case "0.0.0.0", "::", "*", "":
-		return "127.0.0.1"
-	}
-	return h
-}
-
 // Python equality of a decoded JSON value with an int
 func jsonEqualsInt(v any, n int) bool {
 	if i, ok := jsonPyInt(v); ok {
@@ -377,63 +323,6 @@ func jsonEqualsInt(v any, n int) bool {
 		return f == float64(n)
 	}
 	return false
-}
-
-// Owner identity the recorded endpoint answers over a bounded connect and token gated GET, nil otherwise
-func ProbeHostOwner(r *HostRecord, timeout time.Duration) *pyjson.Object {
-	if r.Port == nil || *r.Port == 0 {
-		return nil
-	}
-	h := HostDialHost(r)
-	addr := net.JoinHostPort(h, strconv.Itoa(*r.Port))
-	conn, err := net.DialTimeout("tcp", addr, timeout)
-	if err != nil {
-		hostLog().Debug(fmt.Sprintf("host %s owner does not answer at %s:%d", r.Role, h, *r.Port))
-		return nil
-	}
-	conn.Close()
-	req, err := http.NewRequest(http.MethodGet, "http://"+addr+HostIdentityPath, nil)
-	if err != nil {
-		return nil
-	}
-	if token := ReadHostToken(r.Role); token != "" {
-		req.Header.Set("X-Icebath-Token", token)
-		req.Header.Set("Authorization", "Bearer "+token)
-	}
-	client := &http.Client{Timeout: timeout}
-	resp, err := client.Do(req)
-	if err != nil {
-		hostLog().Debug(fmt.Sprintf("host %s identity probe failed at %s:%d", r.Role, h, *r.Port), "error", err)
-		return nil
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		hostLog().Debug(fmt.Sprintf("host %s identity probe failed at %s:%d", r.Role, h, *r.Port), "error", "HTTP Error "+strconv.Itoa(resp.StatusCode))
-		return nil
-	}
-	if resp.StatusCode != http.StatusOK {
-		return nil
-	}
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 65536))
-	if err != nil {
-		hostLog().Debug(fmt.Sprintf("host %s identity probe failed at %s:%d", r.Role, h, *r.Port), "error", err)
-		return nil
-	}
-	decoded, err := pyjson.Loads(pystr.DecodeUTF8Replace(body))
-	if err != nil {
-		hostLog().Debug(fmt.Sprintf("host %s identity probe failed at %s:%d", r.Role, h, *r.Port), "error", err)
-		return nil
-	}
-	payload, ok := decoded.(*pyjson.Object)
-	if !ok {
-		return nil
-	}
-	role, _ := payload.Get("role")
-	pid, _ := payload.Get("pid")
-	if s, isStr := role.(string); !isStr || s != r.Role || !jsonEqualsInt(pid, r.PID) {
-		return nil
-	}
-	return payload
 }
 
 // Text of a file decoded as utf-8-sig, false when unreadable or not UTF-8
@@ -472,23 +361,6 @@ func readHostRecord(role string, includeStale bool) *HostRecord {
 // Published record for role, nil when absent, foreign, corrupt or stale unless stale ones are wanted
 func ReadHostRecord(role string, includeStale bool) *HostRecord {
 	return readHostRecord(role, includeStale)
-}
-
-// Owner written session token for role, empty when absent or unreadable
-func ReadHostToken(role string) string {
-	text, ok := readUTF8Sig(HostTokenPath(role))
-	if !ok {
-		return ""
-	}
-	return pystr.Strip(text)
-}
-
-// Whether the on disk token still hashes to the record fingerprint, a tokenless record always consistent
-func HostRecordTokenIsConsistent(r *HostRecord) bool {
-	if r.TokenFingerprint == "" {
-		return true
-	}
-	return HostTokenFingerprint(ReadHostToken(r.Role)) == r.TokenFingerprint
 }
 
 func hostLockKey(role string) [2]string {
@@ -580,12 +452,9 @@ func recordNamesLiveOwner(r *HostRecord) bool {
 // Whether the record incarnation is proven and its host lock is not observed free
 func RecordNamesLiveOwner(r *HostRecord) bool { return recordNamesLiveOwner(r) }
 
-// Options of a host record publish, the token persisted 0600 beside it with only its fingerprint published
+// Served profiles and launch home a host record publish carries
 type HostPublishOptions struct {
-	Host     string
-	Port     *int
 	Profiles []string
-	Token    string
 	Home     string
 }
 
@@ -594,33 +463,22 @@ func PublishHostRecord(ctx context.Context, role string, o HostPublishOptions) *
 	role = validatedRole(role)
 	pid := os.Getpid()
 	r := &HostRecord{
-		Role:             role,
-		PID:              pid,
-		CreateTime:       HostProcessCreateTime(0),
-		BootEpoch:        currentBootEpoch(),
-		Host:             o.Host,
-		ProtocolVersion:  HostProtocolVersion,
-		TokenFingerprint: HostTokenFingerprint(o.Token),
-		Profiles:         append([]string{}, o.Profiles...),
-		UpdatedAt:        utcNowISO(),
-		Home:             o.Home,
+		Role:            role,
+		PID:             pid,
+		CreateTime:      HostProcessCreateTime(0),
+		BootEpoch:       currentBootEpoch(),
+		ProtocolVersion: HostProtocolVersion,
+		Profiles:        append([]string{}, o.Profiles...),
+		UpdatedAt:       utcNowISO(),
+		Home:            o.Home,
 	}
 	if n, ok := jsonPyInt(hostProcessStartTime(pid)); ok && n.IsInt64() {
 		v := n.Int64()
 		r.StartTime = &v
 	}
-	if o.Port != nil && *o.Port > 0 {
-		p := *o.Port
-		r.Port = &p
-	}
 	err := func() error {
 		if _, err := EnsureHostStateDir(ctx); err != nil {
 			return err
-		}
-		if o.Token != "" {
-			if err := writePrivateText(HostTokenPath(role), o.Token); err != nil {
-				return err
-			}
 		}
 		return config.AtomicJSONWriteMode(ctx, HostRecordPath(role), r.ToJSON(), 0o600, pyjson.Indent(2))
 	}()
@@ -632,11 +490,9 @@ func PublishHostRecord(ctx context.Context, role string, o HostPublishOptions) *
 	return r
 }
 
-// Removes the record and token files, ignoring any OS error
+// Removes the record file, ignoring any OS error
 func unlinkHostRecordFiles(role string) {
-	for _, path := range []string{HostRecordPath(role), HostTokenPath(role)} {
-		_ = hostUnlink(path)
-	}
+	_ = hostUnlink(HostRecordPath(role))
 }
 
 // Retracts the role record once its owner is provably gone, holding the host lock across the re read and unlink
@@ -688,7 +544,7 @@ func holdLockBriefly(role string) *os.File {
 	return nil
 }
 
-// Removes this process's record and token, never another owner's
+// Removes this process's record, never another owner's
 func ClearHostRecord(role string) {
 	role = validatedRole(role)
 	if existing := readHostRecord(role, true); existing != nil && existing.PID != os.Getpid() {
@@ -762,17 +618,9 @@ func HostServedProfiles(multiplex *bool) []string {
 
 // One line human description used by attach messages and conflict logs
 func DescribeHostRecord(r *HostRecord) string {
-	where := "no bound port"
-	if r.Port != nil && *r.Port != 0 {
-		h := r.Host
-		if h == "" {
-			h = "127.0.0.1"
-		}
-		where = fmt.Sprintf("%s:%d", h, *r.Port)
-	}
 	ps := "unknown"
 	if len(r.Profiles) > 0 {
 		ps = strings.Join(r.Profiles, ", ")
 	}
-	return fmt.Sprintf("PID %d (%s; profiles: %s)", r.PID, where, ps)
+	return fmt.Sprintf("PID %d (profiles: %s)", r.PID, ps)
 }

@@ -95,54 +95,6 @@ func presenceWorld(t *testing.T, entries []*PluginCatalogEntry, manifests map[st
 	return &hits
 }
 
-func onboardingFixture(t *testing.T) {
-	here, other := presenceHereOther()
-	entries := []*PluginCatalogEntry{presenceEntry(t, "everywhere", true, nil, "Everywhere App", ""),
-		presenceEntry(t, "not-curated", false, nil, "", ""), presenceEntry(t, "here-only", true, []string{here}, "", ""),
-		presenceEntry(t, "elsewhere", true, []string{other}, "", "")}
-	presenceWorld(t, entries, map[string]any{"everywhere": presenceNeedsApp("/nonexistent/fx-app", nil),
-		"here-only": map[string]any{"name": "here-only"}}, nil)
-}
-
-func TestOnboardingRowsAreCuratedEntriesThisOSRuns(t *testing.T) {
-	onboardingFixture(t)
-	rows, err := OnboardingEntries(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
-	byName := map[string]OnboardingEntry{}
-	for _, r := range rows {
-		byName[r.Name] = r
-	}
-	if len(byName) != 2 || byName["everywhere"].Title != "Everywhere App" || byName["here-only"].Title != "here-only" {
-		t.Fatalf("rows %+v", rows)
-	}
-	if names := OnboardingNames(context.Background()); strings.Join(names, ",") != "everywhere,here-only" {
-		t.Fatalf("names %v", names)
-	}
-	if byName["everywhere"].Description != "everywhere does things." {
-		t.Fatalf("description %q", byName["everywhere"].Description)
-	}
-}
-
-func TestAppStateComesFromThePinnedDeclaration(t *testing.T) {
-	onboardingFixture(t)
-	rows, err := OnboardingEntries(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
-	byName := map[string]OnboardingEntry{}
-	for _, r := range rows {
-		byName[r.Name] = r
-	}
-	if r := byName["everywhere"]; r.AppState != "missing_app" || !strings.Contains(r.Sentence, "Everywhere App") {
-		t.Fatalf("everywhere %+v", r)
-	}
-	if r := byName["here-only"]; r.AppState != "unknown" || r.Sentence != "" {
-		t.Fatalf("here-only %+v", r)
-	}
-}
-
 // Every fetch waits for the other two so a serial reader breaks the barrier and reads nothing
 func presenceByNameFixture(t *testing.T) *atomic.Int64 {
 	here, other := presenceHereOther()

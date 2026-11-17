@@ -384,7 +384,7 @@ func osNormcase(path string) string {
 // Registers every catalogue tool package
 func init() {
 	for _, p := range []Package{
-		newDmgbuild(), newUv(), newPython(), newVenv(""), newNodejs(), newTermuxDocker(), newNpm(), newGit(), newGh(),
+		newUv(), newPython(), newVenv(""), newNodejs(), newTermuxDocker(), newNpm(), newGit(), newGh(),
 		newFfmpeg(), newRipgrep(), newCuaDriver(), newChromium(), newWhisperCppCpu(),
 	} {
 		MustRegister(p)

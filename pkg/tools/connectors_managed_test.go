@@ -57,7 +57,7 @@ func (g *gatewayFake) Connections(ctx context.Context, req ConnectionsRequest) (
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	g.mints = append(g.mints, map[string]any{"connectors": strings.Join(req.Connectors, ","), "reinitiate": req.Reinitiate,
-		"alias": req.Alias, "return_to": req.ReturnTo, "op": req.Op})
+		"alias": req.Alias})
 	var results []any
 	for _, slug := range req.Connectors {
 		status := g.mintStatus

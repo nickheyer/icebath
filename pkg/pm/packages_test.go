@@ -551,69 +551,6 @@ func TestCatCuaDriverProbeNeverMintsTelemetryState(t *testing.T) {
 	}
 }
 
-func TestDmgbuildStagesPairedRuntimeAndStaysOutOfPayload(t *testing.T) {
-	for target, cpu := range map[string]uint32{"darwin-arm64": 0x0100000C, "darwin-x64": 0x01000007} {
-		t.Run(target, func(t *testing.T) {
-			p := catPackage(t, "dmgbuild")
-			lock := catLock()
-			version, ok := lock.Version("dmgbuild")
-			if !ok {
-				t.Fatal("dmgbuild is unpinned")
-			}
-			url, err := p.FetchURL(version, target)
-			if err != nil || lock.Artifacts("dmgbuild", target)[0]["url"] != url {
-				t.Fatalf("pinned url disagrees with fetch_url %q %v", url, err)
-			}
-			if latest, err := p.LatestVersions(target, version); err != nil || len(latest) != 0 {
-				t.Fatalf("latest versions = %q, %v", latest, err)
-			}
-			if base := p.Base(); !base.Internal || base.OnPath() {
-				t.Fatal("dmgbuild must be internal and off PATH")
-			}
-			for _, other := range AllTargets {
-				if !strings.HasPrefix(other, "darwin-") && p.MissingReason(other) == "" {
-					t.Fatalf("dmgbuild claims %s", other)
-				}
-			}
-			python := binary.LittleEndian.AppendUint32(binary.LittleEndian.AppendUint32(nil, 0xFEEDFACF), cpu)
-			python = append(python, make([]byte, 56)...)
-			launcher := []byte("#!/usr/bin/env bash\nexec \"$(dirname \"$0\")/python/bin/python3\" -m dmgbuild \"$@\"\n")
-			tmp := t.TempDir()
-			archive := filepath.Join(tmp, "dmgbuild.tar.gz")
-			writeFile(t, archive, makeTarGz(t, []member{{"./python/bin/python3", python}, {"./dmgbuild", launcher}}, 0o755), 0o666)
-			catSwap(t, &runProcess, func(spec processSpec) (processResult, error) {
-				t.Fatalf("staging executed the foreign supplier: %q", spec.Argv)
-				return processResult{}, nil
-			})
-			staged := filepath.Join(tmp, "staged")
-			if err := p.Unpack(archive, staged, target); err != nil {
-				t.Fatal(err)
-			}
-			if err := p.Stage(NewStore(filepath.Join(tmp, "store")), staged, version, target); err != nil {
-				t.Fatal(err)
-			}
-			if got := p.Binary(staged, target); got != filepath.Join(staged, "dmgbuild") {
-				t.Fatalf("binary = %q", got)
-			}
-			if reason := p.Verify(staged, target); reason != "" {
-				t.Fatalf("verify = %q", reason)
-			}
-			if !bytes.Equal(readFile(t, filepath.Join(staged, "dmgbuild")), launcher) {
-				t.Fatal("launcher changed in staging")
-			}
-			wrong := "darwin-arm64"
-			if target == "darwin-arm64" {
-				wrong = "darwin-x64"
-			}
-			catContains(t, p.Verify(staged, wrong), "not a")
-			if err := os.Remove(filepath.Join(staged, "python", "bin", "python3")); err != nil {
-				t.Fatal(err)
-			}
-			catContains(t, p.Verify(staged, target), "python/bin/python3 missing")
-		})
-	}
-}
-
 // Facts recording one installed entry for a package, the shape install location lookups return
 func catFacts(t *testing.T, store *Store, name, entry string) *Facts {
 	t.Helper()

@@ -167,7 +167,7 @@ type doctorCheckEntry struct {
 var doctorChecks = []doctorCheckEntry{
 	{"Security Advisories", checkSecurityAdvisories}, {"MCP Server Security", checkMCPSecurity},
 	{"Python Environment", checkPythonEnvironment}, {"SSL / CA Certificates", checkCertificates},
-	{"Required Packages", checkRequiredPackages}, {"", checkWebDashboardImport},
+	{"Required Packages", checkRequiredPackages},
 	{"Configuration Files", checkEnvFile},
 	{"", checkConfigFile}, {"", checkConfigDrift},
 	{"xAI Model Retirement (May 15, 2026)", checkXAIRetirement},
@@ -177,7 +177,7 @@ var doctorChecks = []doctorCheckEntry{
 	{"", checkCheckpointStore},
 	{"", checkGatewaySupervision}, {"", checkCommandInstallation},
 	{"External Tools", checkGitAndRg}, {"", checkTerminalBackend}, {"", checkNodeAndBrowser},
-	{"", checkNpmAudit}, {"API Connectivity", checkAPIConnectivity},
+	{"", checkWhatsAppSessionAndTermux}, {"API Connectivity", checkAPIConnectivity},
 	{"Tool Availability", checkToolAvailability}, {"Skills Hub", checkSkillsHub},
 	{"Memory Provider", checkMemoryProvider}, {"", checkPluginsDisabledByUpdate},
 	{"", checkPluginsInBothLists},

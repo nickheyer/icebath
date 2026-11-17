@@ -38,8 +38,8 @@ type APIServerAdapter struct {
 	modelRoutes         *modelRouteTable
 	directModelRequests bool
 	toolProgressEvents  bool
-	app                 *gateway.WebApplication
-	runner              *gateway.WebAppRunner
+	app                 *gateway.HTTPApp
+	runner              *gateway.HTTPAppRunner
 
 	responseStore     *gateway.ResponseStore
 	responseStoreHome string

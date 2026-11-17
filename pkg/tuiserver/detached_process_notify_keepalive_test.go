@@ -10,14 +10,14 @@ import (
 	"github.com/nickheyer/icebath/pkg/tuigateway"
 )
 
-// Detached idle desktop session with an isolated process registry and a twenty second orphan grace
+// Detached idle TUI session with an isolated process registry and a twenty second orphan grace
 func detachedProcSession(t *testing.T) (string, *tuigateway.Session, *tools.ProcessRegistry) {
 	t.Helper()
 	t.Setenv("ICEBATH_HOME", t.TempDir())
 	registry := tools.DefaultProcessRegistry()
 	t.Cleanup(tools.IsolateProcessRegistryForTests(registry))
 	sid := "sid-detached-proc"
-	session := tuigateway.NewSession(map[string]any{"session_key": "desktop-proc-session", "transport": tuigateway.DetachedWSTransport(),
+	session := tuigateway.NewSession(map[string]any{"session_key": "tui-proc-session", "transport": tuigateway.DetachedWSTransport(),
 		"running": false, "history_lock": &sync.Mutex{}, "last_active": 0.0, "created_at": 0.0})
 	swapSessions(t, map[string]*tuigateway.Session{sid: session})
 	swapVar(t, &wsOrphanReapGraceS, func() float64 { return 20 })
@@ -35,7 +35,7 @@ func spawnOwnedProcess(registry *tools.ProcessRegistry, owner string, notify boo
 
 func TestOrphanReapRearmsWhileProcessWillNotify(t *testing.T) {
 	sid, session, registry := detachedProcSession(t)
-	spawnOwnedProcess(registry, "desktop-proc-session", true)
+	spawnOwnedProcess(registry, "tui-proc-session", true)
 	scheduleWSOrphanReap(context.Background(), sid, nil, nil)
 	first := pendingReap(sid)
 	fireReap(first, 20, 20)
@@ -50,7 +50,7 @@ func TestOrphanReapRearmsWhileProcessWillNotify(t *testing.T) {
 func TestForeignNoticeInAnotherSessionsPostTurnDrainKeepsItsOwner(t *testing.T) {
 	sid, session, registry := detachedProcSession(t)
 	ctx := context.Background()
-	proc := spawnOwnedProcess(registry, "desktop-proc-session", true)
+	proc := spawnOwnedProcess(registry, "tui-proc-session", true)
 	tools.FinishProcessForTests(ctx, registry, proc, 0)
 	otherSID := "other-sid"
 	other := tuigateway.NewSession(map[string]any{"session_key": "other-owner", "transport": tuigateway.DetachedWSTransport(),
@@ -61,7 +61,7 @@ func TestForeignNoticeInAnotherSessionsPostTurnDrainKeepsItsOwner(t *testing.T) 
 	type observation struct{ queueEmpty, reapable bool }
 	var observed []observation
 	swapVar(t, &sessionOwnsNotificationEvent, func(ctx context.Context, drainingSID string, draining *tuigateway.Session, evt map[string]any) bool {
-		if drainingSID == otherSID && evt["owner_task_id"] == "desktop-proc-session" {
+		if drainingSID == otherSID && evt["owner_task_id"] == "tui-proc-session" {
 			observed = append(observed, observation{registry.CompletionQueue.Empty(), sessionIsReapable(ctx, sid, session)})
 			scheduleWSOrphanReap(ctx, sid, nil, nil)
 			fireReap(pendingReap(sid), 20, 20)
@@ -81,7 +81,7 @@ func TestForeignNoticeInAnotherSessionsPostTurnDrainKeepsItsOwner(t *testing.T) 
 		t.Fatal("owner of the notice was reaped")
 	}
 	queued := registry.CompletionQueue.Snapshot()
-	if len(queued) != 1 || queued[0]["owner_task_id"] != "desktop-proc-session" {
+	if len(queued) != 1 || queued[0]["owner_task_id"] != "tui-proc-session" {
 		t.Fatalf("queue %v", queued)
 	}
 	if len(routed) != 1 || len(routed[0]) != 0 {

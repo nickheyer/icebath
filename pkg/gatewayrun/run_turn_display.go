@@ -89,7 +89,7 @@ func (r *GatewayRunner) runAgentDisplaySettings(ctx context.Context, source *gat
 	}
 	enabledToolsets, disabledToolsets := r.resolveTurnToolsets(ctx, userConfig, source, platformKey)
 	if policy != nil {
-		if enabledToolsets, err = gateway.PolicyTurnToolsets(ctx, authority, policy, userConfig, source.ChatID); err != nil {
+		if enabledToolsets, err = gateway.PolicyTurnToolsets(ctx, policy, userConfig); err != nil {
 			return nil, err
 		}
 	}

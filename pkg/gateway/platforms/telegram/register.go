@@ -79,7 +79,7 @@ func (telegramPlugin) Manifest() plugins.Manifest {
 			Secret: true}}}
 }
 
-// Registers the Telegram platform with its sender, YAML bridge, setup, dashboard card and access policy declarations
+// Registers the Telegram platform with its sender, YAML bridge, setup and access policy declarations
 func (telegramPlugin) Register(ctx *plugins.Context) error {
 	extra := map[string]any{
 		"ensure_deps_fn":         func(context.Context) (bool, error) { return true, nil },

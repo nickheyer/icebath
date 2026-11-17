@@ -15,7 +15,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -260,7 +259,7 @@ func closeConfigSection(cfg map[string]any, key string) map[string]any {
 }
 
 // Orphan end grace in seconds of the profile owning the store, zero meaning never
-func orphanCloseGrace(ctx context.Context, a *SessionAuthority, startup bool) (float64, error) {
+func orphanCloseGrace(ctx context.Context, a *SessionAuthority) (float64, error) {
 	def, _ := pyint.Float(closeConfigSection(config.Defaults(), "sessions")["orphan_end_grace_s"])
 	resolved, err := pypath.Resolve(a.DB.Path())
 	if err != nil {
@@ -272,17 +271,8 @@ func orphanCloseGrace(ctx context.Context, a *SessionAuthority, startup bool) (f
 	if err != nil {
 		return 0, err
 	}
-	sessions, dashboard := closeConfigSection(cfg, "sessions"), closeConfigSection(cfg, "dashboard")
-	if raw, ok := sessions["orphan_end_grace_s"]; ok {
+	if raw, ok := closeConfigSection(cfg, "sessions")["orphan_end_grace_s"]; ok {
 		return closeSeconds(raw, def)
-	}
-	reap, err := closeSeconds(dashboard["ws_orphan_reap_grace_s"], def)
-	if err != nil {
-		return 0, err
-	}
-	sweep := dashboard["startup_orphan_sweep"]
-	if reap == 0 || (startup && !(sweep == nil || provider.IsTruthyValue(sweep))) {
-		return 0, nil
 	}
 	return def, nil
 }
@@ -372,7 +362,7 @@ func armDetachedOrphanClose(ctx context.Context, a *SessionAuthority, sessionID 
 	}
 	grace := 0.0
 	if candidate {
-		if grace, err = orphanCloseGrace(ctx, a, false); err != nil {
+		if grace, err = orphanCloseGrace(ctx, a); err != nil {
 			return err
 		}
 	}
@@ -403,7 +393,7 @@ func closeIdleSeconds(ctx context.Context, a *SessionAuthority, sessionID string
 
 // Arms the startup orphan close of sessions the previous owner stopped under, after the legacy sweep TTL
 func armStartupOrphanCloses(ctx context.Context, a *SessionAuthority, orphans []string) error {
-	grace, err := orphanCloseGrace(ctx, a, true)
+	grace, err := orphanCloseGrace(ctx, a)
 	if err != nil {
 		return err
 	}

@@ -3,7 +3,6 @@ package selfupdate
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"io"
 	"os"
@@ -13,7 +12,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -349,107 +347,7 @@ func TestDockerBackendReadyWhenOnlyPodmanResolves(t *testing.T) {
 	}
 }
 
-// npm audit JSON carrying the given vulnerability counts
-func auditJSON(critical, high, moderate int) string {
-	raw, _ := json.Marshal(map[string]any{"metadata": map[string]any{"vulnerabilities": map[string]any{
-		"critical": critical, "high": high, "moderate": moderate, "low": 0, "info": 0, "total": critical + high + moderate,
-	}}})
-	return string(raw)
-}
-
-// Runs one root audit against a canned npm answer and returns the output and manual issues
-func runAuditOne(t *testing.T, auditExtra []string, auditStdout string) (string, []string) {
-	t.Helper()
-	issues := []string{}
-	toolsSeam(t, &doctorSubprocessRun, func(_ context.Context, argv []string, _ pysubprocess.Options) (*pysubprocess.Completed, error) {
-		return &pysubprocess.Completed{Args: argv, Returncode: 0, Stdout: []byte(auditStdout)}, nil
-	})
-	var out bytes.Buffer
-	doctorAuditOne(context.Background(), &out, "npm", "C:/fake/root", "Root npm package", auditExtra, &issues)
-	return out.String(), issues
-}
-
-func TestRootRemedyNeverPrescribesLocalAuditFix(t *testing.T) {
-	out, issues := runAuditOne(t, []string{"--workspaces=false"}, auditJSON(0, 1, 1))
-	if strings.Contains(out, "run: cd") || strings.Contains(out, "npm audit fix") || !strings.Contains(out, "lockfile bump") {
-		t.Fatalf("output:\n%s", out)
-	}
-	want := []string{"Root npm package has 2 npm vulnerabilities; wait for an upstream lockfile fix, then update " +
-		"your installation (Docker: pull a rebuilt image; recreating the same image restores the same dependencies)"}
-	if !reflect.DeepEqual(issues, want) {
-		t.Fatalf("issues = %q", issues)
-	}
-}
-
-func TestCleanTreeReportsNoKnownVulnerabilities(t *testing.T) {
-	out, issues := runAuditOne(t, []string{"--workspaces=false"}, auditJSON(0, 0, 0))
-	if !strings.Contains(out, "no known vulnerabilities") || len(issues) != 0 {
-		t.Fatalf("output:\n%s\nissues = %q", out, issues)
-	}
-}
-
-func TestRootAuditRowIsNotMislabeledAsAgentBrowser(t *testing.T) {
-	d, out := toolsDoctor(t)
-	if err := os.MkdirAll(filepath.Join(d.ProjectRoot, "node_modules"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	toolsSeam(t, &doctorPMToolPath, func(_ context.Context, name string) string {
-		if name == "npm" {
-			return "/usr/bin/npm"
-		}
-		return ""
-	})
-	toolsSeam(t, &doctorWhatsAppSession, func(context.Context) (string, bool, bool, error) { return "", false, false, nil })
-	toolsSeam(t, &doctorSubprocessRun, func(_ context.Context, argv []string, _ pysubprocess.Options) (*pysubprocess.Completed, error) {
-		return &pysubprocess.Completed{Args: argv, Returncode: 0, Stdout: []byte(auditJSON(0, 0, 0))}, nil
-	})
-	if _, err := checkNpmAudit(context.Background(), d, false); err != nil {
-		t.Fatal(err)
-	}
-	if strings.Contains(strings.ToLower(out.String()), "agent-browser") || !strings.Contains(out.String(), "Root npm package deps") {
-		t.Fatalf("output:\n%s", out.String())
-	}
-}
-
-func TestWorkspaceRuntimeFindingsAreNotDismissedAsBuildTooling(t *testing.T) {
-	for _, tc := range []struct{ workspace, runtimePackage string }{{"web", "react-router"}} {
-		t.Run(tc.workspace, func(t *testing.T) {
-			auditArgs := []string{"npm", "audit", "--json", "--workspace", tc.workspace}
-			raw, _ := json.Marshal(map[string]any{
-				"vulnerabilities": map[string]any{
-					tc.runtimePackage: map[string]any{"severity": "high", "isDirect": true},
-					"vitest":          map[string]any{"severity": "moderate", "isDirect": true},
-				},
-				"metadata": map[string]any{"vulnerabilities": map[string]any{"high": 1, "moderate": 1}},
-			})
-			var ran []string
-			toolsSeam(t, &doctorSubprocessRun, func(_ context.Context, argv []string, _ pysubprocess.Options) (*pysubprocess.Completed, error) {
-				ran = argv
-				return &pysubprocess.Completed{Args: argv, Returncode: 1, Stdout: raw}, nil
-			})
-			issues := []string{}
-			var out bytes.Buffer
-			doctorAuditOne(context.Background(), &out, "npm", t.TempDir(), tc.workspace+" workspace", auditArgs[3:], &issues)
-			if !reflect.DeepEqual(ran, auditArgs) {
-				t.Fatalf("argv = %q", ran)
-			}
-			text := out.String()
-			for _, want := range []string{"runtime and build dependencies", "1 high, 1 moderate", "upstream lockfile bump"} {
-				if !strings.Contains(text, want) {
-					t.Fatalf("output lacks %q:\n%s", want, text)
-				}
-			}
-			if strings.Contains(text, "not runtime") {
-				t.Fatalf("output:\n%s", text)
-			}
-			if len(issues) != 1 || !strings.HasPrefix(issues[0], tc.workspace+" workspace has 2 npm vulnerabilities") {
-				t.Fatalf("issues = %q", issues)
-			}
-		})
-	}
-}
-
-func TestNpmAuditReportsTheInProcessWhatsAppSessionNotABridge(t *testing.T) {
+func TestWhatsAppSessionCheckReportsTheInProcessSessionNotABridge(t *testing.T) {
 	for _, tc := range []struct {
 		name            string
 		present, paired bool
@@ -464,11 +362,10 @@ func TestNpmAuditReportsTheInProcessWhatsAppSessionNotABridge(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			d, out := toolsDoctor(t)
-			toolsSeam(t, &doctorPMToolPath, func(context.Context, string) string { return "" })
 			toolsSeam(t, &doctorWhatsAppSession, func(context.Context) (string, bool, bool, error) {
 				return "/wa/session", tc.present, tc.paired, tc.err
 			})
-			f, err := checkNpmAudit(context.Background(), d, false)
+			f, err := checkWhatsAppSessionAndTermux(context.Background(), d, false)
 			if err != nil {
 				t.Fatal(err)
 			}

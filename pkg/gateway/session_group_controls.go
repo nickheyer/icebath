@@ -642,7 +642,7 @@ func groupExecutionControl(ctx context.Context, service *CanonicalHostedRoomServ
 		}
 		return pyjson.ObjectOf("event", event, "client_event_id", params["event_id"], "accepted", true, "driver_started", true), nil
 	case "groups.stop":
-		cancelled, err := groupStopRoom(ctx, service, params["room_id"], groupOr(params, "cancel_id", "desktop-stop"), false)
+		cancelled, err := groupStopRoom(ctx, service, params["room_id"], groupOr(params, "cancel_id", "group-stop"), false)
 		if err != nil {
 			return nil, err
 		}

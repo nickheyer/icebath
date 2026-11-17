@@ -383,7 +383,7 @@ func dumpAPIKeyLines(h string, showKeys bool) []string {
 			}
 		}
 		if val != "" && !dotenv[envVar] {
-			display += " (shell only — not in .env; managed/desktop backend may not see it)"
+			display += " (shell only — not in .env; a service-managed gateway may not see it)"
 		}
 		if val == "" && label == "openrouter" {
 			if pool := provider.LoadPool(provider.HomePoolEnv(h), "openrouter"); pool != nil && pool.HasCredentials() {

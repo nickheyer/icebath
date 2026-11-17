@@ -81,13 +81,8 @@ func wsLegacyHomes(t *testing.T) (launch, bee string) {
 	prevDB, prevErr := sharedDB, dbError
 	sharedDB, dbError = nil, ""
 	dbMu.Unlock()
-	prevOpen := OpenSessionDBAtPath
-	OpenSessionDBAtPath = func(ctx context.Context, dbPath string, readOnly bool) (*state.DB, error) {
-		return state.NewSessionDB(ctx, dbPath, readOnly)
-	}
 	t.Cleanup(func() {
 		wsTestSwapLaunchHome(prevHome)
-		OpenSessionDBAtPath = prevOpen
 		dbMu.Lock()
 		sharedDB, dbError = prevDB, prevErr
 		dbMu.Unlock()

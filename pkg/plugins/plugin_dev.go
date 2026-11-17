@@ -5,7 +5,6 @@ import (
 	"context"
 	"crypto/sha1"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -505,60 +504,6 @@ func manifestSchemaOrder(dir string) []string {
 	return nil
 }
 
-// Warns when the Desktop app runs a stale copy of this package's desktop plugin.js
-func checkDesktopHalfCopy(ctx context.Context, r *PluginDoctorReport, path string) {
-	sourceDir := desktopSource(path)
-	if sourceDir == "" {
-		return
-	}
-	source := filepath.Join(sourceDir, "plugin.js")
-	rel, _ := filepath.Rel(path, source)
-	shown := filepath.ToSlash(rel)
-	appRoot := filepath.Join(home.RootOf(home.Dir(ctx)), "desktop-plugins")
-	copies, err := filepath.Glob(filepath.Join(appRoot, "*", ".icebath-package.json"))
-	if err != nil {
-		return
-	}
-	sort.Strings(copies)
-	sourceParent, err := pypath.Resolve(filepath.Dir(source))
-	if err != nil {
-		return
-	}
-	for _, markerFile := range copies {
-		raw, err := os.ReadFile(markerFile)
-		if err != nil {
-			continue
-		}
-		var marker map[string]any
-		if json.Unmarshal(bytes.TrimPrefix(raw, []byte("\xef\xbb\xbf")), &marker) != nil {
-			continue
-		}
-		markerSource, ok := marker["source"].(string)
-		if !ok {
-			continue
-		}
-		if resolved, err := pypath.Resolve(markerSource); err != nil || resolved != sourceParent {
-			continue
-		}
-		copied, err := os.ReadFile(filepath.Join(filepath.Dir(markerFile), "plugin.js"))
-		if err != nil {
-			continue
-		}
-		current, err := os.ReadFile(source)
-		if err != nil {
-			continue
-		}
-		if bytes.Equal(copied, current) {
-			return
-		}
-		r.addWarning(fmt.Sprintf("Desktop runs a stale copy of %s (%s); your edits are not "+
-			"loaded. Refresh it with Capabilities → Plugins → Rescan in the Desktop app (or restart it). "+
-			"To develop in place, symlink the checkout into plugins/ instead: the Desktop then re-syncs "+
-			"the copy on every save.", shown, filepath.Dir(markerFile)))
-		return
-	}
-}
-
 // Raw manifest list field, the list itself or ok false when the value is not a list
 func rawManifestList(mf *Manifest, keys ...string) ([]any, bool) {
 	for _, key := range keys {
@@ -661,7 +606,6 @@ func doctorPlugin(ctx context.Context, target string) (*PluginDoctorReport, erro
 	default:
 		report.addError(fmt.Sprintf("unexpected validation failure: %s: %s", doctorErrorClass(runErr), doctorErrorText(runErr)))
 	}
-	checkDesktopHalfCopy(ctx, report, path)
 	return report, nil
 }
 

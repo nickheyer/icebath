@@ -1,10 +1,10 @@
 package tuigateway
 
 import (
-	"fmt"
 	"bytes"
 	"context"
 	"encoding/base64"
+	"fmt"
 	"math/big"
 	"os"
 	"regexp"
@@ -24,7 +24,7 @@ const (
 	autoContinueNotePrefix = "[System note: Your previous turn was interrupted mid-run"
 	imageHintSeparator     = "\n\n[Image attached at: "
 	defaultImageQuestion   = "What do you see in this image?"
-	fsDataURLMaxBytes      = home.WebappAttachmentMaxBytes
+	fsDataURLMaxBytes      = home.AttachmentMaxBytes
 	pyNonSpace             = `[^\s\x0b\x1c-\x1f\x85\p{Z}]`
 )
 

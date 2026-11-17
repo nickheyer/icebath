@@ -17,18 +17,7 @@ import (
 // SeverityOrder lists diagnostic severities from least to most urgent
 var SeverityOrder = []string{"warning", "error", "critical"}
 
-// Whether severity meets or exceeds threshold, true for no threshold and false for unknown names
-func SeverityAtOrAbove(severity, threshold *string) bool {
-	if threshold == nil {
-		return true
-	}
-	if severity == nil || !slices.Contains(SeverityOrder, *severity) || !slices.Contains(SeverityOrder, *threshold) {
-		return false
-	}
-	return slices.Index(SeverityOrder, *severity) >= slices.Index(SeverityOrder, *threshold)
-}
-
-// DiagnosticAction is one recovery action the dashboard renders as a button and the CLI as a hint
+// DiagnosticAction is one recovery action the CLI renders as a hint
 type DiagnosticAction struct {
 	Kind      string
 	Label     string

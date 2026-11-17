@@ -258,7 +258,6 @@ func TestGatewayCommandLineMatching(t *testing.T) {
 		"python -m icebath_cli.main gateway run":                 "run",
 		"python -m gateway.run":                                  "run",
 		"/opt/x/gateway/run.py":                                  "run",
-		"/opt/desktop-gateway.py":                                "run",
 		`"C:\Program Files\icebath-gateway.exe"`:                 "run",
 		"python -m tui_gateway":                                  "",
 		"icebath chat":                                           "",

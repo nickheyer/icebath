@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"path"
 	"strings"
 )
 
@@ -16,37 +15,13 @@ type Profile struct {
 	Calls  map[string]Func
 }
 
-// Dashboard API request the host forwards, Authenticated carrying the admission of this one request
-type APIRequest struct {
-	Method        string
-	Path          string
-	Query         string
-	Headers       [][2]string
-	Body          []byte
-	Authenticated bool
-}
-
-// Answer of the plugin to a dashboard API request
-type APIResponse struct {
-	Status  int
-	Headers [][2]string
-	Body    []byte
-}
-
-// Serves one dashboard API request of the plugin
-type APIFunc func(ctx context.Context, req APIRequest) (APIResponse, error)
-
 var (
 	profiles     []Profile
-	dashboardAPI APIFunc
 	configSchema any
 )
 
 // Names a model provider profile the plugin offers, called from an init function
 func RegisterProfile(p Profile) { profiles = append(profiles, p) }
-
-// Names the function serving the dashboard API of the plugin, called from an init function
-func RegisterDashboardAPI(fn APIFunc) { dashboardAPI = fn }
 
 // Names the config schema of a memory provider plugin, called from an init function
 func RegisterConfigSchema(schema any) { configSchema = schema }
@@ -188,34 +163,6 @@ func (p *peer) extractProfiles() []byte {
 		out, _ = json.Marshal(map[string]any{"error": "TypeError: " + err.Error()})
 	}
 	return out
-}
-
-// Serves one dashboard API request with the function the plugin registered
-func (p *peer) asgi(ctx context.Context, params map[string]any) (any, error) {
-	if dashboardAPI == nil {
-		return nil, &Error{Type: "AttributeError", Message: fmt.Sprintf("dashboard api %s has no 'router'", path.Base(text(params["api_file"])))}
-	}
-	req := APIRequest{Method: text(params["method"]), Path: text(params["path"]), Query: text(params["query"]),
-		Authenticated: params["authenticated"] == true}
-	for _, raw := range asList(params["headers"]) {
-		if pair := asList(raw); len(pair) == 2 {
-			req.Headers = append(req.Headers, [2]string{text(pair[0]), text(pair[1])})
-		}
-	}
-	req.Body, _ = p.decode(params["body"]).([]byte)
-	resp, err := dashboardAPI(ctx, req)
-	if err != nil {
-		return nil, err
-	}
-	headers := make([]any, 0, len(resp.Headers))
-	for _, h := range resp.Headers {
-		headers = append(headers, []any{h[0], h[1]})
-	}
-	body := resp.Body
-	if body == nil {
-		body = []byte{}
-	}
-	return map[string]any{"status": json.Number(fmt.Sprint(resp.Status)), "headers": headers, "body": body}, nil
 }
 
 // Assigns a decoded value to a public attribute of a plugin object

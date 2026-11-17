@@ -81,7 +81,7 @@ func impeccableCommandDef(plugin string, build func(ctx context.Context, cmdKey,
 	cmdKey := "/impeccable:impeccable"
 	return commands.Def{
 		Name: "impeccable", Description: description, Category: "Plugins", ArgsHint: argsHint,
-		Subcommands: names, ArgumentMode: "text", Plugin: plugin,
+		Subcommands: names, Plugin: plugin,
 		Handler: func(ctx context.Context, inv *commands.Invocation) error {
 			host, ok := inv.Host.(TurnSubmitter)
 			if !ok {

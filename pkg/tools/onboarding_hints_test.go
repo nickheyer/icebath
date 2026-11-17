@@ -131,7 +131,7 @@ func TestProfileBuildModeNonMappingConfigSafe(t *testing.T) {
 func TestFirstContactTurnNoteReturnsProfileDirectiveAndMarksSeen(t *testing.T) {
 	cfgPath := filepath.Join(t.TempDir(), "config.yaml")
 	cfg := map[string]any{"onboarding": map[string]any{"profile_build": "ask"}}
-	note := FirstContactTurnNote(context.Background(), cfg, cfgPath, true, false, false)
+	note := FirstContactTurnNote(context.Background(), cfg, cfgPath, true, false)
 	if note == nil || *note != strings.TrimSpace(ProfileBuildDirective()) {
 		t.Fatalf("note %v", note)
 	}
@@ -144,7 +144,7 @@ func TestFirstContactTurnNoteEveryFirstContactNotePutsARealTaskFirst(t *testing.
 	dir := t.TempDir()
 	for _, mode := range []string{"ask", "off"} {
 		note := FirstContactTurnNote(context.Background(), map[string]any{"onboarding": map[string]any{"profile_build": mode}},
-			filepath.Join(dir, mode+".yaml"), true, false, false)
+			filepath.Join(dir, mode+".yaml"), true, false)
 		if note == nil || !strings.Contains(*note, OnboardingTaskFirstClause) {
 			t.Fatalf("%s: note %v", mode, note)
 		}
@@ -153,10 +153,10 @@ func TestFirstContactTurnNoteEveryFirstContactNotePutsARealTaskFirst(t *testing.
 
 func TestFirstContactTurnNoteReturnsNoneWhenNotFirstContact(t *testing.T) {
 	cfgPath := filepath.Join(t.TempDir(), "config.yaml")
-	if FirstContactTurnNote(context.Background(), map[string]any{}, cfgPath, false, false, false) != nil {
+	if FirstContactTurnNote(context.Background(), map[string]any{}, cfgPath, false, false) != nil {
 		t.Fatal("note for a non empty history")
 	}
-	if FirstContactTurnNote(context.Background(), map[string]any{}, cfgPath, true, true, false) != nil {
+	if FirstContactTurnNote(context.Background(), map[string]any{}, cfgPath, true, true) != nil {
 		t.Fatal("note for an install with prior sessions")
 	}
 	if _, err := os.Stat(cfgPath); !os.IsNotExist(err) {

@@ -211,26 +211,6 @@ func TestProfilesDefaultSubdirIsSkippedWithWarning(t *testing.T) {
 	}
 }
 
-func TestMainSkipsReconcileInDashboardContainerS6v3(t *testing.T) {
-	hermeticContainerArgv(t, "/bin/sh", "-e", "/run/s6/basedir/scripts/rc.init", "top", "/opt/icebath/docker/main-wrapper.sh",
-		"dashboard", "--host", "0.0.0.0", "--port", "9119", "--no-open", "--insecure")
-	home := t.TempDir()
-	scandir := filepath.Join(home, "run-service")
-	os.Mkdir(scandir, 0o755)
-	makeBootProfile(t, home, "worker", "running", "")
-	t.Setenv("ICEBATH_HOME", home)
-	t.Setenv("S6_PROFILE_GATEWAY_SCANDIR", scandir)
-	var out bytes.Buffer
-	if rc := ContainerBootMain(context.Background(), &out); rc != 0 {
-		t.Fatalf("rc = %d", rc)
-	}
-	for _, name := range []string{"gateway-worker", "gateway-default"} {
-		if _, err := os.Stat(filepath.Join(scandir, name)); err == nil {
-			t.Fatalf("%s registered in a dashboard container", name)
-		}
-	}
-}
-
 func TestANamedSlotsAutostartIntentBootsTheRootSlot(t *testing.T) {
 	hermeticContainerArgv(t)
 	root := t.TempDir()

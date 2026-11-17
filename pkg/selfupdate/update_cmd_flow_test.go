@@ -275,7 +275,7 @@ func TestCalledProcessErrorMessageDepInstallFailureLeadAndNextStep(t *testing.T)
 	t.Cleanup(func() { installRepairIsWindows = saved })
 	exc := ucCPE([]string{"uv", "pip", "install", "-e", ".[all]"}, 1, "error: disk full", "")
 	var out bytes.Buffer
-	err := handleUpdateCalledProcessError(context.Background(), &out, exc, map[string]any{}, false, false, "", "", nil)
+	err := handleUpdateCalledProcessError(context.Background(), &out, exc, map[string]any{}, false, "", "", nil)
 	var exit *pm.SystemExit
 	if !errors.As(err, &exit) || exit.Code != 1 {
 		t.Fatalf("err = %v", err)

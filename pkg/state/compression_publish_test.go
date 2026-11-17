@@ -98,7 +98,7 @@ func TestCompressionLineagePublishAndRecoveryVerbs(t *testing.T) {
 	if _, err := stale.StampLegacyCompressionChains(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if CreatedSurface("gui") != "desktop" || CreatedSurface("tool") != "tool" || CreatedSurface("local") != nil || CreatedSurface(nil) != nil || CreatedSurface("telegram") != "telegram" {
+	if CreatedSurface("gui") != "tui" || CreatedSurface("tool") != "tool" || CreatedSurface("local") != nil || CreatedSurface(nil) != nil || CreatedSurface("telegram") != "telegram" {
 		t.Fatal("created surface mapping")
 	}
 }

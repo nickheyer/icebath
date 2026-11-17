@@ -229,9 +229,6 @@ var mattermostAdapterClass = &gateway.AdapterClass{Name: "MattermostAdapter", Tr
 // Registers the Mattermost platform entry with its factory, gates, setup, YAML bridge, env bridge, standalone sender and hint
 func (mattermostPlatformPlugin) Register(ctx *plugins.Context) error {
 	extra := map[string]any{
-		"dashboard_description":  "Connect Icebath to Mattermost channels and direct messages.",
-		"docs_url":               "https://mattermost.com/deploy/",
-		"dashboard_env_vars":     []string{"MATTERMOST_URL", "MATTERMOST_TOKEN", "MATTERMOST_ALLOWED_USERS"},
 		"scoped_validate_config": validateMattermostConfig,
 		"is_connected":           gateway.EnvIsConnected("MATTERMOST_TOKEN", "MATTERMOST_URL"),
 		"setup_fn":               InteractiveSetup,

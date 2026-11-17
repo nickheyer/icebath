@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/provider"
 )
 
 func twoProfileStores(t *testing.T) (*Store, *Store) {
@@ -83,20 +82,6 @@ func TestReleaseHonoursTheRegistrationOwner(t *testing.T) {
 	sa.releaseRunningJob(id, "", first)
 	if isJobRunning(sa, id) || len(getRunningJobDetails()) != 0 {
 		t.Fatal("owner release left the run registered")
-	}
-}
-
-func TestRetirementRefusesRegistration(t *testing.T) {
-	sa, _ := twoProfileStores(t)
-	prevFence, prevProof := provider.Retirement, provider.RetirementIdleProof
-	t.Cleanup(func() { provider.Retirement, provider.RetirementIdleProof = prevFence, prevProof })
-	provider.Retirement = provider.NewRetirementFence()
-	provider.RetirementIdleProof = func() (map[string]any, error) { return map[string]any{"idle": true}, nil }
-	if permit := provider.Retirement.Prepare(); permit["ok"] != true {
-		t.Fatalf("prepare refused %#v", permit)
-	}
-	if sa.tryRegisterRunningJob("refused", nil, futurePending) {
-		t.Fatal("registration admitted during retirement")
 	}
 }
 

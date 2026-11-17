@@ -630,7 +630,7 @@ func (r *GatewayRunner) onRelayProvisioned() {
 	}
 }
 
-// Starts the local Group Chat worker without the dashboard, an error when it has no backend or did not start
+// Starts the local Group Chat worker, an error when it has no backend or did not start
 func startHostedRoomWorkerSync() (tuigateway.HostedRoomService, error) {
 	service := tuigateway.GetHostedRoomService()
 	if service == nil {

@@ -18,12 +18,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
-// ResolveSessionPlatformHook returns the TUI gateway session's platform, set by the binary
-var ResolveSessionPlatformHook func() string
-
 var commandSurfaces = map[string]string{
 	"chat": "cli_slash", "tools": "cli_tools", "config": "cli_config", "skills": "cli_config", "plugins": "cli_config",
-	"dashboard": "web", "serve": "web", "gui": "web", "desktop": "web",
 }
 
 var settingKinds = map[string]string{"memory": "memory", "curator": "curator", "compression": "compression"}
@@ -75,10 +71,8 @@ func CurrentSurface() (string, bool) {
 	switch surface := rawSurface(); surface {
 	case "":
 		return "", false
-	case "web":
-		return WebSetupSurface(), true
 	case "tui_gateway":
-		return ResolveSessionPlatformHook(), true
+		return "tui", true
 	default:
 		return surface, true
 	}

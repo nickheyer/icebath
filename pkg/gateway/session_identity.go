@@ -333,10 +333,10 @@ func resolveIdentity(ctx context.Context, source *SessionSource, runner Transpor
 	return identity, nil
 }
 
-// Login subject prefix of a namespaced dashboard identity
+// Login subject prefix of a namespaced sign in identity
 const AuthSubjectPrefix = "auth:v1:"
 
-// Internal server identity of hermes_cli dashboard_auth ws_tickets, never an authenticated login
+// Internal server identity of server minted tickets, never an authenticated login
 const (
 	wsInternalUserID   = "server-internal"
 	wsInternalProvider = "server-internal"
@@ -366,7 +366,7 @@ func ParseAuthenticatedSubject(subject any) (parts [3]string, ok bool) {
 	return parts, true
 }
 
-// Stable subject of a private native identity, else the auth v1 namespaced form of a dashboard login
+// Stable subject of a private native identity, else the auth v1 namespaced form of a sign in
 func AuthenticatedSubject(identity map[string]any) (string, error) {
 	subject := "unbound"
 	if value := identity["user_id"]; pyTruthy(value) {
@@ -403,12 +403,12 @@ func IsAuthenticatedIdentity(identity any) bool {
 	return !(userID == wsInternalUserID && provider == wsInternalProvider)
 }
 
-// Server derived dashboard principal id, the first 32 hex digits of the subject digest
+// Server derived principal id of a sign in, the first 32 hex digits of the subject digest
 func AuthenticatedPrincipalDigest(identity map[string]any) (string, error) {
 	raw, err := AuthenticatedSubject(identity)
 	if err != nil {
 		return "", err
 	}
 	sum := sha256.Sum256([]byte(raw))
-	return "principal:dashboard:" + hex.EncodeToString(sum[:])[:32], nil
+	return "principal:auth:" + hex.EncodeToString(sum[:])[:32], nil
 }

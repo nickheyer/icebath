@@ -25,7 +25,6 @@ func glReceiptHome(t *testing.T) context.Context {
 		t.Fatal(err)
 	}
 	t.Setenv("ICEBATH_HOME", h)
-	t.Setenv("ICEBATH_UPDATE_CORRELATION_ID", "")
 	return pm.WithReceiptScope(updaterecord.UpdateReceiptScope(context.Background()))
 }
 

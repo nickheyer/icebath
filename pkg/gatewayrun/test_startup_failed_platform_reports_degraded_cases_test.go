@@ -233,7 +233,7 @@ func TestLastPlatformParkedDuringAnExternalDrainKeepsDrainingUntilRelease(t *tes
 	r, adapter := startOnlyTelegram(t)
 	ctx := context.Background()
 	h := filepath.Dir(r.config.SessionsDir)
-	if _, err := gateway.WriteDrainRequest(ctx, "dashboard", false, h); err != nil {
+	if _, err := gateway.WriteDrainRequest(ctx, "operator", false, h); err != nil {
 		t.Fatal(err)
 	}
 	waitGatewayState(t, r, "draining")

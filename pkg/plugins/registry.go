@@ -96,7 +96,7 @@ func GetPluginManager(ctx context.Context) *Manager {
 	return manager
 }
 
-// Drops every cached manager after unloading it, clears published hosts and dashboard auth providers
+// Drops every cached manager after unloading it and clears published hosts
 func ResetPluginManagersForTests() {
 	pluginManagersMu.Lock()
 	for _, m := range knownPluginManagersLocked() {
@@ -112,9 +112,6 @@ func ResetPluginManagersForTests() {
 	publishedTUIMu.Lock()
 	publishedTUIInjector = nil
 	publishedTUIMu.Unlock()
-	if s := installedServices(); s != nil && s.ClearDashboardAuthProviders != nil {
-		s.ClearDashboardAuthProviders()
-	}
 }
 
 // Purges the hosted modules of a manager directory plugins and frees the bare module names its home claimed
@@ -170,14 +167,14 @@ func (m *Manager) InjectGatewayMessage(ctx context.Context, kwargs map[string]an
 	return registered != nil && registered.injector(ctx, kwargs)
 }
 
-// Reports whether a live TUI or desktop host can accept plugin triggered turns
+// Reports whether a live TUI host can accept plugin triggered turns
 func (m *Manager) HasTUIMessageInjector() bool {
 	m.injectorMu.Lock()
 	defer m.injectorMu.Unlock()
 	return m.tuiInjector != nil
 }
 
-// Publishes a live TUI or desktop injector without touching the gateway slot
+// Publishes a live TUI injector without touching the gateway slot
 func (m *Manager) SetTUIMessageInjector(owner any, injector MessageInjector) {
 	m.injectorMu.Lock()
 	m.tuiInjector = &ownedInjector{owner: owner, injector: injector}
@@ -193,7 +190,7 @@ func (m *Manager) ClearTUIMessageInjector(owner any) {
 	m.injectorMu.Unlock()
 }
 
-// Submits a plugin triggered turn to the live TUI or desktop host
+// Submits a plugin triggered turn to the live TUI host
 func (m *Manager) InjectTUIMessage(ctx context.Context, kwargs map[string]any) bool {
 	m.injectorMu.Lock()
 	registered := m.tuiInjector

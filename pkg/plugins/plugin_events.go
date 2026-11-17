@@ -5,8 +5,18 @@ import (
 	"unicode/utf8"
 
 	"github.com/dlclark/regexp2/v2"
+	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
+
+// Compiles a Python re pattern with Python semantics, panicking on an invalid pattern
+func mustPyRe(pattern string) *regexp2.Regexp {
+	re, err := pyre.Compile(pattern)
+	if err != nil {
+		panic(err)
+	}
+	return re
+}
 
 // Prefix every plugin event name starts with, core owning every other name
 const PluginEventPrefix = "plugin."

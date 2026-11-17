@@ -8,16 +8,15 @@ const (
 
 // Context methods the host refuses with the reason the live object cannot cross
 var HostUnsupportedCtxMethods = map[string]string{
-	"register_login_backend":           "browser-vault fills hold a server-local context manager",
-	"register_browser_page_backend":    "browser-vault fill scripts carry credentials that stay in the Icebath process",
-	"register_platform":                "platform adapters run on the gateway's event loop with native SDK clients",
-	"register_platform_handler":        "the handler factory receives the platform's native SDK client",
-	"register_telegram_handler":        "the handler factory receives the native Telegram Application",
-	"register_slack_action_handler":    "the callback receives native slack_bolt ack/body objects",
-	"register_dashboard_auth_provider": "dashboard auth is owned by the launch process, not a profile",
-	"register_approval_transport":      "approval transports hold the live approval request/response channel",
-	"post_message":                     "the returned handle is bound to the gateway's event loop and live adapter",
-	"apost_message":                    "the returned handle is bound to the gateway's event loop and live adapter",
+	"register_login_backend":        "browser-vault fills hold a server-local context manager",
+	"register_browser_page_backend": "browser-vault fill scripts carry credentials that stay in the Icebath process",
+	"register_platform":             "platform adapters run on the gateway's event loop with native SDK clients",
+	"register_platform_handler":     "the handler factory receives the platform's native SDK client",
+	"register_telegram_handler":     "the handler factory receives the native Telegram Application",
+	"register_slack_action_handler": "the callback receives native slack_bolt ack/body objects",
+	"register_approval_transport":   "approval transports hold the live approval request/response channel",
+	"post_message":                  "the returned handle is bound to the gateway's event loop and live adapter",
+	"apost_message":                 "the returned handle is bound to the gateway's event loop and live adapter",
 }
 
 // Context methods the host skips with a warning
@@ -48,10 +47,9 @@ var HostObjectBases = map[string]string{
 
 // Unsupported registrars the parent serves for an in process plugin, mapped to the base their object subclasses
 var HostInProcessObjectBases = map[string]string{
-	"register_login_backend":           "agent.vault_backends.base:LoginBackend",
-	"register_browser_page_backend":    "agent.browser_page_backend:BrowserPageBackend",
-	"register_dashboard_auth_provider": "hermes_cli.dashboard_auth:DashboardAuthProvider",
-	"register_platform":                "gateway.platforms.send_targets:StandaloneSendPolicy",
+	"register_login_backend":        "agent.vault_backends.base:LoginBackend",
+	"register_browser_page_backend": "agent.browser_page_backend:BrowserPageBackend",
+	"register_platform":             "gateway.platforms.send_targets:StandaloneSendPolicy",
 }
 
 // Provider bases a category loader hands back as hosted objects though no ctx registration names them

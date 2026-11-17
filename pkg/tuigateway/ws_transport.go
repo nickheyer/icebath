@@ -103,7 +103,6 @@ type WSTransport struct {
 	peer string
 	// Identity the upgrade credential verified, nil for the legacy token and stdio
 	authIdentity map[string]any
-	DesktopLocal bool
 	// Served profile home whose skin this peer follows, nil for the launch home
 	SkinHome *string
 

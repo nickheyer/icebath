@@ -423,7 +423,7 @@ func TestRemoveLaunchdGatewayReturnsFalseWhenNoPlists(t *testing.T) {
 	}
 }
 
-func TestRemoveDesktopAppLeftoversRemovesHermesLibraryEntries(t *testing.T) {
+func TestRemoveAppLeftoversRemovesHermesLibraryEntries(t *testing.T) {
 	if runtime.GOOS != "darwin" {
 		t.Skip("macOS Library layout")
 	}
@@ -437,7 +437,7 @@ func TestRemoveDesktopAppLeftoversRemovesHermesLibraryEntries(t *testing.T) {
 		ours = append(ours, d)
 	}
 	os.MkdirAll(filepath.Join(library, "Caches", "com.other.vendor"), 0o755)
-	removed := removeDesktopAppLeftovers(io.Discard, false)
+	removed := removeAppLeftovers(io.Discard, false)
 	for _, d := range ours {
 		if uninstallExists(d) {
 			t.Fatalf("%s survived", d)
@@ -460,7 +460,7 @@ func TestXdgCacheRemovedAndDataModeSemantics(t *testing.T) {
 	if r, p := xdgLeftoverPaths(true); !slices.Equal(r, []string{cache, data}) || len(p) != 0 {
 		t.Fatalf("full %v %v", r, p)
 	}
-	removed := removeDesktopAppLeftovers(io.Discard, false)
+	removed := removeAppLeftovers(io.Discard, false)
 	if !slices.Contains(removed, cache) || uninstallExists(cache) || !uninstallExists(data) {
 		t.Fatalf("removed %v", removed)
 	}
@@ -472,7 +472,7 @@ func TestXdgDataRemovedOnFullUninstall(t *testing.T) {
 	data := filepath.Join(fake, ".local", "share", "icebath")
 	os.MkdirAll(cache, 0o755)
 	os.MkdirAll(data, 0o755)
-	removed := removeDesktopAppLeftovers(io.Discard, true)
+	removed := removeAppLeftovers(io.Discard, true)
 	if uninstallExists(cache) || uninstallExists(data) || !slices.Contains(removed, cache) || !slices.Contains(removed, data) {
 		t.Fatalf("removed %v", removed)
 	}
@@ -536,48 +536,5 @@ func TestUnknownPlatformRunsNoRemover(t *testing.T) {
 	swap(t, &uninstallGatewayServiceRemover, map[string]gatewayServiceRemover{})
 	if uninstallGatewayService(context.Background(), io.Discard) {
 		t.Fatal("empty table reported success")
-	}
-}
-
-func TestUninstallArgsNamespaceModeMapping(t *testing.T) {
-	gui := uninstallModeNamespace("gui", nil)
-	if gui["gui"] != true || gui["full"] != false || gui["yes"] != true {
-		t.Fatalf("gui %v", gui)
-	}
-	lite := uninstallModeNamespace("lite", nil)
-	if lite["gui"] != false || lite["full"] != false || lite["yes"] != true {
-		t.Fatalf("lite %v", lite)
-	}
-	full := uninstallModeNamespace("full", nil)
-	if full["gui"] != false || full["full"] != true || full["yes"] != true {
-		t.Fatalf("full %v", full)
-	}
-}
-
-func TestModuleEntrypointRoutesDataMode(t *testing.T) {
-	type call struct {
-		mode string
-		ns   map[string]any
-	}
-	var calls []call
-	record := func(mode string) func(context.Context, map[string]any, io.Writer) (int, error) {
-		return func(_ context.Context, ns map[string]any, _ io.Writer) (int, error) {
-			calls = append(calls, call{mode, ns})
-			return 0, nil
-		}
-	}
-	swap(t, &uninstallRunDataMode, record("data"))
-	swap(t, &uninstallRunGUIMode, record("gui"))
-	swap(t, &uninstallRunAgentMode, record("agent"))
-	for _, step := range [][2]string{{"data", "data"}, {"gui", "gui"}, {"full", "agent"}} {
-		if code := UninstallModuleMain(context.Background(), []string{"--mode", step[0]}, io.Discard, io.Discard); code != 0 {
-			t.Fatalf("%s exit %d", step[0], code)
-		}
-		if calls[len(calls)-1].mode != step[1] {
-			t.Fatalf("%s routed to %s", step[0], calls[len(calls)-1].mode)
-		}
-	}
-	if calls[len(calls)-1].ns["full"] != true {
-		t.Fatalf("full namespace %v", calls[len(calls)-1].ns)
 	}
 }

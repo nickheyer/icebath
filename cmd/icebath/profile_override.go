@@ -14,7 +14,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/profiles"
-	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 // Profile named by a consumed -p or --profile flag, empty when the sticky active_profile chose
@@ -157,7 +156,7 @@ func applyProfileOverride(argv []string) []string {
 	if profileName == "" && envHome != "" && filepath.Base(filepath.Dir(envHome)) == home.ProfilesDir {
 		return argv
 	}
-	if profileName == "" && !underGatewaySupervisor(argv) && !tools.IsDesktopSSHBackendArgv(argv) && !s6SupervisedGatewayRun(argv) {
+	if profileName == "" && !underGatewaySupervisor(argv) && !s6SupervisedGatewayRun(argv) {
 		if raw, readErr := os.ReadFile(filepath.Join(home.Root(), "active_profile")); readErr == nil {
 			name := strings.TrimSpace(strings.TrimPrefix(string(raw), "\ufeff"))
 			if name != "" && name != "default" {

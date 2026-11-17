@@ -1082,7 +1082,7 @@ func ReadEnvSetting(h, key string) (string, bool) {
 // ---- unified provider catalog (provider_catalog) ----
 
 // Auth types that sign in through an account flow rather than a pasted key
-var accountsAuthTypes = map[string]bool{
+var signInAuthTypes = map[string]bool{
 	AuthTypeOAuthDeviceCode: true, AuthTypeOAuthExternal: true, AuthTypeOAuthMiniMax: true, AuthTypeExternalProcess: true,
 }
 
@@ -1099,19 +1099,11 @@ type ProviderDescriptor struct {
 	Label         string
 	Description   string
 	AuthType      string
-	Tab           string
+	OAuth         bool
 	APIKeyEnvVars []string
 	BaseURLEnvVar string
 	SignupURL     string
 	Order         int
-}
-
-// TabForAuthType returns the desktop tab a provider's auth maps to
-func TabForAuthType(authType string) string {
-	if accountsAuthTypes[authType] {
-		return "accounts"
-	}
-	return "keys"
 }
 
 func isURLVar(name string) bool {
@@ -1180,7 +1172,7 @@ func ProviderCatalog() []ProviderDescriptor {
 			desc = label
 		}
 		out = append(out, ProviderDescriptor{
-			Slug: entry.Slug, Label: label, Description: desc, AuthType: authType, Tab: TabForAuthType(authType),
+			Slug: entry.Slug, Label: label, Description: desc, AuthType: authType, OAuth: signInAuthTypes[authType],
 			APIKeyEnvVars: apiKeyVars, BaseURLEnvVar: baseURLVar, SignupURL: signup, Order: order,
 		})
 	}

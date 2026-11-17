@@ -124,8 +124,8 @@ func TestExpectedRows(t *testing.T) {
 		{nil, nil, nil, none, nil, true},
 		{nil, []int{4321}, map[string]any{"profiles": map[string]any{"default": 4321}}, none, nil, true},
 		{planOfKinds("gateway"), []int{}, map[string]any{"unmapped": []any{map[string]any{"pid": 99}}}, none, nil, true},
-		{planOfKinds("serve", "dashboard"), []int{}, nil, none, nil, false},
-		{planOfKinds("serve", "gateway"), []int{}, nil, none, nil, true},
+		{planOfKinds("worker"), []int{}, nil, none, nil, false},
+		{planOfKinds("worker", "gateway"), []int{}, nil, none, nil, true},
 		{nil, []int{}, nil, []string{"icebath-gateway"}, nil, true},
 		{nil, []int{}, nil, none, map[int]bool{4321: true}, true},
 	}
@@ -189,24 +189,10 @@ func TestFleetRestartTimeoutIsolationNonGatewayUnitsInListOutputAreIgnored(t *te
 	}
 }
 
-func TestFleetRestartTimeoutIsolationHermesServeUnitsAreIncluded(t *testing.T) {
-	seen := seenGatewayUnits(t, "ssh.service loaded active running\nicebath-serve.service loaded active running\n"+
-		"icebath-serve-work.service loaded active running\nicebath-gateway.service loaded active running\n")
-	if !reflect.DeepEqual(seen, []string{"icebath-serve", "icebath-serve-work", "icebath-gateway"}) {
-		t.Fatalf("seen = %v", seen)
-	}
-}
-
-func TestFleetRestartTimeoutIsolationHermesDashboardUnitsAreIncluded(t *testing.T) {
-	seen := seenGatewayUnits(t, "ssh.service loaded active running\nicebath-dashboard.service loaded active running\n"+
-		"icebath-dashboard-work.service loaded active running\nicebath-serve.service loaded active running\n")
-	if !reflect.DeepEqual(seen, []string{"icebath-dashboard", "icebath-dashboard-work", "icebath-serve"}) {
-		t.Fatalf("seen = %v", seen)
-	}
-}
-
-func TestFleetRestartTimeoutIsolationHermesDashboardNearPrefixIsRejected(t *testing.T) {
-	if seen := seenGatewayUnits(t, listUnitsStdout("icebath-dashboardd", "icebath-dashboard-work")); !reflect.DeepEqual(seen, []string{"icebath-dashboard-work"}) {
+func TestFleetRestartTimeoutIsolationOnlyGatewayUnitsAreIncluded(t *testing.T) {
+	seen := seenGatewayUnits(t, "ssh.service loaded active running\nicebath-worker.service loaded active running\n"+
+		"icebath-gateway-work.service loaded active running\nicebath-gateway.service loaded active running\n")
+	if !reflect.DeepEqual(seen, []string{"icebath-gateway-work", "icebath-gateway"}) {
 		t.Fatalf("seen = %v", seen)
 	}
 }
@@ -220,18 +206,6 @@ func TestFleetRestartTimeoutIsolationHermesServerNearPrefixIsRejected(t *testing
 func TestFleetRestartTimeoutIsolationHermesGatewayNearPrefixIsRejected(t *testing.T) {
 	if seen := seenGatewayUnits(t, listUnitsStdout("icebath-gatewayd", "icebath-gateway-coder")); !reflect.DeepEqual(seen, []string{"icebath-gateway-coder"}) {
 		t.Fatalf("seen = %v", seen)
-	}
-}
-
-func TestGracefulSigusr1EligibilityGatewayUnitsAreEligible(t *testing.T) {
-	if !serviceUnitSupportsGracefulSigusr1Restart("icebath-gateway") || !serviceUnitSupportsGracefulSigusr1Restart("icebath-gateway-work") {
-		t.Fatal("a gateway unit was not eligible")
-	}
-}
-
-func TestGracefulSigusr1EligibilityServeUnitsAreNotEligible(t *testing.T) {
-	if serviceUnitSupportsGracefulSigusr1Restart("icebath-serve") || serviceUnitSupportsGracefulSigusr1Restart("icebath-serve-work") {
-		t.Fatal("a serve unit was eligible")
 	}
 }
 

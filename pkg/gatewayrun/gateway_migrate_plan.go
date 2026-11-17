@@ -214,31 +214,6 @@ func (m *MigrationPlan) TargetRunAsUser() string {
 	return ""
 }
 
-// Plan as the JSON shape the migrate command reports
-func (m *MigrationPlan) ToDict() *pyjson.Object {
-	profileDicts := make([]any, len(m.Profiles))
-	for i, p := range m.Profiles {
-		profileDicts[i] = p.ToDict()
-	}
-	var liveServed any
-	if m.LiveServedRecorded {
-		liveServed = stringsToAny(m.LiveServed)
-	}
-	return pyjson.ObjectOf("default_home", m.DefaultHome, "profiles", profileDicts,
-		"standalone_by_config", stringsToAny(m.StandaloneByConfig), "multiplex_flag_on", m.MultiplexFlagOn,
-		"live_served", liveServed, "already_multiplexed", m.AlreadyMultiplexed(), "interrupted", m.Interrupted,
-		"blockers", stringsToAny(m.Blockers), "notices", stringsToAny(m.Notices),
-		"eligible", m.EligibleForMigration(), "command", MigrateCommand)
-}
-
-func stringsToAny(items []string) []any {
-	out := make([]any, len(items))
-	for i, s := range items {
-		out[i] = s
-	}
-	return out
-}
-
 // Update hook bar, two profiles with a standalone secondary, not converged and nothing blocking
 func (m *MigrationPlan) EligibleForMigration() bool {
 	return len(m.Profiles) >= 2 && len(m.StandaloneSecondaries()) > 0 && !m.AlreadyMultiplexed() && !m.Blocked()

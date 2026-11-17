@@ -13,8 +13,8 @@ import (
 )
 
 var adoptOldChats = []struct{ sid, source, userID string }{
-	{"old-desktop", "desktop", ""}, {"old-desktop-nous", "desktop", "nous:account"}, {"old-cli", "cli", ""},
-	{"foreign-desktop", "desktop", "telegram:42"}, {"api-row", "api_server", ""},
+	{"old-client", state.ClientHistorySource, ""}, {"old-client-nous", state.ClientHistorySource, "nous:account"}, {"old-cli", "cli", ""},
+	{"foreign-client", state.ClientHistorySource, "telegram:42"}, {"api-row", "api_server", ""},
 }
 
 // Seeded store in rollback journal mode where an exclusive writer lock also blocks readers

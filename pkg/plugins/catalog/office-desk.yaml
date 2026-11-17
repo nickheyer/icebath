@@ -6,8 +6,7 @@ version: "0.1.1"
 title: Office Desk
 description: >-
   Guarded Word, PowerPoint and Excel editing: tracked Word changes and comments, slide and deck edits,
-  and Excel edits with LibreOffice recalc. Every write gets a backup and a revertible receipt, and you
-  review it all on a Desk page in the Desktop app. Settings are in Settings > Plugins.
+  and Excel edits with LibreOffice recalc. Every write gets a backup and a revertible receipt. Settings are in Settings > Plugins.
   Disclosure: reads any Office file the agent is pointed at but writes only inside folders the user puts
   on the Desk (backups and receipts live in the plugin's own data dir). xlsx_recalc runs the user's installed
   LibreOffice (soffice, headless) on a temporary copy. The Desk page reads the session store read-only

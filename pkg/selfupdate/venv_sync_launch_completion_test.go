@@ -414,7 +414,7 @@ func TestNonSelfOrPmLaunchCannotTriggerUpdate(t *testing.T) {
 	for _, tc := range []struct {
 		owner string
 		argv  []string
-	}{{"", []string{}}, {"external", []string{}}, {"electron-updater", []string{}}, {"self", []string{"-p", "coder", "pm", "repair"}}} {
+	}{{"", []string{}}, {"external", []string{}}, {"self", []string{"-p", "coder", "pm", "repair"}}} {
 		t.Run(tc.owner+" "+strings.Join(tc.argv, " "), func(t *testing.T) {
 			_, root := vsOwnedCheckout(t, tc.owner)
 			vsNoToolDownloads(t)

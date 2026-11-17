@@ -74,7 +74,7 @@ func canonicalLedgerRefusal(ctx context.Context, session *tuigateway.Session) *a
 		kind = "outcome-unknown"
 	}
 	refusal := activesessions.NewRefusal(fmt.Sprintf("Session %s has %s work in the gateway's durable queue. Resume it through the gateway "+
-		"(icebath chat --resume, Desktop or the TUI) to resolve it; nothing was run here.", key, kind), activesessions.SessionNotOwned)
+		"(icebath chat --resume or the TUI) to resolve it; nothing was run here.", key, kind), activesessions.SessionNotOwned)
 	refusal.LedgerStatus = ledger
 	return refusal
 }
@@ -130,7 +130,7 @@ func takeOverDetachedRuntimeLease(ctx context.Context, sid string, session *tuig
 				logger().Error("lease-takeover interrupt failed sid="+otherSID, "error", r)
 			}
 		}()
-		interruptSessionTurn(ctx, otherSID, other, "lease-takeover-"+sid, false)
+		interruptSessionTurn(ctx, otherSID, other, false)
 	}()
 	return true
 }

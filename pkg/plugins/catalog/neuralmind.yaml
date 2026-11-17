@@ -14,7 +14,7 @@ readme: true
 platforms: []
 known_issues:
   - "Needs NeuralMind installed separately (`pipx install neuralmind` or `uv tool install neuralmind`) and the project built with `neuralmind build`. Without both, the plugin loads and adds nothing."
-  - "Installed from the catalog, the plugin runs the `neuralmind` command on Hermes's PATH. If that PATH doesn't include it (a gateway run as a service, Hermes Desktop) or finds an older NeuralMind, run `neuralmind install-hermes-plugin` once: on a plugin Hermes installed, it only records the interpreter in the plugin's config.json and leaves the code alone."
+  - "Installed from the catalog, the plugin runs the `neuralmind` command on Hermes's PATH. If that PATH doesn't include it (a gateway run as a service) or finds an older NeuralMind, run `neuralmind install-hermes-plugin` once: on a plugin Hermes installed, it only records the interpreter in the plugin's config.json and leaves the code alone."
 capabilities:
   provides_tools: []
   provides_hooks:

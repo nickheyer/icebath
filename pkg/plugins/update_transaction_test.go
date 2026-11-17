@@ -101,7 +101,7 @@ func txInstalled(t *testing.T, catalog bool) *txWorld {
 	w.sha = txVersion(t, w.repo, "1.0.0", false, "")
 	entry := func() *PluginCatalogEntry {
 		return &PluginCatalogEntry{Name: "transactional", Repo: "file://" + filepath.ToSlash(w.repo), Sha: w.sha, Description: "fixture",
-			Maintainer: "fixture", Tier: "community", Category: "desktop"}
+			Maintainer: "fixture", Tier: "community", Category: "general"}
 	}
 	savedURL, savedClient, savedTree, savedScan := LiveCatalogURL, liveCatalogClient, inTreeCatalogEntries, scanOnInstallEnabled
 	t.Cleanup(func() {
@@ -195,7 +195,7 @@ func txFailure(t *testing.T, failure string) {
 				}
 				t.Cleanup(func() { os.Chmod(dir, 0o755) })
 			}
-			result, err := DashboardUpdateUserPlugin(w.ctx, "transactional", false, false)
+			result, err := UnattendedUpdateUserPlugin(w.ctx, "transactional", false, false)
 			if failure == "publication" {
 				os.Chmod(filepath.Dir(facts), 0o755)
 			}
@@ -219,7 +219,7 @@ func TestSuccessfulUpdatePublishesMatchingCodeAndDurableWorkspace(t *testing.T) 
 		before := w.selected(t)
 		config := txRead(t, filepath.Join(w.h, "config.yaml"))
 		w.sha = txVersion(t, w.repo, "2.0.0", false, "")
-		result, err := DashboardUpdateUserPlugin(w.ctx, "transactional", false, false)
+		result, err := UnattendedUpdateUserPlugin(w.ctx, "transactional", false, false)
 		if err != nil || result["ok"] != true {
 			t.Fatalf("%v %v", result, err)
 		}
@@ -273,7 +273,7 @@ func TestSuccessfulUpdatePublishesMatchingCodeAndDurableWorkspace(t *testing.T) 
 		previousStamp := fact["stamp"]
 		c6Write(t, filepath.Join(w.repo, "helper.py"), "VERSION = 'code-only'\ndef register(ctx):\n    pass\n")
 		w.sha = c6Commit(t, w.repo, "code-only update")
-		if result, err := DashboardUpdateUserPlugin(w.ctx, "transactional", false, false); err != nil || result["ok"] != true {
+		if result, err := UnattendedUpdateUserPlugin(w.ctx, "transactional", false, false); err != nil || result["ok"] != true {
 			t.Fatalf("%v %v", result, err)
 		}
 		metadata, _ = readInstallMetadata(w.h)
@@ -333,7 +333,7 @@ func TestDisabledUpdateDoesNotChangeDependenciesOrEnablement(t *testing.T) {
 		}
 		config, facts := txRead(t, filepath.Join(w.h, "config.yaml")), txRead(t, pm.RuntimeFactsPath(w.ctx))
 		w.sha = txVersion(t, w.repo, "2.0.0", false, "")
-		result, err := DashboardUpdateUserPlugin(w.ctx, "transactional", false, false)
+		result, err := UnattendedUpdateUserPlugin(w.ctx, "transactional", false, false)
 		if err != nil || result["ok"] != true || w.head(t) != w.sha {
 			t.Fatalf("%v %v", result, err)
 		}
@@ -366,7 +366,7 @@ func TestEnablementBeforeLockAcquisitionCannotSkipValidation(t *testing.T) {
 			}
 			return saved(ctx, opts)
 		}
-		result, err := DashboardUpdateUserPlugin(w.ctx, "transactional", false, false)
+		result, err := UnattendedUpdateUserPlugin(w.ctx, "transactional", false, false)
 		if err != nil || result["ok"] != false {
 			t.Fatalf("%v %v", result, err)
 		}
@@ -412,9 +412,9 @@ func TestPinnedPluginCmdUpdateRefusesToDrift(t *testing.T) {
 	}
 }
 
-func TestDashboardUpdateAlsoRefusesToDriftPin(t *testing.T) {
+func TestUnattendedUpdateAlsoRefusesToDriftPin(t *testing.T) {
 	ctx, h, oldSha := txPinnedDemo(t)
-	result, err := DashboardUpdateUserPlugin(ctx, "demo", false, false)
+	result, err := UnattendedUpdateUserPlugin(ctx, "demo", false, false)
 	if err != nil || result["ok"] != false || !strings.Contains(pyrepr.Str(result["error"]), "pinned") {
 		t.Fatalf("%v %v", result, err)
 	}
@@ -431,11 +431,11 @@ func txCautionRelease(t *testing.T, repo string) string {
 	return c6Commit(t, repo, "caution release")
 }
 
-func TestDashboardUpdateReturnsTheFindingsThenForceApplies(t *testing.T) {
+func TestUnattendedUpdateReturnsTheFindingsThenForceApplies(t *testing.T) {
 	txKinds(t, []string{"custom"}, func(t *testing.T, w *txWorld) {
 		oldHead, newHead := w.head(t), txCautionRelease(t, w.repo)
 		scanOnInstallEnabled = func(string) bool { return true }
-		blocked, err := DashboardUpdateUserPlugin(w.ctx, "transactional", false, false)
+		blocked, err := UnattendedUpdateUserPlugin(w.ctx, "transactional", false, false)
 		if err != nil || blocked["ok"] != false || blocked["scan_blocked"] != true || blocked["scan_verdict"] != "caution" {
 			t.Fatalf("%v %v", blocked, err)
 		}
@@ -448,7 +448,7 @@ func TestDashboardUpdateReturnsTheFindingsThenForceApplies(t *testing.T) {
 		if !found || w.head(t) != oldHead {
 			t.Fatalf("a blocked update changed the installed tree or lost its findings: %v", blocked["scan_findings"])
 		}
-		applied, err := DashboardUpdateUserPlugin(w.ctx, "transactional", false, true)
+		applied, err := UnattendedUpdateUserPlugin(w.ctx, "transactional", false, true)
 		if err != nil || applied["ok"] != true || applied["unchanged"] != false || w.head(t) != newHead {
 			t.Fatalf("%v %v", applied, err)
 		}

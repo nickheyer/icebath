@@ -55,7 +55,7 @@ type LineAdapter struct {
 
 	mu             sync.Mutex
 	client         *lineClient
-	runner         *gateway.WebAppRunner
+	runner         *gateway.HTTPAppRunner
 	replyTokens    map[string]replyToken
 	cache          *RequestCache
 	dedup          *gateway.MessageDeduplicator
@@ -303,7 +303,7 @@ func (a *LineAdapter) Connect(ctx context.Context, isReconnect bool) (bool, erro
 	a.mu.Lock()
 	a.client, a.botUserID = client, botUserID
 	a.mu.Unlock()
-	app := gateway.NewWebApplication(webhookBodyMaxBytes)
+	app := gateway.NewHTTPApp(webhookBodyMaxBytes)
 	if err := app.AddPost(a.webhookPath, a.handleWebhook); err != nil {
 		return false, err
 	}

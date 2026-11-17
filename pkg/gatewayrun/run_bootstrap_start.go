@@ -27,9 +27,6 @@ const (
 	housekeepingShutdownDrainTimeout = 35.0
 )
 
-// Restores the user proxy env an update restart replaced, assigned from pkg/selfupdate in cmd/icebath wiring
-var RestoreUserProxyEnv func(environ map[string]string)
-
 // Arguments of start_gateway, a nil config loading the runner config and a nil verbosity meaning quiet
 type StartGatewayOptions struct {
 	Config    *gateway.GatewayConfig
@@ -391,7 +388,6 @@ var (
 // Starts the gateway and runs until interrupted, false when it failed to start so supervisors restart it
 func StartGateway(ctx context.Context, o StartGatewayOptions) (bool, error) {
 	os.Setenv("ICEBATH_EXEC_ASK", "1")
-	RestoreUserProxyEnv(nil)
 	if err := startGatewayResolveTerminalCwd(); err != nil {
 		return false, err
 	}

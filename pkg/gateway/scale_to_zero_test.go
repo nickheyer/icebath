@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"io"
-	"math"
 	"net"
 	"net/http"
 	"os"
@@ -13,9 +12,6 @@ import (
 	"runtime"
 	"strings"
 	"testing"
-	"time"
-
-	"github.com/nickheyer/icebath/pkg/home"
 )
 
 func TestEnabledTruthyValues(t *testing.T) {
@@ -243,103 +239,5 @@ func TestRequestBrokeredSuspendFailsAwake(t *testing.T) {
 		if RequestBrokeredSuspend(context.Background(), testSleepURL, BrokeredSuspendTimeoutS, &http.Client{Transport: opener}) {
 			t.Fatalf("opener %d accepted", i)
 		}
-	}
-}
-
-// Temp process home for the dashboard client marker
-func dashboardHome(t *testing.T) string {
-	t.Helper()
-	dir := t.TempDir()
-	t.Setenv(home.EnvHome, dir)
-	return dir
-}
-
-// Marker made unreadable by removing search permission from its directory
-func denyMarkerStat(t *testing.T) {
-	t.Helper()
-	if os.Geteuid() == 0 || runtime.GOOS == "windows" {
-		t.Skip("permission bits do not deny stat here")
-	}
-	dir := filepath.Dir(DashboardClientHeartbeatPath(""))
-	if err := os.Chmod(dir, 0o000); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.Chmod(dir, 0o755) })
-}
-
-func TestHeartbeatPathLivesUnderHermesHomeState(t *testing.T) {
-	dir := dashboardHome(t)
-	if got := DashboardClientHeartbeatPath(""); got != filepath.Join(dir, "state", "dashboard_clients.heartbeat") {
-		t.Fatalf("path = %s", got)
-	}
-}
-
-func TestLastSeenMissingMarkerIsNoneNotFailAwake(t *testing.T) {
-	dashboardHome(t)
-	if seen := DashboardClientLastSeen("", nil); seen != nil {
-		t.Fatalf("seen = %v", *seen)
-	}
-}
-
-func TestTouchCreatesStateDirAndMarker(t *testing.T) {
-	dashboardHome(t)
-	if !TouchDashboardClientHeartbeat("") {
-		t.Fatal("touch failed")
-	}
-	if _, err := os.Stat(DashboardClientHeartbeatPath("")); err != nil {
-		t.Fatal(err)
-	}
-	seen := DashboardClientLastSeen("", nil)
-	if seen == nil || math.Abs(*seen-float64(time.Now().UnixNano())/1e9) >= 5 {
-		t.Fatalf("seen = %v", seen)
-	}
-}
-
-func TestLastSeenReturnsRawMtimeWithoutStalenessCutoff(t *testing.T) {
-	dashboardHome(t)
-	TouchDashboardClientHeartbeat("")
-	info, err := os.Stat(DashboardClientHeartbeatPath(""))
-	if err != nil {
-		t.Fatal(err)
-	}
-	mtime := float64(info.ModTime().UnixNano()) / 1e9
-	for _, offset := range []float64{10, 3600} {
-		now := mtime + offset
-		if seen := DashboardClientLastSeen("", &now); seen == nil || *seen != mtime {
-			t.Fatalf("seen = %v want %v", seen, mtime)
-		}
-	}
-}
-
-func TestLastSeenFutureMtimeIsClampedToNow(t *testing.T) {
-	dashboardHome(t)
-	TouchDashboardClientHeartbeat("")
-	future := time.Now().Add(600 * time.Second)
-	if err := os.Chtimes(DashboardClientHeartbeatPath(""), future, future); err != nil {
-		t.Fatal(err)
-	}
-	now := float64(time.Now().UnixNano()) / 1e9
-	if seen := DashboardClientLastSeen("", &now); seen == nil || *seen != now {
-		t.Fatalf("seen = %v want %v", seen, now)
-	}
-}
-
-func TestLastSeenUnreadableMarkerFailsAwake(t *testing.T) {
-	dashboardHome(t)
-	TouchDashboardClientHeartbeat("")
-	denyMarkerStat(t)
-	now := 1_000_000.0
-	if seen := DashboardClientLastSeen("", &now); seen == nil || *seen != now {
-		t.Fatalf("seen = %v", seen)
-	}
-}
-
-func TestTouchNeverRaises(t *testing.T) {
-	dashboardHome(t)
-	if err := os.MkdirAll(DashboardClientHeartbeatPath(""), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if TouchDashboardClientHeartbeat("") {
-		t.Fatal("a failed touch must report false")
 	}
 }

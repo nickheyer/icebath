@@ -33,7 +33,7 @@ description: >-
   Orbit is not affiliated with Nous Research.
 maintainer: mojomast
 tier: community
-category: desktop
+category: tools
 version: "0.2.7"
 docs_url: https://github.com/mojomast/orbitdesktop/blob/98b9a5ee13cb1841e819d7a9c873d7de427ba347/hermes-plugin/README.md
 platforms: [linux]

@@ -99,7 +99,7 @@ func pluginProviderCodexAuth(rawURL string) (map[string]string, string, error) {
 	}
 	token := strings.TrimSpace(pyOrStr(creds["api_key"]))
 	if token == "" {
-		return nil, "", newProviderNotSignedIn(fmt.Sprintf("Not signed in to Codex in Icebath. Run `%s` or sign in to OpenAI Codex under Providers in the Icebath desktop app.",
+		return nil, "", newProviderNotSignedIn(fmt.Sprintf("Not signed in to Codex in Icebath. Run `%s` to sign in to OpenAI Codex.",
 			oauthReloginCommandIn(envHome(env), "openai-codex")))
 	}
 	headers := map[string]string{}

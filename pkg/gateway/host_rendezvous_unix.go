@@ -36,26 +36,6 @@ func tightenHostStateDir(directory string) {
 	}
 }
 
-// Creates or replaces path with owner only content through a 0600 temp file and an atomic rename
-func writePrivateText(path, text string) error {
-	tmp := path + ".tmp"
-	f, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
-	if err != nil {
-		return err
-	}
-	if _, err := f.WriteString(text); err != nil {
-		f.Close()
-		os.Remove(tmp)
-		return err
-	}
-	_ = f.Sync()
-	if err := f.Close(); err != nil {
-		os.Remove(tmp)
-		return err
-	}
-	return os.Rename(tmp, path)
-}
-
 var (
 	hostSignalInstalled bool
 	hostSignalCh        chan os.Signal

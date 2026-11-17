@@ -329,33 +329,6 @@ func lightChatArgs(argv []string) (*chatArgs, bool) {
 	return a, true
 }
 
-// Dispatches an unambiguous serve without the full CLI tree, Desktop's cold start path
-func tryFastServeLaunch(argv []string) (bool, int) {
-	if os.Getenv("ICEBATH_DISABLE_FAST_SERVE_LAUNCH") == "1" {
-		return false, 0
-	}
-	if len(argv) == 0 || argv[0] != "serve" || containsArg(argv, "-h") || containsArg(argv, "--help") {
-		return false, 0
-	}
-	if containerExecInfo() != nil {
-		return false, 0
-	}
-	cli := commands.NewCLI()
-	cmd, rest, err := cli.Root.Find(argv)
-	if err != nil || cmd == nil || cmd.Name() != "serve" {
-		return false, 0
-	}
-	cmd.SilenceErrors, cmd.SilenceUsage = true, true
-	if err := cmd.ParseFlags(rest); err != nil || len(cmd.Flags().Args()) > 0 {
-		return false, 0
-	}
-	code, msg := commands.ExitCode(status(cmdDashboard(cli, cmd, cmd.Flags().Args())))
-	if msg != "" {
-		fmt.Fprintln(os.Stderr, msg)
-	}
-	return true, code
-}
-
 // Fast path for unambiguous interactive chat launches on every host
 func tryFastChatLaunch(argv []string) (bool, int) {
 	if os.Getenv("ICEBATH_DISABLE_FAST_CHAT_LAUNCH") == "1" || containsArg(argv, "-h") || containsArg(argv, "--help") {

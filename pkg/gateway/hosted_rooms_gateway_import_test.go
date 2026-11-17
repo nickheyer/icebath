@@ -27,7 +27,7 @@ func hrStandaloneRoom(t *testing.T, source, roomID string) {
 	ctx := context.Background()
 	local := hrOK(LocalAuthorityGatewayID(ctx))
 	hrOK(CreateRoom(ctx, source, CreateRoomInput{RoomID: roomID, Name: roomID, Members: hrImportMembers, AuthorityGatewayID: local}))
-	hrOK(AppendEvent(ctx, source, AppendEventInput{RoomID: roomID, EventID: "user:" + roomID, Kind: "message.user", Actor: map[string]any{"kind": "user", "id": "desktop"},
+	hrOK(AppendEvent(ctx, source, AppendEventInput{RoomID: roomID, EventID: "user:" + roomID, Kind: "message.user", Actor: map[string]any{"kind": "user", "id": "local-user"},
 		Payload: map[string]any{"text": "hello"}, AuthorityGatewayID: local, AuthorityEpoch: 1}))
 }
 

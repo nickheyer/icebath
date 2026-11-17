@@ -507,9 +507,9 @@ func (a *WhatsAppAdapter) preflight(ctx context.Context) bool {
 	}{
 		{a.bridgeScript, fmt.Sprintf("[%s] Bridge script not found: %s", a.Name(), a.bridgeScript),
 			"whatsapp_bridge_missing", fmt.Sprintf("WhatsApp bridge script missing at %s.", a.bridgeScript)},
-		{credsPath, fmt.Sprintf("[%s] WhatsApp is enabled but not paired (no creds.json at %s). Pair from the dashboard or run "+
+		{credsPath, fmt.Sprintf("[%s] WhatsApp is enabled but not paired (no creds.json at %s). Pair by running "+
 			"`icebath whatsapp`; remove WHATSAPP_ENABLED from your .env to disable.", a.Name(), credsPath),
-			"whatsapp_not_paired", "WhatsApp enabled but not paired — pair from the dashboard or run `icebath whatsapp`."},
+			"whatsapp_not_paired", "WhatsApp enabled but not paired — pair by running `icebath whatsapp`."},
 	}
 	for _, c := range checks {
 		if _, err := os.Stat(c.path); err != nil {

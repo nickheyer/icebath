@@ -84,7 +84,7 @@ func (r *GatewayRunner) coldReviewParent(ctx context.Context, source *gateway.Se
 	prefill := r.prefillMessages
 	var tier *string
 	if policy != nil {
-		if enabled, err = gateway.PolicyTurnToolsets(ctx, authority, policy, userConfig, source.ChatID); err != nil {
+		if enabled, err = gateway.PolicyTurnToolsets(ctx, policy, userConfig); err != nil {
 			return err
 		}
 		if pr, err = gateway.SessionRouting(ctx, authority, policy); err != nil {

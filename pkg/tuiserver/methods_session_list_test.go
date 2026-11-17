@@ -89,8 +89,8 @@ func TestSessionListProjectsLineageRootID(t *testing.T) {
 // test_session_hidden_rpc.py test_session_list_include_hidden
 func TestSessionListIncludeHidden(t *testing.T) {
 	db := listingDB(t)
-	seedCounted(t, db, "plain-chat", "desktop", 1)
-	seedCounted(t, db, "bot-chat", "desktop", 2)
+	seedCounted(t, db, "plain-chat", "tui", 1)
+	seedCounted(t, db, "bot-chat", "tui", 2)
 	if hidden, err := db.SetSessionHidden(context.Background(), "bot-chat", true); err != nil || !hidden {
 		t.Fatalf("hide %v %v", hidden, err)
 	}
@@ -107,7 +107,7 @@ func TestSessionListHidesInternalSources(t *testing.T) {
 	for _, source := range []string{"oneshot", "kanban", "tool"} {
 		t.Run(source, func(t *testing.T) {
 			db := listingDB(t)
-			seedCounted(t, db, "plain-chat", "desktop", 1)
+			seedCounted(t, db, "plain-chat", "tui", 1)
 			seedCounted(t, db, "internal-run", source, 2)
 			if ids := listedIDs(t, map[string]any{}); !slices.Equal(ids, []string{"plain-chat"}) {
 				t.Fatalf("listed %v", ids)

@@ -41,8 +41,6 @@ const (
 	SpotifyDashboardURL           = "https://developer.spotify.com/dashboard"
 	// Seconds before expiry a runtime read refreshes the access token
 	SpotifyAccessTokenRefreshSkewSeconds = 120
-	// Command the stored Spotify login is managed with
-	SpotifyLoginCommand = "icebath spotify login"
 )
 
 // SpotifyDefaultScope is every scope the seven Spotify tools need, space separated
@@ -759,12 +757,4 @@ func spotifyDisabledCommandHint(h, prog, value string) string {
 	}
 	return fmt.Sprintf("Spotify is built in but not loaded in this profile. Enable it with: `%s`.",
 		strings.ReplaceAll(PluginInstallCommand(SpotifyProvider, h), " install ", " enable "))
-}
-
-// SpotifyPluginLoginCommand is the login command of the built in Spotify plugin, false for any other plugin
-func SpotifyPluginLoginCommand(name string) (string, bool) {
-	if name != SpotifyProvider {
-		return "", false
-	}
-	return SpotifyLoginCommand, true
 }

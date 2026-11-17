@@ -11,22 +11,16 @@ description: >-
   Godot/godot-ai/uv with the exact registration path). Complements the
   hi-godot/godot-ai MCP editor bridge by covering the verification and export
   leg of the loop; bundles the godot-studio skill teaching edit → verify →
-  export → playtest. Ships an optional desktop half (unified package): a
-  Godot version statusbar chip and a builds gallery pane backed by its own
-  read-only dashboard API; opt-in, degrades gracefully when the backend is
-  off. Tools register only when a Godot 4 binary is present (check_fn).
+  export → playtest. Tools register only when a Godot 4 binary is present (check_fn).
   Disclosure — runs shell commands (godot --headless against the
-  caller-targeted project; read-only godot --version in the desktop backend;
-  read-only hermes mcp list in godot_setup); godot_headless_check and
+  caller-targeted project; read-only hermes mcp list in godot_setup); godot_headless_check and
   godot_export execute the target project's own GDScript (autoloads, main
   scene, export plugins) with no approval prompt — point them only at
   projects you trust; no network calls, no credentials, no telemetry, no
   background processes; exports write only inside the target project (the
   output path is resolved and confined to the project directory, existing
   files that aren't known export artifacts are never overwritten, and the
-  default is the preset's own export_path from export_presets.cfg); the
-  desktop backend reads export_presets.cfg and artifact metadata inside the
-  project path the user configures in the pane.
+  default is the preset's own export_path from export_presets.cfg).
 maintainer: Foolafroos
 tier: community
 category: tools

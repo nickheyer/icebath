@@ -383,8 +383,8 @@ func CmdCheckUpdates(ctx context.Context, asJSON bool, out io.Writer) error {
 	return nil
 }
 
-// Non interactive update for the dashboard, a catalog re pin or a git pull, refusals as answers
-func DashboardUpdateUserPlugin(ctx context.Context, name string, acceptCapabilities, force bool) (map[string]any, error) {
+// Non interactive update by catalog re pin or git pull, refusals as answers
+func UnattendedUpdateUserPlugin(ctx context.Context, name string, acceptCapabilities, force bool) (map[string]any, error) {
 	h := home.Dir(ctx)
 	target, err := userInstalledPluginDir(ctx, name)
 	if err != nil {
@@ -397,7 +397,7 @@ func DashboardUpdateUserPlugin(ctx context.Context, name string, acceptCapabilit
 		}
 		return map[string]any{"ok": false, "error": fmt.Sprintf("Plugin '%s' was not found under %s.", name, dir)}, nil
 	}
-	answer, msg, err := dashboardUpdateStep(ctx, h, name, target, acceptCapabilities, force)
+	answer, msg, err := unattendedUpdateStep(ctx, h, name, target, acceptCapabilities, force)
 	var consent *RepinConsentRequired
 	var blocked *PluginScanBlocked
 	var opErr *PluginOperationError
@@ -425,8 +425,8 @@ func DashboardUpdateUserPlugin(ctx context.Context, name string, acceptCapabilit
 	return mergeResult(map[string]any{"ok": true, "name": name, "output": msg, "unchanged": unchanged}, activated), nil
 }
 
-// Catalog re pin answer or the git pull output of one dashboard update
-func dashboardUpdateStep(ctx context.Context, h, name, target string, acceptCapabilities, force bool) (map[string]any, string, error) {
+// Catalog re pin answer or the git pull output of one unattended update
+func unattendedUpdateStep(ctx context.Context, h, name, target string, acceptCapabilities, force bool) (map[string]any, string, error) {
 	sidecar, err := catalogInstallRecord(h, target)
 	if err != nil {
 		return nil, "", err

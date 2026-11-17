@@ -15,7 +15,6 @@ func registerSessionMetaHandlers() {
 	sessionRegistry.method("session.title", withSession(withSessionDB(5007, sessionTitle)))
 	sessionRegistry.method("session.archive", sessionArchive)
 	sessionRegistry.method("session.set_hidden", sessionSetHidden)
-	sessionMethod("message.react", false, messageReact)
 }
 
 // Stored title of a session, applying a queued pending title when the row now takes it
@@ -195,66 +194,4 @@ func sessionSetHidden(ctx context.Context, rid any, params map[string]any) map[s
 	return setLineageFlag(ctx, rid, params, tuigateway.SessionRecord(sid), strParam(params, "session_id", ""), "hidden", hidden, func(db *state.DB, key string) (bool, error) {
 		return db.SetSessionHidden(ctx, key, hidden)
 	})
-}
-
-// Sets or clears one author's emoji reaction on a stored message, else on the newest of a role
-func messageReact(ctx context.Context, rid any, params map[string]any, session *tuigateway.Session) map[string]any {
-	newestRole := strParam(params, "newest_role", "")
-	rowID := params["row_id"]
-	if rowID == nil && newestRole != "user" && newestRole != "assistant" {
-		return rpcErr(rid, 4023, "row_id or newest_role required", nil)
-	}
-	var emoji *string
-	if params["emoji"] != nil {
-		text := pystr.Strip(pyrepr.Str(params["emoji"]))
-		if text == "" {
-			return rpcErr(rid, 4024, "emoji must be a non-empty string or null", nil)
-		}
-		emoji = &text
-	}
-	author := "user"
-	if truthy(params["author"]) {
-		author = pystr.Strip(pyrepr.Str(params["author"]))
-	}
-	if author != "user" && author != "agent" {
-		return rpcErr(rid, 4025, "author must be 'user' or 'agent'", nil)
-	}
-	db, release := sessionDB(ctx, session)
-	defer release()
-	if db == nil {
-		return dbUnavailableError(ctx, rid, 5007)
-	}
-	rowSession := submitRowTargetKey(session)
-	var reactions []any
-	found := false
-	var resolvedRow int64
-	var early map[string]any
-	if failure := catchPanic(func() {
-		if rowID == nil {
-			latest, exists, err := db.LatestMessageRowID(ctx, rowSession, newestRole, 0, true)
-			panicIf(err)
-			if !exists {
-				early = rpcErr(rid, 4040, "no message to react to yet", nil)
-				return
-			}
-			rowID = latest
-		}
-		n, err := pyint.Of(rowID)
-		panicIf(err)
-		if !n.IsInt64() {
-			panic(&pyint.Error{Kind: "OverflowError", Msg: "Python int too large to convert to SQLite INTEGER"})
-		}
-		resolvedRow = n.Int64()
-		reactions, found, err = db.SetMessageReaction(ctx, rowSession, resolvedRow, emoji, author)
-		panicIf(err)
-	}); failure != nil {
-		return rpcErr(rid, 5007, failureText(failure), nil)
-	}
-	if early != nil {
-		return early
-	}
-	if !found {
-		return rpcErr(rid, 4040, "message not found in this session", nil)
-	}
-	return ok(rid, map[string]any{"row_id": resolvedRow, "reactions": reactions})
 }

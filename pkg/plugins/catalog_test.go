@@ -93,7 +93,7 @@ func TestCatalogTierCategoryVersionImageAndScreenshots(t *testing.T) {
 	writeCatalogYAML(t, dir, "b.yaml", catalogEntryMap("mem", map[string]any{"category": "memory"}), "")
 	writeCatalogYAML(t, dir, "c.yaml", catalogEntryMap("typo", map[string]any{"category": "memmory"}), "")
 	got := catalogByName(LoadCatalog(dir))
-	if len(got) != 2 || got["no-cat"].Category != "desktop" || got["mem"].ToDict()["category"] != "memory" {
+	if len(got) != 2 || got["no-cat"].Category != "general" || got["mem"].ToDict()["category"] != "memory" {
 		t.Fatalf("categories %v", got)
 	}
 	banner := "https://raw.githubusercontent.com/owner/repo/" + catalogTestSha + "/banner.png"

@@ -9,7 +9,7 @@ description: >-
   translated (C:\Users\me\proj becomes /mnt/c/Users/me/proj, \\wsl.localhost paths become the
   distro's own paths) and the mount root is asked once with wslpath, so a distro that moved
   its automount point still gets correct paths. cwd persists across commands, stdin and exit
-  codes ride through wsl.exe, and hermes doctor / setup and the dashboard picker get real rows
+  codes ride through wsl.exe, and hermes doctor / setup get real rows
   (wsl.exe path, WSL version, distros present, selected distro). HERMES_WSL_DISTRO and
   HERMES_WSL_USER select the distro and the user. Disclosure — this is a full-access backend,
   not a sandbox: when it is the selected backend, everything the terminal tool runs executes

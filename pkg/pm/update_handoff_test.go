@@ -34,20 +34,18 @@ func TestLegacyPostSwapInvocationRecognizesOnlyTheShippedShape(t *testing.T) {
 }
 
 func TestTakeoverRequestMapsHistoricalPayloadNames(t *testing.T) {
-	for _, desktop := range []bool{false, true} {
-		for _, resume := range []any{nil, pyjson.ObjectOf("resume_needed", true)} {
-			payload := pyjson.ObjectOf("gateway_mode", true, "had_desktop_app_before_update", desktop, "windows_gateway_resume", resume)
-			request := takeoverRequest(payload, []string{"--yes"})
-			for key, want := range map[string]any{"desktop": desktop, "assume_yes": true, "restart_update": false,
-				"gateway_mode": true, "had_desktop_app_before_update": desktop, "windows_resume": resume} {
-				if got, _ := request.Get(key); !reflect.DeepEqual(got, want) {
-					t.Fatalf("%s = %#v, want %#v", key, got, want)
-				}
+	for _, resume := range []any{nil, pyjson.ObjectOf("resume_needed", true)} {
+		payload := pyjson.ObjectOf("gateway_mode", true, "windows_gateway_resume", resume)
+		request := takeoverRequest(payload, []string{"--yes"})
+		for key, want := range map[string]any{"assume_yes": true, "restart_update": false,
+			"gateway_mode": true, "windows_resume": resume} {
+			if got, _ := request.Get(key); !reflect.DeepEqual(got, want) {
+				t.Fatalf("%s = %#v, want %#v", key, got, want)
 			}
 		}
 	}
-	current := takeoverRequest(pyjson.ObjectOf("desktop", false, "windows_resume", "kept", "assume_yes", false, "restart_update", true), nil)
-	for key, want := range map[string]any{"desktop": false, "windows_resume": "kept", "assume_yes": false, "restart_update": true} {
+	current := takeoverRequest(pyjson.ObjectOf("windows_resume", "kept", "assume_yes", false, "restart_update", true), nil)
+	for key, want := range map[string]any{"windows_resume": "kept", "assume_yes": false, "restart_update": true} {
 		if got, _ := current.Get(key); got != want {
 			t.Fatalf("new schema %s = %#v, want %#v", key, got, want)
 		}

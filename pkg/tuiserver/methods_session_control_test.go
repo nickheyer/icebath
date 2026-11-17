@@ -111,7 +111,7 @@ func forbidDispatch(t *testing.T) {
 }
 
 func saveGoal(key string, edit func(*goals.GoalState)) *goals.GoalState {
-	st := &goals.GoalState{Goal: "Finish the desktop control card", Status: "active", TurnsUsed: 3, MaxTurns: 12,
+	st := &goals.GoalState{Goal: "Finish the TUI control card", Status: "active", TurnsUsed: 3, MaxTurns: 12,
 		CreatedAt: 100.0, LastTurnAt: 200.0}
 	if edit != nil {
 		edit(st)
@@ -163,7 +163,7 @@ func TestGoalContractSubgoalsAndGatesAreStructuredAndSanitized(t *testing.T) {
 			TimeoutSeconds: 90, MaxRetries: 2, Attempts: 1, LastExitCode: &exitCode, LastOutputTail: "private output must stay private"}}
 	})
 	goal, _ := readControl(t, sid)["goal"].(map[string]any)
-	if goal["title"] != "Finish the desktop control card" {
+	if goal["title"] != "Finish the TUI control card" {
 		t.Fatalf("title %v", goal["title"])
 	}
 	wantContract, _ := pyjson.Dumps(contract.ToDict())

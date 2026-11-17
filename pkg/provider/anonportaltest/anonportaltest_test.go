@@ -62,7 +62,6 @@ func jwtClaims(t *testing.T, token string) map[string]any {
 
 func TestInstallIsolatesEnvAndServesTheDefaultSurface(t *testing.T) {
 	t.Setenv("OPENAI_API_KEY", "sk-real")
-	t.Setenv(anonportaltest.DesktopEnv, "1")
 	p := anonportaltest.Install(t)
 	for name, want := range map[string]string{anonportaltest.HomeEnv: p.Home, anonportaltest.PortalBaseURLEnv: p.URL,
 		anonportaltest.AnonSecretEnv: anonportaltest.Secret, anonportaltest.SharedAuthDirEnv: p.SharedDir, anonportaltest.CABundleEnv: p.CAPath} {

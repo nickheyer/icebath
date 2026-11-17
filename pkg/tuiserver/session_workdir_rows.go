@@ -199,7 +199,7 @@ func ensureSessionDBRow(ctx context.Context, session *tuigateway.Session) bool {
 	func() {
 		defer func() {
 			if r := recover(); r != nil {
-				workdirReraiseDiskFull(r, "failed to persist desktop session row")
+				workdirReraiseDiskFull(r, "failed to persist session row")
 			}
 		}()
 		userID := ""

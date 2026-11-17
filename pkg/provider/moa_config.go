@@ -481,52 +481,6 @@ func moaPresetOrder(presets map[string]any) []string {
 	return config.MappingKeys(presets)
 }
 
-// ValidateMoAPayload returns the problems normalizing would silently repair, empty when safe to save
-func ValidateMoAPayload(raw any) []string {
-	m, ok := raw.(map[string]any)
-	if !ok {
-		return []string{"MoA config must be an object"}
-	}
-	presets, ok := m["presets"].(map[string]any)
-	if !ok || len(presets) == 0 {
-		presets = map[string]any{DefaultMoAPresetName: m}
-	}
-	problems := []string{}
-	for _, name := range moaPresetOrder(presets) {
-		label := pyStripSpace(name)
-		if label == "" {
-			label = "(unnamed)"
-		}
-		preset, ok := presets[name].(map[string]any)
-		if !ok {
-			problems = append(problems, fmt.Sprintf("preset '%s': must be an object", label))
-			continue
-		}
-		refs, isList := preset["reference_models"].([]any)
-		if !isList {
-			refs = []any{}
-			if single, isMap := preset["reference_models"].(map[string]any); isMap {
-				refs = []any{single}
-			}
-		}
-		allBad := true
-		for index, slot := range refs {
-			if issue := moaSlotProblem(slot); issue != "" {
-				problems = append(problems, fmt.Sprintf("preset '%s' reference %d: %s", label, index+1, issue))
-			} else {
-				allBad = false
-			}
-		}
-		if allBad {
-			problems = append(problems, fmt.Sprintf("preset '%s': needs at least one complete reference model", label))
-		}
-		if issue := moaSlotProblem(preset["aggregator"]); issue != "" {
-			problems = append(problems, fmt.Sprintf("preset '%s' aggregator: %s", label, issue))
-		}
-	}
-	return problems
-}
-
 // One preset with cleaned slots, defaults for missing slots and coerced numeric, policy and fanout fields
 func normalizeMoAPreset(raw any) map[string]any {
 	m, ok := raw.(map[string]any)

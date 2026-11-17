@@ -195,101 +195,25 @@ func idleRunner(t *testing.T, lastInboundAt float64) *GatewayRunner {
 	return r
 }
 
-// Touches the dashboard marker and moves its mtime ago seconds into the past
-func touchMarkerAgo(t *testing.T, ago float64) {
-	t.Helper()
-	gateway.TouchDashboardClientHeartbeat("")
-	if ago == 0 {
-		return
-	}
-	at := time.Now().Add(-time.Duration(ago * float64(time.Second)))
-	if err := os.Chtimes(gateway.DashboardClientHeartbeatPath(""), at, at); err != nil {
-		t.Fatal(err)
-	}
-}
-
-func TestIdleWithoutDashboardClientUnchanged(t *testing.T) {
+func TestOldInboundIsIdle(t *testing.T) {
 	t.Setenv(home.EnvHome, t.TempDir())
 	if !idleRunner(t, wallClock()-600).scaleToZeroIsIdle(context.Background()) {
-		t.Fatal("no client and old inbound must be idle")
+		t.Fatal("no work and old inbound must be idle")
 	}
 }
 
-func TestAttachedDashboardClientBlocksIdle(t *testing.T) {
-	t.Setenv(home.EnvHome, t.TempDir())
-	r := idleRunner(t, wallClock()-600)
-	touchMarkerAgo(t, 0)
-	if r.scaleToZeroIsIdle(context.Background()) {
-		t.Fatal("an attached client must block idle")
-	}
-}
-
-func TestClientGetsTheSameIdleGraceAsAMessage(t *testing.T) {
-	t.Setenv(home.EnvHome, t.TempDir())
-	r := idleRunner(t, wallClock()-600)
-	touchMarkerAgo(t, 100)
-	if r.scaleToZeroIsIdle(context.Background()) {
-		t.Fatal("a frame 100s ago is inside the 120s window")
-	}
-}
-
-func TestClientGoneLongerThanIdleTimeoutIsIdle(t *testing.T) {
-	t.Setenv(home.EnvHome, t.TempDir())
-	r := idleRunner(t, wallClock()-600)
-	touchMarkerAgo(t, 121)
-	if !r.scaleToZeroIsIdle(context.Background()) {
-		t.Fatal("a client gone past the timeout must be idle")
-	}
-}
-
-func TestMarkerPredatingGatewayInboundDoesNotMatter(t *testing.T) {
-	t.Setenv(home.EnvHome, t.TempDir())
-	r := idleRunner(t, wallClock()-600)
-	touchMarkerAgo(t, 7200)
-	if !r.scaleToZeroIsIdle(context.Background()) {
-		t.Fatal("an ancient marker must not keep the gateway awake")
-	}
-}
-
-func TestDashboardClientSeenRecentlyExtendsInboundClock(t *testing.T) {
-	t.Setenv(home.EnvHome, t.TempDir())
-	r := idleRunner(t, wallClock()-600)
-	touchMarkerAgo(t, 30)
-	if r.scaleToZeroIsIdle(context.Background()) {
-		t.Fatal("a marker 30s old moves the inbound clock inside the window")
-	}
-}
-
-func TestNewerGatewayInboundWinsOverOlderMarker(t *testing.T) {
+func TestRecentInboundKeepsGatewayAwake(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv(home.EnvHome, dir)
 	if err := os.WriteFile(filepath.Join(dir, "config.yaml"), []byte("gateway:\n  scale_to_zero:\n    idle_timeout_minutes: 0.16666666666666666\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	r := idleRunner(t, wallClock()-5)
-	touchMarkerAgo(t, 40)
 	if r.scaleToZeroIsIdle(context.Background()) {
-		t.Fatal("the newer chat message must win over the older marker")
+		t.Fatal("a chat message inside the window must keep the gateway awake")
 	}
 	if wallClock()-r.lastInboundAt >= 10 {
 		t.Fatal("the read must not move the inbound clock")
-	}
-}
-
-func TestUnreadableMarkerKeepsGatewayAwake(t *testing.T) {
-	if os.Geteuid() == 0 {
-		t.Skip("root stats through denied directories")
-	}
-	t.Setenv(home.EnvHome, t.TempDir())
-	r := idleRunner(t, wallClock()-600)
-	touchMarkerAgo(t, 0)
-	dir := filepath.Dir(gateway.DashboardClientHeartbeatPath(""))
-	if err := os.Chmod(dir, 0o000); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.Chmod(dir, 0o755) })
-	if r.scaleToZeroIsIdle(context.Background()) {
-		t.Fatal("an unreadable marker must keep the gateway awake")
 	}
 }
 

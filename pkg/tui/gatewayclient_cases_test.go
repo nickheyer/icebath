@@ -21,7 +21,6 @@ const describeResult = `{"session_create":{"sources":["tui"],"parameters":["sour
 func startLocal(t *testing.T, boot *fakeBootstrap) (*gatewayClient, *fakeDialer, *fakeClock, *recorder, *fakeSocket) {
 	t.Helper()
 	t.Setenv("ICEBATH_TUI_GATEWAY_URL", "")
-	t.Setenv("ICEBATH_TUI_SIDECAR_URL", "")
 	c, d, k := newTestClient(t, boot)
 	rec := &recorder{}
 	c.start()
@@ -338,48 +337,6 @@ func TestGatewayClientWebsocketAttachMode(t *testing.T) {
 			t.Fatalf("order %v %v", evs[0].Type, evs[1].Type)
 		}
 	})
-	t.Run("mirrors event frames to sidecar websocket when configured", func(t *testing.T) {
-		t.Setenv("ICEBATH_TUI_GATEWAY_URL", "ws://gateway.test/api/ws?token=abc")
-		t.Setenv("ICEBATH_TUI_SIDECAR_URL", "ws://gateway.test/api/pub?token=abc&channel=demo")
-		c, d, _ := newTestClient(t, nil)
-		rec := &recorder{}
-		c.start()
-		eventually(t, "the socket", func() bool { return d.count() == 1 })
-		d.at(0).open()
-		eventually(t, "the sidecar", func() bool { return d.count() == 2 })
-		sidecar := d.at(1)
-		sidecar.open()
-		eventually(t, "the sidecar link", func() bool { c.mu.Lock(); defer c.mu.Unlock(); return c.sidecar != nil })
-		c.attach(rec.send)
-		frame := `{"jsonrpc":"2.0","method":"event","params":{"type":"tool.start","payload":{"tool_id":"t1"}}}`
-		d.at(0).message(frame)
-		eventually(t, "the event", func() bool { return len(rec.events("tool.start")) == 1 })
-		if !slices.Contains(sidecar.sentRaw(), frame) {
-			t.Fatalf("mirrored %q", sidecar.sentRaw())
-		}
-	})
-	t.Run("publishes local dashboard-control events to the sidecar websocket", func(t *testing.T) {
-		t.Setenv("ICEBATH_TUI_GATEWAY_URL", "ws://gateway.test/api/ws?token=abc")
-		t.Setenv("ICEBATH_TUI_SIDECAR_URL", "ws://gateway.test/api/pub?token=abc&channel=demo")
-		c, d, _ := newTestClient(t, nil)
-		rec := &recorder{}
-		c.start()
-		eventually(t, "the socket", func() bool { return d.count() == 1 })
-		d.at(0).open()
-		eventually(t, "the sidecar", func() bool { return d.count() == 2 })
-		sidecar := d.at(1)
-		sidecar.open()
-		eventually(t, "the sidecar link", func() bool { c.mu.Lock(); defer c.mu.Unlock(); return c.sidecar != nil })
-		c.attach(rec.send)
-		c.publishLocalEvent(gatewayEventMsg{Type: "dashboard.new_session_requested", SessionID: "sid-old", Payload: map[string]any{"reason": "idle_exit_hotkey"}})
-		eventually(t, "the event", func() bool { return len(rec.events("dashboard.new_session_requested")) == 1 })
-		sent := sidecar.sentFrames()
-		want := map[string]any{"jsonrpc": "2.0", "method": "event", "params": map[string]any{
-			"payload": map[string]any{"reason": "idle_exit_hotkey"}, "session_id": "sid-old", "type": "dashboard.new_session_requested"}}
-		if len(sent) == 0 || !reflect.DeepEqual(sent[len(sent)-1], want) {
-			t.Fatalf("sidecar %v", sent)
-		}
-	})
 	t.Run("emits exit when attached websocket closes", func(t *testing.T) {
 		c, _, _, s := openExplicit(t, "ws://gateway.test/api/ws?token=abc")
 		rec := &recorder{}
@@ -457,20 +414,6 @@ func TestGatewayClientWebsocketAttachMode(t *testing.T) {
 		c.attach((&recorder{}).send)
 		tail := c.logTail(20)
 		if d.count() != 0 || strings.Contains(tail, "hunter2") || strings.Contains(tail, "channel=secret") || strings.Contains(tail, secretURL) || !strings.Contains(tail, "ws://gateway.test:99999/api/ws?***") {
-			t.Fatalf("tail %q", tail)
-		}
-	})
-	t.Run("redacts sidecar URL secrets when the WebSocket constructor throws", func(t *testing.T) {
-		sidecarURL := "ws://gateway.test:99999/api/pub?token=hunter2&channel=secret"
-		t.Setenv("ICEBATH_TUI_GATEWAY_URL", "ws://gateway.test/api/ws?token=abc")
-		t.Setenv("ICEBATH_TUI_SIDECAR_URL", sidecarURL)
-		c, d, _ := newTestClient(t, nil)
-		c.start()
-		eventually(t, "the socket", func() bool { return d.count() == 1 })
-		d.at(0).open()
-		eventually(t, "the sidecar failure", func() bool { return strings.Contains(c.logTail(20), "[sidecar] failed to connect") })
-		tail := c.logTail(20)
-		if strings.Contains(tail, "hunter2") || strings.Contains(tail, "channel=secret") || strings.Contains(tail, sidecarURL) || !strings.Contains(tail, "ws://gateway.test:99999/api/pub?***") {
 			t.Fatalf("tail %q", tail)
 		}
 	})

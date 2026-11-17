@@ -79,23 +79,3 @@ func hostedProfileKeys() map[string]bool {
 
 const acmeProviderInit = "from providers import register_provider\nfrom providers.base import ProviderProfile\n" +
 	"register_provider(ProviderProfile(name='%s', auth_type='external_process',\n                                  process_command='acme'%s))\n"
-
-func desktopUniPlugin(t *testing.T, root string) string {
-	t.Helper()
-	plugin := doctorPluginDir(t, filepath.Join(root, "plugins", "uni"), "name: uni\nversion: 0.1.0\n", doctorNoopInit)
-	if err := os.MkdirAll(filepath.Join(plugin, "desktop"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	writeFile(t, filepath.Join(plugin, "desktop", "plugin.js"), "export default { id: 'uni' } // v1\n")
-	return plugin
-}
-
-func staleWarnings(r *PluginDoctorReport) []string {
-	var out []string
-	for _, f := range r.Findings {
-		if strings.Contains(f.Message, "stale copy") {
-			out = append(out, f.Message)
-		}
-	}
-	return out
-}

@@ -26,7 +26,6 @@ func init() {
 	voiceRPCRegistry.method("client.capabilities", clientCapabilities)
 	voiceRPCRegistry.method("wake.start", wakeStart)
 	voiceRPCRegistry.method("wake.stop", wakeStop)
-	voiceRPCRegistry.method("wake.pause", wakePause)
 	voiceRPCRegistry.method("wake.resume", wakeResume)
 	voiceRPCRegistry.method("wake.status", wakeStatus)
 	voiceRPCRegistry.method("wake.feed", wakeFeed)
@@ -46,19 +45,11 @@ func gatewayCapabilities(_ context.Context, rid any, _ map[string]any) map[strin
 	return ok(rid, map[string]any{"per_session_exclusive_submit": activesessions.PerSessionExclusiveSubmit})
 }
 
-// Records what the calling client handles, a local Desktop starting the boot work once
+// Records what the calling client handles
 func clientCapabilities(ctx context.Context, rid any, params map[string]any) map[string]any {
 	transport := callerTransport(ctx)
 	if raw, present := params["server_requests"]; present {
 		tuigateway.Advertise(transport, truthy(raw))
-	}
-	if declared, present := params["desktop_local"]; present {
-		if ws, isWS := transport.(*tuigateway.WSTransport); isWS && ws != nil {
-			ws.DesktopLocal = tools.LocalDesktopClient(ws.AuthIdentity(), declared)
-			if ws.DesktopLocal {
-				beginLocalDesktopBoot(ctx)
-			}
-		}
 	}
 	names := make([]string, 0, len(tuigateway.ServerRequests))
 	for name := range tuigateway.ServerRequests {
@@ -92,9 +83,9 @@ func frameFields(frame media.WakeFrameInfo) map[string]any {
 	return map[string]any{"sample_rate": sampleRate, "frame_length": frameLength}
 }
 
-// Capture mode the surface would arm with and the requirements probed for it
-func wakeProbe(ctx context.Context, cfg map[string]any, params map[string]any, surface string) (string, media.WakeRequirements) {
-	preferClient := surface == "gui" || surface == "desktop" || truthy(params["client_capture"])
+// Capture mode the listener would arm with and the requirements probed for it
+func wakeProbe(ctx context.Context, cfg map[string]any, params map[string]any) (string, media.WakeRequirements) {
+	preferClient := truthy(params["client_capture"])
 	capture := media.ResolveCaptureMode(ctx, cfg, preferClient, false)
 	probed := make(map[string]any, len(cfg)+1)
 	for key, value := range cfg {
@@ -162,7 +153,7 @@ func wakeStart(ctx context.Context, rid any, params map[string]any) map[string]a
 		return ok(rid, out)
 	}
 	cfg := media.LoadWakeWordConfig(ctx)
-	capture, reqs := wakeProbe(ctx, cfg, params, surface)
+	capture, reqs := wakeProbe(ctx, cfg, params)
 	if !reqs.Available {
 		voiceLogger().Warn(fmt.Sprintf("wake.start(%s): not available — %s", surface, reqs.Hint))
 		return refused("unavailable", map[string]any{"hint": reqs.Hint, "capture": capture})
@@ -234,22 +225,6 @@ func wakeStop(ctx context.Context, rid any, params map[string]any) map[string]an
 	return ownerResult(rid, "stopped", stopped, map[string]any{"disabled_persisted": disabledPersisted})
 }
 
-// Releases the microphone while another capture holds it
-func wakePause(ctx context.Context, rid any, _ map[string]any) map[string]any {
-	paused := false
-	func() {
-		defer func() {
-			if failure := recover(); failure != nil {
-				voiceLogger().Debug(fmt.Sprintf("wake.pause failed: %s", failureText(failure)))
-				paused = false
-			}
-		}()
-		paused = media.PauseListening(callerTransport(ctx))
-		voiceLogger().Info(fmt.Sprintf("wake.pause: detector paused=%s", pyrepr.Repr(paused)))
-	}()
-	return ownerResult(rid, "paused", paused, nil)
-}
-
 // Reclaims the microphone after a pause, nothing when the listener is not armed
 func wakeResume(ctx context.Context, rid any, _ map[string]any) map[string]any {
 	resumed := wakeResumeIfOwner(callerTransport(ctx), 15e9, 1e9)
@@ -281,7 +256,7 @@ func wakeStatus(ctx context.Context, rid any, params map[string]any) (response m
 		}
 	}()
 	cfg := media.LoadWakeWordConfig(ctx)
-	probeCapture, reqs := wakeProbe(ctx, cfg, params, strings.ToLower(strings.TrimSpace(relayString(params["surface"]))))
+	probeCapture, reqs := wakeProbe(ctx, cfg, params)
 	owner, ownerSurface := wakeOwnerSnapshot()
 	ownedByCaller := media.OwnsListener(callerTransport(ctx))
 	listening := ownedByCaller && media.IsListening()

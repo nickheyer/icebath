@@ -100,6 +100,6 @@ func TestAClaimedGuestReadsAsTheFreeTierOnTheCliToo(t *testing.T) {
 	anonSurfaceWriteAuth(t, h, anonSurfaceGuestState())
 	text := anonSurfaceAuth(t, context.Background(), "status")
 	if !strings.Contains(strings.ToLower(text), "free tier") {
-		t.Fatalf("auth status off the desktop did not name the free tier:\n%s", text)
+		t.Fatalf("auth status did not name the free tier:\n%s", text)
 	}
 }

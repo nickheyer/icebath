@@ -14,6 +14,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/testfakes/configplane"
 	"github.com/nickheyer/icebath/pkg/testfakes/configplane/remoteplane"
+	"github.com/nickheyer/icebath/pkg/tuigateway"
 )
 
 // Remote plane fixture with the raw config cache of the server cleared
@@ -192,4 +193,13 @@ func TestTuiSharedMetricsSetRefusesALockedConsent(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(p.Home, "telemetry", "shared_metrics", "metrics.sqlite3")); !os.IsNotExist(err) {
 		t.Fatalf("consent change recorded %v", err)
 	}
+}
+
+// Registers an empty live session record for the test
+func liveRecord(t *testing.T, sid string) *tuigateway.Session {
+	t.Helper()
+	record := tuigateway.NewSession(nil)
+	tuigateway.SetSessionRecord(sid, record)
+	t.Cleanup(func() { tuigateway.SetSessionRecord(sid, nil) })
+	return record
 }

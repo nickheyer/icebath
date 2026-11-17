@@ -181,7 +181,7 @@ type WecomCallbackAdapter struct {
 	apps []map[string]any
 
 	mu           sync.Mutex
-	runner       *gateway.WebAppRunner
+	runner       *gateway.HTTPAppRunner
 	httpClient   *http.Client
 	pollTask     *gateway.AdapterTask
 	messageQueue *eventQueue
@@ -296,7 +296,7 @@ func (a *WecomCallbackAdapter) start(ctx context.Context) error {
 	a.mu.Lock()
 	a.httpClient = client
 	a.mu.Unlock()
-	app := gateway.NewWebApplication(callbackMaxBody)
+	app := gateway.NewHTTPApp(callbackMaxBody)
 	if err := app.AddGet("/health", a.handleHealth); err != nil {
 		return err
 	}

@@ -16,11 +16,10 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 const (
-	// SetupReadyWait is how long the desktop's first setup.status waits for the record before a live probe
+	// SetupReadyWait is how long the first setup.status waits for the record before a live probe
 	SetupReadyWait  = 8 * time.Second
 	SetupReadyEvent = "setup.ready"
 )
@@ -82,8 +81,6 @@ var (
 	setupDone           = make(chan struct{})
 	setupDoneSet        bool
 	setupStarted        bool
-	setupSettled        bool
-	setupResettle       sync.Mutex
 	setupInventory      *setupConfigStamp
 	setupInventoryFiles = [3]string{"config.yaml", ".env", "auth.json"}
 	setupNow            = func() float64 { return float64(time.Now().UnixNano()) / 1e9 }
@@ -142,7 +139,6 @@ func ReconcileSetupRecord(env PoolEnv) *SetupRecord {
 	}
 	setupRecord = &refreshed
 	setupMu.Unlock()
-	setupDueChanged()
 	setupBroadcast(env, &refreshed)
 	return &refreshed
 }
@@ -151,7 +147,7 @@ func ReconcileSetupRecord(env PoolEnv) *SetupRecord {
 func resetFreeTierBootstrapForTests() {
 	setupMu.Lock()
 	defer setupMu.Unlock()
-	setupRecord, setupStarted, setupSettled, setupInventory = nil, false, false, nil
+	setupRecord, setupStarted, setupInventory = nil, false, nil
 	setupDone, setupDoneSet = make(chan struct{}), false
 }
 
@@ -219,7 +215,7 @@ func setupBuildRecord(env PoolEnv, other bool) *SetupRecord {
 	}
 }
 
-// Settles an interrupted claim, inventories, records and broadcasts once per process, a second call returns the record
+// Inventories, records and broadcasts once per process, a second call returns the record
 func RunFreeTierBootstrap(env PoolEnv, announce bool) *SetupRecord {
 	return runFreeTierBootstrap(env, announce, func() {})
 }
@@ -254,10 +250,9 @@ func runFreeTierBootstrap(env PoolEnv, announce bool, began func()) *SetupRecord
 	setupMu.Unlock()
 	began()
 
-	settled := setupSettleInstall(env)
 	record := setupBuildRecord(env, setupInventoryFn(env))
 	setupMu.Lock()
-	setupRecord, setupSettled = record, settled
+	setupRecord = record
 	if !setupDoneSet {
 		setupDoneSet = true
 		close(setupDone)
@@ -269,57 +264,6 @@ func runFreeTierBootstrap(env PoolEnv, announce bool, began func()) *SetupRecord
 	return record
 }
 
-// Latches a fresh desktop install and settles an interrupted claim, true when neither step failed
-func setupSettleInstall(env PoolEnv) bool {
-	settled := true
-	if onLocalDesktopBackend(env) {
-		if _, err := tools.OnboardingLatchFirstInstall(env.ctx()); err != nil {
-			settled = false
-			env.log().Warn("onboarding: could not record the first-install decision", "error", err)
-		}
-	}
-	if _, err := SettleInterruptedClaim(env); err != nil {
-		settled = false
-		env.log().Warn("free tier: could not settle an interrupted claim", "error", err)
-	}
-	return settled
-}
-
-// Retries the install settle steps of a boot that could not settle, rebuilding the record on success
-func ResettleAfterFailedBoot(env PoolEnv) {
-	setupMu.Lock()
-	unsettled := setupRecord != nil && !setupSettled
-	setupMu.Unlock()
-	if !unsettled || !setupResettle.TryLock() {
-		return
-	}
-	defer setupResettle.Unlock()
-	if setupSettleInstall(env) {
-		setupMu.Lock()
-		setupSettled = true
-		setupMu.Unlock()
-		RefreshSetupRecord(env, true)
-	}
-}
-
-// Rebuilds the record after the identity changed, nil before the first bootstrap
-func RefreshSetupRecord(env PoolEnv, announce bool) *SetupRecord {
-	if CurrentSetupRecord() == nil {
-		return nil
-	}
-	record := setupBuildRecord(env, setupInventoryFn(env))
-	setupMu.Lock()
-	setupRecord = record
-	setupMu.Unlock()
-	setupDueChanged()
-	if announce {
-		setupBroadcast(env, record)
-	}
-	return record
-}
-
-func setupDueChanged() { tools.OnboardingDueInvalidate() }
-
 // Sends setup.ready to every connected client when a gateway server is loaded
 func setupBroadcast(env PoolEnv, record *SetupRecord) {
 	hooks := freeTierGatewayHooks()
@@ -329,25 +273,6 @@ func setupBroadcast(env PoolEnv, record *SetupRecord) {
 	if err := hooks.BroadcastGlobal(SetupReadyEvent, record.AsPayload()); err != nil {
 		env.log().Debug(fmt.Sprintf("setup.ready not broadcast: %v", err))
 	}
-}
-
-// Runs the bootstrap on its own goroutine once it is marked started, a raised failure logged as a thread exception
-func StartBackgroundBootstrap(env PoolEnv) <-chan struct{} {
-	finished, started := make(chan struct{}), make(chan struct{})
-	var once sync.Once
-	began := func() { once.Do(func() { close(started) }) }
-	go func() {
-		defer close(finished)
-		defer began()
-		defer func() {
-			if failure := recover(); failure != nil {
-				env.log().Error("Exception in thread free-tier-bootstrap", "error", failure)
-			}
-		}()
-		runFreeTierBootstrap(env, true, began)
-	}()
-	<-started
-	return finished
 }
 
 const (

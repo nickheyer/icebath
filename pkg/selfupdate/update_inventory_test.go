@@ -6,53 +6,29 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/gatewaycli"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
-// Serve ledger row of a network bound serve with the given fields replaced
-func ledgerEntry(over map[string]any) map[string]any {
-	entry := map[string]any{"pid": int64(4321), "create_time": 111.0, "purpose": "serve", "install": "inst", "spawner_pid": nil, "spawner_create": nil,
-		"registered_at": 222.0, "argv": "icebath serve --host 100.94.65.93 --port 9119", "host": "100.94.65.93", "port": int64(9119), "profile": ""}
-	for key, value := range over {
-		entry[key] = value
-	}
-	return entry
-}
-
-// Isolates the inventory from this host and feeds it the given ledger rows and spawner verdict
-func pinInventory(t *testing.T, entries []map[string]any, spawnerDead, spawnerKnown bool) {
+// Isolates the inventory from this host so only the seams a test sets report runtimes
+func pinInventory(t *testing.T) {
 	t.Helper()
 	t.Setenv("ICEBATH_HOME", t.TempDir())
 	saved := struct {
 		pids     func(context.Context, bool) ([]int, error)
 		windows  func(context.Context) ([]gatewaycli.WindowsGatewayService, error)
 		procs    func(context.Context) ([]gatewaycli.ProfileGatewayProcess, error)
-		ledger   func() []map[string]any
-		spawner  func(map[string]any) (bool, bool)
-		jobs     func(context.Context) []gateway.LaunchdBackendJob
-		parents  func(context.Context, int) []int
-		systemd  func(context.Context, int) (string, string, bool)
 		image    func() *ImageProvenance
 		homes    func() []profileHome
 		identity func(bool) (*pyjson.Object, error)
-		liveness func(int64, *float64) (bool, bool)
-	}{inventoryServicePIDs, inventoryWindowsServices, inventoryProfileGatewayProcs, inventoryLedgerEntries, inventorySpawnerIsDead, inventoryLaunchdJobs,
-		inventoryProcessAncestors, inventorySystemdOwnerForPid, inventoryReadImageProvenance, fleetHomes, fleetCodeIdentity, servePidAliveMatches}
+	}{inventoryServicePIDs, inventoryWindowsServices, inventoryProfileGatewayProcs, inventoryReadImageProvenance, fleetHomes, fleetCodeIdentity}
 	t.Cleanup(func() {
-		inventoryServicePIDs, inventoryWindowsServices, inventoryProfileGatewayProcs, inventoryLedgerEntries = saved.pids, saved.windows, saved.procs, saved.ledger
-		inventorySpawnerIsDead, inventoryLaunchdJobs, inventoryProcessAncestors, inventorySystemdOwnerForPid = saved.spawner, saved.jobs, saved.parents, saved.systemd
-		inventoryReadImageProvenance, fleetHomes, fleetCodeIdentity, servePidAliveMatches = saved.image, saved.homes, saved.identity, saved.liveness
+		inventoryServicePIDs, inventoryWindowsServices, inventoryProfileGatewayProcs = saved.pids, saved.windows, saved.procs
+		inventoryReadImageProvenance, fleetHomes, fleetCodeIdentity = saved.image, saved.homes, saved.identity
 	})
 	inventoryServicePIDs = func(context.Context, bool) ([]int, error) { return nil, nil }
 	inventoryWindowsServices = func(context.Context) ([]gatewaycli.WindowsGatewayService, error) { return nil, nil }
 	inventoryProfileGatewayProcs = func(context.Context) ([]gatewaycli.ProfileGatewayProcess, error) { return nil, nil }
-	inventoryLedgerEntries = func() []map[string]any { return entries }
-	inventorySpawnerIsDead = func(map[string]any) (bool, bool) { return spawnerDead, spawnerKnown }
-	inventoryLaunchdJobs = func(context.Context) []gateway.LaunchdBackendJob { return nil }
-	inventoryProcessAncestors = func(context.Context, int) []int { return []int{} }
-	inventorySystemdOwnerForPid = func(context.Context, int) (string, string, bool) { return "", "", false }
 	inventoryReadImageProvenance = func() *ImageProvenance { return nil }
 	fleetHomes = func() []profileHome { return nil }
 	fleetCodeIdentity = func(bool) (*pyjson.Object, error) {
@@ -63,106 +39,8 @@ func pinInventory(t *testing.T, entries []map[string]any, spawnerDead, spawnerKn
 	}
 }
 
-// First serve runtime of the collected inventory, failing the test when there is none
-func firstServe(t *testing.T) *RuntimeRecord {
-	t.Helper()
-	for _, runtime := range CollectRuntimeInventory(context.Background()).Runtimes {
-		if runtime.Kind == "serve" {
-			return runtime
-		}
-	}
-	t.Fatal("no serve runtime in the inventory")
-	return nil
-}
-
-func detailValue(r *RuntimeRecord, key string) any {
-	value, _ := r.Detail.Get(key)
-	return value
-}
-
-func TestInventoryIncludesManualServeFromLedger(t *testing.T) {
-	pinInventory(t, []map[string]any{ledgerEntry(nil)}, false, false)
-	row := firstServe(t)
-	if row.PID == nil || *row.PID != 4321 || row.Supervisor != "manual-serve" || row.RestartVia != "respawn-argv" ||
-		detailValue(row, "host") != "100.94.65.93" || detailValue(row, "port") != int64(9119) || row.Profile != "default" {
-		t.Fatalf("row %+v detail %v", row, row.Detail.Vals)
-	}
-}
-
-func TestInventoryClassifiesDesktopOwnedServe(t *testing.T) {
-	pinInventory(t, []map[string]any{ledgerEntry(map[string]any{"spawner_pid": int64(999), "spawner_create": 1.0})}, false, true)
-	if row := firstServe(t); row.Supervisor != "desktop" || row.RestartVia != "desktop" {
-		t.Fatalf("row %+v", row)
-	}
-}
-
-const sshServeArgv = "icebath serve --isolated --host 127.0.0.1 --port 0 --ssh-session-token-file /h/.icebath/desktop-ssh/a/b.token --ssh-owner-nonce 0123456789abcdef"
-
-func TestInventoryClassifiesRemoteDesktopSshServeAsItsClients(t *testing.T) {
-	pinInventory(t, []map[string]any{ledgerEntry(map[string]any{"argv": sshServeArgv, "host": "127.0.0.1", "port": int64(57474), "isolated": true})}, false, false)
-	row := firstServe(t)
-	if row.Supervisor == "manual-serve" || row.Supervisor == "desktop" || row.RestartVia == "respawn-argv" {
-		t.Fatalf("row %+v", row)
-	}
-	if row.Supervisor != "desktop-ssh" || !ClientOwnedServeSupervisors[row.Supervisor] {
-		t.Fatalf("supervisor %q", row.Supervisor)
-	}
-	if DeferManualServe(context.Background(), row.ToDict(), false) {
-		t.Fatal("a manual restart reminder was filed for a client owned serve")
-	}
-}
-
-func TestHandStartedIsolatedServeStaysManual(t *testing.T) {
-	pinInventory(t, []map[string]any{ledgerEntry(map[string]any{"argv": "icebath serve --isolated --host 127.0.0.1 --port 9119", "isolated": true})}, false, false)
-	if row := firstServe(t); row.Supervisor != "manual-serve" {
-		t.Fatalf("row %+v", row)
-	}
-}
-
-func TestInventoryRecordsTheServeProcessIncarnation(t *testing.T) {
-	pinInventory(t, []map[string]any{ledgerEntry(map[string]any{"create_time": 1712345678.5})}, false, false)
-	if row := firstServe(t); detailValue(row, "create_time") != 1712345678.5 {
-		t.Fatalf("detail %v", row.Detail.Vals)
-	}
-}
-
-func TestInventoryClassifiesLaunchdJobOwnedServe(t *testing.T) {
-	pinInventory(t, []map[string]any{ledgerEntry(map[string]any{"spawner_pid": int64(999), "spawner_create": 1.0})}, true, true)
-	inventoryLaunchdJobs = func(context.Context) []gateway.LaunchdBackendJob {
-		return []gateway.LaunchdBackendJob{{Domain: "gui/501", Label: "ai.icebath.dashboard", Argv: []string{"icebath", "serve", "--host", "100.94.65.93", "--port", "9119"}}}
-	}
-	row := firstServe(t)
-	if row.Supervisor != "launchd" || row.RestartVia != "launchd" || detailValue(row, "launchd_domain") != "gui/501" || detailValue(row, "launchd_label") != "ai.icebath.dashboard" {
-		t.Fatalf("row %+v detail %v", row, row.Detail.Vals)
-	}
-}
-
-func TestInventoryClassifiesSystemdUnitOwnedServeAndSkipsRowsOutsideTheServeKinds(t *testing.T) {
-	entries := []map[string]any{ledgerEntry(map[string]any{"purpose": "dashboard", "profile": "ops"}), ledgerEntry(map[string]any{"pid": int64(5), "purpose": "gateway"}),
-		ledgerEntry(map[string]any{"pid": "77"}), ledgerEntry(nil)}
-	pinInventory(t, entries, true, true)
-	inventorySystemdOwnerForPid = func(ctx context.Context, pid int) (string, string, bool) {
-		return "icebath-dashboard.service", "", pid == 4321
-	}
-	plan := CollectRuntimeInventory(context.Background())
-	if len(plan.Runtimes) != 1 {
-		t.Fatalf("runtimes %d", len(plan.Runtimes))
-	}
-	row := plan.Runtimes[0]
-	if row.Kind != "dashboard" || row.Profile != "ops" || row.Supervisor != "systemd" || row.RestartVia != "systemd" ||
-		detailValue(row, "systemd_unit") != "icebath-dashboard.service" || detailValue(row, "systemd_scope") != nil {
-		t.Fatalf("row %+v detail %v", row, row.Detail.Vals)
-	}
-	if want := []string{"argv", "host", "port", "create_time", "systemd_unit", "systemd_scope"}; !reflect.DeepEqual(row.Detail.Keys, want) {
-		t.Fatalf("detail keys %v", row.Detail.Keys)
-	}
-	if plan.ExpectedSHA != "feedc0de" || plan.ExpectedVersion != "1.2.3" || plan.InstallMethod == "" || plan.UpdateMechanism == "" {
-		t.Fatalf("plan %+v", plan)
-	}
-}
-
 func TestInventoryGatewayRowsComeFromSocketsThenStatusThenPidFilesOncePerProcess(t *testing.T) {
-	pinInventory(t, nil, false, false)
+	pinInventory(t)
 	savedSock, savedLive, savedStatus := fleetSocketIdentity, fleetLiveGatewayPID, fleetReadStatus
 	t.Cleanup(func() { fleetSocketIdentity, fleetLiveGatewayPID, fleetReadStatus = savedSock, savedLive, savedStatus })
 	identity := func(pairs ...any) *pyjson.Object {
@@ -178,7 +56,7 @@ func TestInventoryGatewayRowsComeFromSocketsThenStatusThenPidFilesOncePerProcess
 	fleetSocketIdentity = func(h string) (int, *pyjson.Object, bool) {
 		switch h {
 		case "/h/default", "/h/work":
-			return 100, identity("launch_supervisor", "desktop", "supervisor", "none", "code_sha", "aaa", "code_version", "9.9"), true
+			return 100, identity("launch_supervisor", "systemd", "supervisor", "none", "code_sha", "aaa", "code_version", "9.9"), true
 		case "/h/odd":
 			return 300, identity("supervisor", "none"), true
 		}
@@ -216,7 +94,7 @@ func TestInventoryGatewayRowsComeFromSocketsThenStatusThenPidFilesOncePerProcess
 		}
 		got = append(got, row{r.Profile, r.Supervisor, r.RestartVia, *r.PID, sha})
 	}
-	want := []row{{"default", "desktop", "desktop", 100, "aaa"}, {"side", "launchd", "launchd", 200, "bbb"}, {"odd", "launchd", "launchd", 300, ""},
+	want := []row{{"default", "systemd", "systemd", 100, "aaa"}, {"side", "launchd", "launchd", 200, "bbb"}, {"odd", "launchd", "launchd", 300, ""},
 		{"extra", "manual", "manual", 400, ""}}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("rows %+v", got)
@@ -227,8 +105,14 @@ func TestInventoryGatewayRowsComeFromSocketsThenStatusThenPidFilesOncePerProcess
 }
 
 func TestUpdatePlanRoundTripsThroughItsDict(t *testing.T) {
-	pinInventory(t, []map[string]any{ledgerEntry(nil)}, false, false)
+	pinInventory(t)
+	inventoryProfileGatewayProcs = func(context.Context) ([]gatewaycli.ProfileGatewayProcess, error) {
+		return []gatewaycli.ProfileGatewayProcess{{Profile: "work", PID: 4321}}, nil
+	}
 	plan := CollectRuntimeInventory(context.Background())
+	if plan.ExpectedSHA != "feedc0de" || plan.ExpectedVersion != "1.2.3" || plan.InstallMethod == "" || plan.UpdateMechanism == "" {
+		t.Fatalf("plan %+v", plan)
+	}
 	dict := plan.ToDict()
 	if want := []string{"install_method", "updatable_in_place", "update_mechanism", "expected_sha", "expected_version", "profiles", "runtimes"}; !reflect.DeepEqual(dict.Keys, want) {
 		t.Fatalf("plan keys %v", dict.Keys)
@@ -262,7 +146,7 @@ func TestUpdatePlanRoundTripsThroughItsDict(t *testing.T) {
 }
 
 func TestInstallShapeFollowsImageProvenance(t *testing.T) {
-	pinInventory(t, nil, false, false)
+	pinInventory(t)
 	savedMethod, savedManaged := inventoryDetectInstallMethod, inventoryManagedSystem
 	t.Cleanup(func() { inventoryDetectInstallMethod, inventoryManagedSystem = savedMethod, savedManaged })
 	inventoryDetectInstallMethod = func(context.Context) (string, error) { return "git", nil }

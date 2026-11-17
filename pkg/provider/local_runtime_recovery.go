@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log/slog"
 	"math"
 	"math/big"
 	"os"
@@ -447,55 +446,6 @@ func legacyOrphanProcess(state map[string]any) (localRuntimeProc, error) {
 		return nil, nil
 	}
 	return proc, nil
-}
-
-// Explicit user stop of the recorded router, refusing uncertain identity or a living recorded owner
-func StopRecordedOrphan() (bool, error) {
-	decoded, err := lrReadStateFile()
-	if errors.Is(err, os.ErrNotExist) {
-		return true, nil
-	}
-	if err != nil {
-		return false, nil
-	}
-	state, ok := decoded.(map[string]any)
-	if !ok || !lrValidPid(state["pid"]) {
-		return false, nil
-	}
-	pid, ok := state["pid"].(int)
-	if !ok || pid > math.MaxInt32 {
-		return false, errors.New("signed integer is greater than maximum")
-	}
-	failed := func() (bool, error) {
-		slog.Warn("could not verify or stop recorded managed llama-server")
-		return false, nil
-	}
-	if !lrPidExists(pid) {
-		return true, nil
-	}
-	var proc localRuntimeProc
-	if isModernLocalRuntimeState(state) {
-		proc = lrRecordedProcess(state)
-		if proc == nil || !lrOwnerIsDead(state) {
-			return false, nil
-		}
-	} else {
-		proc, err = legacyOrphanProcess(state)
-		if err != nil {
-			return false, err
-		}
-	}
-	if proc == nil || !reflect.DeepEqual(readLocalRuntimeState(), state) || !proc.IsRunning() {
-		return false, nil
-	}
-	if err := lrTerminateTree(proc, true); err != nil {
-		return failed()
-	}
-	if err := proc.Wait(5 * time.Second); err != nil {
-		return failed()
-	}
-	slog.Info(fmt.Sprintf("stopped orphaned managed llama-server pid=%d", proc.Pid()))
-	return true, nil
 }
 
 // Pathlib comparison key of a path, separators and dot parts collapsed and case folded on Windows

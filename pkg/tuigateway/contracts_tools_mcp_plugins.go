@@ -22,7 +22,7 @@ var ToolsetsListResult = pydantic.NewModel("ToolsetsListResult", ClosedConfig,
 
 var _ = Method("tools.list", sessionScoped, ToolsetsListResult, "Every toolset with its resolved tool names, flagged against the session's (or config's) enabled set.")
 
-var _ = Method("toolsets.list", sessionScoped, ToolsetsListResult, "Toolset summaries (no tool names) for the desktop Toolsets tab.")
+var _ = Method("toolsets.list", sessionScoped, ToolsetsListResult, "Toolset summaries (no tool names) for the client's toolset listing.")
 
 var ToolShowRow = pydantic.NewModel("ToolShowRow", ClosedConfig,
 	pydantic.Req("name", pydantic.Str),
@@ -88,8 +88,6 @@ var ReloadMcpResult = pydantic.NewModel("ReloadMcpResult", ClosedConfig,
 	pydantic.Def("message", pydantic.Nullable(pydantic.Str), nil),
 	pydantic.Def("loaded_rev", pydantic.Nullable(pydantic.Str), nil),
 	pydantic.Def("coalesced", pydantic.Nullable(pydantic.Bool), nil),
-	pydantic.Def("turn_isolation", pydantic.Nullable(pydantic.Bool), nil),
-	pydantic.Def("host_ack", pydantic.Nullable(pydantic.Any), nil),
 	pydantic.Def("session", pydantic.Nullable(ReloadMcpSession), nil),
 	pydantic.Def("unavailable", pydantic.Nullable(pydantic.List(pydantic.Str)), nil),
 	pydantic.Def("session_servers", pydantic.Nullable(pydantic.List(pydantic.Str)), nil),
@@ -450,7 +448,7 @@ var PluginsListResult = pydantic.NewModel("PluginsListResult", ClosedConfig,
 
 var _ = Method("plugins.list", PluginsListParams, PluginsListResult, "Loaded plugin manager entries (legacy flat view); the Plugins Hub uses plugins.manage list.")
 
-var PluginsAction = pydantic.Enum("PluginsAction", "list", "list", "toggle", "toggle", "install", "install", "inspect", "inspect", "install_desktop", "install_desktop", "remove_desktop", "remove_desktop", "update", "update", "remove", "remove", "settings", "settings", "onboarding", "onboarding", "presence", "presence")
+var PluginsAction = pydantic.Enum("PluginsAction", "list", "list", "toggle", "toggle", "install", "install", "inspect", "inspect", "update", "update", "remove", "remove", "settings", "settings", "presence", "presence")
 
 var PluginsManageParams = pydantic.Extend(ProfileParams, "PluginsManageParams", ParamsConfig,
 	pydantic.Def("action", PluginsAction, "list"),
@@ -466,7 +464,7 @@ var PluginsManageParams = pydantic.Extend(ProfileParams, "PluginsManageParams", 
 	pydantic.Def("accept_capabilities", pydantic.Nullable(pydantic.Bool), nil),
 	pydantic.Def("values", pydantic.Nullable(pydantic.Dict(pydantic.Any)), nil),
 	pydantic.Def("names", pydantic.Nullable(pydantic.List(pydantic.Str)), nil),
-).Described("``toggle``: ``key``/``name`` + ``enable``; ``install``: ``identifier``/``repo`` or ``catalog_name``\n(+ ``force``, ``enable``, ``ref``, ``inspected_sha`` = the commit ``inspect`` read: a custom source with no\n``ref`` whose branch moved since is refused); ``inspect``: ``identifier``/``repo`` or ``catalog_name``;\n``install_desktop``: ``identifier``/``repo`` (any source ``install`` takes) or ``catalog_name``, always\nwith ``ref`` (the commit ``inspect`` read and the dialog showed; another commit is refused) (+ ``force``) — the desktop half onto\nthe host that serves this client; ``remove_desktop``: ``name``\n(+ ``force`` for a package's own half); ``update``: ``name`` (+ ``accept_capabilities`` to apply a re-pin\nthat widened the plugin after the user confirmed the ``delta``, + ``force`` to apply an update whose\nsecurity scan returned caution after the user saw the findings); ``remove``: ``name`` (user installs only);\n``settings``: ``key`` + ``values`` (``{setting_key: value}``, non-secret schema keys only);\n``presence``: ``names`` (catalog names, answered in that order).")
+).Described("``toggle``: ``key``/``name`` + ``enable``; ``install``: ``identifier``/``repo`` or ``catalog_name``\n(+ ``force``, ``enable``, ``ref``, ``inspected_sha`` = the commit ``inspect`` read: a custom source with no\n``ref`` whose branch moved since is refused); ``inspect``: ``identifier``/``repo`` or ``catalog_name``;\n``update``: ``name`` (+ ``accept_capabilities`` to apply a re-pin\nthat widened the plugin after the user confirmed the ``delta``, + ``force`` to apply an update whose\nsecurity scan returned caution after the user saw the findings); ``remove``: ``name`` (user installs only);\n``settings``: ``key`` + ``values`` (``{setting_key: value}``, non-secret schema keys only);\n``presence``: ``names`` (catalog names, answered in that order).")
 
 var PluginSettingFieldType = pydantic.Enum("PluginSettingFieldType", "string", "string", "number", "number", "boolean", "boolean", "enum", "enum", "secret", "secret", "json", "json")
 
@@ -500,7 +498,6 @@ var AgentPluginRow = pydantic.NewModel("AgentPluginRow", ClosedConfig,
 	pydantic.Req("status", pydantic.Str),
 	pydantic.Req("portable", pydantic.Bool),
 	pydantic.Req("install_dir", pydantic.Str),
-	pydantic.Req("has_desktop_half", pydantic.Bool),
 	pydantic.Req("servers", pydantic.List(PluginServerRow)),
 	pydantic.Def("catalog_name", pydantic.Nullable(pydantic.Str), nil),
 	pydantic.Def("catalog_tier", pydantic.Nullable(pydantic.Str), nil),
@@ -541,17 +538,7 @@ var PluginActivation = pydantic.NewModel("PluginActivation", ClosedConfig,
 	pydantic.Fac("deferred", pydantic.Dict(pydantic.List(pydantic.Str)), pydantic.NewDict),
 	pydantic.Fac("missing_dependencies", pydantic.List(pydantic.Str), pydantic.NewList),
 	pydantic.Fac("missing_in", pydantic.List(PluginRestartTarget), pydantic.NewList),
-).Described("What a plugin loaded mid-run does NOW vs later (``hermes_cli.plugins_activation``). ``activated_now``\nkinds (``{kind: [names]}``): ``gateway_commands`` (slash names), ``locales`` (``<lang>.<surface>``\nlanguage-pack layers), ``gateway_transforms`` / ``hooks`` (hook\nnames), ``callbacks`` (platforms / ``slack:<action_id>``) — live in the running gateway once it reloaded\n(``gateway_reloaded``). ``live_now``: the plugin's MCP servers (connected, with their tools, or the\nerror) and skills, usable in every open chat of the profile from its next turn — the chats also get a\nnote listing them. ``deferred`` kinds: ``tools`` (Python tool names) and ``prompt`` (section ids)\napply from the next session. ``missing_dependencies``: the plugin's declared Python requirements a\nrunning process cannot import (installed after it booted, or never); ``missing_in`` names which\nprocesses (``gateway``, ``backend`` = the Desktop / dashboard process) — only restarting them loads them.")
-
-var OnboardingCatalogPlugin = pydantic.NewModel("OnboardingCatalogPlugin", ClosedConfig,
-	pydantic.Req("name", pydantic.Str),
-	pydantic.Req("title", pydantic.Str),
-	pydantic.Req("description", pydantic.Str),
-	pydantic.Req("tier", CatalogTier),
-	pydantic.Req("platforms", pydantic.List(pydantic.Str)),
-	pydantic.Req("app_state", CatalogAppState),
-	pydantic.Req("sentence", pydantic.Str),
-).Described("A catalog plugin curated for the onboarding card (``onboarding: true``) that this OS runs.\n``app_state`` is the pinned ``plugin.json`` declaration judged on this host; ``sentence`` names what\nis missing (empty when present or unknown).")
+).Described("What a plugin loaded mid-run does NOW vs later (``hermes_cli.plugins_activation``). ``activated_now``\nkinds (``{kind: [names]}``): ``gateway_commands`` (slash names), ``locales`` (``<lang>.<surface>``\nlanguage-pack layers), ``gateway_transforms`` / ``hooks`` (hook\nnames), ``callbacks`` (platforms / ``slack:<action_id>``) — live in the running gateway once it reloaded\n(``gateway_reloaded``). ``live_now``: the plugin's MCP servers (connected, with their tools, or the\nerror) and skills, usable in every open chat of the profile from its next turn — the chats also get a\nnote listing them. ``deferred`` kinds: ``tools`` (Python tool names) and ``prompt`` (section ids)\napply from the next session. ``missing_dependencies``: the plugin's declared Python requirements a\nrunning process cannot import (installed after it booted, or never); ``missing_in`` names which\nprocesses (``gateway``, ``backend`` = the session server process) — only restarting them loads them.")
 
 var CatalogPluginPresence = pydantic.NewModel("CatalogPluginPresence", ClosedConfig,
 	pydantic.Req("name", pydantic.Str),
@@ -598,17 +585,11 @@ var PluginsManageResult = pydantic.NewModel("PluginsManageResult", ClosedConfig,
 	pydantic.Def("scan_findings", pydantic.Nullable(pydantic.List(PluginScanFinding)), nil),
 	pydantic.Def("error", pydantic.Nullable(pydantic.Str), nil),
 	pydantic.Def("written", pydantic.Nullable(pydantic.List(pydantic.Str)), nil),
-	pydantic.Def("onboarding", pydantic.Nullable(pydantic.List(OnboardingCatalogPlugin)), nil),
 	pydantic.Def("presence", pydantic.Nullable(pydantic.List(CatalogPluginPresence)), nil),
 	pydantic.Def("agent", pydantic.Nullable(pydantic.Bool), nil),
-	pydantic.Def("desktop", pydantic.Nullable(pydantic.Bool), nil),
 	pydantic.Def("agent_name", pydantic.Nullable(pydantic.Str), nil),
-	pydantic.Def("desktop_name", pydantic.Nullable(pydantic.Str), nil),
 	pydantic.Def("insecure", pydantic.Nullable(pydantic.Bool), nil),
-	pydantic.Def("path", pydantic.Nullable(pydantic.Str), nil),
-	pydantic.Def("paired_with_agent", pydantic.Nullable(pydantic.Bool), nil),
-	pydantic.Def("unpaired_from", pydantic.Nullable(pydantic.Str), nil),
-).Described("``list`` → ``plugins`` + counts; ``toggle`` → ``ok``/``unchanged``/``restart_required``/``name``\n(the canonical key written)/``plugin``; ``install`` → ``hermes_cli.plugins_cmd.dashboard_install_plugin``'s\nok payload; ``inspect`` → ``ok``/``agent``/``desktop``/``agent_name``/``desktop_name``/``sha`` (the commit\nread)/``warnings``/``insecure`` or ``ok=false`` + ``error``; ``toggle``/``install``/``update`` that loaded a plugin also carry ``gateway_reloaded`` (the\nrunning gateway picked it up and re-wired its handlers) and ``activation`` — the honest split of what is\nlive now vs deferred, so ``restart_required`` is True only when no gateway answered or the running\ngateway/backend cannot import the plugin's Python dependencies (``activation.missing_dependencies``); ``update`` → ``ok``/``unchanged``/``sha``, or ``ok=false`` + ``consent_required`` with the\n``delta`` (``{surface: [added...]}``) / ``delta_lines`` a widened pin adds — nothing changed until the\nclient retries with ``accept_capabilities`` — or ``ok=false`` + ``scan_blocked`` with ``scan_verdict`` /\n``scan_findings`` (retry a caution verdict with ``force``); ``remove`` → ``ok``/``name`` plus\n``cleared_memory_provider`` when the removed plugin was the live ``memory.provider``.")
+).Described("``list`` → ``plugins`` + counts; ``toggle`` → ``ok``/``unchanged``/``restart_required``/``name``\n(the canonical key written)/``plugin``; ``install`` → ``hermes_cli.plugins_cmd.unattended_install_plugin``'s\nok payload; ``inspect`` → ``ok``/``agent``/``agent_name``/``sha`` (the commit\nread)/``warnings``/``insecure`` or ``ok=false`` + ``error``; ``toggle``/``install``/``update`` that loaded a plugin also carry ``gateway_reloaded`` (the\nrunning gateway picked it up and re-wired its handlers) and ``activation`` — the honest split of what is\nlive now vs deferred, so ``restart_required`` is True only when no gateway answered or the running\ngateway/backend cannot import the plugin's Python dependencies (``activation.missing_dependencies``); ``update`` → ``ok``/``unchanged``/``sha``, or ``ok=false`` + ``consent_required`` with the\n``delta`` (``{surface: [added...]}``) / ``delta_lines`` a widened pin adds — nothing changed until the\nclient retries with ``accept_capabilities`` — or ``ok=false`` + ``scan_blocked`` with ``scan_verdict`` /\n``scan_findings`` (retry a caution verdict with ``force``); ``remove`` → ``ok``/``name`` plus\n``cleared_memory_provider`` when the removed plugin was the live ``memory.provider``.")
 
 var _ = Method("plugins.manage", PluginsManageParams, PluginsManageResult, "Plugins Hub backend: list installed plugins, toggle, git-install, re-pin a catalog install, or remove a user install.")
 

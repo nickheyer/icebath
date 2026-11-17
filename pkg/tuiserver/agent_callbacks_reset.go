@@ -32,9 +32,8 @@ func resetSessionAgent(ctx context.Context, sid string, session *tuigateway.Sess
 		for _, k := range []string{"model_override", "create_reasoning_override", "create_service_tier_override", "one_turn_model_restore"} {
 			session.Pop(k)
 		}
-		launch := contextCwdIsLaunchArtifact(session)
 		return rebuildSessionAgent(scoped, sid, session, makeAgentOptions{sessionID: strOr(sessionKey),
-			platformOverride: sessionSource(session), contextCwdIsLaunchArtifact: &launch}, false)
+			platformOverride: sessionSource(session)}, false)
 	}()
 	if err != nil {
 		return nil, err

@@ -22,7 +22,6 @@ import (
 func fakeEntryStartup(t *testing.T, stdin string) {
 	t.Helper()
 	t.Setenv("ICEBATH_HOME", t.TempDir())
-	swapVar(t, &entryInstallSidecarPublisher, func() {})
 	swapVar(t, &entryEnsureMCPDiscovery, func(context.Context) {})
 	swapVar(t, &entryResolveSkin, func(context.Context) any { return "default" })
 	swapVar(t, &entryEnsureSkinWatcher, func(context.Context) {})

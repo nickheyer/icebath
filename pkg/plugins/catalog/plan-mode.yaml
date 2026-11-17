@@ -13,11 +13,11 @@ description: 'Claude Code-style plan mode for Hermes: the agent explores and wri
   planning, run /planmode edit, save, then /planmode show and /planmode approve; the text you were shown is saved as
   an approved snapshot, so later edits to the file do not change the approval. The classic profile
   (plan_profile: classic), approval_card: false and surfaces without a card use Hermes'' own approval prompt
-  (gateway buttons, the TUI/Desktop card, the CLI panel or /approve). When yolo or approvals.mode: off would
+  (gateway buttons, the TUI card, the CLI panel or /approve). When yolo or approvals.mode: off would
   auto-approve, it asks through clarify instead, so a person still decides. By default plans are compact and
   decision-complete, the lean profile asks at most three targeted questions, and the agent does not commit unless
   asked (plan_style, plan_profile, allow_commits and plan_skill settings). Classic CLI enforced on every supported
-  Hermes; gateway, TUI and Desktop from Hermes v2026.9.24 (0.21.5), and refused on older builds; 0.21.6 recommended.
+  Hermes; gateway and TUI from Hermes v2026.9.24 (0.21.5), and refused on older builds; 0.21.6 recommended.
   On the interactive classic CLI, Hermes'' inline diff shows a new plan file in full, so the agent does not retype it
   (write_once). A report-a-problem skill drafts a bug report and files it with gh only after you approve the draft.
   Disclosure — plan-mode does not enforce Codex app-server exec/applyPatch or TUI /background and btw side agents.
@@ -32,7 +32,7 @@ description: 'Claude Code-style plan mode for Hermes: the agent explores and wri
   pick "Always" on a plan approval or a per-edit review, Hermes core writes a
   plugin_rule:plan-mode entry to command_allowlist in config.yaml; each entry is keyed to one plan revision, so it
   cannot approve another plan. With allow_gateway_injection: true it queues one message to start work after a typed
-  /planmode approve. On TUI, Desktop and hermes serve sessions (lean profile, plan_once) it reads the visible reply
+  /planmode approve. On TUI sessions (lean profile, plan_once) it reads the visible reply
   text from post_api_request while planning and saves its <proposed_plan> block as the plan file. On the interactive
   classic CLI (lean, write_once) it checks that Hermes printed a newly written plan file in full, then tells the agent
   not to retype it. Its report-a-problem skill has the agent file to the plugin repository with gh only after the user

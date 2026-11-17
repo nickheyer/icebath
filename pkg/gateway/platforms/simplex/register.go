@@ -168,8 +168,6 @@ func (simplexPlatformPlugin) Register(ctx *plugins.Context) error {
 		Check:       func() bool { return checkRequirements(context.Background()) },
 		RequiredEnv: []string{"SIMPLEX_WS_URL"},
 		Extra: map[string]any{
-			"dashboard_description":  "Talk to Icebath over SimpleX Chat via a local simplex-chat daemon.",
-			"docs_url":               "https://hermes-agent.nousresearch.com/docs/user-guide/messaging/simplex",
 			"scoped_check_fn":        checkRequirements,
 			"scoped_validate_config": validateConfig,
 			"is_connected":           isConnected,

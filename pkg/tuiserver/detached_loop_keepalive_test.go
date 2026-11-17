@@ -11,17 +11,17 @@ import (
 	"github.com/nickheyer/icebath/pkg/tuigateway"
 )
 
-// Detached idle desktop session under a fresh home, with a 20 s orphan grace and no delegations
+// Detached idle TUI session under a fresh home, with a 20 s orphan grace and no delegations
 func detachedLoopSession(t *testing.T) (string, *tuigateway.Session) {
 	t.Helper()
 	sid := "sid-detached-loop"
-	session := orphanRaceSession(t, sid, 600, map[string]any{"session_key": "desktop-loop-session", "running": false,
+	session := orphanRaceSession(t, sid, 600, map[string]any{"session_key": "tui-loop-session", "running": false,
 		"last_active": 0.0, "created_at": 0.0})
 	return sid, session
 }
 
 // Stores an active half hour loop for the session key, with an optional gateway chat route
-func setDesktopLoop(t *testing.T, sessionKey string, route *pyjson.Object) {
+func setSessionLoop(t *testing.T, sessionKey string, route *pyjson.Object) {
 	t.Helper()
 	interval := int64(1800)
 	if _, err := agent.NewLoopManager(context.Background(), sessionKey).Set(context.Background(), "reconcile the spec", &interval, 0, "", route); err != nil {
@@ -30,7 +30,7 @@ func setDesktopLoop(t *testing.T, sessionKey string, route *pyjson.Object) {
 }
 
 // Stores an active half hour heartbeat for the session key
-func setDesktopHeartbeat(t *testing.T, sessionKey string) *agent.HeartbeatManager {
+func setSessionHeartbeat(t *testing.T, sessionKey string) *agent.HeartbeatManager {
 	t.Helper()
 	heartbeat := agent.NewHeartbeatManager(context.Background(), sessionKey)
 	if _, err := heartbeat.Set("check the board", 1800); err != nil {
@@ -64,17 +64,17 @@ func assertCollected(t *testing.T, sid string) {
 	}
 }
 
-func TestOrphanReapKeepsDetachedSessionWithActiveDesktopLoop(t *testing.T) {
+func TestOrphanReapKeepsDetachedSessionWithActiveLoop(t *testing.T) {
 	sid, session := detachedLoopSession(t)
-	setDesktopLoop(t, "desktop-loop-session", nil)
+	setSessionLoop(t, "tui-loop-session", nil)
 	fireOrphanReap(sid)
 	assertKeptDetached(t, sid, session)
 }
 
 func TestOrphanReapStillCollectsSessionOnceLoopStops(t *testing.T) {
 	sid, _ := detachedLoopSession(t)
-	setDesktopLoop(t, "desktop-loop-session", nil)
-	agent.NewLoopManager(context.Background(), "desktop-loop-session").Clear(context.Background())
+	setSessionLoop(t, "tui-loop-session", nil)
+	agent.NewLoopManager(context.Background(), "tui-loop-session").Clear(context.Background())
 	fireOrphanReap(sid)
 	assertCollected(t, sid)
 }
@@ -84,12 +84,12 @@ func TestGatewayRoutedLoopDoesNotPinDetachedSession(t *testing.T) {
 	route := pyjson.NewObject()
 	route.Set("platform", "discord")
 	route.Set("chat_id", "123")
-	setDesktopLoop(t, "desktop-loop-session", route)
+	setSessionLoop(t, "tui-loop-session", route)
 	fireOrphanReap(sid)
 	assertCollected(t, sid)
 }
 
-func TestTtlAndCapReapersSpareSessionWithActiveDesktopLoop(t *testing.T) {
+func TestTtlAndCapReapersSpareSessionWithActiveLoop(t *testing.T) {
 	ctx := context.Background()
 	sid, session := detachedLoopSession(t)
 	prevTTL := sessionTTLS
@@ -99,7 +99,7 @@ func TestTtlAndCapReapersSpareSessionWithActiveDesktopLoop(t *testing.T) {
 	if !sessionIsEvictable(ctx, sid, session, now) {
 		t.Fatal("idle detached session past its TTL is not evictable")
 	}
-	setDesktopLoop(t, "desktop-loop-session", nil)
+	setSessionLoop(t, "tui-loop-session", nil)
 	if sessionIsEvictable(ctx, sid, session, now) {
 		t.Fatal("looping session is evictable")
 	}
@@ -113,7 +113,7 @@ func TestTtlAndCapReapersSpareSessionWithActiveDesktopLoop(t *testing.T) {
 
 func TestSettledClientGoneInterruptIsCollectedDespiteActiveLoop(t *testing.T) {
 	sid, session := detachedLoopSession(t)
-	setDesktopLoop(t, "desktop-loop-session", nil)
+	setSessionLoop(t, "tui-loop-session", nil)
 	orphanRaceStale(t, 0)
 	session.Set("_run_thread", liveTurnThread(t))
 	session.Set("running", true)
@@ -128,7 +128,7 @@ func TestSettledClientGoneInterruptIsCollectedDespiteActiveLoop(t *testing.T) {
 
 func TestOrphanReapKeepsDetachedSessionWithActiveLocalHeartbeat(t *testing.T) {
 	sid, session := detachedLoopSession(t)
-	setDesktopHeartbeat(t, "desktop-loop-session")
+	setSessionHeartbeat(t, "tui-loop-session")
 	fireOrphanReap(sid)
 	if tuigateway.SessionRecord(sid) != session {
 		t.Fatal("detached session with a local heartbeat was reaped")
@@ -139,8 +139,8 @@ func TestPausedOrClearedHeartbeatReleasesDetachedSession(t *testing.T) {
 	for _, release := range []string{"pause", "clear"} {
 		t.Run(release, func(t *testing.T) {
 			sid, _ := detachedLoopSession(t)
-			setDesktopHeartbeat(t, "desktop-loop-session")
-			heartbeat := agent.NewHeartbeatManager(context.Background(), "desktop-loop-session")
+			setSessionHeartbeat(t, "tui-loop-session")
+			heartbeat := agent.NewHeartbeatManager(context.Background(), "tui-loop-session")
 			if release == "pause" {
 				heartbeat.Pause()
 			} else {
@@ -155,10 +155,10 @@ func TestPausedOrClearedHeartbeatReleasesDetachedSession(t *testing.T) {
 func TestGatewayOwnedHeartbeatDoesNotPinDetachedSession(t *testing.T) {
 	ctx := context.Background()
 	sid, _ := detachedLoopSession(t)
-	setDesktopHeartbeat(t, "desktop-loop-session")
+	setSessionHeartbeat(t, "tui-loop-session")
 	db := ledgerHandle(t, filepath.Join(os.Getenv("ICEBATH_HOME"), "state.db"))
 	useSharedDB(t, db)
-	entry := `{"session_id": "desktop-loop-session", "origin": {"platform": "discord", "chat_id": "123"}}`
+	entry := `{"session_id": "tui-loop-session", "origin": {"platform": "discord", "chat_id": "123"}}`
 	if err := db.SaveGatewayRoutingEntry(ctx, "agent:main:discord:dm:123", entry, "default"); err != nil {
 		t.Fatal(err)
 	}

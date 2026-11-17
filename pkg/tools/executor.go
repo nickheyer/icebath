@@ -259,7 +259,6 @@ type ExecutorHost interface {
 	GuardrailBlockResult(d ToolGuardrailDecision) string
 	AppendGuardrailObservation(name string, args map[string]any, result string, failed bool, toolCallID string) string
 	RecordFileMutationResult(name string, args map[string]any, result string, isError bool, taskID string)
-	ObserveOnboardingResult(ctx context.Context, name string, args map[string]any, result string) string
 	ObserveToolOutcome(name string, isError bool)
 	NoteToolResult(name, toolCallID, result, persisted string)
 	RecordToolBatch(batch []*state.Message, contentsBefore []any)
@@ -1131,9 +1130,6 @@ func (e *Executor) commitToolResult(ctx context.Context, messages *[]*state.Mess
 	host := e.Host
 	log := toolsLogger(host.Env())
 	host.ObserveToolOutcome(ref.Name, in.isError)
-	if !(in.blocked || in.isError) {
-		result = host.ObserveOnboardingResult(ctx, ref.Name, ref.Args, result)
-	}
 	if in.observed {
 		if !in.blocked {
 			result = host.AppendGuardrailObservation(ref.Name, orderedArgsObject(ref.RawArgs, ref.Args).Vals, result, in.isError, ref.CallID)

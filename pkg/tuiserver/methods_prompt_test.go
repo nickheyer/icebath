@@ -19,7 +19,7 @@ func finalizedDB(t *testing.T) *state.DB {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { db.Close() })
-	if err := db.CreateSession(state.NewSession{ID: "finalized", Source: "desktop"}); err != nil {
+	if err := db.CreateSession(state.NewSession{ID: "finalized", Source: "tui"}); err != nil {
 		t.Fatal(err)
 	}
 	for _, m := range []map[string]any{{"role": "user", "content": "old ask", "timestamp": 100.0},
@@ -37,7 +37,7 @@ func finalizedDB(t *testing.T) *state.DB {
 func TestReopenIfFinalizedLeavesLiveRowsUntouched(t *testing.T) {
 	ctx := context.Background()
 	db := finalizedDB(t)
-	if err := db.CreateSession(state.NewSession{ID: "live", Source: "desktop"}); err != nil {
+	if err := db.CreateSession(state.NewSession{ID: "live", Source: "tui"}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := db.AppendMessage(ctx, "live", map[string]any{"role": "user", "content": "ask", "timestamp": 100.0}, state.AppendGuards{}); err != nil {

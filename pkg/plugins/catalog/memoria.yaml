@@ -17,7 +17,7 @@ docs_url: https://github.com/matrixorigin/memoria/blob/3a5c5065b2820d56dd3d8ac8b
 readme: true
 platforms: [linux, macos]
 known_issues:
-  - "Development preview: local CLI acceptance passed; Desktop has not been validated and gateway platforms are disabled."
+  - "Development preview: local CLI acceptance passed; Gateway platforms are disabled."
   - "Auto capture is off by default. One-shot CLI exit can interrupt an in-flight capture, leaving an uncertain event requiring manual inspection."
   - "Explicit-write exclusions apply to the current turn only. Auto capture can retain paraphrases, recalled facts from later turns, transient results or operation requests; global semantic deduplication is not guaranteed."
   - "Ambiguous write outcomes are not automatically retried; this plugin does not provide exactly-once capture."

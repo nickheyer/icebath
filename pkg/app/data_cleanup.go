@@ -15,7 +15,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
 	"github.com/nickheyer/icebath/pkg/pm"
-	"github.com/nickheyer/icebath/pkg/selfupdate"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -62,7 +61,7 @@ func pathCompare(a, b string) int {
 }
 
 // Lists what a data wipe of the home removes and keeps, never the code, runtime stores or sibling profiles
-func planDataRemoval(ctx context.Context, h, project string, userdata *string) (*dataRemovalPlan, error) {
+func planDataRemoval(ctx context.Context, h, project string) (*dataRemovalPlan, error) {
 	h, err := pypath.Resolve(h)
 	if err != nil {
 		return nil, err
@@ -109,17 +108,6 @@ func planDataRemoval(ctx context.Context, h, project string, userdata *string) (
 		filepath.Join(h, "cron", ".tick.lock"), tools.CheckpointStoreLockPath(filepath.Join(h, "checkpoints")))
 	if pathEq(h, machine) {
 		protected = append(protected, filepath.Join(machine, "profiles"))
-	}
-	if selfupdate.IsBundledPayload(project) {
-		layout, err := resolveBundleLayout(project, "")
-		if err != nil {
-			var notBundled *notBundledApp
-			if errors.As(err, &notBundled) {
-				return nil, &dataPlanError{notBundled.Error()}
-			}
-			return nil, err
-		}
-		protected = append(protected, layout.AppRoot)
 	}
 	canonical := filepath.Join(h, "icebath-agent")
 	if st, err := os.Stat(filepath.Join(canonical, "hermes_cli", "__init__.py")); err == nil && st.Mode().IsRegular() {
@@ -185,27 +173,6 @@ func planDataRemoval(ctx context.Context, h, project string, userdata *string) (
 		}
 		for _, child := range children {
 			if err := visit(child); err != nil {
-				return nil, err
-			}
-		}
-	}
-	if !pathEq(h, machine) {
-		userdata = nil
-	}
-	if userdata != nil {
-		resolvedUserdata, err := pypath.Resolve(*userdata)
-		if err != nil {
-			return nil, err
-		}
-		if !pathUnder(resolvedUserdata, h) {
-			if pathEq(resolvedUserdata, userHomeResolved) || pathUnder(h, resolvedUserdata) {
-				return nil, &dataPlanError{"desktop data directory must not contain the Icebath or user home: " + *userdata}
-			}
-			parent, err := pypath.Resolve(pypath.PathParent(*userdata))
-			if err != nil {
-				return nil, err
-			}
-			if err := visit(filepath.Join(parent, pypath.PathName(*userdata))); err != nil {
 				return nil, err
 			}
 		}

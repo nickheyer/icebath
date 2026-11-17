@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -41,13 +40,12 @@ func runHostRendezvousChild(mode string) int {
 		line, _ := json.Marshal(map[string]bool{"per_home": perHome, "host": outcome == HostLockAcquired})
 		fmt.Println(string(line))
 		hold()
-	case "sigterm-serve":
-		if outcome, _ := ClaimHostLock(context.Background(), RoleServe); outcome != HostLockAcquired {
+	case "sigterm-cleanup":
+		if outcome, _ := ClaimHostLock(context.Background(), RoleGateway); outcome != HostLockAcquired {
 			return 1
 		}
-		port := 9119
-		PublishHostRecord(context.Background(), RoleServe, HostPublishOptions{Host: "127.0.0.1", Port: &port, Token: "live-session-token"})
-		HostCleanupOnExit(RoleServe)
+		PublishHostRecord(context.Background(), RoleGateway, HostPublishOptions{Profiles: []string{"default"}})
+		HostCleanupOnExit(RoleGateway)
 		fmt.Println("published")
 		hold()
 	case "holder":
@@ -63,7 +61,7 @@ func runHostRendezvousChild(mode string) int {
 			outcome, _ := ClaimHostLock(context.Background(), RoleGateway)
 			won := outcome == HostLockAcquired
 			if won {
-				PublishHostRecord(context.Background(), RoleGateway, HostPublishOptions{Profiles: []string{"default"}, Token: "new-owner-token"})
+				PublishHostRecord(context.Background(), RoleGateway, HostPublishOptions{Profiles: []string{"default"}})
 			}
 			fmt.Println(won)
 		}
@@ -132,7 +130,6 @@ func hostDir(t *testing.T) string {
 	invalidateHostGatewayCache()
 	t.Cleanup(func() {
 		ReleaseHostLock(RoleGateway)
-		ReleaseHostLock(RoleServe)
 		invalidateHostGatewayCache()
 	})
 	return dir
@@ -184,11 +181,10 @@ func TestStaleRecordIsNeverAttachable(t *testing.T) {
 	}{{"dead-pid", 1<<22 - 1}, {"creation-time-mismatch", os.Getpid()}} {
 		t.Run(tc.name, func(t *testing.T) {
 			hostDir(t)
-			port := 9119
-			r := &HostRecord{Role: RoleServe, PID: tc.pid, CreateTime: f64(1.0), Host: "127.0.0.1", Port: &port,
+			r := &HostRecord{Role: RoleGateway, PID: tc.pid, CreateTime: f64(1.0),
 				ProtocolVersion: HostProtocolVersion, Profiles: []string{"default"}, UpdatedAt: "2026-01-01T00:00:00+00:00"}
 			writeHostRecord(t, r)
-			if !HostRecordIsStale(r) || ReadHostRecord(RoleServe, false) != nil || ReadHostRecord(RoleServe, true) == nil {
+			if !HostRecordIsStale(r) || ReadHostRecord(RoleGateway, false) != nil || ReadHostRecord(RoleGateway, true) == nil {
 				t.Fatal("a dead or recycled pid record is attachable")
 			}
 		})
@@ -200,7 +196,7 @@ func TestUnopenableLockDirIsNotReportedAsAnotherOwner(t *testing.T) {
 	blocked := filepath.Join(dir, "blocked")
 	os.WriteFile(blocked, []byte("not a directory"), 0o600)
 	t.Setenv("ICEBATH_GATEWAY_LOCK_DIR", filepath.Join(blocked, "locks"))
-	outcome, err := ClaimHostLock(context.Background(), RoleServe)
+	outcome, err := ClaimHostLock(context.Background(), RoleGateway)
 	var errno syscall.Errno
 	if outcome != HostLockCouldNotOpen || !errors.As(err, &errno) {
 		t.Fatalf("outcome %v err %v", outcome, err)
@@ -209,44 +205,18 @@ func TestUnopenableLockDirIsNotReportedAsAnotherOwner(t *testing.T) {
 
 func TestLockCacheFollowsTheLockDirectory(t *testing.T) {
 	hostDir(t)
-	if o, _ := ClaimHostLock(context.Background(), RoleServe); o != HostLockAcquired {
+	if o, _ := ClaimHostLock(context.Background(), RoleGateway); o != HostLockAcquired {
 		t.Fatal(o)
 	}
 	moved := filepath.Join(t.TempDir(), "other-locks")
 	t.Setenv("ICEBATH_GATEWAY_LOCK_DIR", moved)
-	if OwnsHostLock(RoleServe) {
+	if OwnsHostLock(RoleGateway) {
 		t.Fatal("ownership followed the role, not the lock path")
 	}
-	if o, _ := ClaimHostLock(context.Background(), RoleServe); o != HostLockAcquired || !exists(filepath.Join(moved, "host-serve.lock")) {
+	if o, _ := ClaimHostLock(context.Background(), RoleGateway); o != HostLockAcquired || !exists(filepath.Join(moved, "host-gateway.lock")) {
 		t.Fatal("claim in the moved directory")
 	}
-	ReleaseHostLock(RoleServe)
-}
-
-func TestProbeOwnerRefusesAClosedPortAndAForeignListener(t *testing.T) {
-	hostDir(t)
-	closed, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	deadPort := closed.Addr().(*net.TCPAddr).Port
-	closed.Close()
-	r := &HostRecord{Role: RoleServe, PID: os.Getpid(), CreateTime: HostProcessCreateTime(0), Host: "127.0.0.1",
-		Port: &deadPort, ProtocolVersion: HostProtocolVersion, Profiles: []string{}, UpdatedAt: "2026-01-01T00:00:00+00:00"}
-	if ProbeHostOwner(r, time.Second) != nil {
-		t.Fatal("closed port answered")
-	}
-	foreign, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer foreign.Close()
-	port := foreign.Addr().(*net.TCPAddr).Port
-	other := *r
-	other.Port = &port
-	if ProbeHostOwner(&other, time.Second) != nil {
-		t.Fatal("foreign listener answered as the owner")
-	}
+	ReleaseHostLock(RoleGateway)
 }
 
 func TestRelativeXdgStateHomeIsIgnored(t *testing.T) {

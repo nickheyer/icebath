@@ -27,15 +27,14 @@ func newFleetHarness(t *testing.T) *fleetHarness {
 	h := &fleetHarness{t: t, ctx: context.Background(), home: t.TempDir(), err: &bytes.Buffer{}}
 	t.Setenv("ICEBATH_HOME", h.home)
 	t.Setenv("ICEBATH_GATEWAY_LOCK_DIR", t.TempDir())
-	savedSHA, savedFleet, savedLive, savedOut, savedErr := fleetReadCheckoutSHA, fleetCollectVersions, servePidAliveMatches, serveStdout, serveStderr
+	savedSHA, savedFleet := fleetReadCheckoutSHA, fleetCollectVersions
 	savedRoot, savedInventory := fleetProjectRoot, gatewaylessInventory
 	t.Cleanup(func() {
-		fleetReadCheckoutSHA, fleetCollectVersions, servePidAliveMatches, serveStdout, serveStderr = savedSHA, savedFleet, savedLive, savedOut, savedErr
+		fleetReadCheckoutSHA, fleetCollectVersions = savedSHA, savedFleet
 		fleetProjectRoot, gatewaylessInventory = savedRoot, savedInventory
 	})
 	fleetProjectRoot = func() string { return filepath.Join(h.home, "install-tree") }
 	fleetCollectVersions = func() []*pyjson.Object { return nil }
-	servePidAliveMatches = func(int64, *float64) (bool, bool) { return true, true }
 	gatewaylessInventory = func(context.Context) *UpdatePlan { return NewUpdatePlan() }
 	return h
 }
@@ -98,7 +97,7 @@ func (h *fleetHarness) startupWarning() string {
 
 func (h *fleetHarness) pendingNeeded() bool {
 	h.t.Helper()
-	needed, err := pendingFleetRestartNeeded(h.ctx, nil, nil, false)
+	needed, err := pendingFleetRestartNeeded(h.ctx, nil)
 	if err != nil {
 		h.t.Fatal(err)
 	}
@@ -245,10 +244,8 @@ func TestStartupWarnPrintsWhenMarkerPresent(t *testing.T) {
 
 func TestStartupWarnSilentWhenNothingPending(t *testing.T) {
 	h := newFleetHarness(t)
-	out := &bytes.Buffer{}
-	serveStdout = out
-	if warning := h.startupWarning(); warning != "" || out.Len() != 0 {
-		t.Fatalf("warning %q stdout %q", warning, out.String())
+	if warning := h.startupWarning(); warning != "" {
+		t.Fatalf("warning %q", warning)
 	}
 }
 
@@ -276,25 +273,10 @@ func TestStartupWarnDischargedWhenMultiplexerCoversOwedProfiles(t *testing.T) {
 	}
 }
 
-func TestStartupWarnDischargedWhenInventoryHoldsSupervisedServe(t *testing.T) {
-	for _, supervisor := range []string{"desktop", "launchd"} {
-		t.Run(supervisor, func(t *testing.T) {
-			h := newFleetHarness(t)
-			h.arm(shaE, []any{map[string]any{"kind": "gateway", "profile": "default", "pid": int64(42), "supervisor": "systemd"},
-				map[string]any{"kind": "serve", "profile": "default", "pid": int64(6161), "supervisor": supervisor, "detail": map[string]any{"create_time": 1000.0}}})
-			h.checkout(shaE)
-			h.fleet(currentRow("default", shaE))
-			if warning := h.startupWarning(); warning != "" || h.armed() {
-				t.Fatalf("warning %q armed %v", warning, h.armed())
-			}
-		})
-	}
-}
-
-func TestStartupWarnKeptWhenInventoryHoldsUnclassifiedServe(t *testing.T) {
+func TestStartupWarnKeptWhenInventoryHoldsANonGatewayRow(t *testing.T) {
 	h := newFleetHarness(t)
 	h.arm(shaE, []any{map[string]any{"kind": "gateway", "profile": "default", "pid": int64(42), "supervisor": "systemd"},
-		map[string]any{"kind": "serve", "profile": "default", "pid": int64(6161), "supervisor": "manual"}})
+		map[string]any{"kind": "worker", "profile": "default", "pid": int64(6161), "supervisor": "manual"}})
 	h.checkout(shaE)
 	h.fleet(currentRow("default", shaE))
 	if warning := h.startupWarning(); !strings.Contains(warning, "did not restart running gateways") || !h.armed() {
@@ -410,7 +392,7 @@ func TestStartupWarnSilentWhenFailedReceiptAlreadyRestartedFleet(t *testing.T) {
 	h := newFleetHarness(t)
 	pre, pulled, checkout := strings.Repeat("a", 40), strings.Repeat("b", 40), strings.Repeat("c", 40)
 	h.checkout(checkout)
-	h.receipt(map[string]any{"outcome": "failed", "exit_code": 1, "stop_reason": "AttributeError: module 'icebath_cli.main_dashboard' has no attribute 'x'",
+	h.receipt(map[string]any{"outcome": "failed", "exit_code": 1, "stop_reason": "AttributeError: module 'icebath_cli.main_update' has no attribute 'x'",
 		"pre_update": map[string]any{"sha": pre}, "post_update": map[string]any{"sha": pulled}, "gateway_restart": completedRestart, "fleet": []any{},
 		"plan": map[string]any{"runtimes": []any{map[string]any{"kind": "gateway", "profile": "default", "code_sha": pre, "pid": 1}}}})
 	h.fleet(map[string]any{"profile": "default", "pid": int64(42), "code_sha": pulled, "code_version": "0.21.3", "state": "stale"})
@@ -501,18 +483,17 @@ func TestStartupWarnKeptWhenShaLessMarkerFleetIsAllExternal(t *testing.T) {
 	}
 }
 
-func TestLaunchdServeRowNeverPessimizeGatewayCoverage(t *testing.T) {
-	launchd := map[string]any{"kind": "serve", "profile": "work", "pid": int64(900), "supervisor": "launchd", "code_sha": nil, "code_version": nil,
-		"restart_via": "launchd", "detail": map[string]any{}}
-	receipt := map[string]any{"plan": map[string]any{"runtimes": []any{map[string]any{"kind": "gateway", "profile": "default"}, launchd}}, "fleet": []any{}}
-	owed, known, err := receiptOwedGateways(receipt, []any{})
-	if err != nil || !known || len(owed) != 1 || !owed[gatewayIdentity{"gateway", "default"}] {
+func TestReceiptOwedGatewaysNamesPlannedAndFleetGateways(t *testing.T) {
+	receipt := map[string]any{"plan": map[string]any{"runtimes": []any{map[string]any{"kind": "gateway", "profile": "default"}}},
+		"fleet": []any{map[string]any{"profile": "work", "pid": int64(900)}}}
+	owed, known, err := receiptOwedGateways(receipt)
+	if err != nil || !known || len(owed) != 2 || !owed[gatewayIdentity{"gateway", "default"}] || !owed[gatewayIdentity{"gateway", "work"}] {
 		t.Fatalf("owed %v %v %v", owed, known, err)
 	}
-	if _, known, _ := receiptOwedGateways(map[string]any{"plan": map[string]any{"runtimes": []any{map[string]any{"kind": "serve", "supervisor": "manual"}}}}, nil); known {
-		t.Fatal("an unclassified serve row left coverage verified")
+	if _, known, _ := receiptOwedGateways(map[string]any{"plan": map[string]any{"runtimes": []any{map[string]any{"kind": "gateway", "profile": "unknown"}}}}); known {
+		t.Fatal("an unidentified planned gateway left coverage verified")
 	}
-	if _, known, _ := receiptOwedGateways(map[string]any{"fleet": []any{map[string]any{"profile": "unknown"}}}, nil); known {
+	if _, known, _ := receiptOwedGateways(map[string]any{"fleet": []any{map[string]any{"profile": "unknown"}}}); known {
 		t.Fatal("an unidentified fleet row left coverage verified")
 	}
 }
@@ -582,14 +563,6 @@ func TestHostOwesNoGatewayRestartReadsProfileStatesAndTheInventory(t *testing.T)
 	}
 	states["/p/b"] = "startup_failed"
 	pid := 6161
-	gatewaylessInventory = func(context.Context) *UpdatePlan {
-		plan := NewUpdatePlan()
-		plan.Runtimes = append(plan.Runtimes, newRuntime("serve", "default", &pid, "desktop", nil, nil, nil))
-		return plan
-	}
-	if !hostOwesNoGatewayRestart(h.ctx) {
-		t.Fatal("a desktop owned serve kept the host owing a restart")
-	}
 	gatewaylessInventory = func(context.Context) *UpdatePlan {
 		plan := NewUpdatePlan()
 		plan.Runtimes = append(plan.Runtimes, newRuntime("gateway", "default", &pid, "manual", nil, nil, nil))

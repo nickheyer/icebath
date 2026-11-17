@@ -14,9 +14,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/provider"
-	"github.com/nickheyer/icebath/pkg/tools"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
 )
 
@@ -28,11 +26,8 @@ const (
 	wsWaitingReadLimit    = 8
 )
 
-// Wait of a frame for the profile start it names, under the Desktop request deadline
+// Wait of a frame for the profile start it names, under the client request deadline
 var wsProfileStartWait = 20 * time.Second
-
-// Seconds between two marker writes of the dashboard client liveness throttle
-var dashboardClientTouchMinIntervalS = 5.0
 
 // Read only projections that run beside the serial lane, and verbs that answer an open server request
 var (
@@ -54,85 +49,7 @@ var (
 	wsStartBackendLiveness      = startBackendLiveness
 	wsStartHeartbeatRefresher   = startBackendHeartbeatRefresher
 	wsResolveSkin               = resolveSkin
-	wsTouchDashboardClient      = gateway.TouchDashboardClientHeartbeat
-	wsSubmitDashboardClient     = submitDashboardClientTouch
 )
-
-// Throttle and single writer of the dashboard client liveness marker
-var dashboardClientTouch = struct {
-	sync.Mutex
-	touchedAt float64
-	pending   map[string]bool
-	queue     []string
-	running   bool
-}{pending: map[string]bool{}}
-
-// Clears the pending mark of a path and stamps its marker
-func touchDashboardClientMarker(path string) {
-	dashboardClientTouch.Lock()
-	delete(dashboardClientTouch.pending, path)
-	dashboardClientTouch.Unlock()
-	wsTouchDashboardClient(path)
-}
-
-// Queues one marker write on the single toucher, starting it when idle
-func submitDashboardClientTouch(path string) error {
-	dashboardClientTouch.Lock()
-	defer dashboardClientTouch.Unlock()
-	dashboardClientTouch.queue = append(dashboardClientTouch.queue, path)
-	if dashboardClientTouch.running {
-		return nil
-	}
-	dashboardClientTouch.running = true
-	go func() {
-		for {
-			dashboardClientTouch.Lock()
-			if len(dashboardClientTouch.queue) == 0 {
-				dashboardClientTouch.running = false
-				dashboardClientTouch.Unlock()
-				return
-			}
-			next := dashboardClientTouch.queue[0]
-			dashboardClientTouch.queue = dashboardClientTouch.queue[1:]
-			dashboardClientTouch.Unlock()
-			func() {
-				defer func() {
-					if failure := recover(); failure != nil {
-						wsLogger().Debug(fmt.Sprintf("dashboard client heartbeat touch failed: %v", failure))
-					}
-				}()
-				touchDashboardClientMarker(next)
-			}()
-		}
-	}()
-	return nil
-}
-
-// Refreshes the dashboard client liveness marker at most every five seconds without blocking the caller
-func noteDashboardClientActivity(force bool) {
-	now := pythread.Monotonic()
-	dashboardClientTouch.Lock()
-	if !force && now-dashboardClientTouch.touchedAt < dashboardClientTouchMinIntervalS {
-		dashboardClientTouch.Unlock()
-		return
-	}
-	dashboardClientTouch.touchedAt = now
-	dashboardClientTouch.Unlock()
-	path := gateway.DashboardClientHeartbeatPath("")
-	dashboardClientTouch.Lock()
-	if dashboardClientTouch.pending[path] {
-		dashboardClientTouch.Unlock()
-		return
-	}
-	dashboardClientTouch.pending[path] = true
-	dashboardClientTouch.Unlock()
-	if err := wsSubmitDashboardClient(path); err != nil {
-		dashboardClientTouch.Lock()
-		delete(dashboardClientTouch.pending, path)
-		dashboardClientTouch.Unlock()
-		wsLogger().Debug(fmt.Sprintf("dashboard client heartbeat touch failed: %s", err))
-	}
-}
 
 // Whether a frame answers an open server request, settled at once instead of queued
 func answersOpenRequest(req any) bool {
@@ -161,7 +78,7 @@ func (e *SocketDisconnect) Error() string {
 	return fmt.Sprintf("(%s, %s)", pyrepr.Repr(e.Code), pyrepr.Repr(e.Reason))
 }
 
-// Accepted WebSocket one session connection runs over, as the dashboard and gateway routes hand it in
+// Accepted WebSocket one session connection runs over, as the gateway session route hands it in
 type ServedSocket interface {
 	tuigateway.WSConn
 	Accept(ctx context.Context, subprotocol *string) error
@@ -270,9 +187,8 @@ func principalCapabilities(actor gateway.Principal) []string {
 	return out
 }
 
-// One request through the authority when attached, else the legacy dispatcher, run as work for a local Desktop
+// One request through the authority when attached, else the legacy dispatcher
 func wsDispatchRequest(ctx context.Context, authority authorityConn, req any, reqMethod string, transport *tuigateway.WSTransport) (any, error) {
-	ctx = tools.WithServingLocalDesktop(ctx, transport.DesktopLocal)
 	if authority == nil {
 		if resp := wsServerDispatch(ctx, req, transport); resp != nil {
 			return resp, nil
@@ -854,7 +770,6 @@ func (c *wsConnection) serve(subprotocol *string, authIdentity map[string]any, o
 		return err
 	}
 	c.disconnectReason = "connected"
-	noteDashboardClientActivity(true)
 	disableNagle(c.ws)
 	wsLogger().Info(fmt.Sprintf("ws accepted peer=%s", c.peer))
 	c.transport = tuigateway.NewWSTransport(c.ws, c.peer, authIdentity)
@@ -922,7 +837,6 @@ func (c *wsConnection) serve(subprotocol *string, authIdentity map[string]any, o
 			wsLogger().Error(fmt.Sprintf("ws receive failed peer=%s: %s", c.peer, err))
 			return nil
 		}
-		noteDashboardClientActivity(false)
 		line := pystr.Strip(raw)
 		if line == "" {
 			continue
@@ -1011,4 +925,14 @@ func (c *wsConnection) teardown() error {
 		"dispatch_crashes=%d send_failures=%d reaped_sessions=%d detached_sessions=%d",
 		c.peer, c.disconnectReason, c.messages, c.parseErrors, c.dispatchCrashes, c.sendFailures, reaped, detached))
 	return nil
+}
+
+// Whether a signal channel is closed
+func channelClosed(ch <-chan struct{}) bool {
+	select {
+	case <-ch:
+		return true
+	default:
+		return false
+	}
 }

@@ -20,7 +20,6 @@ type CatalogCommand struct {
 	Name, Category, Description string
 	Aliases                     []string
 	GatewayOnly                 bool
-	DesktopMeta                 map[string]any
 }
 
 // Builtin registry rows in registry order and the subcommand table of pkg/commands, assigned in cmd/icebath/wiring.go
@@ -35,11 +34,10 @@ var catalogExtras = [][3]string{
 	{"/sessions", "Switch between live TUI sessions", "TUI"},
 }
 
-// Accumulated pairs, canonical names, desktop meta, ordered categories and plugin commands of the catalog
+// Accumulated pairs, canonical names, ordered categories and plugin commands of the catalog
 type commandCatalogAcc struct {
 	pairs          []any
 	canon          *pyjson.Object
-	commands       *pyjson.Object
 	catMap         *pyjson.Object
 	pluginCommands *pyjson.Object
 }
@@ -69,13 +67,6 @@ func (cat *commandCatalogAcc) appendCategory(name string, row []any) {
 // Registry commands with their aliases canonicalized, then the TUI extras the registry does not claim
 func catalogRegistry(cat *commandCatalogAcc, rows []CatalogCommand) {
 	for _, cmd := range rows {
-		for _, key := range append([]string{cmd.Name}, cmd.Aliases...) {
-			meta := pyjson.NewObject()
-			for _, k := range sortedMetaKeys(cmd.DesktopMeta) {
-				meta.Set(k, cmd.DesktopMeta[k])
-			}
-			cat.commands.Set("/"+key, meta)
-		}
 		if catalogHidden[cmd.Name] || cmd.GatewayOnly {
 			continue
 		}
@@ -89,25 +80,6 @@ func catalogRegistry(cat *commandCatalogAcc, rows []CatalogCommand) {
 			cat.add(extra[0], extra[1], extra[2])
 		}
 	}
-}
-
-// Desktop meta keys in the order the registry builds them
-func sortedMetaKeys(meta map[string]any) []string {
-	order := []string{"argument_mode", "desktop", "desktop_subcommands"}
-	var keys []string
-	for _, k := range order {
-		if _, ok := meta[k]; ok {
-			keys = append(keys, k)
-		}
-	}
-	var rest []string
-	for k := range meta {
-		if k != "argument_mode" && k != "desktop" && k != "desktop_subcommands" {
-			rest = append(rest, k)
-		}
-	}
-	sort.Strings(rest)
-	return append(keys, rest...)
 }
 
 // Quick commands of the config under User commands, the category present even when every entry is malformed
@@ -185,16 +157,6 @@ func catalogPluginCommands(ctx context.Context, cat *commandCatalogAcc) {
 			continue
 		}
 		cat.add(key, desc, "Plugin commands")
-		var mode any
-		switch info.ArgumentMode {
-		case "options", "text", "mixed":
-			mode = info.ArgumentMode
-		default:
-			if strings.TrimSpace(info.ArgsHint) != "" {
-				mode = "text"
-			}
-		}
-		cat.commands.Set(key, pyjson.ObjectOf("argument_mode", mode, "desktop", nil))
 	}
 }
 
@@ -245,8 +207,7 @@ func catalogSkills(ctx context.Context, cat *commandCatalogAcc, skillsOut *pyjso
 
 // Registry backed slash metadata by category, each discovery source degrading into the warning on failure
 func CommandCatalog(ctx context.Context, scope func(context.Context) (context.Context, error)) (map[string]any, error) {
-	cat := &commandCatalogAcc{canon: pyjson.NewObject(), commands: pyjson.NewObject(), catMap: pyjson.NewObject(),
-		pluginCommands: pyjson.NewObject(), pairs: []any{}}
+	cat := &commandCatalogAcc{canon: pyjson.NewObject(), catMap: pyjson.NewObject(), pluginCommands: pyjson.NewObject(), pairs: []any{}}
 	rows, subcommands := CatalogRegistry(ctx)
 	catalogRegistry(cat, rows)
 	warning, pluginError := "", ""
@@ -297,7 +258,7 @@ func CommandCatalog(ctx context.Context, scope func(context.Context) (context.Co
 		pairs, _ := cat.catMap.Get(name)
 		categories = append(categories, pyjson.ObjectOf("name", name, "pairs", pairs))
 	}
-	return map[string]any{"pairs": cat.pairs, "sub": sub, "canon": cat.canon, "commands": cat.commands,
+	return map[string]any{"pairs": cat.pairs, "sub": sub, "canon": cat.canon,
 		"categories": categories, "skills": skillsOut, "skill_count": skillsOut.Len(), "warning": warning,
 		"plugin_discovery_error": pluginError, "plugin_commands": cat.pluginCommands}, nil
 }

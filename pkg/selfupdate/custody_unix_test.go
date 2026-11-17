@@ -606,7 +606,7 @@ func TestCustodyAContainedBuildRunsInCheckoutCustody(t *testing.T) {
 	}
 	cmd := exec.Command(contained.Argv[0], contained.Argv[1:]...)
 	cmd.ExtraFiles = contained.ExtraFiles
-	_, err = pm.RunContained(cmd, "desktop build", pm.ContainOptions{})
+	_, err = pm.RunContained(cmd, "contained build", pm.ContainOptions{})
 	cerr := contained.Close()
 	lock.Release(ctx)
 	if err != nil || cerr != nil {
@@ -727,7 +727,7 @@ func TestPauseUpdateStartedFromARelaunchedGatewayDoesNotShareTheClaim(t *testing
 		{[]string{"icebath", "gateway", "run"}, false},
 		{[]string{"icebath", "--profile", "work", "gateway", "run"}, false},
 		{[]string{"/opt/icebath/icebath", "-p", "work", "gateway", "run"}, false},
-		{[]string{"icebath", "--profile", "work", "dashboard"}, false},
+		{[]string{"icebath", "--profile", "work", "chat"}, true},
 		{[]string{"icebath", "status"}, true},
 	} {
 		t.Run(strings.Join(tc.host, " "), func(t *testing.T) {

@@ -34,7 +34,6 @@ func init() {
 	promptAttachRegistry.method("image.attach", imageAttach)
 	promptAttachRegistry.method("image.attach_bytes", imageAttachBytes)
 	promptAttachRegistry.method("pdf.attach", pdfAttach)
-	promptAttachRegistry.method("file.attach", fileAttach)
 	promptAttachRegistry.method("image.detach", imageDetach)
 	promptAttachRegistry.method("input.detect_drop", inputDetectDrop)
 	promptAttachRegistry.install()
@@ -305,29 +304,6 @@ func pdfAttach(ctx context.Context, rid any, params map[string]any) map[string]a
 	return ok(rid, map[string]any{"attached": true, "filename": displayName, "pages_attached": len(pages), "pages": pages,
 		"count": len(stringList(session.Get("attached_images"))),
 		"text":  fmt.Sprintf("[User attached PDF: %s (%d page(s))]", displayName, len(pages))})
-}
-
-// Stages a non image file for the agent and returns its workspace relative file reference
-func fileAttach(ctx context.Context, rid any, params map[string]any) map[string]any {
-	session, errResp := sessBuilding(ctx, params, rid)
-	if errResp != nil {
-		return errResp
-	}
-	raw, dataURL, name := paramText(params, "path"), paramText(params, "data_url"), paramText(params, "name")
-	if raw == "" && dataURL == "" {
-		return rpcErr(rid, 4015, "path or data_url required", nil)
-	}
-	var resp map[string]any
-	if failure := catchPanic(func() {
-		stored, uploaded, err := stageSessionFileAttachment(ctx, session, raw, dataURL, name, nil, false)
-		panicIf(err)
-		refPath := attachmentRefPath(ctx, session, stored)
-		resp = ok(rid, map[string]any{"attached": true, "name": pypath.Name(stored), "path": stored, "ref_path": refPath,
-			"ref_text": "@file:" + formatRefValue(refPath), "uploaded": uploaded})
-	}); failure != nil {
-		return rpcErr(rid, 5028, errorMessage(failure), nil)
-	}
-	return resp
 }
 
 // Removes one queued image by path

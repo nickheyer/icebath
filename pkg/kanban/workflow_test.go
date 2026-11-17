@@ -80,20 +80,3 @@ func TestDuplicateColumnMessageReprsTheKeyTuple(t *testing.T) {
 		t.Fatal(err)
 	}
 }
-
-func TestWorkflowToDictKeepsManualOrderAndSortsDestinations(t *testing.T) {
-	d := DefaultWorkflow.ToDict()
-	manual := d.Vals["manual"].(interface{ Len() int })
-	if manual.Len() != 9 {
-		t.Fatalf("manual rows %d", manual.Len())
-	}
-	b, err := d.MarshalJSON()
-	if err != nil {
-		t.Fatal(err)
-	}
-	s := string(b)
-	if !strings.Contains(s, `"triage":["ready","todo"]`) || !strings.HasSuffix(s, `"archived":"archived"}`) ||
-		!strings.Contains(s, `{"key":"scheduled","label":"Scheduled","icon":"⏱","drag_target":false}`) {
-		t.Fatal(s)
-	}
-}

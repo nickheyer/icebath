@@ -89,14 +89,10 @@ func (matrixPlatformPlugin) Manifest() plugins.Manifest {
 			{Name: "MATRIX_ACCESS_TOKEN", Description: "Matrix access token (or use MATRIX_PASSWORD for password login)", Secret: true}}}
 }
 
-// Registers the Matrix platform entry with its factory, setup, YAML bridge, standalone sender and card
+// Registers the Matrix platform entry with its factory, setup, YAML bridge and standalone sender
 func (matrixPlatformPlugin) Register(ctx *plugins.Context) error {
-	var card gateway.PlatformEntry
-	applyDashboardCard(&card)
 	extra := map[string]any{
-		"target_ref_syntax_fn":  parseSendTarget,
-		"dashboard_description": card.DashboardDescription, "docs_url": card.DocsURL,
-		"dashboard_env_vars": card.DashboardEnvVars, "dashboard_required_env": card.DashboardRequiredEnv,
+		"target_ref_syntax_fn":   parseSendTarget,
 		"ensure_deps_fn":         ensureMatrixDeps,
 		"is_connected":           isConnected,
 		"setup_fn":               InteractiveSetup,

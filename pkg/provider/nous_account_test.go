@@ -127,12 +127,12 @@ func TestNousAccountPoolOAuthEntryForceFreshUsesAccountAPI(t *testing.T) {
 	token := nousAccountJWT(map[string]any{"sub": "user_123", "org_id": "org_123", "paid_access": false})
 	nousAccountSeams(t, func() map[string]any { return map[string]any{} }, nil, nousAccountPayload(true, nil, 0, 3, nil))
 	nousAccountLoadPoolFn = func(env PoolEnv) *Pool {
-		return NewPool(env, "nous", []PooledCredential{{Provider: "nous", Label: "dashboard device_code", AuthType: "oauth", AccessToken: token, RefreshToken: "refresh-token",
+		return NewPool(env, "nous", []PooledCredential{{Provider: "nous", Label: "device_code", AuthType: "oauth", AccessToken: token, RefreshToken: "refresh-token",
 			AgentKey: "opaque-runtime-key", AgentKeyExpiresAt: "2099-01-01T00:00:00+00:00", ExpiresAt: "2099-01-01T00:00:00+00:00",
 			InferenceBaseURL: "https://inference.example.test/v1", BaseURL: "https://inference.example.test/v1", Extra: map[string]any{"portal_base_url": "https://portal.example.test"}}})
 	}
 	info := GetNousPortalAccountInfo(context.Background(), true)
-	if !info.LoggedIn || info.Source != "account_api" || !info.Fresh || !info.IsPaid() || info.CredentialSource != "pool:dashboard device_code" {
+	if !info.LoggedIn || info.Source != "account_api" || !info.Fresh || !info.IsPaid() || info.CredentialSource != "pool:device_code" {
 		t.Fatalf("%+v", info)
 	}
 }
@@ -267,7 +267,7 @@ func TestNousPortalPaidToolNoticeSwitchesWordingInsideAChat(t *testing.T) {
 	}
 }
 
-// Guest store of the anon surfaces fixture on the desktop backend, a portal fetch failing the test unless replaced
+// Guest store of the anon surfaces fixture, a portal fetch failing the test unless replaced
 func nousAccountGuestHome(t *testing.T, overrides map[string]any) PoolEnv {
 	t.Helper()
 	h := newTestHome(t)
@@ -284,7 +284,7 @@ func nousAccountGuestHome(t *testing.T, overrides map[string]any) PoolEnv {
 		t.Error("portal fetch must not happen on a read-only surface")
 		return nil, errors.New("unexpected fetch")
 	}
-	return anonDesktopEnv(testEnv(t, h))
+	return testEnv(t, h)
 }
 
 func TestNousPortalAnonymousTierMatchesCaseAndWhitespaceInsensitively(t *testing.T) {

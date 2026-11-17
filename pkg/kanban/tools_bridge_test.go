@@ -76,7 +76,7 @@ func TestNoopWithoutWorkerEnv(t *testing.T) {
 func TestSeedThenInjectNewComment(t *testing.T) {
 	commentWorkerHome(t)
 	tid := mustCreateTask(t, CreateTaskOptions{Title: "live task"})
-	addBoardComment(t, tid, "desktop", "pre-existing note")
+	addBoardComment(t, tid, "operator", "pre-existing note")
 	t.Setenv("ICEBATH_KANBAN_TASK", tid)
 	t.Setenv("ICEBATH_PROFILE", "worker-bot")
 	agent := &fakeSteerAgent{}
@@ -85,7 +85,7 @@ func TestSeedThenInjectNewComment(t *testing.T) {
 	if InjectNewCommentsFromEnv(ctx, agent) || len(agent.steers) != 0 {
 		t.Fatal("seeding poll injected", agent.steers)
 	}
-	addBoardComment(t, tid, "desktop", "actually use the v2 API")
+	addBoardComment(t, tid, "operator", "actually use the v2 API")
 	unthrottleComments()
 	if !InjectNewCommentsFromEnv(ctx, agent) || len(agent.steers) != 1 || !strings.Contains(agent.steers[0], "v2 API") {
 		t.Fatal(agent.steers)
@@ -123,7 +123,7 @@ func TestDelegatedChildInWorkerProcessNeitherReceivesNorConsumesNotes(t *testing
 	if InjectNewCommentsFromEnv(ctx, worker) {
 		t.Fatal("seeding poll injected")
 	}
-	addBoardComment(t, tid, "desktop", "operator note for the worker")
+	addBoardComment(t, tid, "operator", "operator note for the worker")
 	child := &fakeSteerAgent{}
 	unthrottleComments()
 	if InjectNewCommentsFromEnv(tools.WithDelegatedChildContext(ctx, true), child) || len(child.steers) != 0 {

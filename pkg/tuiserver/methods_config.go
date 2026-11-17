@@ -10,10 +10,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
-	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
 )
@@ -33,135 +31,8 @@ var configGetErr = map[string]int{"provider": 5013, "approval_mode": 5001, "appr
 var configRegistry = &handlerRegistry{}
 
 func init() {
-	projectsHandler("projects.discover_repos", projectsDiscoverRepos)
-	projectsHandler("projects.record_repos", projectsRecordRepos)
-	projectsHandler("projects.tree", projectsTree)
-	projectsHandler("projects.project_sessions", projectsProjectSessions)
 	configRegistry.scopedMethod("config.get", configGet)
 	configRegistry.install()
-}
-
-// Registers a profile scoped projects RPC whose failure answers 5061
-func projectsHandler(name string, fn func(ctx context.Context, rid any, params map[string]any) (map[string]any, error)) {
-	configRegistry.scopedMethod(name, func(ctx context.Context, rid any, params map[string]any) (resp map[string]any) {
-		defer func() {
-			if r := recover(); r != nil {
-				resp = rpcErr(rid, projectsErr, panicMessage(r), nil)
-			}
-		}()
-		out, err := fn(ctx, rid, params)
-		if err != nil {
-			return rpcErr(rid, projectsErr, err.Error(), nil)
-		}
-		return out
-	})
-}
-
-// Clears cached scan rows when the discovery policy changed
-func reconcileRepoDiscovery(ctx context.Context, pdb *tools.ProjectsDB, policy map[string]any, policyKey string) error {
-	_, err := pdb.ReconcileDiscoveredReposPolicy(policyKey, repoDiscoveryPolicyIsDefault(ctx, policy))
-	return err
-}
-
-// Scanned and session derived repos for the desktop overview with the discovery policy
-func projectsDiscoverRepos(ctx context.Context, rid any, params map[string]any) (map[string]any, error) {
-	db, release, err := profileDB(ctx, params, false)
-	if err != nil {
-		return nil, err
-	}
-	defer release()
-	policy := repoDiscoveryPolicy(ctx, nil)
-	pdb, err := openProjectsDB(ctx)
-	if err != nil {
-		return nil, err
-	}
-	defer pdb.Close()
-	if err := reconcileRepoDiscovery(ctx, pdb, policy, repoDiscoveryPolicyKey(policy)); err != nil {
-		return nil, err
-	}
-	if truthy(params["scan"]) && truthy(policy["enabled"]) {
-		scanDiscoveredReposRemote(ctx, pdb, policy)
-	}
-	repos, err := discoverReposPayload(ctx, db, pdb, true, truthy(policy["enabled"]))
-	if err != nil {
-		return nil, err
-	}
-	return ok(rid, map[string]any{"repos": anyList(repos), "discovery_policy": policy}), nil
-}
-
-// Persists the repo roots of a client side scan when its policy matches and answers the merged list
-func projectsRecordRepos(ctx context.Context, rid any, params map[string]any) (map[string]any, error) {
-	policy := repoDiscoveryPolicy(ctx, nil)
-	policyKey := repoDiscoveryPolicyKey(policy)
-	var accepted bool
-	if incoming, isDict := params["discovery_policy"].(map[string]any); isDict {
-		accepted = repoDiscoveryPolicyKey(repoDiscoveryPolicy(ctx, incoming)) == policyKey
-	} else {
-		accepted = repoDiscoveryPolicyIsDefault(ctx, policy)
-	}
-	accepted = truthy(policy["enabled"]) && accepted
-	var pairs []tools.DiscoveredRepo
-	if raw := params["repos"]; truthy(raw) {
-		items, isList := raw.([]any)
-		if !isList {
-			return nil, fmt.Errorf("'%s' object is not iterable", pyrepr.TypeName(raw))
-		}
-		for _, item := range items {
-			switch v := item.(type) {
-			case string:
-				pairs = append(pairs, tools.DiscoveredRepo{Root: v})
-			case map[string]any:
-				if truthy(v["root"]) {
-					label := ""
-					if truthy(v["label"]) {
-						label = pyStrOf(v["label"])
-					}
-					pairs = append(pairs, tools.DiscoveredRepo{Root: pyStrOf(v["root"]), Label: label})
-				}
-			}
-		}
-	}
-	err := func() error {
-		pdb, err := openProjectsDB(ctx)
-		if err != nil {
-			return err
-		}
-		defer pdb.Close()
-		if err := reconcileRepoDiscovery(ctx, pdb, policy, policyKey); err != nil {
-			return err
-		}
-		if accepted {
-			_, err = pdb.RecordDiscoveredRepos(pairs, true, &policyKey)
-			return err
-		}
-		if !truthy(policy["enabled"]) {
-			return pdb.ClearDiscoveredRepos(&policyKey)
-		}
-		return nil
-	}()
-	if err != nil {
-		return nil, err
-	}
-	db, release, err := profileDB(ctx, params, false)
-	if err != nil {
-		return nil, err
-	}
-	defer release()
-	repos, err := discoverReposPayload(ctx, db, nil, true, truthy(policy["enabled"]))
-	if err != nil {
-		return nil, err
-	}
-	return ok(rid, map[string]any{"repos": anyList(repos), "accepted": accepted, "discovery_policy": policy}), nil
-}
-
-// Project tree with every session row stamped with the response profile
-func stampedProjectTree(ctx context.Context, db *state.DB, params map[string]any, o projectTreeBuild) (map[string]any, any, error) {
-	tree, active, err := buildProjectTree(ctx, db, o)
-	if err != nil {
-		return nil, nil, err
-	}
-	stampProfile(dictList(tree["projects"]), responseProfileName(ctx, strOr(params["profile"])))
-	return tree, active, nil
 }
 
 // int of a param value or its default when falsy, raising like int() on a bad value
@@ -174,53 +45,6 @@ func intParamOr(v any, def int) int {
 		panic(err)
 	}
 	return int(n)
-}
-
-// Project overview with counts and previews plus the session ids any project claims
-func projectsTree(ctx context.Context, rid any, params map[string]any) (map[string]any, error) {
-	db, release, err := profileDB(ctx, params, false)
-	if err != nil {
-		return nil, err
-	}
-	defer release()
-	if db == nil {
-		return ok(rid, map[string]any{"projects": []any{}, "active_id": nil, "scoped_session_ids": []any{}}), nil
-	}
-	tree, active, err := stampedProjectTree(ctx, db, params, projectTreeBuild{previewLimit: intParamOr(params["preview_limit"], 3),
-		sessionLimit: intParamOr(params["session_limit"], 2000), includeDiscovered: true})
-	if err != nil {
-		return nil, err
-	}
-	return ok(rid, map[string]any{"projects": tree["projects"], "active_id": active, "scoped_session_ids": tree["scoped_session_ids"]}), nil
-}
-
-// Fully hydrated lanes of one project from the same grouping as the overview
-func projectsProjectSessions(ctx context.Context, rid any, params map[string]any) (map[string]any, error) {
-	projectID := strOr(params["project_id"])
-	if projectID == "" {
-		return rpcErr(rid, projectArgErr, "project_id required", nil), nil
-	}
-	db, release, err := profileDB(ctx, params, false)
-	if err != nil {
-		return nil, err
-	}
-	defer release()
-	if db == nil {
-		return ok(rid, map[string]any{"project": nil}), nil
-	}
-	tree, _, err := stampedProjectTree(ctx, db, params, projectTreeBuild{hydrate: true,
-		sessionLimit: intParamOr(params["session_limit"], 5000)})
-	if err != nil {
-		return nil, err
-	}
-	var found any
-	for _, p := range dictList(tree["projects"]) {
-		if p["id"] == projectID {
-			found = p
-			break
-		}
-	}
-	return ok(rid, map[string]any{"project": found}), nil
 }
 
 // display section of the config, empty when unset

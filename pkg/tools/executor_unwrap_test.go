@@ -11,24 +11,6 @@ func unwrapExecutor(t *testing.T, enabled ...string) *Executor {
 	return NewExecutor(host, NewDispatcher(Default))
 }
 
-func TestUnwrapTUIScopeNamesTheGUISurface(t *testing.T) {
-	e := unwrapExecutor(t, "coding", "project")
-	_, _, block := e.unwrapToolSearchCall(context.Background(), ToolCallName,
-		map[string]any{"name": "drive_preview", "arguments": map[string]any{"action": "elements"}}, false)
-	if block == "" || !strings.Contains(strings.ToLower(block), "desktop") || strings.Contains(strings.ToLower(block), "use tool_search to find") {
-		t.Fatalf("block %q", block)
-	}
-}
-
-func TestUnwrapDesktopScopeNotBlocked(t *testing.T) {
-	e := unwrapExecutor(t, "coding", "desktop_ui", "project")
-	name, _, block := e.unwrapToolSearchCall(context.Background(), ToolCallName,
-		map[string]any{"name": "drive_preview", "arguments": map[string]any{"action": "elements"}}, false)
-	if block != "" || name != "drive_preview" {
-		t.Fatalf("name %q block %q", name, block)
-	}
-}
-
 func TestSingleLocalUnwrapReachesTheUnderlyingTool(t *testing.T) {
 	entries := []map[string]any{
 		{"name": "session_search", "arguments": map[string]any{"session_id": "past-session"}},

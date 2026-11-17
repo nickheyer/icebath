@@ -19,7 +19,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyshlex"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/profiles"
-	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 const launchdLabelBase = "ai.icebath.gateway"
@@ -34,7 +33,7 @@ var (
 	homeForPIDHook      = HermesHomeForPID
 	scanGatewayPIDsHook = scanGatewayPIDs
 	pidEnvironHook      = proc.Environ
-	pidCmdlineHook      = dashboardCmdlineForPID
+	pidCmdlineHook      = cmdlineForPID
 	hostReadRecord      = readHostRecord
 	hostRecordLive      = recordNamesLiveOwner
 )
@@ -507,7 +506,7 @@ func PidIsOtherUsers(ctx context.Context, pid int) bool {
 }
 
 // Argv of a running process from proc or ps with shell splitting, false on Windows or when unreadable
-func dashboardCmdlineForPID(ctx context.Context, pid int) ([]string, bool) {
+func cmdlineForPID(ctx context.Context, pid int) ([]string, bool) {
 	if IsWindows() {
 		return nil, false
 	}
@@ -625,7 +624,7 @@ func HermesHomeForPID(ctx context.Context, pid int, requireLaunchIdentity bool) 
 		defaultHome = filepath.Join(hd, ".icebath")
 	}
 	root := profiles.ProfileRootForEnvHome(envHome, defaultHome)
-	fixed := tools.IsDesktopSSHBackendArgv(argv)
+	fixed := false
 	for _, k := range []string{"ICEBATH_SUPERVISED_CHILD", "ICEBATH_S6_SUPERVISED_CHILD", "ICEBATH_GATEWAY_EXTERNAL_SUPERVISOR", "ICEBATH_GATEWAY_PROFILE_PIN"} {
 		fixed = fixed || env[k] != ""
 	}

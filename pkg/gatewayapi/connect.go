@@ -47,8 +47,8 @@ func (a *APIServerAdapter) apiKeyPassesStartupGuard() bool {
 }
 
 // Application with the guard, profile prefix, CORS, body limit and security middlewares and every route mirrored under the profile prefix
-func (a *APIServerAdapter) buildApp() (*gateway.WebApplication, error) {
-	app := gateway.NewWebApplication(gateway.APIMaxRequestBytes)
+func (a *APIServerAdapter) buildApp() (*gateway.HTTPApp, error) {
+	app := gateway.NewHTTPApp(gateway.APIMaxRequestBytes)
 	app.Middlewares = []gateway.WebMiddleware{gateway.APIConfigUnavailableMiddleware, requestStateMiddleware, a.profilePrefixMiddleware,
 		corsMiddlewareFor(app), bodyLimitMiddleware, securityHeadersMiddleware}
 	for _, route := range a.httpRouteTable() {

@@ -25,9 +25,8 @@
 #           to `sha` so it cannot change under the review. This field is the
 #           ONLY source of the hero: a README image near the top does not become
 #           one. That was checked against live entries rather than guessed —
-#           `image:` present ⇒ the page carries a hero (session-dashboard,
-#           filebox); absent ⇒ it does not, README images notwithstanding
-#           (boardstate, tailgate, hermes-resetwatch). The capture is 2032x1072
+#           `image:` present ⇒ the page carries a hero; absent ⇒ it does not,
+#           README images notwithstanding. The capture is 2032x1072
 #           (1.90:1), so the page's centre-crop to 2:1 trims ~5% off the top and
 #           bottom — window chrome only, nothing the picture is about.
 #           No `screenshots:` list on purpose: that fills a separate gallery
@@ -37,10 +36,10 @@
 name: hermes-anilist
 repo: https://github.com/BatataBF/hermes-anilist
 sha: "0081dfd7b45a469eef1ec35d3d0797318694c640"
-description: "AniList tracker for Hermes Desktop — airing countdowns, a season browser, a local or account-backed watchlist, episode alerts and a daily digest, plus agent tools that read your own list and answer about a single show. Disclosure — stores your pasted AniList token in the active profile .env (sent only to graphql.anilist.co); alerts and the daily digest are Hermes cron jobs it creates on the host you pick, and the digest job asks that host's agent to query the public AniList API itself."
+description: "AniList agent tools that read your own list and answer about a single show. Disclosure — uses the AniList token kept in the active profile .env, sent only to graphql.anilist.co; alerts and the daily digest are Hermes cron jobs, and the digest job asks the agent to query the public AniList API itself."
 maintainer: BatataBF
 tier: community
-category: desktop
+category: general
 requires_hermes: ">=0.21"
 docs_url: https://github.com/BatataBF/hermes-anilist#readme
 version: "0.9.0"

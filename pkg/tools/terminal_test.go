@@ -839,7 +839,7 @@ func TestHandleTerminalMapsNotifyOntoLegacyFlags(t *testing.T) {
 }
 
 func TestTerminalRegisteredInDefaultRegistry(t *testing.T) {
-	for _, name := range []string{"terminal", "read_terminal", "close_terminal"} {
+	for _, name := range []string{"terminal"} {
 		d := Default.Get(name)
 		if d == nil {
 			t.Fatalf("%s not registered", name)

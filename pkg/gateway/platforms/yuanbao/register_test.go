@@ -35,10 +35,10 @@ func TestPluginRegistersTheYuanbaoPlatform(t *testing.T) {
 	if entry.Label != "Yuanbao" || entry.Emoji != "💎" || !reflect.DeepEqual(entry.RequiredEnv, []string{"YUANBAO_APP_ID", "YUANBAO_APP_SECRET"}) ||
 		entry.CronDeliverEnvVar != "YUANBAO_HOME_CHANNEL" || entry.InstallHint != "Yuanbao: websockets not installed. Run: pip install websockets" ||
 		entry.AllowUpdateCommand || entry.StandaloneSend == nil || !entry.StandaloneSend.Media || !entry.StandaloneSend.TextDirect ||
-		entry.StandaloneSenderFn == nil || entry.SetupFn == nil || entry.IsConnected == nil || entry.DashboardLabel != "Yuanbao (元宝)" ||
+		entry.StandaloneSenderFn == nil || entry.SetupFn == nil || entry.IsConnected == nil ||
 		!strings.HasPrefix(entry.PlatformHint, "You are on Yuanbao (腾讯元宝), a Chinese AI assistant platform.") ||
 		entry.AllowedUsersEnv != "YUANBAO_ALLOWED_USERS" || !reflect.DeepEqual(entry.OwnPolicyEnv, []string{"YUANBAO_DM_POLICY", "YUANBAO_GROUP_POLICY"}) ||
-		!entry.RunCheck(ctx) || len(entry.DashboardRequiredEnv) != 0 || len(entry.EnvOverrides) != 1 {
+		!entry.RunCheck(ctx) || len(entry.EnvOverrides) != 1 {
 		t.Fatalf("entry %+v", entry)
 	}
 	adapter, err := entry.AdapterFactory(ctx, gateway.NewPlatformConfig())

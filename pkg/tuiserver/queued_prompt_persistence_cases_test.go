@@ -12,7 +12,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/tuigateway"
 )
 
-// Desktop session over a fresh store with its lazy row written and turn A's prompt in the transcript
+// TUI session over a fresh store with its lazy row written and turn A's prompt in the transcript
 func queuedPromptSession(t *testing.T) (*state.SessionDB, string, *tuigateway.Session, string) {
 	t.Helper()
 	sessionCaseScope(t)
@@ -22,7 +22,7 @@ func queuedPromptSession(t *testing.T) (*state.SessionDB, string, *tuigateway.Se
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = db.Close() })
-	sid, key := submitRowDesktopSession(t, db)
+	sid, key := submitRowSession(t, db)
 	session := tuigateway.SessionRecord(sid)
 	if session == nil {
 		t.Fatalf("no live session %s", sid)

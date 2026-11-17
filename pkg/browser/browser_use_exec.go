@@ -222,7 +222,7 @@ func exportRealProfileNote(penv map[string]string, key string) {
 	}
 }
 
-// Flags a local session browser for the desktop fence and as exclusive unless its profile is shared
+// Flags a local session browser for the Bot Desktop fence and as exclusive unless its profile is shared
 func markLocalBrowser(penv map[string]string, session map[string]any, key string) {
 	features, _ := session["features"].(map[string]any)
 	if pyrepr.Truthy(features["lightpanda"]) {
@@ -364,7 +364,7 @@ func routeBackend(ctx context.Context, env *tools.Env, penv map[string]string, s
 	}
 	if local && !hasCDPEnv(penv) && !realProfileConsented(env) {
 		return "local=true was requested but browser.use_real_profile is off. Enable it in config.yaml " +
-			"(browser.use_real_profile: true) or the desktop Settings → Browser section, then retry."
+			"(browser.use_real_profile: true), then retry."
 	}
 	if local && !hasCDPEnv(penv) && (rpErr != "" || !realProfile) {
 		if rpErr != "" {

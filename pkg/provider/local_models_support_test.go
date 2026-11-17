@@ -1,7 +1,6 @@
 package provider
 
 import (
-	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
@@ -71,7 +70,7 @@ func lmPoll(t *testing.T, jobID string, timeout time.Duration, until ...string) 
 	var view map[string]any
 	for time.Now().Before(deadline) {
 		var err error
-		view, err = LocalModelsJob(context.Background(), jobID)
+		view, err = LocalModelsJobView(jobID)
 		if err != nil {
 			t.Fatalf("job poll: %v", err)
 		}
@@ -86,7 +85,7 @@ func lmPoll(t *testing.T, jobID string, timeout time.Duration, until ...string) 
 	return nil
 }
 
-// Status code of a route refusal, zero for any other error
+// Status code of a refusal, zero for any other error
 func lmStatusOf(err error) int {
 	if e, ok := err.(*HTTPException); ok {
 		return e.StatusCode

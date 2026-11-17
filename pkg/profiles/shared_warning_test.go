@@ -18,13 +18,13 @@ import (
 
 const childInstallEnv = "ICEBATH_PROFILES_TEST_CHILD_INSTALL"
 
-// Registers this process as a serve runtime of the install named by the environment and waits for stdin
+// Registers this process as a gateway runtime of the install named by the environment and waits for stdin
 func TestSharedWarningChildProcess(t *testing.T) {
 	install := os.Getenv(childInstallEnv)
 	if install == "" {
 		return
 	}
-	if !tools.RegisterSelf(context.Background(), "serve", install, nil) {
+	if !tools.RegisterSelf(context.Background(), "gateway", install) {
 		fmt.Println("register failed")
 		os.Exit(3)
 	}
@@ -40,7 +40,7 @@ func runningInstall(t *testing.T, homeDir, install string) *exec.Cmd {
 	var env []string
 	for _, kv := range os.Environ() {
 		k, _, _ := strings.Cut(kv, "=")
-		if k == tools.SpawnEnvVar || k == "ICEBATH_PARENT_PID" || k == "ICEBATH_PARENT_START_MARKER" || k == home.EnvHome {
+		if k == tools.SpawnEnvVar || k == home.EnvHome {
 			continue
 		}
 		env = append(env, kv)

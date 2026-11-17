@@ -654,29 +654,6 @@ func (h *PluginHost) ProfileCall(ctx context.Context, pluginDir, moduleName, pro
 		"attr": attr, "args": h.encodeArgs(nonNilArgs(args)), "kwargs": h.encodeArgs(nonNilKwargs(kwargs))}, nil, 0, nil)
 }
 
-// Serves one dashboard plugin API request with the plugin router in the child, a TimeoutError after timeout
-func (h *PluginHost) ASGIRequest(ctx context.Context, pluginName, dashboardDir, apiFile, method, path, query string,
-	headers [][2]string, body []byte, timeout time.Duration, authenticated bool) (map[string]any, error) {
-	if _, err := h.ensureStarted(ctx); err != nil {
-		return nil, err
-	}
-	pairs := make([]any, len(headers))
-	for i, hd := range headers {
-		pairs[i] = []any{hd[0], hd[1]}
-	}
-	if body == nil {
-		body = []byte{}
-	}
-	raw, err := h.call(ctx, "asgi", map[string]any{"plugin": pluginName, "dashboard_dir": dashboardDir, "api_file": apiFile,
-		"method": method, "path": path, "query": query, "authenticated": authenticated, "headers": pairs,
-		"body": wireEncode(body, nil)}, nil, timeout, nil)
-	if err != nil {
-		return nil, err
-	}
-	reply, _ := raw.(map[string]any)
-	return reply, nil
-}
-
 // Drops a plugin from the child, logging each on_unload callback failure the child reports
 func (h *PluginHost) unload(key string) error {
 	h.stateMu.Lock()

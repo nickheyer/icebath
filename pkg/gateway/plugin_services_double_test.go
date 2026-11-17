@@ -62,7 +62,6 @@ func pluginServicesDouble() *plugins.Services {
 	}
 	return &plugins.Services{
 		ProviderRegistries: registries,
-		DashboardAuth:      DashboardAuthRegistryService(),
 		Platforms:          PlatformRegistryService(),
 		HostObject:         func(string, any) (string, bool) { return "", false },
 	}

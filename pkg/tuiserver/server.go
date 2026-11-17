@@ -30,9 +30,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/tuigateway"
 )
 
-// Monotonic desktop and backend contract version the desktop compares against its required one
-const desktopBackendContract = 8
-
 // Stand in terminal cwd values resolved to the home dir at runtime, never an explicit workspace
 var cwdPlaceholders = map[string]bool{".": true, "auto": true, "cwd": true}
 
@@ -315,17 +312,12 @@ func probeCredentials(a *agent.AIAgent) string {
 	return ""
 }
 
-// Usage of the live agent, else the compute host mirror copy, else empty
+// Usage of the live agent, else empty
 func sessionUsageSnapshot(ctx context.Context, session *tuigateway.Session) map[string]any {
-	mirrorUsage, isDict := metadataMirror(session)["usage"].(map[string]any)
-	if a := sessionAgent(session); a != nil && !(truthy(session.Get("_compute_host_active")) && isDict) {
+	if a := sessionAgent(session); a != nil {
 		return getUsage(ctx, a)
 	}
-	out := map[string]any{}
-	for key, value := range mirrorUsage {
-		out[key] = value
-	}
-	return out
+	return map[string]any{}
 }
 
 // Named project owning the cwd in the profile projects db, nil when none or on failure
@@ -386,7 +378,7 @@ func fastTierApplies(view agent.SessionRuntime, model, providerName string, rout
 	return provider.ResolveFastModeOverrides(model, providerName, baseURL, tier) != nil
 }
 
-// Session info payload of the status bar and desktop, model route, approvals, workspace, usage and inventory
+// Session info payload of the status bar, model route, approvals, workspace, usage and inventory
 func sessionInfo(ctx context.Context, a *agent.AIAgent, session *tuigateway.Session) map[string]any {
 	if session == nil {
 		for _, live := range tuigateway.LiveSessions() {
@@ -397,7 +389,6 @@ func sessionInfo(ctx context.Context, a *agent.AIAgent, session *tuigateway.Sess
 		}
 	}
 	view := agent.SessionRuntimeView(a)
-	mirror := metadataMirror(session)
 	cwd := displaySessionCwd(ctx, session)
 	sessionKey := strOr(session.Get("session_key"))
 	if sessionKey == "" && a != nil {
@@ -421,8 +412,6 @@ func sessionInfo(ctx context.Context, a *agent.AIAgent, session *tuigateway.Sess
 	var serviceTier any = ""
 	if a != nil && a.ServiceTier() != "" {
 		serviceTier = a.ServiceTier()
-	} else if truthy(mirror["service_tier"]) {
-		serviceTier = mirror["service_tier"]
 	}
 	yolo, approvalMode := func() (yolo bool, mode string) {
 		defer func() {
@@ -437,25 +426,16 @@ func sessionInfo(ctx context.Context, a *agent.AIAgent, session *tuigateway.Sess
 	pendingSwitch, _ := session.Get("pending_model_switch").(map[string]any)
 	pendingModel := strings.TrimSpace(strOr(pendingSwitch["display_model"]))
 	pendingProvider := strings.TrimSpace(strOr(pendingSwitch["display_provider"]))
-	providerValue, mirrorHasProvider := mirror["provider"]
-	if !mirrorHasProvider {
-		providerValue = ""
-		if view != nil {
-			providerValue = view.Provider()
-		}
+	var providerValue any = ""
+	if view != nil {
+		providerValue = view.Provider()
 	}
-	if providerValue == "custom" && !mirrorHasProvider && a != nil {
+	if providerValue == "custom" && a != nil {
 		providerValue = scopedSessionProvider(ctx, a, session)
 	}
 	var model any = pendingModel
-	if pendingModel == "" {
-		if mirrored, ok := mirror["model"]; ok {
-			model = mirrored
-		} else if view != nil {
-			model = view.Model()
-		} else {
-			model = ""
-		}
+	if pendingModel == "" && view != nil {
+		model = view.Model()
 	}
 	var reportedProvider any = pendingProvider
 	if pendingProvider == "" {
@@ -479,8 +459,8 @@ func sessionInfo(ctx context.Context, a *agent.AIAgent, session *tuigateway.Sess
 		"fast":                  provider.StaticTiers[tierText] && fastTierApplies(view, strOr(model), strOr(reportedProvider), pendingProvider == "", tierText),
 		"yolo":                  yolo,
 		"approval_mode":         approvalMode,
-		"tools":                 copyDict(mirror["tools"]),
-		"skills":                copyDict(mirror["skills"]),
+		"tools":                 map[string]any{},
+		"skills":                map[string]any{},
 		"cwd":                   cwd,
 		"branch":                tuigateway.Branch(cwd),
 		"project":               projectInfoForCwd(ctx, cwd),
@@ -490,7 +470,6 @@ func sessionInfo(ctx context.Context, a *agent.AIAgent, session *tuigateway.Sess
 		"turn_started_at":       turnStartedAt(session),
 		"title":                 "",
 		"stored_session_id":     sessionKey,
-		"desktop_contract":      desktopBackendContract,
 		"version":               "",
 		"release_date":          "",
 		"update_behind":         nil,
@@ -508,8 +487,7 @@ func sessionInfo(ctx context.Context, a *agent.AIAgent, session *tuigateway.Sess
 	if versionInfo, err := updaterecord.GetVersionInfo(); err == nil {
 		info["version"], info["release_date"] = versionInfo.BaseVersion, Banner.ReleaseDate
 	}
-	liveAgent := a != nil && !truthy(session.Get("_compute_host_active"))
-	if liveAgent {
+	if a != nil {
 		suppress(func() {
 			grouped := map[string]any{}
 			info["tools"] = grouped
@@ -530,9 +508,7 @@ func sessionInfo(ctx context.Context, a *agent.AIAgent, session *tuigateway.Sess
 	info["mcp_servers"] = []any{}
 	suppress(func() { info["mcp_servers"] = mcpStatusRows(ctx) })
 	suppress(func() {
-		if prompt, ok := mirror["system_prompt"]; ok {
-			info["system_prompt"] = prompt
-		} else if a != nil {
+		if a != nil {
 			info["system_prompt"] = a.CachedSystemPrompt()
 		} else {
 			info["system_prompt"] = ""
@@ -550,7 +526,7 @@ func sessionInfo(ctx context.Context, a *agent.AIAgent, session *tuigateway.Sess
 		}
 		info["update_command"] = command
 	})
-	if liveAgent {
+	if a != nil {
 		if warning := probeCredentials(a); warning != "" {
 			info["credential_warning"] = warning
 		}
@@ -575,9 +551,9 @@ func mcpStatusRows(ctx context.Context) []any {
 	return rows
 }
 
-// Emits session info for a session holding an agent or a compute host mirror, swallowing any failure
+// Emits session info for a session holding an agent, swallowing any failure
 func emitSessionInfoForSession(ctx context.Context, sid string, session *tuigateway.Session) {
-	if sessionAgent(session) != nil || len(metadataMirror(session)) > 0 {
+	if sessionAgent(session) != nil {
 		suppress(func() { tuigateway.Emit(ctx, "session.info", sid, sessionInfo(ctx, sessionAgent(session), session)) })
 	}
 }
@@ -651,17 +627,13 @@ func dbUnavailableError(ctx context.Context, rid any, code int) map[string]any {
 		map[string]any{"code": failure.Code, "cause": failure.Cause, "details": state.StorageFailureDetails(cause, 200)})
 }
 
-// Model and provider a live session runs, from its pending switch, mirror, agent or composer pick, else the profile default
+// Model and provider a live session runs, from its pending switch, agent or composer pick, else the profile default
 func liveSessionIdentity(ctx context.Context, session *tuigateway.Session) (string, string) {
 	pending, _ := session.Get("pending_model_switch").(map[string]any)
-	mirror := metadataMirror(session)
 	a := sessionAgent(session)
 	view := agent.SessionRuntimeView(a)
 	override, _ := session.Get("model_override").(map[string]any)
 	model := strings.TrimSpace(strOr(pending["display_model"]))
-	if model == "" {
-		model = strOr(mirror["model"])
-	}
 	if model == "" && view != nil {
 		model = view.Model()
 	}
@@ -676,9 +648,6 @@ func liveSessionIdentity(ctx context.Context, session *tuigateway.Session) (stri
 		agentProvider = scopedSessionProvider(ctx, a, session)
 	}
 	providerName := strings.TrimSpace(strOr(pending["display_provider"]))
-	if providerName == "" {
-		providerName = strOr(mirror["provider"])
-	}
 	if providerName == "" {
 		providerName = agentProvider
 	}
@@ -733,4 +702,23 @@ func profileScoped(handler Handler) Handler {
 		}
 		return handler(profileRuntimeScope(ctx, scopeHome, true), rid, params)
 	}
+}
+
+// Whether a raised failure is a config backend outage, the SystemExit no handler catches
+func configOutage(failure any) bool {
+	err, isError := failure.(error)
+	if !isError {
+		return false
+	}
+	var backendErr *config.ConfigBackendUnavailable
+	var sourceErr *provider.ConfigBackendUnavailableError
+	return errors.As(err, &backendErr) || errors.As(err, &sourceErr)
+}
+
+// Python str of a value or empty string for a falsy one
+func relayString(v any) string {
+	if !truthy(v) {
+		return ""
+	}
+	return pyrepr.Str(v)
 }

@@ -368,11 +368,6 @@ func (a *app) hotkeyRows() [][2]string {
 	return append(rows, [2]string{`\ + enter`, "continue the prompt on a new line"}, [2]string{"!<cmd>", "run a shell command in the session"}, [2]string{"{!<cmd>}", "put the output of a shell command into the prompt"})
 }
 
-// Whether the terminal UI runs inside the dashboard chat tab, where it may not exit or update
-func dashboardMode() bool {
-	return trueRe.MatchString(strings.ToLower(trimJS(os.Getenv("ICEBATH_TUI_DASHBOARD"))))
-}
-
 // Whether destructive commands skip their confirmation
 func noConfirmDestructive() bool {
 	return trueRe.MatchString(strings.ToLower(trimJS(os.Getenv("ICEBATH_TUI_NO_CONFIRM"))))
@@ -447,17 +442,9 @@ func (a *app) coreCommands() []slashCommand {
 			return r.ran()
 		}},
 		{name: "quit", aliases: []string{"exit"}, help: "exit icebath", run: func(r *slashRun) tea.Cmd {
-			if dashboardMode() {
-				r.sys(tr("slashCmd.core.quit.dashboardDisabled"))
-				return nil
-			}
 			return a.die(0)
 		}},
 		{name: "update", help: "update icebath to the latest version, leaving the terminal UI", run: func(r *slashRun) tea.Cmd {
-			if dashboardMode() {
-				r.sys(tr("slashCmd.core.update.dashboardDisabled"))
-				return nil
-			}
 			r.sys(tr("slashCmd.core.update.exiting"))
 			return tea.Tick(100*time.Millisecond, func(time.Time) tea.Msg { return dieMsg{code: exitForUpdate} })
 		}},

@@ -138,7 +138,7 @@ func csFirstAgent(t *testing.T, sessionID string) {
 }
 
 func TestCreditsColdStartRebuildWithSameBandDoesNotRefire(t *testing.T) {
-	sid := "desktop-session-1-" + t.Name()
+	sid := "session-1-" + t.Name()
 	csFirstAgent(t, sid)
 	a2 := csNewAgent(t, "nous", "", "", sid)
 	hydrateSeedState(a2.c, csBandState(0.5))
@@ -148,7 +148,7 @@ func TestCreditsColdStartRebuildWithSameBandDoesNotRefire(t *testing.T) {
 }
 
 func TestCreditsColdStartRebuildStillFiresOnGenuineBandChange(t *testing.T) {
-	sid := "desktop-session-2-" + t.Name()
+	sid := "session-2-" + t.Name()
 	csFirstAgent(t, sid)
 	a2 := csNewAgent(t, "nous", "", "", sid)
 	hydrateSeedState(a2.c, csBandState(0.75))
@@ -158,8 +158,8 @@ func TestCreditsColdStartRebuildStillFiresOnGenuineBandChange(t *testing.T) {
 }
 
 func TestCreditsColdStartUnrelatedSessionIDNotSuppressed(t *testing.T) {
-	csFirstAgent(t, "desktop-session-a-"+t.Name())
-	a2 := csNewAgent(t, "nous", "", "", "desktop-session-b-"+t.Name())
+	csFirstAgent(t, "session-a-"+t.Name())
+	a2 := csNewAgent(t, "nous", "", "", "session-b-"+t.Name())
 	hydrateSeedState(a2.c, csBandState(0.5))
 	if a2.got() != CreditsUsageKey+"|" {
 		t.Fatalf("%s", a2.got())

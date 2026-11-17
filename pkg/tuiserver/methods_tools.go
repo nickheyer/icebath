@@ -6,7 +6,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/mcp"
-	"github.com/nickheyer/icebath/pkg/tools"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
 )
 
@@ -44,7 +43,7 @@ func refreshLiveSessions(ctx context.Context, h *string, preservePrefix bool, pl
 				}
 			}()
 			scoped := sessionProfileRuntimeScope(ctx, entry.Session, true)
-			enabled := tools.CarryOnboardingToolset(scoped, loadEnabledToolsets(scoped, a.Platform()), a)
+			enabled := loadEnabledToolsets(scoped, a.Platform())
 			disabled := loadDisabledToolsets(scoped)
 			refreshAgentMCPTools(scoped, a, mcp.RefreshOptions{EnabledOverride: enabled, DisabledOverride: disabled,
 				Quiet: true, PreservePrefix: preservePrefix})

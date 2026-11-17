@@ -325,7 +325,7 @@ func TestDefaultIdentifyPayloadShape(t *testing.T) {
 		}
 	}
 	switch recGet(ident, "supervisor") {
-	case "systemd", "launchd", "desktop", "external", "manual":
+	case "systemd", "launchd", "external", "manual":
 	default:
 		t.Fatalf("supervisor %v", recGet(ident, "supervisor"))
 	}
@@ -538,12 +538,8 @@ func TestClientsRefuseAControlListenerRunByAnotherUid(t *testing.T) {
 		t.Fatalf("identify %v", err)
 	}
 	endpoint := &GatewayEndpoint{ProfileID: "default", InstanceID: "owner"}
-	if _, err := sessionTicket(h, endpoint, "interactive", "", "", false); !errors.As(err, &de) || de.Reason != "unsafe_control_peer" {
+	if _, err := sessionTicket(h, endpoint, "interactive", "", false); !errors.As(err, &de) || de.Reason != "unsafe_control_peer" {
 		t.Fatalf("session ticket %v", err)
-	}
-	var unreachable *gatewayUnreachable
-	if _, err := webappControl(h, "identify", nil); !errors.As(err, &unreachable) || !strings.Contains(err.Error(), "unsafe_control_peer") {
-		t.Fatalf("webapp control %v", err)
 	}
 	mu.Lock()
 	defer mu.Unlock()

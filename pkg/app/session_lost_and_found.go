@@ -31,7 +31,7 @@ import (
 var lfMessageRoles = map[string]bool{"user": true, "assistant": true, "tool": true, "system": true}
 
 var lfKnownSources = map[string]bool{"cli": true, "telegram": true, "discord": true, "slack": true, "whatsapp": true, "signal": true,
-	"matrix": true, "irc": true, "email": true, "x": true, "twitter": true, "api": true, "gateway": true, "web": true, "dashboard": true,
+	"matrix": true, "irc": true, "email": true, "x": true, "twitter": true, "api": true, "gateway": true,
 	"tool": true, "subagent": true, "cron": true, "recovered": true, "imported": true, "acp": true}
 
 const (

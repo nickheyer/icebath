@@ -69,7 +69,7 @@ type AgentPluginSkill struct {
 	Frontmatter map[string]any
 }
 
-// One desktop app declaration of a portable package server
+// One local application declaration of a portable package server
 type AgentPluginServerDeclaration struct {
 	Name     string
 	App      map[string]any

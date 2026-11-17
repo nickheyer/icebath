@@ -4,7 +4,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pydantic"
 )
 
-var LocaleSurface = pydantic.Enum("LocaleSurface", "core", "core", "tui", "tui", "desktop", "desktop")
+var LocaleSurface = pydantic.Enum("LocaleSurface", "core", "core", "tui", "tui")
 
 var LanguageOption = pydantic.NewModel("LanguageOption", ClosedConfig,
 	pydantic.Req("id", pydantic.Str),

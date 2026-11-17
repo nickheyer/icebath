@@ -58,7 +58,7 @@ func lmSwapLockfile(t *testing.T, path string) {
 	t.Cleanup(func() { pm.SwapLockfilePath(prev) })
 }
 
-func TestComponentJobPauseRetainsPinAndStopsSequence(t *testing.T) {
+func TestComponentJobPauseKeepsBytesAndARerunFinishes(t *testing.T) {
 	for _, endpoint := range []string{"runtime/install", "quickstart"} {
 		t.Run(endpoint, func(t *testing.T) {
 			lmDownloadJobsClient(t)
@@ -155,27 +155,29 @@ func TestComponentJobPauseRetainsPinAndStopsSequence(t *testing.T) {
 				}
 			}
 			ctx := context.Background()
-			var resp map[string]any
-			if endpoint == "runtime/install" {
-				resp, err = LocalModelsRuntimeInstall(ctx, "cpu", "")
-			} else {
-				resp, err = LocalModelsQuickstart(ctx, "", "")
+			start := func() string {
+				var resp map[string]any
+				if endpoint == "runtime/install" {
+					resp, err = LocalModelsRuntimeInstall(ctx, "cpu")
+				} else {
+					resp, err = LocalModelsQuickstart(ctx, "")
+				}
+				if err != nil {
+					t.Fatal(err)
+				}
+				return resp["job_id"].(string)
 			}
-			if err != nil {
-				t.Fatal(err)
-			}
-			jobID := resp["job_id"].(string)
+			jobID := start()
 			func() {
 				defer close(release)
 				select {
 				case <-flowing:
 				case <-time.After(5 * time.Second):
-					view, _ := LocalModelsJob(ctx, jobID)
+					view, _ := LocalModelsJobView(jobID)
 					t.Fatalf("runtime did not enter PM's pinned archive transfer: %v", view)
 				}
-				paused, err := LocalModelsDownloadPause(ctx, jobID)
-				if err != nil || paused["paused"] != true {
-					t.Fatalf("pause %v %v", paused, err)
+				if !LocalModelsPauseJob(jobID) {
+					t.Fatal("pause refused")
 				}
 			}()
 			job := lmPoll(t, jobID, 15*time.Second, "done", "error", "paused")
@@ -196,17 +198,14 @@ func TestComponentJobPauseRetainsPinAndStopsSequence(t *testing.T) {
 			if got := calls.list(); len(got) != 0 || lrPathExists(model) {
 				t.Fatalf("calls %v model %v", got, lrPathExists(model))
 			}
-			if job["can_resume"] != true {
-				t.Fatalf("job %v", job)
+			if lmRunningOf(jobID) != nil {
+				t.Fatal("paused job kept its handles")
 			}
 			if ranges := lmGlob(t, pm.PartialsRoot(), "*.ranges"); len(ranges) == 0 {
 				t.Fatal("no durable ranges kept")
 			}
-			resumed, err := LocalModelsDownloadResume(ctx, jobID)
-			if err != nil || resumed["resumed"] != true {
-				t.Fatalf("resume %v %v", resumed, err)
-			}
-			job = lmPoll(t, jobID, 15*time.Second, "done", "error")
+			rerunID := start()
+			job = lmPoll(t, rerunID, 15*time.Second, "done", "error")
 			if job["status"] != "done" {
 				t.Fatalf("job %v", job)
 			}
@@ -237,7 +236,7 @@ func TestComponentJobPauseRetainsPinAndStopsSequence(t *testing.T) {
 					t.Fatalf("calls %v model %q", calls.list(), got)
 				}
 			}
-			if lmRunningOf(jobID) != nil {
+			if lmRunningOf(rerunID) != nil {
 				t.Fatal("finished job kept its handles")
 			}
 		})

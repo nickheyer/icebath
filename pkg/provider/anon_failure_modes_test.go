@@ -14,8 +14,6 @@ import (
 	"sync"
 	"testing"
 	"time"
-
-	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 // A forced first mint expected to fail, returning its coded error
@@ -244,107 +242,6 @@ func TestAnonMintCooldownATerminalCodeMakesOneForcedAttemptOnly(t *testing.T) {
 	}
 }
 
-// Isolates the bootstrap record and install probe, returning the desktop backend env
-func anonBootstrapEnv(t *testing.T, env PoolEnv) PoolEnv {
-	t.Helper()
-	tools.InstallStateProbeClear()
-	resetFreeTierBootstrapForTests()
-	prev, probe, clear, mark := setupInventoryFn, welcomeInstallProbe, welcomeProbeClear, welcomeMarkUsed
-	used := false
-	welcomeInstallProbe = func(_ context.Context) tools.InstallState {
-		if used {
-			return tools.InstallState{Findings: []tools.InstallFinding{{}}}
-		}
-		return tools.InstallState{}
-	}
-	welcomeProbeClear = func() {}
-	welcomeMarkUsed = func(_ context.Context) error {
-		used = true
-		return nil
-	}
-	t.Cleanup(func() {
-		setupInventoryFn, welcomeInstallProbe, welcomeProbeClear, welcomeMarkUsed = prev, probe, clear, mark
-		tools.InstallStateProbeClear()
-		resetFreeTierBootstrapForTests()
-	})
-	return anonDesktopEnv(env)
-}
-
-// The desktop's welcome trial claim refused by the service
-func anonFailedClaim(t *testing.T, env PoolEnv) *AuthError {
-	t.Helper()
-	state, err := ClaimDesktopFreeTier(env, false, false)
-	if err == nil {
-		t.Fatalf("claim succeeded: %v", state)
-	}
-	return anonCodeOf(t, err)
-}
-
-func TestAnonBootstrapRecordCarriesTheFailedClaimsCodeAndWait(t *testing.T) {
-	portal, env := installAnonPortal(t)
-	denv := anonBootstrapEnv(t, env)
-	portal.set(func(p *anonFakePortal) {
-		p.createResponse = &anonCanned{status: 429, body: map[string]any{"error": "temporarily_unavailable"}, headers: map[string]string{"Retry-After": "30"}}
-	})
-	anonFailedClaim(t, denv)
-	record := RunFreeTierBootstrap(denv, false)
-	if record.HasIdentity || record.FreeTierAccount || record.Failure["error_code"] != AnonRateLimited || record.Failure["retryable"] != true {
-		t.Fatalf("%+v", record)
-	}
-	if wait, _ := record.Failure["retry_after"].(int); wait < 28 || wait > 30 {
-		t.Fatalf("%v", record.Failure)
-	}
-	want := map[string]any{"error": record.Error, "error_code": AnonRateLimited, "retryable": true, "retry_after": record.Failure["retry_after"]}
-	if got := record.FailureFields(); !reflect.DeepEqual(got, want) {
-		t.Fatalf("%v want %v", got, want)
-	}
-	if portal.count("/api/anonymous/create") != 1 {
-		t.Fatal("the boot record never retries the mint")
-	}
-}
-
-func TestAnonBootstrapRecordAClaimedTrialCarriesNoFailureBlock(t *testing.T) {
-	_, env := installAnonPortal(t)
-	denv := anonBootstrapEnv(t, env)
-	anonClaimedTrial(t, env)
-	if record := RunFreeTierBootstrap(denv, false); !record.FreeTierAccount || len(record.FailureFields()) != 0 {
-		t.Fatalf("%+v", record)
-	}
-}
-
-func TestAnonBootstrapRecordARefreshReInventoriesAProviderConnectedMeanwhile(t *testing.T) {
-	portal, env := installAnonPortal(t)
-	denv := anonBootstrapEnv(t, env)
-	portal.set(func(p *anonFakePortal) { p.raiseTransport = true })
-	anonFailedClaim(t, denv)
-	RunFreeTierBootstrap(denv, false)
-	setupInventoryFn = func(PoolEnv) bool { return true }
-	record := RefreshSetupRecord(denv, false)
-	if !record.OtherProviders || !record.ProviderConfigured {
-		t.Fatalf("%+v", record)
-	}
-	data, err := env.Store.Load()
-	if err != nil || data["active_provider"] == "nous" {
-		t.Fatalf("%v %v", data, err)
-	}
-}
-
-func TestAnonBootstrapRecordTheDesktopRetryRefreshesTheBootRecord(t *testing.T) {
-	portal, env := installAnonPortal(t)
-	denv := anonBootstrapEnv(t, env)
-	portal.set(func(p *anonFakePortal) { p.raiseTransport = true })
-	anonFailedClaim(t, denv)
-	RunFreeTierBootstrap(denv, false)
-	portal.set(func(p *anonFakePortal) { p.raiseTransport = false })
-	if state, err := ClaimDesktopFreeTier(denv, false, true); err != nil || state == nil {
-		t.Fatalf("retry: %v %v", state, err)
-	}
-	record := RefreshSetupRecord(denv, false)
-	if !record.FreeTierAccount || len(record.FailureFields()) != 0 || CurrentSetupRecord() != record {
-		t.Fatalf("%+v", record)
-	}
-}
-
 func TestAnonSignInFailureAServiceVerdictKeepsItsCodeWaitAndCopy(t *testing.T) {
 	cases := []struct {
 		code       string
@@ -436,7 +333,7 @@ func closureAccountState() map[string]any {
 		"inference_base_url": "https://inference-api.nousresearch.com/v1"}
 }
 
-// Isolated profile and shared stores on the desktop backend where any portal fetch fails the test
+// Isolated profile and shared stores where any portal fetch fails the test
 func closureIsolatedStore(t *testing.T) PoolEnv {
 	t.Helper()
 	dir := t.TempDir()
@@ -456,7 +353,7 @@ func closureIsolatedStore(t *testing.T) PoolEnv {
 		fetchNousAccountInfoFn = prev
 		ResetNousPortalAccountInfoCache()
 	})
-	return anonDesktopEnv(modelsPoolEnv(context.Background()))
+	return modelsPoolEnv(context.Background())
 }
 
 func closureWriteAuth(t *testing.T, env PoolEnv, nous map[string]any) {

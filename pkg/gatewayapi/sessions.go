@@ -29,7 +29,7 @@ func (a *APIServerAdapter) handleHealth(ctx context.Context, request *gateway.We
 	return jsonResponse(pyjson.ObjectOf("status", "ok", "platform", "icebath-agent", "version", hermesVersion()), http.StatusOK, nil), nil
 }
 
-// Gateway state, platforms, readiness and live API metrics for dashboard probing
+// Gateway state, platforms, readiness and live API metrics for detailed health probing
 func (a *APIServerAdapter) handleHealthDetailed(ctx context.Context, request *gateway.WebRequest) (*gateway.WebResponse, error) {
 	runtime := gateway.ReadRuntimeStatus("")
 	if runtime == nil {

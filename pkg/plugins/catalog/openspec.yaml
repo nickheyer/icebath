@@ -4,7 +4,7 @@ sha: 493b42cd95d2a30f967ede5a53eb22d1bd248fb9
 description: OpenSpec CLI tools for spec-driven development workflows
 maintainer: FelineStateMachine
 tier: community
-category: desktop
+category: tools
 docs_url: https://github.com/FelineStateMachine/hermes-openspec#readme
 capabilities:
   provides_tools:

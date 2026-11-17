@@ -30,10 +30,7 @@ var isolationKindReasons = map[string]string{
 	"platform": "kind 'platform': gateway platform adapters run in the Icebath process",
 }
 
-var (
-	isolationStreamingMarkers = []string{"StreamingResponse", "EventSourceResponse", ".websocket(", "WebSocket"}
-	isolationSkipDirs         = map[string]bool{"tests": true, "test": true, ".git": true, "__pycache__": true, "node_modules": true, ".venv": true, "venv": true, "docs": true}
-)
+var isolationSkipDirs = map[string]bool{"tests": true, "test": true, ".git": true, "__pycache__": true, "node_modules": true, ".venv": true, "venv": true, "docs": true}
 
 // Static classification of where a plugin can run, host isolation or in process only
 type IsolationReport struct {
@@ -140,43 +137,6 @@ func auditPluginDir(pluginDir string, manifest map[string]any) (*IsolationReport
 	}
 	if reason, ok := isolationKindReasons[kind]; ok {
 		reasons = append(reasons, reason)
-	}
-	dashboard := filepath.Join(pluginDir, "dashboard")
-	dashManifest := filepath.Join(dashboard, "manifest.json")
-	if isFile(dashManifest) {
-		text, err := readTextReplace(dashManifest, false)
-		if err != nil {
-			return nil, err
-		}
-		if strings.Contains(text, `"api"`) {
-			var api strings.Builder
-			var readErr error
-			_ = filepath.WalkDir(dashboard, func(p string, d fs.DirEntry, err error) error {
-				if err == nil && !d.IsDir() && strings.HasSuffix(d.Name(), ".py") {
-					text, err := readTextReplace(p, true)
-					if err != nil {
-						readErr = err
-						return filepath.SkipAll
-					}
-					api.WriteString(text)
-				}
-				return nil
-			})
-			if readErr != nil {
-				return nil, readErr
-			}
-			streams := false
-			for _, marker := range isolationStreamingMarkers {
-				if strings.Contains(api.String(), marker) {
-					streams = true
-				}
-			}
-			if streams {
-				reasons = append(reasons, "dashboard backend API streams (SSE/websocket); the host bridge buffers responses")
-			} else {
-				notes = append(notes, "dashboard backend API is served through the plugin host (buffered responses)")
-			}
-		}
 	}
 	for _, rel := range isolationPythonFiles(pluginDir) {
 		native := filepath.FromSlash(rel)

@@ -8,7 +8,6 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/activesessions"
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/browser"
 	"github.com/nickheyer/icebath/pkg/gateway"
@@ -18,11 +17,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/tools"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
 )
-
-// End reasons of a backend initiated cleanup, where a Desktop session keeps its durable row open
-var automaticSessionEndReasons = map[string]bool{
-	"ws_orphan_reap": true, "ws_disconnect": true, "idle_timeout": true, "lru_evict": true, "tui_shutdown": true,
-}
 
 // Pending work of a stored session in the gateway's durable ledger, admissions then worker executions
 const canonicalPendingSQL = `SELECT status FROM session_admissions WHERE target_session_id=? AND status!='terminal'
@@ -81,7 +75,7 @@ func endUnlessLedgerBusy(ctx context.Context, db *state.DB, sessionID string, se
 
 // Sources that never name a gateway platform, the self owned surfaces included
 var nonGatewaySources = map[string]bool{
-	"": true, "tui": true, "cli": true, "webui": true, "desktop": true, "cron": true, "kanban": true, "subagent": true,
+	"": true, "tui": true, "cli": true, "cron": true, "kanban": true, "subagent": true,
 	"test": true, "local": true, "acp": true, "webhook": true, "api_server": true, "msgraph_webhook": true,
 }
 
@@ -108,46 +102,6 @@ func lockVaultManagers(session *tuigateway.Session) {
 	}()
 	if sid := session.Get("_sid"); truthy(sid) {
 		browser.ReleaseVaultSession(strOr(sid))
-	}
-}
-
-// Releases this runtime's lease and runs body under the registry lock with whether another runtime owns the row
-func otherRuntimeLeaseGuard(ctx context.Context, sessionID string, session *tuigateway.Session, body func(otherOwns bool)) {
-	lease, _ := session.Get("active_session_lease").(*activesessions.Lease)
-	own := ownLiveLeaseIDs(lease)
-	entered := false
-	var bodyFailure any
-	guarded := func(active bool) error {
-		entered = true
-		func() {
-			defer func() { bodyFailure = recover() }()
-			body(active)
-		}()
-		return nil
-	}
-	defer func() {
-		if lease != nil && lease.Released() && session.Get("active_session_lease") == lease {
-			session.Pop("active_session_lease")
-		}
-	}()
-	lastErr := leaseRetry(3, func() error {
-		var err error
-		if lease != nil && lease.Enabled {
-			err = activesessions.ReleaseLivenessGuard(ctx, lease, sessionID, own, guarded)
-		} else {
-			err = activesessions.LivenessGuard(ctx, sessionID, strOr(session.Get("profile_home")), own, guarded)
-		}
-		if entered {
-			return nil
-		}
-		return err
-	})
-	if bodyFailure != nil {
-		panic(bodyFailure)
-	}
-	if lastErr != nil && !entered {
-		logger().Warn(fmt.Sprintf("Failed to inspect active session leases; preserving session %s: %s", sessionID, lastErr))
-		body(true)
 	}
 }
 
@@ -183,10 +137,7 @@ func finalizeSession(ctx context.Context, session *tuigateway.Session, endReason
 		session.Set("resume_history_error", "session resume cancelled")
 		ready.Set()
 	}
-	desktopAutomaticCleanup := automaticSessionEndReasons[endReason] && strings.ToLower(strings.TrimSpace(sessionSource(session))) == "desktop"
-	if !desktopAutomaticCleanup {
-		releaseActiveSessionSlot(session)
-	}
+	releaseActiveSessionSlot(session)
 	if stop, ok := session.Get("_notif_stop").(*pythread.Event); ok && stop != nil {
 		stop.Set()
 	}
@@ -231,9 +182,6 @@ func finalizeSession(ctx context.Context, session *tuigateway.Session, endReason
 		boundaryID = &sessionID
 	}
 	session.Set("_end_msgs", notifySessionBoundary(ctx, "on_session_finalize", boundaryID, sessionSource(session)))
-	if desktopAutomaticCleanup && sessionID == "" {
-		releaseActiveSessionSlot(session)
-	}
 	tuiOwnsLifecycle := true
 	lifecycle := func(otherOwns bool) {
 		tuiOwnsLifecycle = !otherOwns
@@ -259,19 +207,15 @@ func finalizeSession(ctx context.Context, session *tuigateway.Session, endReason
 			}
 			if isGatewayOwnedSource(ctx, source) {
 				tuiOwnsLifecycle = false
-			} else if tuiOwnsLifecycle && !desktopAutomaticCleanup {
+			} else if tuiOwnsLifecycle {
 				if !endUnlessLedgerBusy(ctx, db, sessionID, sessionKey, endReason) {
 					tuiOwnsLifecycle = false
 				}
 			}
 		})
 	}
-	if desktopAutomaticCleanup && sessionID != "" {
-		otherRuntimeLeaseGuard(ctx, sessionID, session, lifecycle)
-	} else {
-		lifecycle(truthy(session.Get("_lease_taken_over")))
-	}
-	if a != nil && (desktopAutomaticCleanup || !tuiOwnsLifecycle) {
+	lifecycle(truthy(session.Get("_lease_taken_over")))
+	if a != nil && !tuiOwnsLifecycle {
 		a.SetEndSessionOnClose(false)
 	}
 	suppress(func() {

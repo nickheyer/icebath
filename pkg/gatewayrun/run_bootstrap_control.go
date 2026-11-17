@@ -36,7 +36,7 @@ func identifyRuntime(r *GatewayRunner) *pyjson.Object {
 	}
 	supervisor, _ := payload.Get("supervisor")
 	switch supervisor {
-	case "manual", "desktop":
+	case "manual":
 		payload.Set("supervisor", "none")
 	case nil:
 		if _, present := payload.Get("supervisor"); !present {

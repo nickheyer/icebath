@@ -293,7 +293,7 @@ func TestWsOrphanReapSparesDetachedSessionWithRunningAsyncDelegation(t *testing.
 	session := serverCaseSession(t, "bg-sid", map[string]any{"session_key": "sess_bg"})
 	db := ledgerHandle(t, filepath.Join(h, "state.db"))
 	useSharedDB(t, db)
-	if err := db.CreateSession(state.NewSession{ID: "sess_bg", Source: "desktop"}); err != nil {
+	if err := db.CreateSession(state.NewSession{ID: "sess_bg", Source: "tui"}); err != nil {
 		t.Fatal(err)
 	}
 	record := func(status string) {

@@ -23,14 +23,13 @@ const (
 	CABundleEnv              = "ICEBATH_CA_BUNDLE"
 	AnonSecretEnv            = "ICEBATH_ANON_API_SECRET"
 	SharedAuthDirEnv         = "ICEBATH_SHARED_AUTH_DIR"
-	DesktopEnv               = "ICEBATH_DESKTOP"
 	PreviewFullConnectorsEnv = "ICEBATH_PREVIEW_FULL_CONNECTORS"
 	Secret                   = "test-secret"
 	Welcome                  = "https://welcome-api.nousresearch.com/v1"
 )
 
-// Env names unset for the test so no real key or Desktop marker leaks into the portal flows
-var ClearedEnv = []string{"OPENROUTER_API_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "NOUS_API_KEY", DesktopEnv, PreviewFullConnectorsEnv}
+// Env names unset for the test so no real key leaks into the portal flows
+var ClearedEnv = []string{"OPENROUTER_API_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "NOUS_API_KEY", PreviewFullConnectorsEnv}
 
 type Portal struct {
 	URL       string

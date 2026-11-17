@@ -20,7 +20,6 @@ var _ = Method("gateway.capabilities", PingParams, GatewayCapabilitiesResult, "W
 
 var ClientCapabilitiesParams = pydantic.NewModel("ClientCapabilitiesParams", ParamsConfig,
 	pydantic.Def("server_requests", pydantic.Bool, false),
-	pydantic.Def("desktop_local", pydantic.Bool, false),
 )
 
 var ClientCapabilitiesResult = pydantic.NewModel("ClientCapabilitiesResult", ClosedConfig,

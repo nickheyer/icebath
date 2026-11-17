@@ -5,10 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 	"path/filepath"
 	"sort"
-	"strconv"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -65,7 +63,7 @@ func resolveUpdateOptions(ctx context.Context, w io.Writer, args map[string]any,
 func beginUpdateReceiptAndPlan(ctx context.Context, w io.Writer, args map[string]any) (*UpdatePlan, error) {
 	if err := bestEffort(ctx, "Update receipt unavailable: %s", func() error {
 		updaterecord.BeginUpdateReceipt(ctx, nil, "")
-		return recordUpdateInitiator(ctx)
+		return nil
 	}); err != nil {
 		return nil, err
 	}
@@ -95,38 +93,6 @@ func beginUpdateReceiptAndPlan(ctx context.Context, w io.Writer, args map[string
 	}
 	updaterecord.RecordStage(ctx, "plan", outcome, nil)
 	return plan, nil
-}
-
-// Records the desktop as initiator when the update marker names another pid than this lock holder
-func recordUpdateInitiator(ctx context.Context) error {
-	return bestEffort(ctx, "Update initiator unavailable: %s", func() error {
-		raw, err := os.ReadFile(updaterecord.UpdateMarkerPath())
-		if err != nil {
-			return err
-		}
-		text, err := pystr.DecodeUTF8Sig(raw)
-		if err != nil {
-			return err
-		}
-		first, _, _ := strings.Cut(text, "\n")
-		first = pystr.Strip(first)
-		if first == "" {
-			return nil
-		}
-		for _, r := range first {
-			if !pystr.IsDigit(r) {
-				return nil
-			}
-		}
-		pid, err := strconv.Atoi(first)
-		if err != nil {
-			return &ValueError{Msg: "invalid literal for int() with base 10: " + pyrepr.Repr(first)}
-		}
-		if pid != os.Getpid() {
-			updaterecord.RecordFact(ctx, "initiator", "desktop")
-		}
-		return nil
-	})
 }
 
 // Resolves whether the update uses the ZIP path, the git argv and whether origin is a fork
@@ -168,7 +134,7 @@ func prepareGitCommand(ctx context.Context, w io.Writer, move checkoutMoveFunc) 
 }
 
 // Handles a failed git or installer subprocess, the ZIP download when safe, else the report and exit 1
-func handleUpdateCalledProcessError(ctx context.Context, w io.Writer, e error, args map[string]any, gatewayMode, hadDesktopAppBeforeUpdate bool,
+func handleUpdateCalledProcessError(ctx context.Context, w io.Writer, e error, args map[string]any, gatewayMode bool,
 	targetSHA, targetRepository string, completionRequest map[string]any) error {
 	if unrestored, _ := unrestoredAutostashNotice(); unrestored != "" {
 		fmt.Fprintln(w, unrestored)
@@ -182,7 +148,7 @@ func handleUpdateCalledProcessError(ctx context.Context, w io.Writer, e error, a
 		fmt.Fprintf(w, "⚠ %s: %s\n", stage, e.Error())
 		fmt.Fprintln(w, "→ Falling back to ZIP download...")
 		fmt.Fprintln(w)
-		_, err := updateViaZip(ctx, w, args, hadDesktopAppBeforeUpdate, targetSHA, targetRepository, completionRequest)
+		_, err := updateViaZip(ctx, w, args, targetSHA, targetRepository, completionRequest)
 		return err
 	}
 	if calledProcessErrorIsPythonDepInstall(e) {
@@ -321,7 +287,6 @@ var updateGitOperation = GitOperationInProgress
 // Applies the update, the command boundary owning errors, receipts and output streams
 func cmdUpdateImpl(ctx context.Context, w io.Writer, args map[string]any, gatewayMode bool) error {
 	beginUpdateAttempt()
-	PreferDotenvProxyEnv(nil)
 	root := fleetProjectRoot()
 	gitOperation, err := updateGitOperation(root)
 	if err != nil {
@@ -361,7 +326,6 @@ func cmdUpdateImpl(ctx context.Context, w io.Writer, args map[string]any, gatewa
 	preUpdateSnapshotID := runPreUpdateBackup(ctx, w, args)
 	recordPreUpdateBackupOutcome(ctx, args, preUpdateSnapshotID)
 	recordSnapshotStage(ctx, args, preUpdateSnapshotID)
-	PublishStage("Downloading updates")
 	token, err := pauseGatewaysForUpdate(ctx, w, opts)
 	if err != nil {
 		return err
@@ -370,21 +334,18 @@ func cmdUpdateImpl(ctx context.Context, w io.Writer, args map[string]any, gatewa
 	if len(token) > 0 {
 		registerUpdateExitHook(resumeWindowsGatewaysHook, resume)
 	}
-	desktopDir := filepath.Join(root, "apps", "desktop")
-	_, packaged := desktopPackagedExecutable(desktopDir)
-	hadDesktopAppBeforeUpdate := packaged || desktopDistExists(desktopDir) || len(installedDesktopApps()) > 0
 	releaseBinary, err := releaseBinaryInstall(ctx, root)
 	if err != nil {
 		return err
 	}
 	if releaseBinary {
-		return applyReleaseUpdate(ctx, w, args, opts, preUpdatePlan, preUpdateSnapshotID, token, hadDesktopAppBeforeUpdate, gatewayMode, resume)
+		return applyReleaseUpdate(ctx, w, args, opts, preUpdatePlan, preUpdateSnapshotID, token, gatewayMode, resume)
 	}
 	useZipUpdate, gitCmd, fork, err := prepareGitCommand(ctx, w, movesFor(token))
 	if err != nil {
 		return err
 	}
-	completionRequest, err := sourceCompletionRequest(ctx, opts, preUpdatePlan, preUpdateSnapshotID, token, hadDesktopAppBeforeUpdate, gatewayMode)
+	completionRequest, err := sourceCompletionRequest(ctx, opts, preUpdatePlan, preUpdateSnapshotID, token, gatewayMode)
 	if err != nil {
 		return err
 	}
@@ -400,7 +361,7 @@ func cmdUpdateImpl(ctx context.Context, w io.Writer, args map[string]any, gatewa
 	}
 	branch = pyrepr.Str(completionRequest["branch"])
 	if useZipUpdate {
-		_, zipErr := updateViaZip(ctx, w, args, hadDesktopAppBeforeUpdate, target.ReleaseSHA, target.Repository, completionRequest)
+		_, zipErr := updateViaZip(ctx, w, args, target.ReleaseSHA, target.Repository, completionRequest)
 		if err := resumePausedGatewaysAtExit(ctx, w, token, completionRequest); err != nil {
 			return err
 		}
@@ -410,7 +371,7 @@ func cmdUpdateImpl(ctx context.Context, w io.Writer, args map[string]any, gatewa
 	if _, called := asCalledProcessError(err); !called {
 		return err
 	}
-	handled := handleUpdateCalledProcessError(ctx, w, err, args, gatewayMode, hadDesktopAppBeforeUpdate, target.ReleaseSHA, target.Repository, completionRequest)
+	handled := handleUpdateCalledProcessError(ctx, w, err, args, gatewayMode, target.ReleaseSHA, target.Repository, completionRequest)
 	if err := resumePausedGatewaysAtExit(ctx, w, token, completionRequest); err != nil {
 		return err
 	}
@@ -419,8 +380,8 @@ func cmdUpdateImpl(ctx context.Context, w io.Writer, args map[string]any, gatewa
 
 // The release path of a binary install, channel selection, download and swap, then the completion
 func applyReleaseUpdate(ctx context.Context, w io.Writer, args map[string]any, opts *updateOptions, preUpdatePlan *UpdatePlan, preUpdateSnapshotID *string,
-	token map[string]any, hadDesktopAppBeforeUpdate, gatewayMode bool, resume func() error) error {
-	completionRequest, err := sourceCompletionRequest(ctx, opts, preUpdatePlan, preUpdateSnapshotID, token, hadDesktopAppBeforeUpdate, gatewayMode)
+	token map[string]any, gatewayMode bool, resume func() error) error {
+	completionRequest, err := sourceCompletionRequest(ctx, opts, preUpdatePlan, preUpdateSnapshotID, token, gatewayMode)
 	if err != nil {
 		return err
 	}

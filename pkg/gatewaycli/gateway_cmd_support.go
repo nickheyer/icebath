@@ -100,7 +100,7 @@ func ReportIncompatibleOwner(ctx context.Context, w io.Writer, pids []int) bool 
 		running = "Gateway is running (PID: " + joinInts(pids, ", ") + ")"
 	}
 	fmt.Fprintf(w, "✗ %s but cannot serve this Icebath (%s)\n", running, stale)
-	printLines(w, "  It was started by another Icebath version; TUI, Desktop and chat cannot attach to it.",
+	printLines(w, "  It was started by another Icebath version; the TUI and chat cannot attach to it.",
 		"  Replace it with this version:", "    icebath gateway restart")
 	return true
 }

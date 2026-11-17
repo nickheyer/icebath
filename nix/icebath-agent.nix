@@ -1,10 +1,9 @@
-# The icebath binary with the dashboard bundle embedded by webdist and Matrix encryption compiled in by goolm
+# The icebath binary with Matrix encryption compiled in by goolm
 {
   lib,
   callPackage,
   buildGoModule,
   makeWrapper,
-  web,
   rev ? null,
   extraPythonPackages ? [ ],
 }:
@@ -27,10 +26,9 @@ buildGoModule {
       ../third_party
     ];
   };
-  vendorHash = "sha256-lOM8xlhVJTgqRJWAieHLac11iwou4H1cas5aNm86+8M=";
+  vendorHash = "sha256-XnuwLt3lGyNNPCyM0mSZd/ozTWBUzU01rPA61pNEhzM=";
   subPackages = [ "cmd/icebath" ];
   tags = [
-    "webdist"
     "goolm"
   ];
   env.CGO_ENABLED = 0;
@@ -39,11 +37,6 @@ buildGoModule {
     "-w"
     "-X main.version=${version}"
   ];
-  preBuild = ''
-    rm -rf cmd/icebath/web_dist
-    cp -r ${web} cmd/icebath/web_dist
-    chmod -R u+w cmd/icebath/web_dist
-  '';
   nativeBuildInputs = lib.optional (extraPythonPackages != [ ]) makeWrapper;
   postInstall = ''
     printf 'nix\n' > $out/bin/.install_method
@@ -53,7 +46,7 @@ buildGoModule {
   '';
   doCheck = false;
   passthru = {
-    inherit web python extraPythonPackages;
+    inherit python extraPythonPackages;
   };
   meta = {
     description = "Tiling agentic harness and netrunner toolkit";

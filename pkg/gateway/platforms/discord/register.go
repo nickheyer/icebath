@@ -24,15 +24,12 @@ func (discordPlugin) Manifest() plugins.Manifest {
 		RequiresEnv: []plugins.EnvSpec{{Name: "DISCORD_BOT_TOKEN", Description: "Discord bot token"}}}
 }
 
-// Registers the Discord platform with its sender, YAML bridge, setup, card and access policy declarations
+// Registers the Discord platform with its sender, YAML bridge, setup and access policy declarations
 func (discordPlugin) Register(ctx *plugins.Context) error {
 	extra := map[string]any{
 		"target_ref_syntax_fn": gateway.RegexGroupsParser(sendTargetPattern, true),
 		"standalone_send": &gateway.StandaloneSendPolicy{Label: "Discord", Media: true, AllSends: true, Captionable: true,
 			EmptyListBetweenChunks: true},
-		"dashboard_description":  "Connect Icebath to Discord DMs, channels, and threads.",
-		"docs_url":               "https://discord.com/developers/applications",
-		"dashboard_env_vars":     []string{"DISCORD_BOT_TOKEN", "DISCORD_ALLOWED_USERS"},
 		"ensure_deps_fn":         func(context.Context) (bool, error) { return discordDepsPresent(), nil },
 		"is_connected":           gateway.EnvIsConnected("DISCORD_BOT_TOKEN"),
 		"setup_fn":               InteractiveSetup,

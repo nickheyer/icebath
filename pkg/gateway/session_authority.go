@@ -110,8 +110,6 @@ type SessionAuthority struct {
 	producerTurns          map[string]*producerBracket
 	steerTransfers         map[string]*steerTransfer
 	adopted                map[string]adoptedAgent
-	onboardingDiscards     *onboardingDiscardSet
-	onboardingStartLock    asyncLock
 	botMailboxLock         asyncLock
 	botReceiptIndex        map[string]botReceiptOwner
 	botReceiptTasks        map[*adapterTask]bool
@@ -457,7 +455,7 @@ func (a *SessionAuthority) publishPending(ctx context.Context, ref SessionRef) e
 		}
 		live.EventStream.Publish(ref.SessionID, pyjson.ObjectOf(
 			"stored_session_id", ref.SessionID, "pending", pending, "authority_epoch", a.Epoch,
-			"desktop_protocol", CanonicalGatewayProtocol, "running", handle.ExecutionState == "running",
+			"gateway_protocol", CanonicalGatewayProtocol, "running", handle.ExecutionState == "running",
 			"execution_generation", handle.ExecutionGeneration, "revision", handle.Revision), "session.info", nil)
 		return nil
 	}()

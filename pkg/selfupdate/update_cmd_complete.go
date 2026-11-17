@@ -208,7 +208,7 @@ func printUpdateCheckResult(ctx context.Context, w io.Writer, behind *int, compa
 }
 
 // Freezes the data the completion process needs before the checkout moves
-func sourceCompletionRequest(ctx context.Context, opts *updateOptions, plan *UpdatePlan, snapshotID *string, windowsResume map[string]any, desktop, gatewayMode bool) (map[string]any, error) {
+func sourceCompletionRequest(ctx context.Context, opts *updateOptions, plan *UpdatePlan, snapshotID *string, windowsResume map[string]any, gatewayMode bool) (map[string]any, error) {
 	current := updaterecord.CurrentReceipt(ctx)
 	if current == nil {
 		updaterecord.BeginUpdateReceipt(ctx, nil, "")
@@ -219,7 +219,7 @@ func sourceCompletionRequest(ctx context.Context, opts *updateOptions, plan *Upd
 		return nil, err
 	}
 	request := map[string]any{
-		"schema": 1, "source": source, "home": home.Dir(ctx), "branch": "main", "desktop": desktop,
+		"schema": 1, "source": source, "home": home.Dir(ctx), "branch": "main",
 		"assume_yes": opts.AssumeYes, "gateway_mode": gatewayMode, "no_gateway_restart": opts.NoGatewayRestart,
 		"pre_update_version": optionalValue(opts.PreUpdateVersion), "snapshot_id": optionalValue(snapshotID),
 		"sibling_snapshots": pyjson.Clone(lastSiblingSnapshots), "plan": nil,
@@ -324,7 +324,6 @@ func handOffSourceUpdate(ctx context.Context, w io.Writer, request map[string]an
 		mode = "git"
 	}
 	updaterecord.RecordStage(ctx, "apply", outcome, pyjson.ObjectOf("mode", mode))
-	PublishStage("Updating dependencies")
 	if current := updaterecord.CurrentReceipt(ctx); current != nil {
 		request["receipt"] = pyjson.Clone(current.Data)
 	}

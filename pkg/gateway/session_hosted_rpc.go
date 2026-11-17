@@ -224,7 +224,7 @@ func (r *HostedRoomAuthorityRPC) create(ctx context.Context, params map[string]a
 		merged[key] = value
 	}
 	merged["agent"] = agentCfg
-	policy, err := buildPolicy(ctx, map[string]any{"source": "gui"}, merged, buildPolicyOptions{PrivateSecrets: private})
+	policy, err := buildPolicy(ctx, map[string]any{"source": "tui"}, merged, buildPolicyOptions{PrivateSecrets: private})
 	if err != nil {
 		return nil, err
 	}

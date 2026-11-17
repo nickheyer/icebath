@@ -588,7 +588,7 @@ func modelSaveKey(ctx context.Context, rid any, params map[string]any) (map[stri
 		return nil, err
 	}
 	if !hadPrevious || apiKey != previous {
-		observability.RecordProviderSetupDone(ctx, resolveSessionPlatform(), slug, h, true)
+		observability.RecordProviderSetupDone(ctx, sessionPlatform, slug, h, true)
 	}
 	provider.ReconcileSetupRecord(scopedPoolEnv(ctx))
 	pc, err := modelPickerContext(ctx, paramsSessionAgent(params))

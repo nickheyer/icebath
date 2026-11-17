@@ -171,7 +171,7 @@ func TestCrossProcessWriteStillInvalidates(t *testing.T) {
 	if !guardWouldReuse(t, r, db, "telegram:s1", "s1") {
 		t.Fatal("own turn rebuilt the agent after the rebaseline")
 	}
-	appendRow(t, db, "user", "external from dashboard")
+	appendRow(t, db, "user", "external from another process")
 	if guardWouldReuse(t, r, db, "telegram:s1", "s1") {
 		t.Fatal("cross process write did not invalidate the cached agent")
 	}
@@ -334,7 +334,7 @@ func TestDisconnectedSecondaryFailsClosed(t *testing.T) {
 	}
 }
 
-func TestADesktopClaimOfTheSessionAGatewayTurnJustEndedIsNotAlreadyOwned(t *testing.T) {
+func TestATUIClaimOfTheSessionAGatewayTurnJustEndedIsNotAlreadyOwned(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("ICEBATH_HOME", tmp)
 	r := leaseRunner(0)
@@ -348,9 +348,9 @@ func TestADesktopClaimOfTheSessionAGatewayTurnJustEndedIsNotAlreadyOwned(t *test
 		t.Fatal("stuck release never started")
 	}
 	leaseGW := endGatewayTurn(t, r, key, src)
-	leaseDesk, refusal := tuigateway.ClaimActiveSessionSlotRefusal(context.Background(), key, "desktop-view", "desktop", tmp)
+	leaseView, refusal := tuigateway.ClaimActiveSessionSlotRefusal(context.Background(), key, "tui-view", "tui", tmp)
 	if refusal != nil {
-		t.Fatalf("Desktop saw the ended gateway turn as the session's owner: %s", refusal.PyStr())
+		t.Fatalf("the TUI saw the ended gateway turn as the session's owner: %s", refusal.PyStr())
 	}
 	drainLeaseWorker(t, leaseGW, stuck)
 	entries, err := activesessions.RegistrySnapshot(context.Background(), tmp, true)
@@ -361,10 +361,10 @@ func TestADesktopClaimOfTheSessionAGatewayTurnJustEndedIsNotAlreadyOwned(t *test
 	for _, e := range entries {
 		got = append(got, [2]any{e.GetOr("session_id", nil), e.GetOr("surface", nil)})
 	}
-	if len(got) != 1 || got[0] != [2]any{key, "desktop"} {
+	if len(got) != 1 || got[0] != [2]any{key, "tui"} {
 		t.Fatalf("registry %v", got)
 	}
-	if err := leaseDesk.Release(); err != nil {
+	if err := leaseView.Release(); err != nil {
 		t.Fatal(err)
 	}
 }

@@ -23,11 +23,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
-// Steward value of a desktop bundle install
-const stewardDesktop = "desktop-app"
-
 // Install stamp updateMechanism values a build lane may write
-var updateMechanisms = []string{"self", "app-installer", "electron-updater", "external", "microsoft-store"}
+var updateMechanisms = []string{"self", "external"}
 
 // Install stamp updateMechanism values a build lane may write, as a fresh slice
 func UpdateMechanisms() []string { return append([]string(nil), updateMechanisms...) }
@@ -115,20 +112,6 @@ func IsSealedTree(projectRoot string) (bool, error) { return isSealedTree(projec
 func lexistsFollow(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil
-}
-
-// Reports a desktop bundle payload by its stamp, a git tree never counting
-func IsBundledPayload(root string) bool {
-	if lexistsFollow(filepath.Join(root, ".git")) {
-		return false
-	}
-	stamp := ReadInstallStamp(root)
-	if stamp.Len() == 0 {
-		return false
-	}
-	payload, _ := stamp.Get("payload")
-	distribution, _ := stampString(stamp, "distribution")
-	return truthyOrdered(payload) || distribution == stewardDesktop
 }
 
 // Install binary of a tree when present as a regular file, empty otherwise
@@ -688,12 +671,6 @@ func ExposeCLI(ctx context.Context, projectRoot string, create bool) (ExposeResu
 			return ExposeResult{OK: true, Skipped: "config-disabled"}, nil
 		}
 	}
-	if IsBundledPayload(root) {
-		if create && runtime.GOOS == "darwin" {
-			return symlinkSealedLaunchers(filepath.Join(filepath.Dir(root), "bin")), nil
-		}
-		return ExposeResult{OK: true, Skipped: "bundle-owns-launchers"}, nil
-	}
 	if mechanism, _ := stampString(ReadInstallStamp(root), "updateMechanism"); mechanism == "external" {
 		return ExposeResult{OK: true, Skipped: "externally-owned"}, nil
 	}
@@ -730,50 +707,6 @@ func ExposeCLI(ctx context.Context, projectRoot string, create bool) (ExposeResu
 		}
 	}
 	return ExposeResult{OK: true, Written: written}, nil
-}
-
-// Links a sealed bundle's commands into the user bin, never clobbering a file or live foreign link
-func symlinkSealedLaunchers(payloadBin string) ExposeResult {
-	userHome, err := os.UserHomeDir()
-	if err != nil {
-		return ExposeResult{OK: false, Error: err.Error()}
-	}
-	linkDir := filepath.Join(userHome, ".local", "bin")
-	payloadRoot := filepath.Dir(payloadBin)
-	written := []string{}
-	if err := os.MkdirAll(linkDir, 0o777); err != nil {
-		return ExposeResult{OK: false, Error: pypath.OSErrorText(err)}
-	}
-	for _, name := range []string{"icebath", "icebath-agent", "icebath-acp"} {
-		source := filepath.Join(payloadBin, name)
-		if !isRegularFile(source) {
-			continue
-		}
-		target := filepath.Join(linkDir, name)
-		if isSymlink(target) {
-			current, err := os.Readlink(target)
-			if err != nil {
-				return ExposeResult{OK: false, Error: pypath.OSErrorText(err)}
-			}
-			if current == source {
-				continue
-			}
-			intoPayload := strings.HasPrefix(filepath.Clean(current), payloadRoot+string(os.PathSeparator))
-			if !intoPayload && lexistsFollow(target) {
-				continue
-			}
-		} else if lexistsFollow(target) {
-			continue
-		}
-		if err := os.Remove(target); err != nil && !errors.Is(err, os.ErrNotExist) {
-			return ExposeResult{OK: false, Error: pypath.OSErrorText(err)}
-		}
-		if err := os.Symlink(source, target); err != nil {
-			return ExposeResult{OK: false, Error: pypath.OSErrorText(err)}
-		}
-		written = append(written, name)
-	}
-	return ExposeResult{OK: true, Written: written, Mode: "sealed-symlinks"}
 }
 
 // Puts entry first on a semicolon PATH, false when the PATH already names it

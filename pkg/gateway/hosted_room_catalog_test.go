@@ -86,15 +86,14 @@ func TestCatalogDigestIsCanonicalAndTamperEvident(t *testing.T) {
 	}
 }
 
-func TestLocalCatalogIsHonestForAppManagedProcess(t *testing.T) {
-	t.Setenv("ICEBATH_DESKTOP", "1")
-	catalog, err := LocalCatalogMapping(context.Background(), CatalogOptions{TargetProfile: "default", InstallationID: "install-desktop"})
+func TestLocalCatalogAdvertisesAPersistentProcess(t *testing.T) {
+	catalog, err := LocalCatalogMapping(context.Background(), CatalogOptions{TargetProfile: "default", InstallationID: "install-local"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	persistent, _ := catalog.Get("persistent_process")
 	links, _ := catalog.Get("link_modes")
-	if persistent != false || !pyjson.Equal(links, []any{"direct"}) {
+	if persistent != true || !pyjson.Equal(links, []any{"direct"}) {
 		t.Fatalf("persistent %v links %v", persistent, links)
 	}
 }

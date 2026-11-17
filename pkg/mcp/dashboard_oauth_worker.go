@@ -18,14 +18,6 @@ func (f *DashboardOAuthFlow) SetTools(summaries []ToolSummary) {
 	f.Tools = summaryDicts(summaries)
 }
 
-// Context carrying the dashboard redirect and callback handlers of flow for the OAuth probe
-func WithDashboardOAuthFlow(ctx context.Context, flow *DashboardOAuthFlow) context.Context {
-	return withDashboardOAuthFlow(ctx, flow)
-}
-
-// Process wide MCP OAuth provider manager
-func GetManager() *OAuthManager { return getManager() }
-
 // Evicts the provider and deletes the server's OAuth files, returning the evicted entry
 func (m *OAuthManager) Remove(ctx context.Context, serverName, homeDir string) (*providerEntry, error) {
 	return m.remove(ctx, serverName, homeDir)

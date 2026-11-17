@@ -13,8 +13,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pyshlex"
-	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 var inventoryLog = slog.Default().With("logger", "hermes_cli.update_inventory")
@@ -212,11 +210,6 @@ var (
 	inventoryProfileGatewayProcs = func(ctx context.Context) ([]gatewaycli.ProfileGatewayProcess, error) {
 		return gatewaycli.FindProfileGatewayProcesses(ctx, nil, false)
 	}
-	inventoryLedgerEntries       = func() []map[string]any { return tools.LedgerEntries(tools.LedgerOptions{}) }
-	inventorySpawnerIsDead       = tools.SpawnerIsDead
-	inventoryLaunchdJobs         = gateway.LoadedLaunchdBackendJobs
-	inventoryProcessAncestors    = gateway.ProcessAncestors
-	inventorySystemdOwnerForPid  = gateway.SystemdOwnerForPid
 	inventoryReadImageProvenance = func() *ImageProvenance { return ReadImageProvenance("") }
 	inventoryDetectInstallMethod = func(ctx context.Context) (string, error) {
 		return config.DetectInstallMethod(ctx, home.Dir(ctx), fleetProjectRoot())
@@ -251,22 +244,13 @@ func quietSupervisor(ctx context.Context) (name string) {
 	return "service"
 }
 
-var restartMechanisms = map[string]string{"systemd": "systemd", "launchd": "launchd", "desktop": "desktop", "windows-service": "windows-service",
-	"manual-serve": "respawn-argv", "desktop-ssh": "desktop-ssh"}
+var restartMechanisms = map[string]string{"systemd": "systemd", "launchd": "launchd", "windows-service": "windows-service"}
 
 var mechanismDescriptions = map[string]string{
 	"systemd":         "systemctl restart (drain-first SIGUSR1 when supported)",
 	"launchd":         "launchctl kickstart -k (drain-first, per-label domain)",
-	"desktop":         "Desktop app respawns its serve backend",
 	"windows-service": "sc.exe stop before venv mutation, sc.exe start after update",
-	"respawn-argv":    "stop before code swap, relaunch with recorded launch args",
-	"desktop-ssh":     "the remote Desktop that spawned it over SSH respawns it when it reconnects",
 }
-
-var serveKinds = map[string]bool{"serve": true, "dashboard": true}
-
-// Serve backends a Desktop client owns and recycles, never restarted by the updater
-var ClientOwnedServeSupervisors = map[string]bool{"desktop": true, "desktop-ssh": true}
 
 // Machine readable restart mechanism id of a supervisor, manual when the table has none
 func restartMechanism(supervisor string) string {
@@ -422,122 +406,6 @@ func collectGatewayRuntimes(ctx context.Context, plan *UpdatePlan, profileHomes 
 	})
 }
 
-// Loaded launchd dashboard and serve jobs, none when the probe fails
-func loadedBackendLaunchdJobs(ctx context.Context) (jobs []gateway.LaunchdBackendJob) {
-	defer func() {
-		if r := recover(); r != nil {
-			jobs = nil
-		}
-	}()
-	return inventoryLaunchdJobs(ctx)
-}
-
-// Command line a ledger row recorded, nil when it is empty or cannot be split
-func ledgerEntryArgv(entry map[string]any) []string {
-	text := ""
-	if argv := entry["argv"]; pyrepr.Truthy(argv) {
-		text = pyrepr.Str(argv)
-	}
-	parts, err := pyshlex.SplitPOSIX(text, false)
-	if err != nil || len(parts) == 0 {
-		return nil
-	}
-	return parts
-}
-
-// Loaded launchd job owning this ledger row by live pid, ancestor or arguments, nil when none or the probe fails
-func launchdOwnerForLedgerEntry(ctx context.Context, entry map[string]any, pid int, jobs []gateway.LaunchdBackendJob) (job *gateway.LaunchdBackendJob) {
-	defer func() {
-		if r := recover(); r != nil {
-			job = nil
-		}
-	}()
-	return gateway.LaunchdJobOwningBackend(pid, ledgerEntryArgv(entry), jobs, inventoryProcessAncestors(ctx, pid))
-}
-
-// Unit and scope of the systemd unit whose MainPID is pid, not ok when none owns it
-func systemdOwnerForLedgerPid(ctx context.Context, pid int) (unit, scope string, ok bool) {
-	defer func() {
-		if r := recover(); r != nil {
-			unit, scope, ok = "", "", false
-		}
-	}()
-	return inventorySystemdOwnerForPid(ctx, pid)
-}
-
-// True when the row is the backend a Desktop spawned over SSH, by the canonical argv predicate
-func isDesktopSSHLedgerEntry(entry map[string]any) bool {
-	text := ""
-	if argv := entry["argv"]; pyrepr.Truthy(argv) {
-		text = pyrepr.Str(argv)
-	}
-	parts, err := pyshlex.SplitPOSIX(text, false)
-	if err != nil {
-		return false
-	}
-	return tools.IsDesktopSSHBackendArgv(parts)
-}
-
-// Value of a ledger field, the fallback when it is falsy
-func ledgerOr(entry map[string]any, key string, fallback any) any {
-	if v := entry[key]; pyrepr.Truthy(v) {
-		return v
-	}
-	return fallback
-}
-
-// Serve and dashboard backends from the spawn ledger, each classified by who owns its restart
-func collectLedgerRuntimes(ctx context.Context, plan *UpdatePlan, seen map[int]bool) {
-	inventoryProbe("Serve/dashboard ledger inventory", func() error {
-		launchdJobs := loadedBackendLaunchdJobs(ctx)
-		for _, entry := range inventoryLedgerEntries() {
-			purpose, isStr := entry["purpose"].(string)
-			rawPID, isInt := exactInt(entry["pid"])
-			if flag, isBool := entry["pid"].(bool); isBool {
-				rawPID, isInt = 0, true
-				if flag {
-					rawPID = 1
-				}
-			}
-			if !isStr || !serveKinds[purpose] || !isInt || seen[int(rawPID)] {
-				continue
-			}
-			pid := int(rawPID)
-			seen[pid] = true
-			detail := pyjson.NewObject()
-			detail.Set("argv", ledgerOr(entry, "argv", ""))
-			detail.Set("host", ledgerOr(entry, "host", ""))
-			detail.Set("port", entry["port"])
-			detail.Set("create_time", entry["create_time"])
-			supervisor := "manual-serve"
-			var job *gateway.LaunchdBackendJob
-			if len(launchdJobs) > 0 {
-				job = launchdOwnerForLedgerEntry(ctx, entry, pid, launchdJobs)
-			}
-			if job != nil {
-				supervisor = "launchd"
-				detail.Set("launchd_domain", job.Domain)
-				detail.Set("launchd_label", job.Label)
-			} else if isDesktopSSHLedgerEntry(entry) {
-				supervisor = "desktop-ssh"
-			} else if dead, known := inventorySpawnerIsDead(entry); known && !dead {
-				supervisor = "desktop"
-			} else if unit, scope, owned := systemdOwnerForLedgerPid(ctx, pid); owned {
-				supervisor = "systemd"
-				detail.Set("systemd_unit", unit)
-				if scope != "" {
-					detail.Set("systemd_scope", scope)
-				} else {
-					detail.Set("systemd_scope", nil)
-				}
-			}
-			runtimePID := pid
-			plan.Runtimes = append(plan.Runtimes, newRuntime(purpose, pyrepr.Str(ledgerOr(entry, "profile", "default")), &runtimePID, supervisor, nil, nil, detail))
-		}
-		return nil
-	})
-}
-
 // Builds the plan read only, every collector degrading on its own
 func CollectRuntimeInventory(ctx context.Context) *UpdatePlan {
 	plan := NewUpdatePlan()
@@ -562,6 +430,5 @@ func CollectRuntimeInventory(ctx context.Context) *UpdatePlan {
 	})
 	seen := map[int]bool{}
 	collectGatewayRuntimes(ctx, plan, profileHomes, seen)
-	collectLedgerRuntimes(ctx, plan, seen)
 	return plan
 }

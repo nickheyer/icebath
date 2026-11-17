@@ -99,8 +99,8 @@ var BuiltinSubcommands = map[string]bool{}
 
 func init() {
 	for _, n := range strings.Fields(`acp approvals auth backup bundles checkpoints codex-runtime completion computer-use connectors
-		config console cron curator dashboard serve debug doctor dump egress fallback gateway hooks import insights
-		gui desktop kanban login logout logs lsp mcp memory migrate moa journey memory-graph learning
+		config console cron curator debug doctor dump egress fallback gateway hooks import insights
+		kanban login logout logs lsp mcp memory migrate moa journey memory-graph learning
 		model monitoring pairing pause peer pets plugins portal profile project proxy prompt-size resume send sessions setup
 		skin skills slack status tools uninstall update usage vault webhook whatsapp whatsapp-cloud worktree chat secrets security
 		browser verify help`) {
@@ -157,9 +157,6 @@ const rootEpilog = `Examples:
     icebath debug share             Upload debug report for support
     icebath console                Open the safe Icebath command console
     icebath update                 Update to latest version
-    icebath dashboard              Start web UI dashboard (port 9119)
-    icebath dashboard --stop       Stop running dashboard processes
-    icebath dashboard --status     List running dashboard processes
 
 For more help on a command:
     icebath <command> --help`
@@ -838,7 +835,7 @@ var sessionNameSubcommands = map[string]bool{}
 
 func init() {
 	for _, n := range strings.Fields(`chat model gateway setup whatsapp whatsapp-cloud login logout auth status cron doctor config pairing skills
-		tools mcp sessions insights update uninstall profile dashboard serve webapp desktop gui honcho claw plugins security acp webhook peer
+		tools mcp sessions insights update uninstall profile honcho claw plugins security acp webhook peer
 		memory dump debug backup import completion logs usage`) {
 		sessionNameSubcommands[n] = true
 	}

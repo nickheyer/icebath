@@ -173,7 +173,7 @@ func TestUpdateLogsAreReadFromTheRootHomeUnderAProfile(t *testing.T) {
 	t.Setenv("ICEBATH_HOME", profile)
 	ctx := context.Background()
 	for name, want := range map[string]string{"update": filepath.Join(root, "logs", "update.log"),
-		"handoff": filepath.Join(root, "logs", "desktop-update-handoff.log"), "agent": filepath.Join(profile, "logs", "agent.log")} {
+		"agent": filepath.Join(profile, "logs", "agent.log")} {
 		if got, _ := logFilePath(ctx, name); got != want {
 			t.Fatalf("%s at %s want %s", name, got, want)
 		}

@@ -126,13 +126,8 @@ func commitMutation(ctx context.Context, a *SessionAuthority, ref SessionRef, li
 		result = prepared
 	} else {
 		fields.Prepared, fields.AuthorizeWrite = prepared, authorizeWrite
-		commit := func() (*pyjson.Object, error) { return a.DB.MutateRuntimeSession(ctx, fields) }
 		var err error
-		if operation == "delete" {
-			result, err = endingRunOnDelete(ctx, a.DB, ref.SessionID, commit)
-		} else {
-			result, err = commit()
-		}
+		result, err = a.DB.MutateRuntimeSession(ctx, fields)
 		if operation == "compress" {
 			var committed *pyjson.Object
 			if *applied {

@@ -13,7 +13,7 @@ import (
 // CodingToolset is the toolset the coding posture collapses to under focus
 const CodingToolset = "coding"
 
-var interactiveCodingPlatforms = map[string]bool{"cli": true, "tui": true, "acp": true, "desktop": true, "": true}
+var interactiveCodingPlatforms = map[string]bool{"cli": true, "tui": true, "acp": true, "": true}
 
 var projectMarkers = []string{
 	"pyproject.toml", "setup.py", "setup.cfg", "requirements.txt", "package.json", "tsconfig.json", "deno.json",

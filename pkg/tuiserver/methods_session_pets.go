@@ -38,11 +38,6 @@ func init() {
 	petMethod("pet.remove", nil, true, true, petRemove)
 	petMethod("pet.export", nil, true, true, petExport)
 	petMethod("pet.rename", nil, true, true, petRename)
-	petMethod("pet.thumb", func(params map[string]any) map[string]any {
-		return map[string]any{"ok": false, "slug": strParam(params, "slug", "")}
-	}, true, true, petThumb)
-	petMethod("pet.disable", nil, false, true, petDisable)
-	petMethod("pet.scale", nil, false, true, petScale)
 	petMethodsRegistry.method("pet.cancel", petCancel)
 	petMethod("pet.generate.status", func(map[string]any) map[string]any {
 		return map[string]any{"available": false, "providers": []any{}}
@@ -368,39 +363,6 @@ func petRename(ctx context.Context, rid any, params map[string]any, slug string)
 		petConfigFollowup("pet.rename", func() (bool, error) { return renameActivePetIf(ctx, slug, newSlug) })
 	}
 	return ok(rid, map[string]any{"ok": true, "slug": newSlug, "displayName": name}), nil
-}
-
-// Idle frame PNG data URI of a pet for the picker, a petdex url thumbnailing one not installed yet
-func petThumb(ctx context.Context, rid any, params map[string]any, slug string) (map[string]any, error) {
-	sourceURL := ""
-	if raw := params["url"]; truthy(raw) {
-		sourceURL = pyrepr.Str(raw)
-	}
-	data := pet.ThumbnailPNG(ctx, petEnv(ctx), home.Dir(ctx), slug, sourceURL)
-	if len(data) == 0 {
-		return ok(rid, map[string]any{"ok": false, "slug": slug}), nil
-	}
-	return ok(rid, map[string]any{"ok": true, "slug": slug, "dataUri": "data:image/png;base64," + base64.StdEncoding.EncodeToString(data)}), nil
-}
-
-// Turns the pet display off from the desktop picker
-func petDisable(ctx context.Context, rid any, _ map[string]any, _ string) (map[string]any, error) {
-	if err := setPetEnabled(ctx, false); err != nil {
-		return nil, err
-	}
-	return ok(rid, map[string]any{"ok": true}), nil
-}
-
-// Persists display.pet.scale clamped to the engine bounds from the desktop slider
-func petScale(ctx context.Context, rid any, params map[string]any, _ string) (map[string]any, error) {
-	scale, failure, err := setPetScale(ctx, params["scale"])
-	if err != nil {
-		return nil, err
-	}
-	if failure != "" {
-		return rpcErr(rid, 4004, failure, nil), nil
-	}
-	return ok(rid, map[string]any{"ok": true, "scale": scale}), nil
 }
 
 // Stops an in flight generate or hatch by its token, idempotent

@@ -16,7 +16,7 @@ import (
 )
 
 var (
-	hrUser     = map[string]any{"kind": "user", "id": "desktop-user", "display_name": "User"}
+	hrUser     = map[string]any{"kind": "user", "id": "local-user", "display_name": "User"}
 	hrGatewayA = map[string]any{"kind": "gateway", "id": "gateway-a"}
 	hrGatewayB = map[string]any{"kind": "gateway", "id": "gateway-b"}
 )
@@ -359,7 +359,7 @@ func TestRolledBackAppendDoesNotConsumeSequence(t *testing.T) {
 	for _, statement := range []string{"BEGIN IMMEDIATE", `INSERT INTO hosted_room_events
                (room_id, seq, event_id, kind, actor_json, payload_json, created_at)
                VALUES ('room-1', 1, 'crash-event', 'message.user',
-                       '{"id":"desktop-user","kind":"user"}', '{}', 20)`, "UPDATE hosted_rooms SET next_seq=2 WHERE room_id='room-1'", "ROLLBACK"} {
+                       '{"id":"local-user","kind":"user"}', '{}', 20)`, "UPDATE hosted_rooms SET next_seq=2 WHERE room_id='room-1'", "ROLLBACK"} {
 		if _, err := conn.ExecContext(ctx, statement); err != nil {
 			t.Fatal(err)
 		}

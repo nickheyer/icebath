@@ -17,8 +17,8 @@ const (
 	// Error code a client answers when none of its windows shows the session of the request
 	NotShownCode = 4404
 	// Refusal the tool reports once every attached client declined
-	NotShownMessage = "No Icebath Desktop window is showing this chat, so its preview, terminal and tour are out " +
-		"of reach. Ask the user to open this chat in the Desktop app, then retry."
+	NotShownMessage = "No attached client is showing this chat, so the request is out of reach. " +
+		"Ask the user to open this chat, then retry."
 )
 
 var batchOutcomes = []string{"submitted", "timed_out", "cancelled"}

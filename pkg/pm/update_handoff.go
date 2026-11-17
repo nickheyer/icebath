@@ -12,7 +12,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
 )
 
@@ -53,7 +52,7 @@ func readHandoff(path string) (*pyjson.Object, error) {
 	return payload, nil
 }
 
-// Takeover request of a post swap payload, the older desktop, resume and assume yes names mapped onto the new ones
+// Takeover request of a post swap payload, the older resume and assume yes names mapped onto the new ones
 func takeoverRequest(payload *pyjson.Object, argvTail []string) *OrderedObject {
 	request := NewOrderedObject()
 	for _, key := range payload.Keys {
@@ -64,7 +63,6 @@ func takeoverRequest(payload *pyjson.Object, argvTail []string) *OrderedObject {
 			request.Set(key, value)
 		}
 	}
-	setDefault("desktop", pyrepr.Truthy(payload.GetOr("had_desktop_app_before_update", false)))
 	setDefault("windows_resume", payload.GetOr("windows_gateway_resume", nil))
 	setDefault("assume_yes", slices.Contains(argvTail, "--yes"))
 	setDefault("restart_update", false)

@@ -17,16 +17,15 @@ import (
 
 // Logger name prefixes of each component, gating component logs and logs --component
 var ComponentPrefixes = map[string][]string{
-	"gateway": {"gateway", "hermes_plugins", "plugins.platforms", "agent.memory_caller_scope"},
+	"gateway": {"gateway", "hermes_plugins", "plugins.platforms", "agent.memory_caller_scope", "tui_gateway"},
 	"agent":   {"agent", "run_agent", "model_tools", "batch_runner"},
 	"tools":   {"tools"},
 	"cli":     {"hermes_cli", "cli"},
 	"cron":    {"cron"},
-	"gui":     {"hermes_cli.web_server", "hermes_cli.pty_bridge", "hermes_cli.desktop", "tui_gateway", "uvicorn"},
 }
 
 // Component names in declaration order
-var ComponentNames = []string{"gateway", "agent", "tools", "cli", "cron", "gui"}
+var ComponentNames = []string{"gateway", "agent", "tools", "cli", "cron"}
 
 var noisyLoggers = []string{
 	"openai", "openai._base_client", "httpx", "httpcore", "asyncio", "hpack", "hpack.hpack",
@@ -136,7 +135,6 @@ func SetupLogging(ctx context.Context, o Options) (string, error) {
 		{"agent.log", level, maxBytes, int(backups), ""},
 		{"errors.log", LevelWarning, 2 * 1024 * 1024, 2, ""},
 		{"gateway.log", LevelInfo, 5 * 1024 * 1024, 3, "gateway"},
-		{"gui.log", LevelInfo, 10 * 1024 * 1024, 5, "gui"},
 	}
 	for _, s := range specs {
 		if s.component != "" && o.Mode != s.component {

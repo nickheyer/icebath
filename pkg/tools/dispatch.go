@@ -21,7 +21,7 @@ var AgentLoopTools = map[string]bool{"todo_list": true, "memory": true, "session
 var (
 	legacyAliasMu     sync.RWMutex
 	legacyToolAliases = map[string]string{
-		"todo": "todo_list", "cronjob": "cronjob_manage", "process": "process_manage", "tour": "gui_tour", "tip": "show_tip",
+		"todo": "todo_list", "cronjob": "cronjob_manage", "process": "process_manage",
 	}
 )
 

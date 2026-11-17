@@ -243,13 +243,13 @@ func (c *AuthorityConnection) Actor() Principal { return c.actor }
 // Principal the connection acts as, for the cron RPCs
 func (c *AuthorityConnection) CronActor() *Principal { return &c.actor }
 
-// Whether the connection is the native desktop bootstrap owner
+// Whether the connection is the native bootstrap owner
 func (c *AuthorityConnection) NativeOwner() bool { return c.nativeOwner }
 
 // Whether a verified transport gate granted the operator capability
 func (c *AuthorityConnection) Operator() bool { return c.operator }
 
-// Whether the grant acts for every profile this process serves, the desktop shared socket or the dashboard gate
+// Whether the grant acts for every profile this process serves
 func (c *AuthorityConnection) HostScoped() bool {
 	return c.identity["profile_scope"] == "host"
 }
@@ -344,7 +344,7 @@ func (c *AuthorityConnection) ping(params map[string]any) (map[string]any, error
 	return map[string]any{"pong": true}, nil
 }
 
-// Binds a native desktop or host owner connection that may create sessions as a legacy transport of the authority
+// Binds a native or host owner connection that may create sessions as a legacy transport of the authority
 func bindNativeTransport(a *SessionAuthority, actor Principal, identity map[string]any) {
 	native := identity["provider"] == "local" && pyrepr.Equal(identity["profile_id"], a.ProfileID) &&
 		pyrepr.Equal(identity["instance_id"], a.InstanceID)

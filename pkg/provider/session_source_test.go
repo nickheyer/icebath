@@ -37,7 +37,7 @@ func TestSessionSourceFallsBackToPlatform(t *testing.T) {
 }
 
 func TestOneshotRunGetsDistinctSource(t *testing.T) {
-	for _, inherited := range []string{"", "tui", "desktop"} {
+	for _, inherited := range []string{"", "tui"} {
 		t.Run(inherited, func(t *testing.T) {
 			env := sessionSourceTestEnv(t, nil)
 			t.Setenv("ICEBATH_SESSION_SOURCE", inherited)
@@ -71,7 +71,7 @@ func TestOneshotChildKeepsInheritedAutomationSource(t *testing.T) {
 }
 
 func TestOneshotKeepsExplicitSourceFlag(t *testing.T) {
-	for _, explicit := range []string{"tui", "desktop"} {
+	for _, explicit := range []string{"tui"} {
 		t.Run(explicit, func(t *testing.T) {
 			env := sessionSourceTestEnv(t, nil)
 			t.Setenv("ICEBATH_SESSION_SOURCE", explicit)

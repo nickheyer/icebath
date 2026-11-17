@@ -663,18 +663,7 @@ func TestSVCarriedTransientRefusalAndLeftOutRecord(t *testing.T) {
 	}
 }
 
-func TestSVRetiredEntryPoints(t *testing.T) {
-	var out bytes.Buffer
-	if ScanVenvBlockersMain(nil, &out) != 0 || !strings.Contains(out.String(), `"retired": true`) {
-		t.Fatalf("scan %q", out.String())
-	}
-	out.Reset()
-	if ScanVenvBlockersMain([]string{"--terminate-safe"}, &out) != 1 || !strings.Contains(out.String(), `"ok": false`) {
-		t.Fatalf("terminate %q", out.String())
-	}
-	if isPausableGateway("icebath gateway run") {
-		t.Fatal("no matcher fails closed")
-	}
+func TestSVSigningHappensOnlyOnMacOS(t *testing.T) {
 	saved := signingPlatform
 	signingPlatform = func() string { return "linux" }
 	defer func() { signingPlatform = saved }()

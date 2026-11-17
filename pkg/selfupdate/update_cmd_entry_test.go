@@ -37,7 +37,6 @@ func ucMetricRows(t *testing.T) (context.Context, string, func() []map[string]st
 			mu.Unlock()
 		}
 	}))
-	installServeObligationHooks()
 	return updaterecord.UpdateReceiptScope(context.Background()), h, func() []map[string]string {
 		mu.Lock()
 		defer mu.Unlock()

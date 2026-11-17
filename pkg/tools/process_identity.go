@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
 	"math"
 	"os"
@@ -24,7 +23,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/proc"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Spawn tags, the machine wide spawn ledger, the Windows job object and the POSIX owner death supervisor
@@ -36,11 +34,6 @@ const spawnTagVersion = "v1"
 
 // LedgerFilename is the spawn ledger file under the root home
 const LedgerFilename = "spawn-ledger.json"
-
-// ReapablePurposes are the purposes a reaper may kill once their owner is gone
-var ReapablePurposes = setOf("serve", "dashboard", "gateway", "mcp-helper")
-
-var backendOwnerPurposes = setOf("serve", "dashboard", "gateway")
 
 var errNoSuchProcess = proc.ErrNoSuchProcess
 
@@ -68,9 +61,6 @@ var currentPid = os.Getpid
 
 // Ledger read the reapers consult, swapped by tests
 var ledgerEntriesFn = func(opts LedgerOptions) []map[string]any { return LedgerEntries(opts) }
-
-// Desktop SSH lock claims the reparented orphan rung consults, swapped by tests
-var lockOwnedServePidsFn = func() map[int]bool { return lockOwnedServePids("") }
 
 // Group existence probe the supervisor bookkeeping uses, swapped by tests
 var processGroupGoneFn = func(pgid int) bool { return processGroupGone(pgid) }
@@ -264,11 +254,7 @@ type LedgerEntry struct {
 	SpawnerCreate *float64 `json:"spawner_create"`
 	RegisteredAt  float64  `json:"registered_at"`
 	Argv          string   `json:"argv"`
-	Host          string   `json:"host"`
-	Port          *int     `json:"port"`
-	Profile       string   `json:"profile"`
 	IcebathHome   string   `json:"hermes_home"`
-	Isolated      bool     `json:"isolated"`
 	BootStart     *float64 `json:"boot_start"`
 	SpawnerBoot   *float64 `json:"spawner_boot"`
 	BootID        *string  `json:"boot_id"`
@@ -278,9 +264,8 @@ type LedgerEntry struct {
 func (e LedgerEntry) asObject() *pyjson.Object {
 	o := pyjson.ObjectOf(
 		"pid", e.Pid, "create_time", nil, "purpose", e.Purpose, "install", e.Install, "spawner_pid", nil,
-		"spawner_create", nil, "registered_at", e.RegisteredAt, "argv", e.Argv, "host", e.Host, "port", nil,
-		"profile", e.Profile, "hermes_home", e.IcebathHome, "isolated", e.Isolated, "boot_start", nil,
-		"spawner_boot", nil, "boot_id", nil)
+		"spawner_create", nil, "registered_at", e.RegisteredAt, "argv", e.Argv, "hermes_home", e.IcebathHome,
+		"boot_start", nil, "spawner_boot", nil, "boot_id", nil)
 	if e.CreateTime != nil {
 		o.Set("create_time", *e.CreateTime)
 	}
@@ -289,9 +274,6 @@ func (e LedgerEntry) asObject() *pyjson.Object {
 	}
 	if e.SpawnerCreate != nil {
 		o.Set("spawner_create", *e.SpawnerCreate)
-	}
-	if e.Port != nil {
-		o.Set("port", *e.Port)
 	}
 	if e.BootStart != nil {
 		o.Set("boot_start", *e.BootStart)
@@ -439,109 +421,25 @@ func PidAliveMatches(pid int, createTime *float64, strict bool, boot *float64) (
 }
 
 // RegisterSelf records this process in the machine spawn ledger
-func RegisterSelf(ctx context.Context, purpose, projectRoot string, detail map[string]any) bool {
+func RegisterSelf(ctx context.Context, purpose, projectRoot string) bool {
 	tag := ParseSpawnTag(os.Getenv(SpawnEnvVar))
 	var spawnerPid *int
 	var spawnerCreate *float64
 	if tag != nil {
 		pid := tag.SpawnerPid
 		spawnerPid, spawnerCreate = &pid, tag.SpawnerCreate
-	} else {
-		spawnerPid, spawnerCreate = desktopSpawnerIdentity()
 	}
 	entry := newLedgerEntry(currentPid(), processCreateTime(0), purpose, projectRoot, spawnerPid, spawnerCreate)
 	if spawnerPid != nil {
 		entry.SpawnerBoot = verifiedBootStart(*spawnerPid, spawnerCreate)
 	}
 	entry.IcebathHome = home.Key(home.Process())
-	if detail != nil {
-		if host, ok := detail["host"]; ok && host != nil {
-			entry.Host = fmt.Sprint(host)
-		}
-		if port, ok := detail["port"]; ok && port != nil {
-			if n, ok := asIntValue(port); ok {
-				entry.Port = &n
-			}
-		}
-		if profile, ok := detail["profile"]; ok && profile != nil {
-			entry.Profile = fmt.Sprint(profile)
-		}
-		if isolated, ok := detail["isolated"].(bool); ok {
-			entry.Isolated = isolated
-		}
-	}
 	argv := os.Args
 	if len(argv) > 10 {
 		argv = argv[:10]
 	}
 	entry.Argv = strings.Join(argv, " ")
 	return appendLedgerEntry(ctx, entry)
-}
-
-// IsDesktopOwnedBackend reports whether this process is the backend the Desktop spawned and owns
-func IsDesktopOwnedBackend(argv []string) bool {
-	if os.Getenv("ICEBATH_DESKTOP") != "1" {
-		return false
-	}
-	if os.Getenv("ICEBATH_DASHBOARD_SESSION_TOKEN") != "" {
-		return true
-	}
-	if argv == nil {
-		argv = os.Args[1:]
-	}
-	return IsDesktopSSHBackendArgv(argv)
-}
-
-// IsDesktopSSHBackendArgv reports whether argv is the Desktop client's SSH backend spawn
-func IsDesktopSSHBackendArgv(argv []string) bool {
-	for _, a := range argv {
-		if a == "--ssh-session-token-file" {
-			return true
-		}
-	}
-	return false
-}
-
-type servingLocalDesktopKey struct{}
-
-// WithServingLocalDesktop marks the enclosed activity as work for the local Desktop
-func WithServingLocalDesktop(ctx context.Context, active bool) context.Context {
-	return context.WithValue(ctx, servingLocalDesktopKey{}, active || ServesLocalDesktopNow(ctx))
-}
-
-// ServesLocalDesktopNow reports whether the activity serves the Desktop app on this machine
-func ServesLocalDesktopNow(ctx context.Context) bool {
-	if ctx == nil {
-		return false
-	}
-	v, _ := ctx.Value(servingLocalDesktopKey{}).(bool)
-	return v
-}
-
-// LocalDesktopClient reports a client that declares itself local Desktop and redeemed a native ticket
-func LocalDesktopClient(identity map[string]any, declared any) bool {
-	if declared != true || identity == nil {
-		return false
-	}
-	return identity["provider"] == "local" && identity["native_bootstrap"] == true
-}
-
-// Spawner pid and create time from the Electron parent death watchdog env vars
-func desktopSpawnerIdentity() (*int, *float64) {
-	spawnerPid, err := strconv.Atoi(os.Getenv("ICEBATH_PARENT_PID"))
-	if err != nil || spawnerPid <= 0 {
-		return nil, nil
-	}
-	marker := os.Getenv("ICEBATH_PARENT_START_MARKER")
-	if !strings.HasPrefix(marker, "winms:") {
-		return &spawnerPid, nil
-	}
-	ms, err := strconv.ParseFloat(strings.SplitN(marker, ":", 2)[1], 64)
-	if err != nil {
-		return &spawnerPid, nil
-	}
-	create := ms / 1000.0
-	return &spawnerPid, &create
 }
 
 func newLedgerEntry(pid int, createTime *float64, purpose, projectRoot string, spawnerPid *int, spawnerCreate *float64) LedgerEntry {
@@ -768,27 +666,6 @@ func SpawnerIsDead(entry map[string]any) (dead bool, known bool) {
 	return !alive, true
 }
 
-// SIGTERM, 2s grace, then SIGKILL, false when the incarnation moved on or is already gone
-func terminateThenKill(pid int, createTime *float64, boot *float64) bool {
-	if !identityProber.Running(pid) {
-		return false
-	}
-	if !sameIncarnation(pid, createTime, boot) {
-		return false
-	}
-	if err := identityProber.Terminate(pid); err != nil {
-		identityLogger().Debug(fmt.Sprintf("orphan terminate failed for pid %d", pid), "error", err)
-		return false
-	}
-	if !waitProcessGone(pid, 2*time.Second) {
-		if err := identityProber.Kill(pid); err != nil {
-			identityLogger().Debug(fmt.Sprintf("orphan terminate failed for pid %d", pid), "error", err)
-			return false
-		}
-	}
-	return true
-}
-
 // Polls until pid is gone or a zombie, false at the timeout
 func waitProcessGone(pid int, timeout time.Duration) bool {
 	deadline := time.Now().Add(timeout)
@@ -801,194 +678,6 @@ func waitProcessGone(pid int, timeout time.Duration) bool {
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
-}
-
-// Covers the gap between process start and the Desktop client writing its lock file
-const reapMinAgeSeconds = 180.0
-
-// Null spawner owner reparented to init, old and claimed by no Desktop SSH lock
-func reparentedOrphan(pid int) bool {
-	ppid, ok := identityProber.PPID(pid)
-	if !ok || (ppid != 0 && ppid != 1) {
-		return false
-	}
-	if lockOwnedServePidsFn()[pid] {
-		return false
-	}
-	birth, err := identityProber.Birth(pid)
-	if err != nil {
-		return false
-	}
-	return math.Max(0, float64(time.Now().UnixNano())/1e9-birth) >= reapMinAgeSeconds
-}
-
-const (
-	backendLockSchemaVersion = 2
-	backendLockProtocol      = 1
-	remoteLockSubdir         = "desktop-ssh"
-	// BackendLockName is the Desktop SSH runtime's per backend lock file
-	BackendLockName = "backend.lock.json"
-)
-
-func isLowerHex(value any, length int) bool {
-	s, ok := value.(string)
-	if !ok || len(s) != length {
-		return false
-	}
-	for _, r := range s {
-		if !((r >= '0' && r <= '9') || (r >= 'a' && r <= 'f')) {
-			return false
-		}
-	}
-	return true
-}
-
-// Validates a parsed backend lock body against the Desktop writer's schema
-func validLockfilePayload(parsed any, ownershipID string) bool {
-	obj, ok := parsed.(*pyjson.Object)
-	if !ok {
-		return false
-	}
-	m := obj.Vals
-	if !pyjson.Equal(m["schemaVersion"], int64(backendLockSchemaVersion)) || !pyjson.Equal(m["protocolVersion"], int64(backendLockProtocol)) || m["ownershipId"] != ownershipID {
-		return false
-	}
-	if !isLowerHex(m["spawnNonce"], 16) || !isLowerHex(m["tokenFingerprint"], 32) {
-		return false
-	}
-	pid, okPid := entryInt(m, "pid")
-	port, okPort := entryInt(m, "port")
-	if !okPid || !okPort || pid <= 0 || pid > 4194304 || port < 0 || port > 65535 {
-		return false
-	}
-	for _, f := range []string{"profile", "icebathPath", "icebathHome", "logPath", "startedAt"} {
-		s, ok := m[f].(string)
-		if !ok {
-			alias := strings.Replace(f, "icebath", "hermes", 1)
-			if s, ok = m[alias].(string); !ok {
-				return false
-			}
-		}
-		if pystr.Len(s) > 1024 {
-			return false
-		}
-	}
-	logPath, _ := m["logPath"].(string)
-	return strings.HasSuffix(logPath, fmt.Sprintf("/%s/%s.log", ownershipID, m["spawnNonce"]))
-}
-
-// ReadValidBackendLock returns the validated body of one Desktop SSH backend lock, nil otherwise
-func ReadValidBackendLock(lockPath string) map[string]any {
-	ownershipID := filepath.Base(filepath.Dir(lockPath))
-	if !isLowerHex(ownershipID, 32) {
-		return nil
-	}
-	st, err := os.Stat(lockPath)
-	if err != nil || !st.Mode().IsRegular() {
-		return nil
-	}
-	f, err := os.Open(lockPath)
-	if err != nil {
-		return nil
-	}
-	defer f.Close()
-	buf := make([]byte, 65537)
-	n, err := io.ReadFull(f, buf)
-	if err != nil && !errors.Is(err, io.ErrUnexpectedEOF) && !errors.Is(err, io.EOF) {
-		return nil
-	}
-	if n > 65536 {
-		return nil
-	}
-	parsed, err := pyjson.LoadsBytes(buf[:n])
-	if err != nil {
-		return nil
-	}
-	if !validLockfilePayload(parsed, ownershipID) {
-		return nil
-	}
-	return parsed.(*pyjson.Object).Vals
-}
-
-// Every directory the Desktop may have written an SSH backend lock under
-func remoteLockRoots(baseDir string) []string {
-	if baseDir != "" {
-		return []string{baseDir}
-	}
-	roots := []string{}
-	for _, h := range []string{home.Process(), home.Root()} {
-		root := filepath.Join(h, remoteLockSubdir)
-		if !containsString(roots, root) {
-			roots = append(roots, root)
-		}
-	}
-	return roots
-}
-
-// Pids claimed by valid Desktop SSH backend lock records
-func lockOwnedServePids(baseDir string) map[int]bool {
-	owned := map[int]bool{}
-	for _, root := range remoteLockRoots(baseDir) {
-		st, err := os.Stat(root)
-		if err != nil || !st.IsDir() {
-			continue
-		}
-		ents, err := os.ReadDir(root)
-		if err != nil {
-			continue
-		}
-		for _, ent := range ents {
-			lock := ReadValidBackendLock(filepath.Join(root, ent.Name(), BackendLockName))
-			if lock != nil {
-				pid, _ := entryInt(lock, "pid")
-				owned[pid] = true
-			}
-		}
-	}
-	return owned
-}
-
-// ReapOrphanedBackendOwner kills a conflicting host owner the ledger proves is a dead session's orphan
-func ReapOrphanedBackendOwner(pid int, createTime *float64, killFn func(int) error) (reaped int, ok bool) {
-	if pid <= 0 || pid == currentPid() {
-		return 0, false
-	}
-	defer func() {
-		if recover() != nil {
-			reaped, ok = 0, false
-		}
-	}()
-	var entry map[string]any
-	for _, e := range ledgerEntriesFn(LedgerOptions{}) {
-		epid, ok := entryInt(e, "pid")
-		purpose, _ := e["purpose"].(string)
-		if !ok || epid != pid || !backendOwnerPurposes[purpose] {
-			continue
-		}
-		ec := entryFloat(e, "create_time")
-		if ec != nil && createTime != nil && math.Abs(*ec-*createTime) >= 2.0 {
-			continue
-		}
-		entry = e
-		break
-	}
-	if entry == nil {
-		return 0, false
-	}
-	dead, known := SpawnerIsDead(entry)
-	if !(known && dead) && (entry["spawner_pid"] != nil || !reparentedOrphan(pid)) {
-		return 0, false
-	}
-	if killFn != nil {
-		if err := killFn(pid); err != nil {
-			identityLogger().Debug(fmt.Sprintf("backend owner reap failed for %v", entry), "error", err)
-			return 0, false
-		}
-	} else if !terminateThenKill(pid, entryFloat(entry, "create_time"), entryBoot(entry, "boot_start")) {
-		return 0, false
-	}
-	identityLogger().Info(fmt.Sprintf("reaped orphaned %v backend owner pid %d", entry["purpose"], pid))
-	return pid, true
 }
 
 // ReapOrphanedMCPHelpers kills ledger registered stdio MCP helpers whose spawner is provably dead

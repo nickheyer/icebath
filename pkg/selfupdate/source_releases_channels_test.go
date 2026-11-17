@@ -56,25 +56,19 @@ func chPublishedTree(t *testing.T) *chArchive {
 // One build published as its channel head, preview or stable-release policy
 func (a *chArchive) publishChannelBuild(t *testing.T, name, buildID, commit string, sequence int, stable bool) map[string]any {
 	prefix := "releases/channel-builds/" + buildID + "/"
-	identity := map[string]any{"token": strings.Repeat("a", 16), "displayName": "Preview fixture", "appNamePascal": "Fixture",
-		"artifactNamePascal": "Fixture", "appId": "ai.fixture.preview", "msixAppIdWithOrg": "Fixture.Preview",
-		"cliName": "fixture-preview", "windowsExecutableName": "Fixture"}
+	identity := map[string]any{"token": strings.Repeat("a", 16), "displayName": "Preview fixture", "cliName": "fixture-preview"}
 	version := fmt.Sprintf("0.0.%d", sequence)
 	if stable {
 		version = fmt.Sprintf("1.2.%d", sequence)
 	}
 	request := map[string]any{"schema": 1, "channel": name, "buildId": buildID, "sequence": sequence,
 		"repository": OfficialRepository, "commit": commit, "sourceVersion": fmt.Sprintf("1.2.%d", sequence),
-		"version": version, "windowsVersion": version + ".0", "identity": identity, "bundleEnv": map[string]any{}, "publicBase": a.url}
+		"version": version, "identity": identity, "publicBase": a.url}
 	policy := "preview"
 	if stable {
 		request["releaseTag"], policy = "v"+version, "stable-release"
 	}
-	manifest := map[string]any{"schema": 1, "receiverProtocol": 1, "request": request, "packages": []any{map[string]any{
-		"platform": "darwin", "arch": "arm64", "variant": "bundled",
-		"artifact": map[string]any{"key": prefix + "fixture.zip", "size": 1, "sha256": strings.Repeat("d", 64)},
-		"identity": identity["appId"], "version": version, "teamId": "ABCDEFGHIJ",
-		"feed": map[string]any{"key": prefix + "darwin/stable.yml", "channel": "stable"}}}}
+	manifest := map[string]any{"schema": 1, "receiverProtocol": 1, "request": request}
 	body := a.put(t, prefix+"build.json", manifest)
 	sum := sha256.Sum256(body)
 	channel := map[string]any{"schema": 1, "name": name, "repository": OfficialRepository, "policy": policy, "state": "active",
@@ -194,7 +188,7 @@ func chReaderResult(t *testing.T, s *chSource, name, destination, repository str
 	terminal["head"] = map[string]any{"buildId": "build-fixture", "sequence": 1}
 	manifest := map[string]any{"schema": 1, "request": map[string]any{"buildId": "build-fixture", "channel": terminalName,
 		"sequence": 1, "repository": repository, "commit": s.commits[1], "sourceVersion": "1.2.3", "version": "0.0.1",
-		"identity": map[string]any{}, "bundleEnv": map[string]any{}, "publicBase": sourcePublicBase}, "packages": []any{}}
+		"identity": map[string]any{}, "publicBase": sourcePublicBase}}
 	return &ChannelResolution{Requested: jv(t, record(name, state)).(*pyjson.Object), Terminal: jv(t, terminal).(*pyjson.Object),
 		Manifest: jv(t, manifest).(*pyjson.Object)}
 }

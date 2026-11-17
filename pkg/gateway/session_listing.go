@@ -9,7 +9,7 @@ import (
 )
 
 // Local labels, a cron run being a canonical local session whose last viewer is its own fire
-var pickerLocalSources = []string{"cli", "tui", "gui", "desktop", "local", "cron"}
+var pickerLocalSources = []string{"cli", "tui", "gui", state.ClientHistorySource, "local", "cron"}
 
 // Sources the stored picker never lists, the internal ones and the API transport
 func pickerExcludedSources() []string {

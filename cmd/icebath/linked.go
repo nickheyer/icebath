@@ -4,7 +4,6 @@ package main
 import (
 	_ "github.com/nickheyer/icebath/pkg/agentimport/openclaw"
 	_ "github.com/nickheyer/icebath/pkg/builtin"
-	_ "github.com/nickheyer/icebath/pkg/builtin/achievements"
 	_ "github.com/nickheyer/icebath/pkg/builtin/camofox"
 	_ "github.com/nickheyer/icebath/pkg/builtin/delegationdefault"
 	_ "github.com/nickheyer/icebath/pkg/builtin/diskcleanup"

@@ -141,7 +141,7 @@ func resolveRefreshToolsets(agent AgentToolSnapshot, enabledOverride, disabledOv
 		}
 		if disabledOverride != nil {
 			agent.SetConfiguredDisabledToolsets(disabledOverride)
-			disabled = tools.SessionDisabledToolsets(disabledOverride, agent.Platform(), agent.IsOneshot())
+			disabled = tools.SessionDisabledToolsets(disabledOverride, agent.IsOneshot())
 		}
 		agent.SetToolsets(enabled, disabled)
 	}

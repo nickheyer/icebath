@@ -2,12 +2,10 @@ package hosted
 
 import (
 	"context"
-	"fmt"
 	"maps"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/plugins"
 )
 
@@ -49,20 +47,6 @@ func entryValue(name, key string, value any) (any, error) {
 			return standaloneSendPolicy(o)
 		}
 		return value, nil
-	case "env_value_rules":
-		rules, ok := value.(map[string]any)
-		if !ok {
-			return value, nil
-		}
-		out := map[string]gateway.EnvValueRule{}
-		for env, raw := range rules {
-			pair, _ := raw.([]any)
-			if len(pair) != 2 {
-				return nil, &gateway.PyError{Kind: "ValueError", Msg: fmt.Sprintf("env_value_rules[%s] must be (accepts, detail)", config.PyRepr(env))}
-			}
-			out[env] = gateway.EnvValueRule{Check: predicate(pair[0]), Message: config.PyStr(pair[1])}
-		}
-		return out, nil
 	case "env_overrides":
 		items, ok := value.([]any)
 		if !ok {
@@ -230,17 +214,6 @@ func targetPair(v any) (*string, *string, bool) {
 		return &s
 	}
 	return str(pair[0]), str(pair[1]), true
-}
-
-// Predicate over an env value running a hosted accepts function, a raise counting as rejection
-func predicate(v any) func(string) bool {
-	f, ok := v.(*plugins.HostedCallable)
-	if !ok {
-		return func(string) bool {
-			panic(&gateway.PyError{Kind: "TypeError", Msg: fmt.Sprintf("'%s' object is not callable", pyrepr.TypeName(v))})
-		}
-	}
-	return func(value string) bool { return config.PyTruthy(mustCall(f, value)) }
 }
 
 // Plain mapping of a decoded answer, nil for None or a non mapping

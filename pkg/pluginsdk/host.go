@@ -28,7 +28,7 @@ var providerRegistrars = map[string]string{
 	"secret_source": "register_secret_source", "tts": "register_tts_provider", "transcription": "register_transcription_provider",
 	"delegation": "register_delegation_provider", "context_engine": "register_context_engine",
 	"context_reference": "register_context_reference", "memory": "register_memory_provider", "login_backend": "register_login_backend",
-	"browser_page_backend": "register_browser_page_backend", "dashboard_auth": "register_dashboard_auth_provider",
+	"browser_page_backend": "register_browser_page_backend",
 }
 
 func (h *host) PluginID() string         { return h.id }

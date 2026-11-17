@@ -16,19 +16,9 @@ type fakeSchemaHost struct {
 	*fakeSearchHost
 	search     *sessionSearch
 	quarantine string
-	reap       func(holders []Holder, minAge float64) []int
-	reapCalls  int
 }
 
 func (h *fakeSchemaHost) quarantineReason() (string, bool) { return h.quarantine, h.quarantine != "" }
-
-func (h *fakeSchemaHost) reapInactiveOrphanDesktopHolders(holders []Holder, minAgeSeconds float64) ([]int, error) {
-	h.reapCalls++
-	if h.reap == nil {
-		return nil, nil
-	}
-	return h.reap(holders, minAgeSeconds), nil
-}
 
 func (h *fakeSchemaHost) ftsExternalIndexEmptyWithMessages(ctx context.Context, conn SQLiteConn) (bool, error) {
 	return h.search.ftsExternalIndexEmptyWithMessages(ctx, conn)
@@ -507,20 +497,14 @@ func TestDeferStaleFTSForHoldersEscalatesAndGoesFutile(t *testing.T) {
 	now += 30
 	schema.deferStaleFTSForHolders(ctx, conn, holders)
 	now += 40
-	host.reap = func(h []Holder, minAge float64) []int { return []int{42} }
-	host.holderScan = func() ([]Holder, error) { return []Holder{{PID: 7, Target: "/x/state.db"}}, nil }
 	schema.deferStaleFTSForHolders(ctx, conn, holders)
 	r := record()
-	if a, _ := r.Get("attempts"); a != int64(3) || host.reapCalls != 1 {
-		t.Fatalf("escalation %v %d", a, host.reapCalls)
+	if a, _ := r.Get("attempts"); a != int64(3) {
+		t.Fatalf("escalation %v", a)
 	}
-	if p, _ := r.Get("holder_pids"); len(p.([]any)) != 1 || p.([]any)[0] != int64(7) {
-		t.Fatalf("rechecked holders %v", p)
+	if !strings.Contains(buf.String(), "remains blocked after 3 deferrals") {
+		t.Fatalf("escalation log %s", buf.String())
 	}
-	if !strings.Contains(buf.String(), "Reaped inactive orphan Desktop backend(s) [42] after 3") {
-		t.Fatalf("reap log %s", buf.String())
-	}
-	host.reap = nil
 	for i := 0; i < 10; i++ {
 		now += 200
 		schema.deferStaleFTSForHolders(ctx, conn, []Holder{{PID: 7, Target: "/x/state.db"}})

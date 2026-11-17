@@ -51,11 +51,7 @@ func stewardRefusal(steward string) *UpdateRefusal {
 	if known {
 		return refusal(steward, method, func(string) string { return StewardUpdateMessage(steward) })
 	}
-	command := "update via " + steward
-	if steward == StewardDesktop {
-		command = "Manage updates from within the desktop app"
-	}
-	return &UpdateRefusal{Code: steward, Message: StewardUpdateMessage(steward), UpdateCommand: command}
+	return &UpdateRefusal{Code: steward, Message: StewardUpdateMessage(steward), UpdateCommand: "update via " + steward}
 }
 
 // Runs one admission layer, a failure logged at debug and treated as no verdict

@@ -53,21 +53,6 @@ func (c *AuthorityConnection) botSettle(ctx context.Context, ref SessionRef, par
 	return delegatedAnswer(BotSettle(ctx, c.authority, c.actor, plainParams(params)))
 }
 
-// Bot relay roster sync verb
-func (c *AuthorityConnection) botRoster(ctx context.Context, ref SessionRef, params *pyjson.Object) (any, error) {
-	return relayOperation(ctx, c, "roster", params)
-}
-
-// Bot relay outbox drain verb
-func (c *AuthorityConnection) botOutbox(ctx context.Context, ref SessionRef, params *pyjson.Object) (any, error) {
-	return relayOperation(ctx, c, "outbox", params)
-}
-
-// Bot relay reply verb
-func (c *AuthorityConnection) botReply(ctx context.Context, ref SessionRef, params *pyjson.Object) (any, error) {
-	return relayOperation(ctx, c, "reply", params)
-}
-
 // Answer of a worker operation, None for a nil dict
 func workerAnswer(result *pyjson.Object, err error) (any, error) {
 	if err != nil || result == nil {

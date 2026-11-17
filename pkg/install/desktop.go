@@ -122,20 +122,6 @@ func desktopLaunchCommand(exe, installRoot string) *exec.Cmd {
 	return cmd
 }
 
-// Starts the installed desktop detached, an error when none is installed or the spawn fails
-func SpawnInstalledDesktop(installRoot string) error {
-	exe := ResolveDesktopExe(installRoot)
-	if exe == "" {
-		return fmt.Errorf("no built Icebath desktop app")
-	}
-	cmd := desktopLaunchCommand(exe, installRoot)
-	prepareDetachedSpawn()
-	if err := cmd.Start(); err != nil {
-		return err
-	}
-	return cmd.Process.Release()
-}
-
 // Launches the installed desktop for the UI, naming the expected location when none is installed
 func LaunchDesktop(installRoot string) error {
 	exe := ResolveDesktopExe(installRoot)

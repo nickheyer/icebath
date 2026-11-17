@@ -70,7 +70,7 @@ func TestAcpAndDashboardRejectWhatSwitchModelRejects(t *testing.T) {
 	if len(sessions.made) != 0 || st.Model != "claude-sonnet-5" {
 		t.Fatalf("session touched: %v %q", sessions.made, st.Model)
 	}
-	_, err = provider.ApplyModelAssignmentSync(ctx, "main", "notaprovider", "whatever", "", "", "", provider.AuxReasoningEffort{}, nil)
+	_, err = provider.ApplyModelAssignmentSync(ctx, "notaprovider", "whatever", "", "", nil)
 	var refused *provider.HTTPException
 	if !errors.As(err, &refused) || refused.StatusCode != 400 || !strings.Contains(refused.Detail, "Unknown provider") {
 		t.Fatalf("dashboard err = %v", err)

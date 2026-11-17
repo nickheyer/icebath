@@ -561,7 +561,7 @@ func servedAlphaSession(t *testing.T) (context.Context, *SessionAuthority, Sessi
 	first := servedAlphaOwner(t, ctx, db, "first")
 	actor := Principal{Subject: "owner", ProfileID: first.ProfileID, TransportID: "socket",
 		Capabilities: map[string]bool{"session:create": true, "session:read": true, "session:control": true}}
-	ref, err := createLocalSession(ctx, first, actor, recoverGUIParams("old-desktop", t.TempDir()), localCreateOptions{})
+	ref, err := createLocalSession(ctx, first, actor, recoverGUIParams("old-history", t.TempDir()), localCreateOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}

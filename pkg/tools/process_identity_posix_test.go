@@ -948,7 +948,7 @@ func TestLedgerEntriesExcludesAKilledButUnreapedProcess(t *testing.T) {
 	}
 	child.Process.Signal(syscall.SIGTERM)
 	procWaitUntil(t, 10*time.Second, "the child to become a zombie", func() bool { return identityProber.Zombie(child.Process.Pid) })
-	writeLedgerFile(t, ledger, []map[string]any{ledgerEntry(child.Process.Pid, created, "dashboard", "", nil, nil)})
+	writeLedgerFile(t, ledger, []map[string]any{ledgerEntry(child.Process.Pid, created, "gateway", "", nil, nil)})
 	if live := LedgerEntries(LedgerOptions{ProjectRoot: "/x/install"}); len(live) != 0 {
 		t.Fatalf("zombie listed as live: %v", live)
 	}
@@ -958,7 +958,7 @@ func TestRegisterSelfWritesLedgerWith0600(t *testing.T) {
 	_, ledger := identityFixture(t, map[int]float64{999: 50.0}, 999)
 	old := syscall.Umask(0o022)
 	defer syscall.Umask(old)
-	if !RegisterSelf(context.Background(), "serve", "/x/install", nil) {
+	if !RegisterSelf(context.Background(), "gateway", "/x/install") {
 		t.Fatal("register_self failed")
 	}
 	st, err := os.Stat(ledger)
@@ -1263,7 +1263,7 @@ func TestReapActuallyKillsOrphan(t *testing.T) {
 func TestReapIgnoresNonMCPPurposes(t *testing.T) {
 	ledgerAt(t)
 	child := sleepChild(t)
-	RegisterChild(context.Background(), child.Process.Pid, "serve-child-not-helper", "")
+	RegisterChild(context.Background(), child.Process.Pid, "lsp-server", "")
 	orphanEntryFor(t, child.Process.Pid)
 	if reaped := ReapOrphanedMCPHelpers("", nil); len(reaped) != 0 {
 		t.Fatalf("reaped %v", reaped)

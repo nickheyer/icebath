@@ -33,9 +33,9 @@ type SweepOrphanedOptions struct {
 	RespectGatewayHeartbeats       bool
 }
 
-// Sweep over tui, desktop and subagent rows honouring gateway heartbeats
+// Sweep over tui, legacy client history and subagent rows honouring gateway heartbeats
 func NewSweepOrphanedOptions(maxIdleSeconds float64) SweepOrphanedOptions {
-	return SweepOrphanedOptions{MaxIdleSeconds: maxIdleSeconds, Sources: []string{"tui", "desktop", "subagent"}, RespectGatewayHeartbeats: true}
+	return SweepOrphanedOptions{MaxIdleSeconds: maxIdleSeconds, Sources: []string{"tui", ClientHistorySource, "subagent"}, RespectGatewayHeartbeats: true}
 }
 
 // Ends idle open rows of the sources no live backend could own, sparing excluded and guarded rows

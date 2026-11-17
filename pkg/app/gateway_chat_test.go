@@ -113,13 +113,6 @@ func TestUnsupportedLaunchOptionsFailBeforeConnection(t *testing.T) {
 	}
 }
 
-func TestResumeRepeatingSourceDesktopMatchesTheStoredGUISession(t *testing.T) {
-	frozen := map[string]any{"info": map[string]any{"launch_request": map[string]any{"source": "gui"}}}
-	if err := gatewaycli.CheckResumePolicy(context.Background(), map[string]any{"resume": "stored", "source": "desktop", "query": "x"}, frozen); err != nil {
-		t.Fatal(err)
-	}
-}
-
 // Parses an icebath command line through the full CLI, the namespace of the dispatched command
 func parseIcebathCommand(t *testing.T, command string) map[string]any {
 	t.Helper()

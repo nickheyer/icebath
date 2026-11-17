@@ -399,7 +399,7 @@ var pluginContextStaticMethods = []string{
 	"apost_message", "ask_choice", "call_mcp", "current_cron_execution", "dispatch_tool", "emit", "get_config",
 	"has_capability", "has_plugin", "inject_message", "on_unload", "post_message", "register_approval_transport",
 	"register_automation_blueprint", "register_auxiliary_task", "register_cli_command", "register_command",
-	"register_context_engine", "register_context_reference", "register_dashboard_auth_provider", "register_hook",
+	"register_context_engine", "register_context_reference", "register_hook",
 	"register_locale", "register_locale_dir", "register_memory_provider", "register_middleware", "register_platform",
 	"register_platform_handler", "register_redaction_patterns", "register_skill", "register_slack_action_handler",
 	"register_system_prompt_section", "register_telegram_handler", "register_tool", "session_cwd", "session_surface",
@@ -457,7 +457,7 @@ func builtinToolCollisions(candidates map[string]bool) []string {
 	return collisions
 }
 
-var loadableEntrypoints = []string{"desktop/plugin.js", "plugin.json"}
+var loadableEntrypoints = []string{"plugin.json"}
 
 // Fails a manifest with nothing beside it that icebath can load
 func checkLoadable(report *ValidationReport, pluginDir string, manifest map[string]any) {
@@ -477,7 +477,7 @@ func checkLoadable(report *ValidationReport, pluginDir string, manifest map[stri
 		report.add("loadable", true, "entry: "+strings.Join(present, ", "))
 		return
 	}
-	report.add("loadable", false, "nothing to load: no runtime entry, desktop/plugin.js, plugin.json or provides_locales + locales/ beside plugin.yaml; "+PluginFormsText)
+	report.add("loadable", false, "nothing to load: no runtime entry, plugin.json or provides_locales + locales/ beside plugin.yaml; "+PluginFormsText)
 }
 
 // Install time scanner at admission, dangerous fails and caution findings warn the reviewer
@@ -589,7 +589,6 @@ func validatePluginDir(ctx context.Context, path string, probe *capabilityProbe)
 	if err := checkPrivateImports(report, path); err != nil {
 		return nil, err
 	}
-	checkDesktopSurface(report, path)
 	checkLanguagePacks(report, manifest, path)
 	isolation, err := auditPluginDir(path, manifest)
 	if err != nil {
@@ -749,7 +748,6 @@ func validatePortablePlugin(ctx context.Context, report *ValidationReport, plugi
 		}
 	}
 	checkSecurityScan(report, pluginDir)
-	checkDesktopSurface(report, pluginDir)
 	isolation, err := auditPluginDir(pluginDir, pkg.Manifest)
 	if err != nil {
 		return nil, err

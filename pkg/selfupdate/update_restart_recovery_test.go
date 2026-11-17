@@ -62,7 +62,7 @@ func rrFakeCapture(t *testing.T, result func() *recoveryCompleted) *[]rrCall {
 // Recovery outcome of the abort pass over runtimes with the given already restarted profiles
 func rrRecover(t *testing.T, runtimes []*RuntimeRecord, skip map[string]bool) map[string]any {
 	t.Helper()
-	result, err := recoverGatewayRestartAfterAbort(context.Background(), io.Discard, &UpdatePlan{Runtimes: runtimes}, false, skip, map[string]bool{})
+	result, err := recoverGatewayRestartAfterAbort(context.Background(), io.Discard, &UpdatePlan{Runtimes: runtimes}, false, skip)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -92,7 +92,7 @@ func rrSkipped(result map[string]any) [][3]string {
 func TestAbortRecoveryHandsManagedProfilesToAFreshProcess(t *testing.T) {
 	calls := rrFakeCapture(t, func() *recoveryCompleted { return rrSuccess([]string{"coder", "default"}, nil) })
 	result := rrRecover(t, []*RuntimeRecord{rrRuntime("default", "systemd", ""), rrRuntime("coder", "launchd", ""),
-		rrRuntime("manual-box", "manual", ""), rrRuntime("desktop", "desktop", "serve")}, nil)
+		rrRuntime("manual-box", "manual", ""), rrRuntime("worker-box", "systemd", "worker")}, nil)
 	if !slices.Equal(rrList(t, result, "requested"), []string{"coder", "default"}) || !slices.Equal(rrList(t, result, "verified"), []string{"coder", "default"}) ||
 		len(rrList(t, result, "relaunch_attempted")) != 0 || len(rrList(t, result, "failed")) != 0 {
 		t.Fatalf("%v", result)
@@ -104,7 +104,7 @@ func TestAbortRecoveryHandsManagedProfilesToAFreshProcess(t *testing.T) {
 			t.Fatalf("skip without reason %v", row)
 		}
 	}
-	if len(skipped) != 2 || !skipped[[2]string{"manual-box", "gateway"}] || !skipped[[2]string{"desktop", "serve"}] {
+	if len(skipped) != 1 || !skipped[[2]string{"manual-box", "gateway"}] {
 		t.Fatalf("%v", skipped)
 	}
 	if len(*calls) != 1 {
@@ -120,12 +120,8 @@ func TestAbortRecoveryHandsManagedProfilesToAFreshProcess(t *testing.T) {
 	if string(profiles) != `["coder","default"]` || string(supervisors) != `{"coder":"launchd","default":"systemd"}` {
 		t.Fatalf("%s %s", profiles, supervisors)
 	}
-	serve, _ := call.payload["serve_units"].(map[string]any)
-	if _, ok := serve["recover"]; !ok || len(serve) != 2 {
-		t.Fatalf("%v", serve)
-	}
-	if _, ok := serve["skip"]; !ok {
-		t.Fatalf("%v", serve)
+	if len(call.payload) != 2 {
+		t.Fatalf("%v", call.payload)
 	}
 	if !slices.Contains(call.env, restartRecoveryEnv+"=1") {
 		t.Fatalf("%v", call.env)
@@ -181,9 +177,6 @@ func TestAbortRecoveryRejectsMalformedJsonSuccess(t *testing.T) {
 
 func TestAbortRecoveryDoesNotRestartManualOnlyFleet(t *testing.T) {
 	calls := rrFakeCapture(t, func() *recoveryCompleted { return rrSuccess(nil, nil) })
-	old := abortServeRecovery
-	t.Cleanup(func() { abortServeRecovery = old })
-	abortServeRecovery = func() bool { return false }
 	result := rrRecover(t, []*RuntimeRecord{rrRuntime("manual-box", "manual", "")}, nil)
 	if len(rrList(t, result, "requested")) != 0 || len(rrList(t, result, "verified")) != 0 || len(rrList(t, result, "failed")) != 0 {
 		t.Fatalf("%v", result)
@@ -196,15 +189,11 @@ func TestAbortRecoveryDoesNotRestartManualOnlyFleet(t *testing.T) {
 	}
 }
 
-func TestAbortRecoveryRecordsServeRuntimesAsSkippedWithReason(t *testing.T) {
+func TestAbortRecoveryRecordsManualGatewaysAsSkippedWithReason(t *testing.T) {
 	rrFakeCapture(t, func() *recoveryCompleted { return rrSuccess([]string{"default"}, nil) })
-	result := rrRecover(t, []*RuntimeRecord{rrRuntime("default", "systemd", ""), rrRuntime("default", "desktop", "serve"), rrRuntime("ops", "manual-serve", "dashboard")}, nil)
-	byKind := map[string][3]string{}
-	for _, row := range rrSkipped(result) {
-		byKind[row[1]] = row
-	}
-	if len(byKind) != 2 || !strings.Contains(byKind["serve"][2], "desktop app") || byKind["dashboard"][0] != "ops" || !strings.Contains(byKind["dashboard"][2], "relaunch") {
-		t.Fatalf("%v", byKind)
+	result := rrRecover(t, []*RuntimeRecord{rrRuntime("default", "systemd", ""), rrRuntime("ops", "manual", "")}, nil)
+	if rows := rrSkipped(result); len(rows) != 1 || rows[0] != [3]string{"ops", "gateway", manualGatewaySkipReason} {
+		t.Fatalf("%v", rows)
 	}
 }
 
@@ -354,13 +343,13 @@ func TestRecoveryChildReportsFailedProfileWithoutLosingSuccesses(t *testing.T) {
 }
 
 func TestRecoveryPayloadRejectsPathLikeProfileIds(t *testing.T) {
-	if _, _, _, _, err := parseRecoveryPayload(`{"profiles": ["../other"]}`); err == nil || !strings.Contains(err.Error(), "invalid profile") {
+	if _, _, err := parseRecoveryPayload(`{"profiles": ["../other"]}`); err == nil || !strings.Contains(err.Error(), "invalid profile") {
 		t.Fatalf("path-like profile id must be rejected: %v", err)
 	}
 }
 
 func TestRecoveryPayloadRejectsMalformedSupervisorsMap(t *testing.T) {
-	if _, _, _, _, err := parseRecoveryPayload(`{"profiles": ["default"], "supervisors": {"default": "sys/temd"}}`); err == nil || !strings.Contains(err.Error(), "supervisors") {
+	if _, _, err := parseRecoveryPayload(`{"profiles": ["default"], "supervisors": {"default": "sys/temd"}}`); err == nil || !strings.Contains(err.Error(), "supervisors") {
 		t.Fatalf("malformed supervisors map must be rejected: %v", err)
 	}
 }
@@ -407,7 +396,7 @@ func TestRecoveryModuleEndToEndInARealFreshProcess(t *testing.T) {
 		t.Fatalf("%v %s", err, out)
 	}
 	normalized, _ := json.Marshal(got)
-	if string(normalized) != `{"covered":{},"failed":[],"relaunch_attempted":["coder"],"serve_units":{"failed":[],"verified":[]},"verified":["default"]}` {
+	if string(normalized) != `{"covered":{},"failed":[],"relaunch_attempted":["coder"],"verified":["default"]}` {
 		t.Fatal(string(normalized))
 	}
 	raw, err := os.ReadFile(ledger)

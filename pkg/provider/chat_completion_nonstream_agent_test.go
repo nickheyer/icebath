@@ -204,7 +204,7 @@ func moaHeartbeatAgent(t *testing.T) (*fakeChatAgent, any) {
 		<-release
 		return response, nil
 	}}
-	agent := &fakeChatAgent{provider: "moa", apiMode: "chat_completions", plat: "desktop", client: client,
+	agent := &fakeChatAgent{provider: "moa", apiMode: "chat_completions", plat: "tui", client: client,
 		resolve: func(map[string]any) (any, error) { return math.Inf(1), nil }}
 	base := time.Unix(1000, 0)
 	var polls atomic.Int64

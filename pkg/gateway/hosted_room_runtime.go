@@ -178,7 +178,7 @@ type hostedAttemptKey struct {
 
 type hostedRouteKey struct{ roomID, memberID string }
 
-// Runs queued hosted room tasks independently of Desktop connections
+// Runs queued hosted room tasks independently of client connections
 type HostedRoomRuntime struct {
 	ctx                        context.Context
 	DBPath                     string

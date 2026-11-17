@@ -6,28 +6,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"strings"
-
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
-
-// Every zone key zoneinfo can load, the tzdata package list plus each TZif file under TZPATH
-func AvailableTimezones() map[string]bool {
-	valid := map[string]bool{}
-	for _, zone := range strings.Split(tzdataPackageZones(), "\n") {
-		if zone = pystr.Strip(zone); zone != "" {
-			valid[zone] = true
-		}
-	}
-	for _, root := range tzPath() {
-		if _, err := os.Stat(root); err != nil {
-			continue
-		}
-		walkZoneDir(root, root, valid)
-	}
-	delete(valid, "posixrules")
-	return valid
-}
 
 // Adds the TZif files below dir the way os.walk visits them, skipping right and posix at the root
 func walkZoneDir(root, dir string, valid map[string]bool) {

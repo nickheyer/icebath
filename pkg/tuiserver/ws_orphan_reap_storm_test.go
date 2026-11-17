@@ -2,14 +2,11 @@ package tuiserver
 
 import (
 	"context"
-	"os"
-	"path/filepath"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
@@ -61,54 +58,6 @@ func (a *slowClosingAgent) CloseContext(context.Context) error {
 type raisingTruth struct{}
 
 func (raisingTruth) PyBool() bool { panic("delegation registry unavailable") }
-
-func TestWsOrphanReapInterruptsIsolatedTurnThenReaps(t *testing.T) {
-	session := serverCaseSession(t, "isolated-sid", map[string]any{"agent": &struct{}{}, "agent_ready": &pythread.Event{}, "running": true,
-		"_compute_host_active": true, "history": []any{map[string]any{"role": "assistant", "content": "partial"}},
-		"queued_prompt": map[string]any{"text": "must not run"}, "session_key": "isolated-key"})
-	if err := os.WriteFile(filepath.Join(os.Getenv("ICEBATH_HOME"), "config.yaml"), []byte("dashboard:\n  turn_isolation: true\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	db := reapLedger(t, "isolated-key")
-	sup, sent := testSupervisor(t)
-	swapVar(t, &computeHostSupervisor, sup)
-	interrupts := func() []string {
-		var out []string
-		for _, frame := range *sent {
-			if frame.GetOr("type", nil) == "interrupt" {
-				out = append(out, strOr(frame.GetOr("sid", nil))+"/"+strOr(frame.GetOr("request_id", nil)))
-			}
-		}
-		return out
-	}
-	scheduleWSOrphanReap(context.Background(), "isolated-sid", nil, nil)
-	first := pendingReap("isolated-sid")
-	fireReap(first, 20, 20)
-	if got := interrupts(); len(got) != 1 || got[0] != "isolated-sid/client-gone-isolated-sid" {
-		t.Fatalf("interrupts %v", got)
-	}
-	history, _ := session.Get("history").([]any)
-	if session.Get("_turn_cancel_requested") != true || session.Get("queued_prompt") != nil || len(history) != 1 {
-		t.Fatalf("cancel %v queued %v history %v", session.Get("_turn_cancel_requested"), session.Get("queued_prompt"), history)
-	}
-	second := pendingReap("isolated-sid")
-	if second == nil || second == first {
-		t.Fatal("isolated turn reap was not rescheduled")
-	}
-	fireReap(second, 20, 20)
-	third := pendingReap("isolated-sid")
-	if got := interrupts(); len(got) != 1 || third == nil || third == second {
-		t.Fatalf("interrupts %v rescheduled %v", got, third != nil)
-	}
-	session.Set("running", false)
-	fireReap(third, 20, 20)
-	if tuigateway.SessionRecord("isolated-sid") != nil || session.Get("_finalized") != true {
-		t.Fatal("settled isolated session was not reaped")
-	}
-	if reason := storedEndReason(t, db, "isolated-key"); reason != "ws_orphan_reap" {
-		t.Fatalf("end reason %q", reason)
-	}
-}
 
 func TestWsOrphanReapReleasesResumeLockBeforeSlowTeardown(t *testing.T) {
 	closer := &slowClosingAgent{started: make(chan struct{}), release: make(chan struct{})}

@@ -40,31 +40,20 @@ func shutdownGraceSeconds() float64 {
 
 // Collaborators of the stdio entry, the real functions swapped only where a hermes case installs a fake
 var (
-	entryStdin                   io.Reader = os.Stdin
-	entryInstallSidecarPublisher           = installSidecarPublisher
-	entryEnsureMCPDiscovery                = ensureMCPDiscoveryStarted
-	entryResolveSkin                       = func(ctx context.Context) any { return resolveSkin(ctx) }
-	entryStartHeartbeat                    = startBackendHeartbeatRefresher
-	entryScheduleOrphanSweep               = scheduleStartupOrphanSweep
-	entryEnsureSkinWatcher                 = ensureSkinWatcher
-	entryPrewarmPickerCache                = func(ctx context.Context) { provider.PrewarmPickerCacheAsync(ctx) }
-	entryHandleSpuriousEOF                 = tuigateway.HandleSpuriousEOF
-	entryLogExit                           = logExit
-	entryWriteJSON                         = tuigateway.WriteJSON
-	entryDispatch                          = func(ctx context.Context, req any) map[string]any { return Dispatch(ctx, req, nil) }
-	entryAppendCrashLog                    = appendCrashLog
-	entryOSExit                            = os.Exit
+	entryStdin               io.Reader = os.Stdin
+	entryEnsureMCPDiscovery            = ensureMCPDiscoveryStarted
+	entryResolveSkin                   = func(ctx context.Context) any { return resolveSkin(ctx) }
+	entryStartHeartbeat                = startBackendHeartbeatRefresher
+	entryScheduleOrphanSweep           = scheduleStartupOrphanSweep
+	entryEnsureSkinWatcher             = ensureSkinWatcher
+	entryPrewarmPickerCache            = func(ctx context.Context) { provider.PrewarmPickerCacheAsync(ctx) }
+	entryHandleSpuriousEOF             = tuigateway.HandleSpuriousEOF
+	entryLogExit                       = logExit
+	entryWriteJSON                     = tuigateway.WriteJSON
+	entryDispatch                      = func(ctx context.Context, req any) map[string]any { return Dispatch(ctx, req, nil) }
+	entryAppendCrashLog                = appendCrashLog
+	entryOSExit                        = os.Exit
 )
-
-// Mirrors every stdio frame to the dashboard sidecar socket when ICEBATH_TUI_SIDECAR_URL names one
-func installSidecarPublisher() {
-	url := os.Getenv("ICEBATH_TUI_SIDECAR_URL")
-	if url == "" {
-		return
-	}
-	tuigateway.SetModuleStdioTransport(tuigateway.NewTeeTransport(tuigateway.ModuleStdioTransport(),
-		tuigateway.NewWsPublisherTransport(url, 2*time.Second)))
-}
 
 // Appends one headed entry to the crash log with the detail dump writes, never raising
 func appendCrashLog(header string, dump func(io.Writer)) {
@@ -249,7 +238,6 @@ func (e *stdioEntry) serve() error {
 		InstallTUIMessageInjector(ctx, nil)
 	}()
 	closeRPCStdinOnExec()
-	entryInstallSidecarPublisher()
 	observability.BeginProcess(ctx, "tui")
 	observability.SetProcessSurface("tui_gateway")
 	func() {

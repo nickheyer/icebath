@@ -148,7 +148,7 @@ func authorityRPC(ctx context.Context, profileHome, method string, params map[st
 		if discovery.State != "ready" || discovery.Endpoint == nil {
 			return nil, errors.New("profile authority is not ready")
 		}
-		ticket, err := sessionTicket(h, discovery.Endpoint, "", "", "", false)
+		ticket, err := sessionTicket(h, discovery.Endpoint, "", "", false)
 		if err != nil {
 			return nil, err
 		}

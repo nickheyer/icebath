@@ -16,7 +16,7 @@ func submitRowRotateToChild(t *testing.T, db *state.SessionDB, parent string, a 
 	t.Helper()
 	ctx := context.Background()
 	child, model := state.NewSessionID(), "test-model"
-	if err := db.PublishCompressionChild(ctx, state.CompressionChildPublish{ParentSessionID: parent, ChildSessionID: child, Source: "desktop", Model: &model,
+	if err := db.PublishCompressionChild(ctx, state.CompressionChildPublish{ParentSessionID: parent, ChildSessionID: child, Source: "tui", Model: &model,
 		Messages: []map[string]any{{"role": "user", "content": "earlier turn"}, {"role": "assistant", "content": "earlier reply"}}}); err != nil {
 		t.Fatal(err)
 	}
@@ -56,7 +56,7 @@ func TestSubmitRowSessionTarget(t *testing.T) {
 			t.Fatal(err)
 		}
 		t.Cleanup(func() { _ = db.Close() })
-		sid, key := submitRowDesktopSession(t, db)
+		sid, key := submitRowSession(t, db)
 		session := tuigateway.SessionRecord(sid)
 		if session == nil {
 			t.Fatalf("no live session %s", sid)

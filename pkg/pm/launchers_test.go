@@ -187,33 +187,6 @@ func TestExposeCliSealedTreeWithoutVenvSkips(t *testing.T) {
 	}
 }
 
-func TestExposeCliBundledTreeSkipsBundleOwnsLaunchers(t *testing.T) {
-	for _, create := range []bool{true, false} {
-		if create && runtime.GOOS != "linux" {
-			continue
-		}
-		userHome, _ := lnFakeInstall(t)
-		payload := filepath.Join(userHome, "agent-payload")
-		repo := filepath.Join(payload, "repo")
-		for _, dir := range []string{filepath.Join(payload, "bin"), repo} {
-			if err := os.MkdirAll(dir, 0o777); err != nil {
-				t.Fatal(err)
-			}
-		}
-		stamp := `{"payload": "bundled", "distribution": "desktop-app", "updateMechanism": "electron-updater"}`
-		if err := os.WriteFile(filepath.Join(repo, "install-stamp.json"), []byte(stamp), 0o666); err != nil {
-			t.Fatal(err)
-		}
-		t.Setenv(EnvInstallRoot, repo)
-		if got := lnExpose(t, create); !reflect.DeepEqual(got, ExposeResult{OK: true, Skipped: "bundle-owns-launchers"}) {
-			t.Fatalf("create %v result %+v", create, got)
-		}
-		if lexists(filepath.Join(userHome, ".local", "bin")) {
-			t.Fatal("bundle exposure wrote the user bin")
-		}
-	}
-}
-
 func TestPublishLaunchersSealedDevAndBuildLaneBug(t *testing.T) {
 	_, root := lnFakeInstall(t)
 	stampPath := filepath.Join(root, "install-stamp.json")
@@ -234,7 +207,7 @@ func TestPublishLaunchersSealedDevAndBuildLaneBug(t *testing.T) {
 		t.Fatal(err)
 	}
 	err := publishLaunchers(context.Background(), root, false)
-	if err == nil || !strings.Contains(err.Error(), "missing a valid 'updateMechanism' (one of self, app-installer, electron-updater, external, microsoft-store)") {
+	if err == nil || !strings.Contains(err.Error(), "missing a valid 'updateMechanism' (one of self, external)") {
 		t.Fatalf("build lane bug not raised %v", err)
 	}
 }

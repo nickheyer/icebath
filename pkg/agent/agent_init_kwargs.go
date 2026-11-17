@@ -219,22 +219,8 @@ func applyAgentKwarg(o *AIAgentOptions, name string, value any) error {
 		o.ReasoningCallback = value
 	case "clarify_callback":
 		o.ClarifyCallback = value
-	case "read_terminal_callback":
-		o.ReadTerminalCallback = value
-	case "read_preview_callback":
-		o.ReadPreviewCallback = value
-	case "drive_preview_callback":
-		o.DrivePreviewCallback = value
-	case "read_window_below_callback":
-		o.ReadWindowBelowCallback = value
 	case "connection_callback":
 		o.ConnectionCallback = value
-	case "tour_callback":
-		o.TourCallback = value
-	case "theme_callback":
-		o.ThemeCallback = value
-	case "setup_beat_callback":
-		o.SetupBeatCallback = value
 	case "step_callback":
 		o.StepCallback = value
 	case "stream_delta_callback":

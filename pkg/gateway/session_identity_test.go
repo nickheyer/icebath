@@ -256,7 +256,7 @@ func TestAuthenticatedSubjectFormsAndPrincipalDigest(t *testing.T) {
 		t.Fatalf("unbound subject %q", subject)
 	}
 	digest, err := AuthenticatedPrincipalDigest(login)
-	if err != nil || len(digest) != len("principal:dashboard:")+32 || digest[:20] != "principal:dashboard:" {
+	if err != nil || len(digest) != len("principal:auth:")+32 || digest[:15] != "principal:auth:" {
 		t.Fatalf("digest %q %v", digest, err)
 	}
 	if !IsAuthenticatedIdentity(login) || IsAuthenticatedIdentity(map[string]any{"user_id": "server-internal", "provider": "server-internal"}) ||

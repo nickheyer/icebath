@@ -19,7 +19,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/commands"
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/cron"
-	"github.com/nickheyer/icebath/pkg/dashboard"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/gateway/messagetools"
 	"github.com/nickheyer/icebath/pkg/gateway/platforms/feishu"
@@ -113,7 +112,6 @@ func installProcessWiring() {
 	gatewayrun.GatewayDebugLocalReport = selfupdate.GatewayDebugLocalReport
 	gatewayrun.GatewayDebugUploadReply = selfupdate.GatewayDebugUploadReply
 	gatewayrun.SweepExpiredPastes = selfupdate.SweepExpiredPastes
-	gatewayrun.RestoreUserProxyEnv = selfupdate.RestoreUserProxyEnv
 	gatewayrun.CheckRuntime, gatewayrun.MaybeRunBootBootstrap = selfupdate.CheckRuntime, selfupdate.MaybeRunBootBootstrap
 	gatewayrun.ConfigureWindowsStdio = app.ConfigureWindowsStdio
 	gatewayrun.RunApprovalModeCommand = func(ctx context.Context, h string, env *tools.Env, requestedMode string) (string, error) {
@@ -163,42 +161,11 @@ func installProcessWiring() {
 	selfupdate.LoadCronJobsHook = loadCronJobsForDrainReport
 	gatewaycli.DescribeActiveWorkUnit = selfupdate.DescribeActiveWorkUnit
 	gatewaycli.SealedSteward = selfupdate.SealedSteward
-	gateway.WebServer.ShouldRequireDashboardAuth = dashboard.ShouldRequireDashboardAuthAfterImport
-	gateway.WebServer.StartServer = dashboard.StartServer
-	dashboard.RestoreUserProxyEnv = selfupdate.RestoreUserProxyEnv
-	gatewayrun.BuildGatewayListener = dashboard.BuildGatewayListener
-	provider.RetirementIdleProof = dashboard.RetirementIdleProof
-	dashboard.GatewayCLI.NeedsSudo = selfupdate.NeedsSudo
-	dashboard.GatewayCLI.SudoNoninteractiveOk = selfupdate.SudoNoninteractiveOk
-	dashboard.GatewayCLI.RefusalLines = gatewaycli.RefusalLines
-	dashboard.GatewayCLI.InstalledServices = gatewayrun.InstalledServiceCount
-	dashboard.TUIArgv = app.TUIArgv
 	tui.ClipboardImage = app.SaveClipboardImage
 	tui.PluginWidgets = pluginWidgets
-	dashboard.UpdateCLI.IsCommitBuild = selfupdate.IsCommitBuild
-	dashboard.UpdateCLI.CommitBuildMessage = selfupdate.CommitBuildUpdateMessage
-	dashboard.UpdateCLI.UpdateAdmissionRefusal = selfupdate.UpdateAdmissionRefusal
-	dashboard.UpdateCLI.RecordUpdateRefusal = selfupdate.RecordUpdateRefusal
-	dashboard.UpdateCLI.CheckForUpdates = selfupdate.CheckForUpdatesForce
-	dashboard.UpdateCLI.BuildMigrationPlan = gatewayrun.MigrationPlanDict
-	dashboard.StatusCLI.ReadLogTail = app.ReadLogTail
-	dashboard.StatusCLI.BuildDebugShare = selfupdate.DebugShareForDashboard
-	dashboard.StatusCLI.RedactDebugSupportText = selfupdate.RedactDebugSupportText
-	dashboard.ConsoleCLI.NewEngine = app.NewDashboardConsole
-	gateway.WebUISourceBuild.ProductCurrent = selfupdate.SourceProductCurrent
-	gateway.WebUISourceBuild.Env = func(ctx context.Context) (map[string]string, error) {
-		return selfupdate.SourceBuildEnv(ctx, nil, false, true)
-	}
-	gateway.WebUISourceBuild.PrepareLaunch = selfupdate.PrepareLaunchDependencies
-	gateway.WebUISourceBuild.BuildWeb = func(ctx context.Context, projectRoot string, env map[string]string) error {
-		return selfupdate.BuildSourceWeb(ctx, projectRoot, env, "")
-	}
-	gateway.WebUISourceBuild.ExceptionName = selfupdate.ExceptionName
 	gateway.RefreshLiveSessions = tuiserver.RefreshLiveSessions
-	tuiserver.OpenSessionDBAtPath = dashboard.OpenSessionDBAtPath
-	tuiserver.MintDisplayTicket, tuiserver.DisplayAdmissionOf = dashboard.MintWSTicket, dashboard.SocketAdmission
+	gatewayrun.ServeSessionSocket = serveSessionSocket
 	tuiserver.ShareNousDiagnostics, tuiserver.RedactDebugSupportText = selfupdate.ShareNousDiagnostics, selfupdate.RedactDebugSupportTextCapped
-	tuiserver.WriteProfileModel = dashboard.WriteProfileModel
 	tuiserver.StatusReport.Fields, tuiserver.StatusReport.Lines = app.TUIStatusFields, app.TUIStatusLines
 	tuiserver.NormalizePersonalityName = commands.NormalizePersonalityName
 	tuiserver.RenderPersonalityPrompt = commands.RenderPersonalityPrompt
@@ -255,8 +222,7 @@ func installProcessWiring() {
 		if d == nil {
 			return tuiserver.ResolvedCommand{}, false
 		}
-		return tuiserver.ResolvedCommand{Name: d.Name, Category: d.Category, Describe: d.Describe,
-			DesktopSubcommands: commands.MetaOf(d.Name).DesktopSubcommands}, true
+		return tuiserver.ResolvedCommand{Name: d.Name, Category: d.Category, Describe: d.Describe}, true
 	}
 	tuiserver.SlashCompleter = func(ctx context.Context, skillCommands, skillBundles skills.SkillCommands) func(string) []tuiserver.SlashCompletion {
 		completer := commands.TUISlashCompleter(ctx, skillCommands, skillBundles)
@@ -269,17 +235,11 @@ func installProcessWiring() {
 			return out
 		}
 	}
-	gateway.WebappRendererBuild.Prepare = func(ctx context.Context, projectRoot string, force, skipBuild, explicit bool) (string, error) {
-		return selfupdate.PrepareWebappRenderer(ctx, projectRoot, force, skipBuild, explicit)
-	}
-	gateway.WebappRendererBuild.PackagedDist = selfupdate.PackagedWebappDist
-	gateway.WebappRendererBuild.ExceptionName = selfupdate.ExceptionName
 	selfupdate.RunCLIHook = run
 	agent.KanbanBudgetExhaustedHook = kanban.RecordBudgetExhausted
 	agent.TUIGatewayToolsets = tuiserver.GatewayToolsets
 	agent.SessionSteerAuthority = tuiserver.SessionSteerAuthority
 	mcp.TUILaunchHome, mcp.TUIProfileHome, mcp.TUIProfileRuntimeScope = tuiserver.LaunchHome, tuiserver.ProfileHome, tuiserver.ProfileRuntimeScope
-	observability.ResolveSessionPlatformHook = tuiserver.ResolveSessionPlatform
 	pm.InteractiveAppRunning = app.PromptAppIsRunning
 	provider.SetFreeTierGatewayHooks(provider.FreeTierGatewayHooks{OwnsRuntimeLock: gateway.OwnsGatewayRuntimeLock})
 	pm.CuaDriverChildEnv = cuaDriverChildEnv
@@ -325,10 +285,6 @@ func installProcessWiring() {
 	gateway.ContextAgent.Breakdown = agent.SessionContextBreakdown
 	gateway.ContextAgent.StoredBreakdown = agent.SessionStoredContextBreakdown
 	gateway.ContextAgent.Marks = agent.SessionContextMarks
-	gateway.PromptAttachments.StageBrowserFile = tuiserver.StageBrowserFileAttachment
-	gateway.PromptAttachments.StageSessionFile = tuiserver.StageSessionFileAttachment
-	gateway.PromptAttachments.RefPath = tuiserver.AttachmentRefPath
-	gateway.PromptAttachments.FormatRefValue = tuiserver.FormatRefValue
 	gateway.ImageAttachments.MaxBytes = tuiserver.AttachBytesMaxBytes
 	gateway.ImageAttachments.DecodeBase64 = tuiserver.DecodeAttachBase64
 	gateway.ImageAttachments.SniffImageExt = tuiserver.SniffImageExt
@@ -395,7 +351,6 @@ func installProcessWiring() {
 		return provider.GetCachedContextLength(ctx, modelID, baseURL, false)
 	}
 	tools.ModelContextLength = provider.ToolModelContextLength
-	tools.AllSkillNames = skills.AllSkillNames
 	tools.ProjectBoardWorkdirBinder = bindProjectBoardWorkdir
 	observability.SkillSourceIDAliasesHook = skills.SourceIDAliases
 	app.SecurityAdvisoriesStartupBanner = func(ctx context.Context) string {
@@ -478,15 +433,14 @@ func pluginServices() *plugins.Services {
 		RequestToolApproval: func(ctx context.Context, toolName, message, ruleKey, turnID, toolCallID, sessionID string) (map[string]any, error) {
 			return tools.RequestPluginToolApproval(ctx, callerToolsEnv(ctx), toolName, message, ruleKey, turnID, toolCallID, sessionID)
 		},
-		FailoverReason:              failoverReason,
-		ClearDashboardAuthProviders: gateway.ClearDashboardAuthProviders,
-		MemoryProviderDir:           memory.ProviderDirForHome,
-		HostObject:                  hostedObjectName,
-		BindProfileSecretScope:      provider.BindProfileSecretScope,
-		GetSecret:                   provider.GetSecret,
-		PluginLLM:                   agent.PluginLLMClient(),
-		SubagentLifecycle:           agent.SubagentDelegationService(),
-		DelegationBackends:          func(c *plugins.Context) any { return agent.DelegationBackendsFor(c) },
+		FailoverReason:         failoverReason,
+		MemoryProviderDir:      memory.ProviderDirForHome,
+		HostObject:             hostedObjectName,
+		BindProfileSecretScope: provider.BindProfileSecretScope,
+		GetSecret:              provider.GetSecret,
+		PluginLLM:              agent.PluginLLMClient(),
+		SubagentLifecycle:      agent.SubagentDelegationService(),
+		DelegationBackends:     func(c *plugins.Context) any { return agent.DelegationBackendsFor(c) },
 		CurrentCronExecution: func(ctx context.Context) any {
 			if exec := cron.CurrentCronExecution(ctx); exec != nil {
 				return exec
@@ -499,7 +453,6 @@ func pluginServices() *plugins.Services {
 		ResolveBuiltinCommand:      func(name string) bool { return commands.Resolve(name) != nil },
 		DispatchTool:               tools.DispatchForPlugin,
 		RegisterContextReference:   agent.RegisterContextReference,
-		DashboardAuth:              gateway.DashboardAuthRegistryService(),
 		Platforms:                  gateway.PlatformRegistryService(),
 		ProviderRegistries:         pluginservices.ProviderRegistries(),
 		BuiltinAuxTaskKeys:         provider.BuiltinAuxTaskKeys,
@@ -525,7 +478,6 @@ func pluginServices() *plugins.Services {
 		ReloadGatewayPlugins: func(ctx context.Context, target, profileHome string) (map[string]any, error) {
 			return gateway.ReloadGatewayPluginsAnswer(target, profileHome, 30*time.Second), nil
 		},
-		HostRendezvous:              gateway.HostRendezvousService(),
 		GatewayRunningPid:           gateway.GetRunningPid,
 		InstalledGatewayServiceKind: gateway.InstalledGatewayServiceKind,
 		RefreshPluginSessions:       gateway.RefreshPluginSessions,
@@ -594,8 +546,6 @@ func hostedObjectName(kind string, obj any) (string, bool) {
 		return memory.HostedProviderName(obj)
 	case "context_engine", "context_reference":
 		return agent.HostedContextObjectName(kind, obj)
-	case "dashboard_auth_provider":
-		return gateway.HostedDashboardAuthProviderName(obj)
 	}
 	return "", false
 }

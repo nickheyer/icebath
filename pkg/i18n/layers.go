@@ -18,7 +18,7 @@ import (
 
 const CoreSurface = "core"
 
-var Surfaces = []string{CoreSurface, "tui", "desktop"}
+var Surfaces = []string{CoreSurface, "tui"}
 
 var (
 	languageIDRe = regexp.MustCompile(`^[a-z]{2,3}(-[a-z0-9]{2,8})*$`)

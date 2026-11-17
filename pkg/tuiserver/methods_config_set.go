@@ -196,7 +196,7 @@ func setModel(ctx context.Context, rid any, params map[string]any, key string, v
 	if session != nil {
 		sid := strOr(params["session_id"])
 		parsedFlags := provider.ParseModelSwitchArgs(raw)
-		if truthy(session.Get("running")) || truthy(session.Get("_compute_host_active")) {
+		if truthy(session.Get("running")) {
 			return stashPendingModelSwitch(ctx, rid, key, value, session, confirmed, parsedFlags)
 		}
 		explicitProvider := parsedFlags.ExplicitProvider
@@ -239,8 +239,7 @@ func setModel(ctx context.Context, rid any, params map[string]any, key string, v
 	} else {
 		if !provider.ParseModelSwitchArgs(raw).IsOnce {
 			return rpcErr(rid, 4001, "config.set model requires a live session; to change the "+
-				"profile default run /setup, or use the Models page (dashboard) / "+
-				"Settings -> Models (Desktop)", nil)
+				"profile default run /setup or `icebath model`", nil)
 		}
 		switched, err := applyModelSwitch(ctx, "", tuigateway.NewSession(map[string]any{"agent": nil}), raw,
 			modelSwitchOptions{confirmExpensiveModel: confirmed, pinSessionOverride: true, countSwitch: true})

@@ -61,7 +61,7 @@ func TestRemoveForgetsEveryConfigTraceAndResetsTheMemoryProvider(t *testing.T) {
 	rmPlugin(t, filepath.Join(h, "plugins"), "fakemem", "fakemem", "kind: exclusive\n")
 	vtWrite(t, filepath.Join(h, "config.yaml"), "plugins:\n  enabled: [fakemem, keep-me]\n  disabled: [other]\n"+
 		"  entries:\n    fakemem: {allow_tool_override: true}\n    keep-me: {}\nmemory:\n  provider: fakemem\n")
-	result, err := DashboardRemoveUserPlugin(context.Background(), "fakemem")
+	result, err := UnattendedRemoveUserPlugin(context.Background(), "fakemem")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -95,7 +95,7 @@ func TestRemoveOfASymlinkInsideThePluginsDirUnlinksOnlyTheLink(t *testing.T) {
 	}
 	vtWrite(t, filepath.Join(h, "plugins", ".install-metadata.json"), `{"victim": {"pinned_sha": "`+strings.Repeat("a", 40)+`"}}`)
 	vtWrite(t, filepath.Join(h, "config.yaml"), "plugins:\n  enabled: [victim]\n")
-	result, err := DashboardRemoveUserPlugin(context.Background(), "alias")
+	result, err := UnattendedRemoveUserPlugin(context.Background(), "alias")
 	if err != nil {
 		t.Fatal(err)
 	}

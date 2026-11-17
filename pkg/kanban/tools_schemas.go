@@ -51,7 +51,7 @@ var (
 	}, []any{})
 	kanbanCompleteSchema = kanbanToolSchema("kanban_complete", "Mark your current task done with a structured handoff for others. Prefer ``summary`` for a human-readable 1-3 sentence description of what you did; put machine-readable facts in ``metadata`` (changed_files, tests_run, decisions, findings, etc). At least one of ``summary`` or ``result`` is required. If you created new tasks via ``kanban_create`` during this run, list their ids in ``created_cards`` — the kernel verifies them so phantom references are caught before they leak into downstream automation. If you produced deliverable files (charts, PDFs, spreadsheets, generated images), list their absolute paths in ``artifacts`` — the gateway notifier will upload them as native attachments to the human who subscribed to the task, so the deliverable lands in their chat alongside the summary instead of being a path they have to fetch by hand.", map[string]any{
 		"task_id":  kanbanSchemaProp("string", descTaskIDDefault),
-		"summary":  kanbanSchemaProp("string", "Human-readable handoff, 1-3 sentences. Appears in Run History on the dashboard and in downstream workers' context."),
+		"summary":  kanbanSchemaProp("string", "Human-readable handoff, 1-3 sentences. Appears in downstream workers' context."),
 		"metadata": kanbanSchemaProp("object", "Free-form dict of structured facts about this attempt — {\"changed_files\": [...], \"tests_run\": 12, \"findings\": [...]}. Surfaced to downstream workers alongside ``summary``."),
 		"result":   kanbanSchemaProp("string", "Short result log line (legacy field, maps to task.result). Use ``summary`` instead when possible; this exists for compatibility with callers that still set --result on the CLI."),
 		"created_cards": map[string]any{

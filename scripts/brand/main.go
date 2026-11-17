@@ -8,60 +8,22 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"regexp"
-	"strings"
 )
 
-// Canary rule of pkg/selfupdate IsCanaryTag, carried here so the generator builds without the main module
-var canaryTagRE = regexp.MustCompile(`^v(?:0|[1-9]\p{Nd}{0,2})\.(?:0|[1-9]\p{Nd}*)\.(?:0|[1-9]\p{Nd}*)\+canary\.20\p{Nd}{6}T\p{Nd}{6}Z$`)
-
-var commitRE = regexp.MustCompile(`^[a-f0-9]{40}$`)
-
-// Plate fills of the stable, canary and commit build identities
-var (
-	stablePlates = [2]string{"#ffffff", "#0b0f14"}
-	canaryPlates = [2]string{"#f5cc32", "#443808"}
-	commitPlates = [2]string{"#e34850", "#4a1117"}
-)
-
-// Loads the source art and returns the stable identity and the one desktop outputs carry
-func buildArt(source string, env func(string) string) (*art, *art, error) {
-	tag, commit := env("ICEBATH_PAYLOAD_TAG"), env("ICEBATH_BUILD_COMMIT")
-	var desktopPlates [2]string
-	switch {
-	case commit != "" && tag != "":
-		return nil, nil, errors.New("Commit builds cannot also select ICEBATH_PAYLOAD_TAG")
-	case commit != "" && !commitRE.MatchString(commit):
-		return nil, nil, errors.New("ICEBATH_BUILD_COMMIT requires an exact full 40-character SHA")
-	case commit != "":
-		desktopPlates = commitPlates
-	case canaryTagRE.MatchString(strings.TrimSpace(tag)):
-		desktopPlates = canaryPlates
-	}
+// Loads the source art the targets render from
+func buildArt(source string) (*art, error) {
 	src, err := loadSources(source)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-	stable := newArt(src, stablePlates, "")
-	if desktopPlates == ([2]string{}) {
-		return stable, stable, nil
-	}
-	return stable, newArt(src, desktopPlates, commit), nil
-}
-
-// Desktop outputs carry the build identity, every other output keeps the stable brand
-func artFor(rel string, stable, desktop *art) *art {
-	if strings.HasPrefix(rel, "apps/desktop/") {
-		return desktop
-	}
-	return stable
+	return &art{src: src}, nil
 }
 
 // Writes every target under out, reports each one, then verifies what landed and fails on any error
-func cmdWrite(stdout io.Writer, targets []target, stable, desktop *art, out string) int {
+func cmdWrite(stdout io.Writer, targets []target, a *art, out string) int {
 	written, failures := 0, 0
 	for _, t := range targets {
-		data, err := t.render(artFor(t.rel, stable, desktop))
+		data, err := t.render(a)
 		if err == nil {
 			path := filepath.Join(out, filepath.FromSlash(t.rel))
 			if err = os.MkdirAll(filepath.Dir(path), 0o755); err == nil {
@@ -96,10 +58,10 @@ func cmdWrite(stdout io.Writer, targets []target, stable, desktop *art, out stri
 }
 
 // Regenerates every target in memory and checks the files under out against their declared shape
-func cmdCheck(stdout io.Writer, targets []target, stable, desktop *art, out string) int {
+func cmdCheck(stdout io.Writer, targets []target, a *art, out string) int {
 	var problems []string
 	for _, t := range targets {
-		fresh, err := t.render(artFor(t.rel, stable, desktop))
+		fresh, err := t.render(a)
 		if err != nil {
 			problems = append(problems, fmt.Sprintf("%s: REGENERATE FAILED (%v)", t.rel, err))
 			continue
@@ -145,7 +107,7 @@ func findRoot(dir string) (string, error) {
 }
 
 // Parses flags, resolves the identity, then writes or checks every target and returns the exit code
-func run(args []string, stdout, stderr io.Writer, env func(string) string) int {
+func run(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("brand", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	source := fs.String("source", "", "checkout root holding assets/ (default: nearest one above the working directory)")
@@ -177,17 +139,17 @@ func run(args []string, stdout, stderr io.Writer, env func(string) string) int {
 			return 1
 		}
 	}
-	stable, desktop, err := buildArt(root, env)
+	a, err := buildArt(root)
 	if err != nil {
 		fmt.Fprintln(stderr, err)
 		return 1
 	}
 	if *check {
-		return cmdCheck(stdout, allTargets(), stable, desktop, dest)
+		return cmdCheck(stdout, allTargets(), a, dest)
 	}
-	return cmdWrite(stdout, allTargets(), stable, desktop, dest)
+	return cmdWrite(stdout, allTargets(), a, dest)
 }
 
 func main() {
-	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr, os.Getenv))
+	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
 }

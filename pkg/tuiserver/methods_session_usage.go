@@ -243,13 +243,9 @@ func sessionContextBreakdown(ctx context.Context, rid any, params map[string]any
 		if !present {
 			source = "provider_usage"
 		}
-		model, present := metadataMirror(session)["model"]
-		if !present {
-			model = ""
-		}
 		return ok(rid, map[string]any{"categories": []any{}, "context_max": usageOr(usage, "context_max", 0),
 			"context_percent": usageOr(usage, "context_percent", 0), "context_used": usageOr(usage, "context_used", 0),
-			"estimated_total": 0, "context_estimated": estimated, "context_source": source, "model": model})
+			"estimated_total": 0, "context_estimated": estimated, "context_source": source, "model": ""})
 	}
 	unlock := lockHistory(session)
 	history := historyDicts(append([]any(nil), historyList(session.Get("history"))...))

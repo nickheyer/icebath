@@ -74,7 +74,6 @@ var SessionLiveInfo = pydantic.NewModel("SessionLiveInfo", OpenConfig,
 	pydantic.Def("turn_started_at", pydantic.Nullable(pydantic.Float), nil),
 	pydantic.Def("title", pydantic.Str, ""),
 	pydantic.Def("stored_session_id", pydantic.Str, ""),
-	pydantic.Def("desktop_contract", pydantic.Nullable(pydantic.Union(pydantic.Int, pydantic.Str)), nil),
 	pydantic.Def("version", pydantic.Str, ""),
 	pydantic.Def("release_date", pydantic.Str, ""),
 	pydantic.Def("update_behind", pydantic.Nullable(pydantic.Any), nil),
@@ -179,18 +178,14 @@ var SessionParams = pydantic.NewModel("SessionParams", ParamsConfig,
 
 var ProfileParams = pydantic.NewModel("ProfileParams", ParamsConfig,
 	pydantic.Def("profile", pydantic.Nullable(pydantic.Str), nil),
-).Described("Any method the desktop may route to a named profile (``requestGatewayForProfile`` adds ``profile``).")
+).Described("Any method a client may route to a named profile with ``profile``.")
 
 var SessionOwner = pydantic.NewModel("SessionOwner", ParamsConfig,
 	pydantic.Req("type", pydantic.Literal("session")),
 	pydantic.Req("session_id", pydantic.ConStr(pydantic.MinLen(1))),
 )
 
-var AccountOwner = pydantic.NewModel("AccountOwner", ParamsConfig,
-	pydantic.Req("type", pydantic.Literal("account")),
-)
-
-var ConnectorOwner = pydantic.Tagged("type", SessionOwner, AccountOwner)
+var ConnectorOwner = pydantic.Tagged("type", SessionOwner)
 
 var OkResult = pydantic.NewModel("OkResult", ClosedConfig,
 	pydantic.Def("ok", pydantic.Bool, true),

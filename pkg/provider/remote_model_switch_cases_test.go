@@ -2,6 +2,7 @@ package provider
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
 	"testing"
 
@@ -47,7 +48,7 @@ func TestModelSwitchMasksInheritedEndpointCredentials(t *testing.T) {
 }
 
 // A lock landing after the preflight guard, seen by a poll or by the re-read after a 409, refuses the whole assignment
-func TestDashboardModelSwitchRefusesWhenALockLandsAfterTheGuard(t *testing.T) {
+func TestModelSwitchRefusesWhenALockLandsAfterTheGuard(t *testing.T) {
 	for _, conflictFirst := range []bool{false, true} {
 		name := map[bool]string{false: "poll", true: "cas-retry"}[conflictFirst]
 		t.Run(name, func(t *testing.T) {
@@ -76,9 +77,10 @@ func TestDashboardModelSwitchRefusesWhenALockLandsAfterTheGuard(t *testing.T) {
 			}
 			prepared := &PreparedMainAssignment{BaseURL: url, Result: ModelSwitchResult{Success: true, NewModel: "new", TargetProvider: "custom",
 				ProviderChanged: true, BaseURL: url, APIMode: "chat_completions", IsGlobal: true}}
-			_, err := ApplyModelAssignmentSync(ctx, "main", "custom", "new", "", url, "", AuxReasoningEffort{}, prepared)
-			if http := configRefusalHTTP(err); http == nil || http.StatusCode != 403 {
-				t.Fatalf("err %v http %+v", err, http)
+			_, err := ApplyModelAssignmentSync(ctx, "custom", "new", url, "", prepared)
+			var locked *config.ConfigLockedError
+			if !errors.As(err, &locked) {
+				t.Fatalf("err %v", err)
 			}
 			if n := len(p.Patches()); !conflictFirst && n != 0 {
 				t.Fatalf("%d patches", n)

@@ -230,7 +230,7 @@ func rcMarker(t *testing.T, lines ...string) {
 	}
 }
 
-func TestReceiptExitBeforeTheReceiptReadsDesktopOnlyUnderItsOwnHandOff(t *testing.T) {
+func TestReceiptExitBeforeTheReceiptFailsOnlyUnderItsOwnHandOffDelegate(t *testing.T) {
 	rcHome(t)
 	rows := rcRecorder(t)
 	t.Setenv(HandoffPIDEnv, "")
@@ -246,16 +246,16 @@ func TestReceiptExitBeforeTheReceiptReadsDesktopOnlyUnderItsOwnHandOff(t *testin
 		t.Fatal(err)
 	}
 	RecordStopWithoutReceipt(context.Background(), "managed_install", "refused")
-	var got [][3]any
+	var got [][2]any
 	for _, r := range *rows {
-		got = append(got, [3]any{r["stop_class"], r["initiator"], r["outcome"]})
+		got = append(got, [2]any{r["stop_class"], r["outcome"]})
 	}
-	want := [][3]any{{"lock_held", "desktop", "failed"}, {"git_in_progress", "desktop", "failed"}, {"lock_held", nil, "refused"}, {"managed_install", nil, "refused"}}
+	want := [][2]any{{"lock_held", "failed"}, {"git_in_progress", "failed"}, {"lock_held", "refused"}, {"managed_install", "refused"}}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("rows %v", got)
 	}
 	for _, r := range *rows {
-		if len(r["update_id"].(string)) != 32 || r["started_at"] != r["finished_at"] {
+		if _, labelled := r["initiator"]; labelled || len(r["update_id"].(string)) != 32 || r["started_at"] != r["finished_at"] {
 			t.Fatalf("row %v", r)
 		}
 	}
@@ -275,11 +275,11 @@ func TestReceiptLockRefusalOfTheHandOffsOwnUpdateChildIsAFailedRun(t *testing.T)
 	RecordStopWithoutReceipt(context.Background(), "lock_held", "refused")
 	t.Setenv(HandoffPIDEnv, "")
 	RecordStopWithoutReceipt(context.Background(), "lock_held", "refused")
-	var got [][2]any
+	var got []any
 	for _, r := range *rows {
-		got = append(got, [2]any{r["outcome"], r["initiator"]})
+		got = append(got, r["outcome"])
 	}
-	want := [][2]any{{"failed", "desktop"}, {"failed", "desktop"}, {"refused", "desktop"}, {"refused", nil}}
+	want := []any{"failed", "failed", "refused", "refused"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("rows %v", got)
 	}

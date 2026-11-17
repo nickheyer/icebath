@@ -14,14 +14,14 @@ func TestSessionPolicySurfacesAndLabels(t *testing.T) {
 	if !reflect.DeepEqual(storedAsLocal, want) {
 		t.Fatalf("stored as local %v", storedAsLocal)
 	}
-	if !reflect.DeepEqual(SurfaceGroups["gui"], map[string]bool{"gui": true, "desktop": true}) ||
-		!reflect.DeepEqual(SurfaceGroups["desktop"], SurfaceGroups["gui"]) {
+	if !reflect.DeepEqual(SurfaceGroups["gui"], map[string]bool{"gui": true, "tui": true}) ||
+		!reflect.DeepEqual(SurfaceGroups["tui"], SurfaceGroups["gui"]) || Surfaces["gui"] != "tui" {
 		t.Fatalf("gui group %v", SurfaceGroups["gui"])
 	}
 	if _, ok := SurfaceGroups["tool"]; ok {
 		t.Fatal("tool is not an alias of cli")
 	}
-	for label, want := range map[any]any{nil: nil, "": nil, "local": nil, "unknown": nil, "gui": "desktop", "cli": "cli", "tool": "tool", "oneshot": "oneshot", "telegram": "telegram"} {
+	for label, want := range map[any]any{nil: nil, "": nil, "local": nil, "unknown": nil, "gui": "tui", "cli": "cli", "tool": "tool", "oneshot": "oneshot", "telegram": "telegram"} {
 		if got := state.CreatedSurface(label); got != want {
 			t.Errorf("%v: %v", label, got)
 		}

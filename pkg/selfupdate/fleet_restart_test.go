@@ -213,7 +213,7 @@ const (
 )
 
 // Runs the restart phase with one timed out unit and then verification, returning the output, receipt and marker clears
-func updateWithFailedUnit(t *testing.T, mainPID int, fleetRows []*pyjson.Object, dashboardsDown map[int]bool) (string, map[string]any, int) {
+func updateWithFailedUnit(t *testing.T, mainPID int, fleetRows []*pyjson.Object) (string, map[string]any, int) {
 	t.Helper()
 	h := newFleetHarness(t)
 	ctx := updaterecord.UpdateReceiptScope(h.ctx)
@@ -249,8 +249,6 @@ func updateWithFailedUnit(t *testing.T, mainPID int, fleetRows []*pyjson.Object,
 	})
 	installFleetClock(t)
 	vsSwap(t, &fleetPrintLegacyUnits, func(context.Context, io.Writer) {})
-	vsSwap(t, &fleetRefreshDashboard, func(context.Context, io.Writer, map[string]bool) map[int]bool { return dashboardsDown })
-	vsSwap(t, &fleetSurvivingServeRuntimes, func(context.Context, *UpdatePlan) ([]any, error) { return []any{}, nil })
 	vsSwap(t, &fleetAutoMigrate, func(context.Context, io.Writer) error { return nil })
 	cleared := 0
 	vsSwap(t, &fleetClearMarker, func(context.Context) { cleared++ })
@@ -285,7 +283,7 @@ func TestFailedUnitSettlesOnlyOnItsOwnFreshCurrentGateway(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			out, receipt, cleared := updateWithFailedUnit(t, tc.mainPID, tc.rows, nil)
+			out, receipt, cleared := updateWithFailedUnit(t, tc.mainPID, tc.rows)
 			followups := followupSteps(receipt)
 			restart, _ := receipt["gateway_restart"].(map[string]any)
 			if tc.settled {
@@ -300,20 +298,6 @@ func TestFailedUnitSettlesOnlyOnItsOwnFreshCurrentGateway(t *testing.T) {
 				t.Fatalf("out=%q followups=%v restart=%v cleared=%d", out, followups, restart, cleared)
 			}
 		})
-	}
-}
-
-func TestSettledUnitKeepsTheReceiptIncompleteWhileADashboardIsDown(t *testing.T) {
-	if runtime.GOOS != "linux" {
-		t.Skip("systemd restart phase")
-	}
-	out, receipt, cleared := updateWithFailedUnit(t, fleetNewPID,
-		[]*pyjson.Object{fleetObject("profile", "default", "pid", int64(fleetNewPID))}, map[int]bool{4242: true})
-	restart, _ := receipt["gateway_restart"].(map[string]any)
-	if strings.Contains(out, "Update incomplete — some units were not restarted") ||
-		!reflect.DeepEqual(followupSteps(receipt), []string{"gateway_restart"}) ||
-		len(restart["failed_units"].([]any)) != 0 || restart["incomplete"] != true || cleared != 0 {
-		t.Fatalf("out=%q receipt=%v cleared=%d", out, receipt, cleared)
 	}
 }
 
@@ -436,7 +420,6 @@ func TestFleetCompletionPreservesRuntimeVerdictAndRestartObligation(t *testing.T
 		t.Run(tc.name, func(t *testing.T) {
 			h := newFleetHarness(t)
 			ctx := updaterecord.UpdateReceiptScope(h.ctx)
-			refreshed := []map[string]bool{}
 			migrated := 0
 			snapshot := []*pyjson.Object{}
 			if tc.state != nil {
@@ -446,11 +429,6 @@ func TestFleetCompletionPreservesRuntimeVerdictAndRestartObligation(t *testing.T
 			restart.PreRestartGatewayPIDs = []int{1234}
 			restart.RestartedServices = []string{"icebath-gateway"}
 			vsSwap(t, &fleetPrintLegacyUnits, func(context.Context, io.Writer) {})
-			vsSwap(t, &fleetSurvivingServeRuntimes, func(context.Context, *UpdatePlan) ([]any, error) { return []any{}, nil })
-			vsSwap(t, &fleetRefreshDashboard, func(_ context.Context, _ io.Writer, already map[string]bool) map[int]bool {
-				refreshed = append(refreshed, already)
-				return nil
-			})
 			vsSwap(t, &fleetAutoMigrate, func(context.Context, io.Writer) error { migrated++; return nil })
 			// The drain signal is withheld so a live pid 1234 of the test host is never signalled
 			vsSwap(t, &fleetGracefulRestart, func(int, float64, func()) bool { return false })
@@ -491,9 +469,6 @@ func TestFleetCompletionPreservesRuntimeVerdictAndRestartObligation(t *testing.T
 			if wantMigrated := map[bool]int{true: 1, false: 0}[healthy]; migrated != wantMigrated {
 				t.Fatalf("migrated = %d", migrated)
 			}
-			if !reflect.DeepEqual(refreshed, []map[string]bool{{"icebath-gateway": true}}) {
-				t.Fatalf("refreshed = %v", refreshed)
-			}
 		})
 	}
 }
@@ -503,8 +478,6 @@ func TestVerifyFleetHandsStaleRowsToSurvivorSignalling(t *testing.T) {
 	staleFleet := []*pyjson.Object{fleetObject("profile", "default", "pid", int64(4242), "state", "stale", "code_sha", strings.Repeat("a", 40))}
 	var seen []any
 	vsSwap(t, &fleetPrintLegacyUnits, func(context.Context, io.Writer) {})
-	vsSwap(t, &fleetRefreshDashboard, func(context.Context, io.Writer, map[string]bool) map[int]bool { return map[int]bool{} })
-	vsSwap(t, &fleetSurvivingServeRuntimes, func(context.Context, *UpdatePlan) ([]any, error) { return []any{}, nil })
 	vsSwap(t, &fleetCollectSnapshot, func(context.Context, *gatewayRestartOutcome, bool) ([]*pyjson.Object, error) { return staleFleet, nil })
 	vsSwap(t, &fleetSignalStaleSurvivors, func(_ context.Context, _ io.Writer, fleet []any, _ *gatewayRestartOutcome, _ float64) []int {
 		if seen == nil {

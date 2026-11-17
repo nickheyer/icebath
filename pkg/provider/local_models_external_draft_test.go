@@ -101,7 +101,7 @@ func lmUpdateJob(t *testing.T, serving string, onDownload func(job map[string]an
 // Starts the runtime install job for the cpu backend
 func lmStartRuntimeInstall(t *testing.T) string {
 	t.Helper()
-	resp, err := LocalModelsRuntimeInstall(context.Background(), "cpu", "")
+	resp, err := LocalModelsRuntimeInstall(context.Background(), "cpu")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -131,72 +131,6 @@ func TestTheUpdateJobDownloadsMissingDraftsThenRestartsTheServer(t *testing.T) {
 	mu.Unlock()
 	if !reflect.DeepEqual(names, []string{lr6HybridEntry().Draft.LocalName()}) {
 		t.Fatalf("fetched %v", names)
-	}
-	if !reflect.DeepEqual(events.list(), []any{"restart"}) {
-		t.Fatalf("events %v", events.list())
-	}
-}
-
-func TestADraftThatFailsToDownloadLeavesTheModelDownloaded(t *testing.T) {
-	lmDownloadJobsClient(t)
-	entry := lr6HybridEntry()
-	lmStaged(t, entry)
-	dir := t.TempDir()
-	models, assets := filepath.Join(dir, "models"), filepath.Join(dir, "assets")
-	lmDeps.modelsDir = func() string { return models }
-	lmDeps.assetsDir = func() string { return assets }
-	lmDeps.refreshRuntime = func(context.Context, func(context.Context) (bool, error), string) {}
-	lmDeps.downloadJob = func(ctx context.Context, job map[string]any, plan []lmPlanRow) error {
-		for _, row := range plan {
-			if filepath.Base(row.Dest) == entry.Draft.LocalName() {
-				return &pm.DownloadError{Kind: pm.DownloadTransportFailed,
-					Message: "download failed from https://huggingface.co/lab/Hybrid-DFlash-GGUF: HTTP Error 404"}
-			}
-		}
-		for _, row := range plan {
-			lmTouch(t, row.Dest)
-		}
-		return nil
-	}
-	resp, err := LocalModelsDownload(context.Background(), lr6Build.ModelID())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if job := lmPoll(t, resp["job_id"].(string), 15*time.Second, "done", "error"); job["status"] != "done" {
-		t.Fatalf("job %v", job)
-	}
-	if !lrIsFile(filepath.Join(models, lr6Build.Files[0].LocalName())) {
-		t.Fatal("model not downloaded")
-	}
-	if lrPathExists(filepath.Join(assets, entry.Draft.LocalName())) {
-		t.Fatal("failed draft left a file")
-	}
-}
-
-func TestAPauseBetweenTheDraftsAndTheRestartStillRestartsOnResume(t *testing.T) {
-	lmDownloadJobsClient(t)
-	events := lmUpdateJob(t, "b11671", func(job map[string]any, plan []lmPlanRow) error {
-		for _, row := range plan {
-			lmTouch(t, row.Dest)
-		}
-		lmJobsMu.Lock()
-		lmRunning[lmJobID(job)].pause.Set()
-		lmJobsMu.Unlock()
-		return nil
-	})
-	jobID := lmStartRuntimeInstall(t)
-	if job := lmPoll(t, jobID, 15*time.Second, "paused", "done", "error"); job["status"] != "paused" {
-		t.Fatalf("job %v", job)
-	}
-	if got := events.list(); len(got) != 0 {
-		t.Fatalf("events %v", got)
-	}
-	resumed, err := LocalModelsDownloadResume(context.Background(), jobID)
-	if err != nil || resumed["resumed"] != true {
-		t.Fatalf("resume %v %v", resumed, err)
-	}
-	if job := lmPoll(t, jobID, 15*time.Second, "done", "error"); job["status"] != "done" {
-		t.Fatalf("job %v", job)
 	}
 	if !reflect.DeepEqual(events.list(), []any{"restart"}) {
 		t.Fatalf("events %v", events.list())

@@ -9,7 +9,7 @@ import (
 )
 
 func TestGatewayAPIServerAnswers503(t *testing.T) {
-	app := NewWebApplication(0)
+	app := NewHTTPApp(0)
 	app.Middlewares = []WebMiddleware{APIConfigUnavailableMiddleware}
 	if err := app.AddGet("/v1/x", func(context.Context, *WebRequest) (*WebResponse, error) {
 		return nil, &config.ConfigBackendUnavailable{Message: "Remote Config: the config plane is unreachable"}

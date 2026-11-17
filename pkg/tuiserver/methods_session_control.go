@@ -95,7 +95,7 @@ func safeLoopSnapshot(state *agent.SessionLoopState, deferredByGoal bool) map[st
 	return snapshot
 }
 
-// Persisted heartbeat fields the desktop renders, nil for no heartbeat or a cleared one
+// Persisted heartbeat fields a client renders, nil for no heartbeat or a cleared one
 func safeHeartbeatSnapshot(state *agent.HeartbeatState) map[string]any {
 	if state == nil || state.Status == "cleared" {
 		return nil

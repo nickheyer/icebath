@@ -155,7 +155,7 @@ func (c *Context) OnUnload(callback func() error) (*Registration, error) {
 		return nil, errors.New("on_unload callback must be callable")
 	}
 	_, name := callbackNames(callback)
-	handle := c.track("on_unload", name, callback, false)
+	handle := c.track("on_unload", name, callback)
 	logDebug(fmt.Sprintf("Plugin %s registered on_unload callback", c.manifest.Name))
 	return handle, nil
 }
@@ -197,7 +197,7 @@ func (c *Context) SpawnTask(ctx context.Context, fn func(context.Context) error,
 			cancel()
 		}
 		return nil
-	}, false)
+	})
 	go func() {
 		defer func() {
 			if p := recover(); p != nil {
@@ -823,49 +823,6 @@ func (c *Context) MemoryProvider() any {
 	return c.memoryProvider
 }
 
-// Registers a process wide dashboard auth provider from the launch scope only, kept out of teardown
-func (c *Context) RegisterDashboardAuthProvider(provider any) (*Registration, error) {
-	if c.ignoredAfterAbandonedLoad("register_dashboard_auth_provider") {
-		return nil, nil
-	}
-	var handle *Registration
-	var err error
-	serializedReplacement(func() { handle, err = c.registerDashboardAuthProvider(provider) })
-	return handle, err
-}
-
-// Scope check, upsert and persistent lease body of RegisterDashboardAuthProvider
-func (c *Context) registerDashboardAuthProvider(provider any) (*Registration, error) {
-	name, ok, err := c.hostObject("dashboard_auth_provider", provider)
-	if err != nil {
-		return nil, err
-	}
-	if c.wrongType(ok, "a", "dashboard-auth provider", "DashboardAuthProvider") {
-		return nil, nil
-	}
-	launchScope := home.Key(home.Process())
-	if c.manager.home != launchScope {
-		logWarn(fmt.Sprintf("Plugin '%s' tried to register dashboard-auth provider %s from profile scope %s; ignoring it because dashboard auth is owned by launch scope %s.",
-			c.manifest.Name, config.PyRepr(name), c.manager.home, launchScope))
-		return nil, nil
-	}
-	registry, err := needService("DashboardAuth", func(s *Services) DashboardAuthRegistry { return s.DashboardAuth })
-	if err != nil {
-		return nil, err
-	}
-	display, err := registry.RegisterGlobal(provider)
-	if err != nil {
-		logWarn(fmt.Sprintf("Plugin '%s' failed to register dashboard-auth provider %s: %v", c.manifest.Name, config.PyRepr(name), err))
-		return nil, nil
-	}
-	handle := c.track("dashboard_auth_provider", name, func() error {
-		registry.UnregisterGlobal(name, provider)
-		return nil
-	}, true)
-	logInfo(fmt.Sprintf("Plugin '%s' registered dashboard-auth provider: %s (%s)", c.manifest.Name, name, display))
-	return handle, nil
-}
-
 // Arguments of one gateway platform adapter registration
 type PlatformSpec struct {
 	Name           string
@@ -974,7 +931,7 @@ func (c *Context) registerSlackActionHandler(actionID, callback any, text string
 		m.slackActionHandlers, _ = removeIdentity(m.slackActionHandlers, entry)
 		m.mu.Unlock()
 		return nil
-	}, false)
+	})
 	shown := text
 	if s, ok := actionID.(string); ok {
 		shown = s
@@ -1208,7 +1165,7 @@ func (c *Context) RegisterLocale(lang string, source any, endonym string, rtl bo
 	handle := c.track("locale", langID+"."+surface, func() error {
 		i18n.UnregisterPack(entry)
 		return nil
-	}, false)
+	})
 	logDebug(fmt.Sprintf("Plugin %s registered locale: %s/%s (%d keys)", c.manifest.Name, langID, surface, len(messages)))
 	return handle, nil
 }

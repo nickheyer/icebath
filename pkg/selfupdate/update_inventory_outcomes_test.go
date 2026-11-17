@@ -39,11 +39,11 @@ func TestExternalRequiresVerifiedPidEvidence(t *testing.T) {
 	}
 }
 
-func TestExternalEvidenceNeverCoversAServeRuntime(t *testing.T) {
+func TestExternalEvidenceOfAnotherPidLeavesTheGatewayUnaccounted(t *testing.T) {
 	pid := 4242
 	plan := NewUpdatePlan()
-	plan.Runtimes = []*RuntimeRecord{{Kind: "serve", Profile: "work", PID: &pid, Supervisor: "manual-serve"}}
-	got := outcomeOf(t, plan, runtimeOutcomeEvidence{KilledPIDs: map[int]bool{}, ExternalGatewayPIDs: map[int]bool{4242: true}})
+	plan.Runtimes = []*RuntimeRecord{{Kind: "gateway", Profile: "work", PID: &pid, Supervisor: "manual"}}
+	got := outcomeOf(t, plan, runtimeOutcomeEvidence{KilledPIDs: map[int]bool{}, ExternalGatewayPIDs: map[int]bool{4243: true}})
 	if got != "unaccounted" {
 		t.Fatalf("outcome = %q", got)
 	}

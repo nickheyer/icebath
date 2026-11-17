@@ -30,7 +30,7 @@ var FileMutatingToolNames = map[string]bool{"write_file": true, "patch": true}
 var NoEffectToolNames = map[string]bool{
 	"read_file": true, "search_files": true, "session_search": true, "skill_view": true, "skills_list": true,
 	"web_extract": true, "web_search": true, "vision_analyze": true, "browser_snapshot": true,
-	"browser_get_images": true, "browser_console": true, "read_terminal": true,
+	"browser_get_images": true, "browser_console": true,
 }
 
 // ToolMayHaveSideEffect is true for every tool outside the known read only set
@@ -286,7 +286,7 @@ const (
 	defaultMaxSubagentsPerTurn   = 50
 )
 
-var attendedPlatforms = map[string]bool{"cli": true, "tui": true, "desktop": true, "acp": true, "subagent": true, "api_server": true}
+var attendedPlatforms = map[string]bool{"cli": true, "tui": true, "acp": true, "subagent": true, "api_server": true}
 
 // IsStallGuardRepeatable reports whether a tool is exempt from the identical call loop notice
 func IsStallGuardRepeatable(toolName string) bool {
@@ -1257,7 +1257,7 @@ func bedrockBatchChildren(block any, replacements map[string][]state.ToolCall) [
 // ---- Dispatch helpers ----
 
 // Interactive tools never run concurrently
-var NeverParallelTools = map[string]bool{"clarify": true, "manage_connections": true, "manage_catalog": true, "setup_beat": true, "set_theme": true}
+var NeverParallelTools = map[string]bool{"clarify": true, "manage_connections": true}
 
 // Read only tools with no shared mutable session state
 var ParallelSafeTools = map[string]bool{

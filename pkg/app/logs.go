@@ -466,7 +466,7 @@ func logAgeLabel(mtime time.Time) string {
 func ListLogs(ctx context.Context, w io.Writer) error {
 	logDir := filepath.Join(home.Dir(ctx), "logs")
 	var rootLogs []string
-	for _, name := range []string{"handoff", "update"} {
+	for _, name := range []string{"update"} {
 		path, _ := logFilePath(ctx, name)
 		if st, err := os.Stat(path); err == nil && st.Mode().IsRegular() && filepath.Dir(path) != logDir {
 			rootLogs = append(rootLogs, path)

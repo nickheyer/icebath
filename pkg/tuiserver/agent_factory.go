@@ -43,23 +43,15 @@ var (
 // Approval modes a session reports, anything else read as manual
 var approvalModes = map[string]bool{"manual": true, "smart": true, "off": true}
 
-// Session platform, desktop for the chat panel of the desktop app else tui
-func ResolveSessionPlatform() string { return resolveSessionPlatform() }
-
-func resolveSessionPlatform() string {
-	desktop := provider.IsTruthyValue(os.Getenv("ICEBATH_DESKTOP"))
-	if desktop && !provider.IsTruthyValue(os.Getenv("ICEBATH_DESKTOP_TERMINAL")) {
-		return "desktop"
-	}
-	return "tui"
-}
+// Platform every session this server builds runs on
+const sessionPlatform = "tui"
 
 // Session db source, an explicit caller value kept and only an empty one falling back to the platform
 func resolveSessionSource(explicit string) string {
 	if explicit != "" {
 		return explicit
 	}
-	return resolveSessionPlatform()
+	return sessionPlatform
 }
 
 // Platform an agent of a session source is built for
@@ -129,28 +121,14 @@ func loadApprovalMode(ctx context.Context) string {
 	return "manual"
 }
 
-// Toolsets that exist because of the client, every client surface toolset on desktop else project
-func guiSurfaceToolsets(platform string) map[string]bool {
-	if platform == "desktop" {
-		out := map[string]bool{}
-		for name := range tools.ClientSurfaceToolsets {
-			out[name] = true
-		}
-		return out
-	}
-	return map[string]bool{"project": true}
-}
-
-// Selection plus the client surface toolsets the session carries, configured disables applied except desktop_ui
-func withSessionToolsets(ctx context.Context, selection []string, platform string) []string {
-	foldIn := guiSurfaceToolsets(platform)
+// Selection plus the project toolset the session carries unless selected or disabled
+func withSessionToolsets(ctx context.Context, selection []string) []string {
+	foldIn := map[string]bool{"project": true}
 	for _, name := range selection {
 		delete(foldIn, name)
 	}
 	for _, name := range loadDisabledToolsets(ctx) {
-		if name != "desktop_ui" {
-			delete(foldIn, name)
-		}
+		delete(foldIn, name)
 	}
 	extra := make([]string, 0, len(foldIn))
 	for name := range foldIn {
@@ -261,9 +239,8 @@ func resolveExplicitToolsets(ctx context.Context, explicit []string, validate fu
 
 // Agent toolsets of a session, nil for all, an explicit pin, the coding posture or the configured CLI set
 func loadEnabledToolsets(ctx context.Context, platform string) []string {
-	sessionPlatform := platform
-	if sessionPlatform == "" {
-		sessionPlatform = resolveSessionPlatform()
+	if platform == "" {
+		platform = sessionPlatform
 	}
 	var explicit []string
 	for _, item := range strings.Split(os.Getenv("ICEBATH_TUI_TOOLSETS"), ",") {
@@ -275,10 +252,10 @@ func loadEnabledToolsets(ctx context.Context, platform string) []string {
 	if len(explicit) == 0 {
 		var selection []string
 		suppress(func() {
-			selection = codingSelection(configEnv(ctx), sessionPlatform, "")
+			selection = codingSelection(configEnv(ctx), platform, "")
 		})
 		if selection != nil {
-			out := withSessionToolsets(ctx, selection, sessionPlatform)
+			out := withSessionToolsets(ctx, selection)
 			sort.Strings(out)
 			return out
 		}
@@ -316,7 +293,7 @@ func loadEnabledToolsets(ctx context.Context, platform string) []string {
 			for name := range enabled {
 				names = append(names, name)
 			}
-			result = withSessionToolsets(ctx, names, sessionPlatform)
+			result = withSessionToolsets(ctx, names)
 			sort.Strings(result)
 			return true
 		}
@@ -336,7 +313,7 @@ func loadEnabledToolsets(ctx context.Context, platform string) []string {
 	return result
 }
 
-// Enabled and configured disabled toolsets a desktop or TUI session of the platform is built with
+// Enabled and configured disabled toolsets a TUI session of the platform is built with
 func GatewayToolsets(ctx context.Context, platform string) (enabled, disabled []string) {
 	return loadEnabledToolsets(ctx, platform), loadDisabledToolsetsConfig(ctx)
 }
@@ -371,7 +348,7 @@ var toolProgressModes = map[string]bool{"off": true, "new": true, "all": true, "
 // Tools whose lifecycle is the UI card or diff the user reviews, never optional chrome
 var toolLifecycleUITools = map[string]bool{
 	"clarify": true, "manage_connections": true, "setup_mcp": true,
-	"image_generate": true, "manage_catalog": true, "delegate_task": true, "setup_beat": true, "set_theme": true,
+	"image_generate": true, "delegate_task": true,
 	"edit_file": true, "patch": true, "write_file": true,
 }
 

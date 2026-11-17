@@ -187,7 +187,7 @@ func printMacosFDATip() error {
 	}
 	provider.SetupInfo(nil, "  macOS tip: silence ALL folder permission prompts with one switch —",
 		"  System Settings → Privacy & Security → Full Disk Access → enable",
-		"  your terminal (and Icebath.app if you use Desktop), or run:",
+		"  your terminal, or run:",
 		"    open \"x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles\"",
 		"  The grant is permanent — it survives every Icebath update.")
 	return nil

@@ -120,7 +120,6 @@ func TestAdmissionNixRefuses(t *testing.T) {
 func TestRefusalReceiptWrittenAsRefused(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("ICEBATH_HOME", tmp)
-	installServeObligationHooks()
 	ctx := updaterecord.UpdateReceiptScope(context.Background())
 	recordRefusalReceipt(ctx, &UpdateRefusal{Code: "image-marker", Message: "msg", UpdateCommand: "docker pull nousresearch/hermes-agent:latest"})
 	matches, err := filepath.Glob(filepath.Join(updaterecord.ReceiptDir(ctx), "*.json"))

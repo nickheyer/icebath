@@ -49,9 +49,6 @@ func TestMain(m *testing.M) {
 		main()
 	}
 	startProcess(context.Background())
-	if port, probing := os.LookupEnv(startServerProbeEnv); probing {
-		os.Exit(runStartServerProbe(port))
-	}
 	os.Exit(runSandboxed(m))
 }
 

@@ -110,7 +110,7 @@ func TestSafeSyncSlashCommandsOnlyMutatesDiffs(t *testing.T) {
 	cmd := func(name, desc string) map[string]any {
 		return map[string]any{"name": name, "description": desc, "type": int64(1), "options": []any{}, "nsfw": false, "dm_permission": true, "default_member_permissions": nil}
 	}
-	desiredSame, desiredUpdated, desiredCreated := cmd("status", "Show Hermes session status"), cmd("help", "Show available commands"), cmd("metricas", "Show Colmeio metrics dashboard")
+	desiredSame, desiredUpdated, desiredCreated := cmd("status", "Show Hermes session status"), cmd("help", "Show available commands"), cmd("metricas", "Show Colmeio metrics")
 	a.desiredCommands = []map[string]any{desiredSame, desiredUpdated, desiredCreated}
 	api.mu.Lock()
 	api.get = map[string]string{"/applications/999/commands": `[

@@ -49,7 +49,7 @@ type toolsetCarrier interface {
 // Agent exposing its session id
 type agentSessionIdentified interface{ SessionID() string }
 
-// Desktop per child steer or stop, only for a child of this session's live agent
+// Per child steer or stop, only for a child of this session's live agent
 func subagentControl(ctx context.Context, c *AuthorityConnection, ref SessionRef, params *pyjson.Object, steer bool) (any, error) {
 	fields := []string{"session_id", "profile", "subagent_id"}
 	required := []string{"session_id", "subagent_id"}
@@ -102,7 +102,7 @@ func subagentControl(ctx context.Context, c *AuthorityConnection, ref SessionRef
 		return nil, err
 	}
 	if !steer {
-		found := !nilAgent(child) && hardInterruptWith(child, "Interrupted via Desktop ("+sub+")")
+		found := !nilAgent(child) && hardInterruptWith(child, "Interrupted via TUI ("+sub+")")
 		return pyjson.ObjectOf("found", found, "subagent_id", sub), nil
 	}
 	text := params.GetOr("text", "").(string)
@@ -196,11 +196,7 @@ func showTools(ctx context.Context, c *AuthorityConnection, ref SessionRef, para
 			if err != nil {
 				return nil, err
 			}
-			platform := "cli"
-			if policy != nil {
-				platform = policy.Platform
-			}
-			disabled = tools.SessionDisabledToolsets(tools.ParseConfigStringList(raw), platform, policy != nil && policy.Source == "oneshot")
+			disabled = tools.SessionDisabledToolsets(tools.ParseConfigStringList(raw), policy != nil && policy.Source == "oneshot")
 		}
 		defs := tools.Default.ToolDefinitions(scoped, nil, tools.DefinitionOptions{Enabled: enabled, Disabled: disabled,
 			Quiet: true, SkipToolSearchAssembly: true})
@@ -318,60 +314,6 @@ func skillRows(value any) []map[string]any {
 	return nil
 }
 
-// Desktop approval replay and card ack over the owner's generation bound prompt projection
-func approvals(ctx context.Context, c *AuthorityConnection, ref SessionRef, params *pyjson.Object, ack bool) (any, error) {
-	fields := []string{"session_id", "profile"}
-	if ack {
-		fields = append(fields, "request_id")
-	}
-	requestID, isStr := params.GetOr("request_id", nil).(string)
-	if paramsOutside(params, fields...) || ref.SessionID == "" || (ack && (!isStr || requestID == "")) {
-		return nil, runtimeRefusal("invalid_params")
-	}
-	a := c.authority
-	live, ok := a.live(ref.SessionID)
-	if !ok {
-		return nil, runtimeRefusal("not_found")
-	}
-	if err := authorizeBusy(ctx, a, c.actor, ref, params, "session:read"); err != nil {
-		return nil, err
-	}
-	pending := []pendingPrompt{}
-	live.EventStream.Lock.Lock()
-	controls := live.pendingControls()
-	for _, promptID := range controls.order {
-		held := controls.pending[promptID]
-		if pyjson.Equal(held.prompt.GetOr("kind", nil), "approval") {
-			pending = append(pending, held)
-		}
-	}
-	live.EventStream.Lock.Unlock()
-	if ack {
-		for _, held := range pending {
-			if pyjson.Equal(held.prompt.GetOr("prompt_id", nil), requestID) {
-				return pyjson.ObjectOf("acknowledged", held.route != nil && tools.AckGatewayApproval(pyrepr.Str(held.route), requestID)), nil
-			}
-		}
-		return pyjson.ObjectOf("acknowledged", false), nil
-	}
-	rows := make([]any, 0, len(pending))
-	for _, held := range pending {
-		choices, err := pyIterable(held.prompt.GetOr("choices", nil))
-		if err != nil {
-			return nil, err
-		}
-		permanent := false
-		for _, choice := range choices {
-			if pyjson.Equal(choice, "always") {
-				permanent = true
-			}
-		}
-		rows = append(rows, pyjson.ObjectOf("request_id", held.prompt.GetOr("prompt_id", nil), "command", held.prompt.GetOr("command", nil),
-			"description", held.prompt.GetOr("description", nil), "choices", choices, "allow_permanent", permanent))
-	}
-	return pyjson.ObjectOf("approvals", rows), nil
-}
-
 // One of the session control, process, subagent and tail projections, read off the owner loop
 func ancillaryRead(ctx context.Context, c *AuthorityConnection, ref SessionRef, params *pyjson.Object, kind string) (any, error) {
 	fields := []string{"session_id", "profile"}
@@ -481,7 +423,7 @@ func scopedToolEnv(ctx context.Context) *tools.Env {
 	return &tools.Env{Home: home.Dir(ctx)}
 }
 
-// Desktop per process stop of one process this session owns, any other id refused as process_not_found
+// Per process stop of one process this session owns, any other id refused as process_not_found
 func killProcess(ctx context.Context, c *AuthorityConnection, ref SessionRef, params *pyjson.Object) (any, error) {
 	processID, isStr := params.GetOr("process_id", nil).(string)
 	if paramsOutside(params, "session_id", "process_id", "profile") || ref.SessionID == "" || !isStr || processID == "" {

@@ -1,7 +1,7 @@
 name: auto-pin
 repo: https://github.com/bmcfiv/hermes-plugin-auto-pin
 sha: 4458088ccfe3b5371e16fdae37753956f1296713
-description: "Automatically pin every new interactive session (desktop, CLI, TUI) and the branches you fork from them. Cron, one-shot, subagent and messaging sessions are left alone, and unpinning a session sticks. Disclosure — on each new desktop/CLI/TUI session it sets the session's pinned flag in Hermes's session database (state.db) through the shared SessionDB handle, and records each automatic pin in $HERMES_HOME/auto-pin/ledger.txt; no network, no tools."
+description: "Automatically pin every new interactive session (CLI, TUI) and the branches you fork from them. Cron, one-shot, subagent and messaging sessions are left alone, and unpinning a session sticks. Disclosure — on each new CLI/TUI session it sets the session's pinned flag in Hermes's session database (state.db) through the shared SessionDB handle, and records each automatic pin in $HERMES_HOME/auto-pin/ledger.txt; no network, no tools."
 maintainer: bmcfiv
 tier: community
 category: general

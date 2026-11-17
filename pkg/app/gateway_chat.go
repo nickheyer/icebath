@@ -32,7 +32,7 @@ var gatewayChatUnsupported = []string{"image", "worktree", "w", "no_restore_cwd"
 
 // Where each refused option lives now
 var gatewayChatRelocated = map[string]string{
-	"image":                               "`icebath` or the Desktop app to attach the image",
+	"image":                               "`icebath` (the terminal UI) to attach the image",
 	"worktree":                            "`icebath -w`",
 	"w":                                   "`icebath -w`",
 	"no_restore_cwd":                      "`--in <dir>` (the gateway keeps the session's frozen cwd)",
@@ -408,7 +408,7 @@ func ExitOnResumeRefusal(err error) error {
 
 // Records this chat client in the process ledger and warns once when another install shares the home
 func gatewayRegisterTerminalProcess(ctx context.Context) {
-	tools.RegisterSelf(ctx, "cli", "", nil)
+	tools.RegisterSelf(ctx, "cli", "")
 	if warning := profiles.SharedProfileWarning(ctx, home.Dir(ctx), ""); warning != "" {
 		fmt.Fprintln(stderrWriter(), "Warning: "+warning)
 	}

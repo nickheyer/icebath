@@ -273,25 +273,6 @@ func setActivePet(ctx context.Context, slug string) error {
 	return err
 }
 
-// Turns the pet display on or off
-func setPetEnabled(ctx context.Context, enabled bool) error {
-	_, err := updatePetConfig(ctx, nil, map[string]any{"enabled": enabled})
-	return err
-}
-
-// Sets display.pet.scale clamped to the engine bounds, an error text and no write when the value is no number
-func setPetScale(ctx context.Context, value any) (float64, string, error) {
-	scale, err := pyFloat(value)
-	if err != nil {
-		return 0, "not a number: " + pyrepr.Repr(value) + " — try a value like 0.5", nil
-	}
-	scale = pet.ClampScale(scale)
-	if _, err := updatePetConfig(ctx, nil, map[string]any{"scale": scale}); err != nil {
-		return 0, "", err
-	}
-	return scale, "", nil
-}
-
 // Disables and unsets the active pet when it is the given slug
 func clearActivePetIf(ctx context.Context, slug string) (bool, error) {
 	return updatePetConfig(ctx, &slug, map[string]any{"slug": "", "enabled": false})

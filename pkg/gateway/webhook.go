@@ -254,7 +254,7 @@ type WebhookAdapter struct {
 	dynamicRoutes             *pydict.Dict[string, any]
 	dynamicRoutesStat         []any
 	routes                    *pydict.Dict[string, any]
-	runner                    *WebAppRunner
+	runner                    *HTTPAppRunner
 	v1SignatureWarned         map[string]bool
 	deliveryInfo              map[string]*pyjson.Object
 	deliveryInfoCreated       map[string]float64
@@ -376,7 +376,7 @@ func (a *WebhookAdapter) ListenHost() *string { return a.host }
 func (a *WebhookAdapter) ListenPort() int { return a.port }
 
 // Running listener, nil before connect
-func (a *WebhookAdapter) Runner() *WebAppRunner { return a.runner }
+func (a *WebhookAdapter) Runner() *HTTPAppRunner { return a.runner }
 
 // Body cap the listener and handlers enforce
 func (a *WebhookAdapter) MaxBodyBytes() int64 { return a.maxBodyBytes }
@@ -425,7 +425,7 @@ func (a *WebhookAdapter) Connect(ctx context.Context, isReconnect bool) (bool, e
 			return false, err
 		}
 	}
-	app := NewWebApplication(a.maxBodyBytes)
+	app := NewHTTPApp(a.maxBodyBytes)
 	for _, route := range []struct {
 		method, path string
 		handler      WebHandler

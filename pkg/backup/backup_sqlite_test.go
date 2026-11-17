@@ -1,17 +1,13 @@
 package backup
 
 import (
-	"bytes"
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
-	"sort"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -81,114 +77,6 @@ func queryOne(t *testing.T, path, q string) string {
 	return v.String
 }
 
-// Runs the pre-flight entry in process and returns its exit code, stdout and stderr
-func runPreflight(ctx context.Context, h string) (int, string, string) {
-	var out, errOut bytes.Buffer
-	code := PreflightStateDBMain(ctx, []string{h}, &out, &errOut)
-	return code, out.String(), errOut.String()
-}
-
-// Path the pre-flight printed as its published snapshot
-func printedPath(t *testing.T, stdout string) string {
-	t.Helper()
-	var result map[string]any
-	if err := json.Unmarshal([]byte(stdout), &result); err != nil {
-		t.Fatalf("stdout %q: %v", stdout, err)
-	}
-	return result["path"].(string)
-}
-
-// Sorted globbed names under a home
-func globNames(t *testing.T, h, pattern string) []string {
-	t.Helper()
-	paths, err := pypath.Glob(h, pattern)
-	if err != nil {
-		t.Fatal(err)
-	}
-	names := []string{}
-	for _, p := range paths {
-		names = append(names, filepath.Base(p))
-	}
-	sort.Strings(names)
-	return names
-}
-
-func TestPreflightFinishesWhileAnotherConnectionKeepsWriting(t *testing.T) {
-	h := filepath.Join(t.TempDir(), "home")
-	os.MkdirAll(h, 0o755)
-	db := filepath.Join(h, "state.db")
-	messagesDB(t, db, "WAL", 4000)
-	writer := testConn(t, db, "_pragma=busy_timeout(5000)")
-	stop := make(chan struct{})
-	var wg sync.WaitGroup
-	wg.Go(func() {
-		for {
-			select {
-			case <-stop:
-				return
-			case <-time.After(5 * time.Millisecond):
-				writer.c.ExecContext(context.Background(), "INSERT INTO messages VALUES ('live turn')")
-			}
-		}
-	})
-	code, stdout, stderr := runPreflight(context.Background(), h)
-	close(stop)
-	wg.Wait()
-	if code != 0 {
-		t.Fatalf("exit %d: %s", code, stderr)
-	}
-	if got := queryOne(t, printedPath(t, stdout), "PRAGMA integrity_check"); got != "ok" {
-		t.Fatalf("integrity %s", got)
-	}
-}
-
-func TestPreflightCapturesCommittedWALWithoutApplicationState(t *testing.T) {
-	tmp := t.TempDir()
-	h := filepath.Join(tmp, "home")
-	os.MkdirAll(h, 0o755)
-	db := filepath.Join(h, "state.db")
-	writer := testConn(t, db, "")
-	mustExec(t, writer, "PRAGMA journal_mode=WAL", "PRAGMA wal_autocheckpoint=0", "CREATE TABLE messages (body TEXT)",
-		"PRAGMA wal_checkpoint(TRUNCATE)", "INSERT INTO messages VALUES ('committed only in WAL')")
-	if info, err := os.Stat(db + "-wal"); err != nil || info.Size() == 0 {
-		t.Fatalf("wal %v", err)
-	}
-	control := filepath.Join(tmp, "raw.db")
-	raw, _ := os.ReadFile(db)
-	os.WriteFile(control, raw, 0o644)
-	if got := queryOne(t, control, "SELECT count(*) FROM messages"); got != "0" {
-		t.Fatalf("control rows %s", got)
-	}
-	for range 3 {
-		code, stdout, stderr := runPreflight(context.Background(), h)
-		if code != 0 {
-			t.Fatalf("exit %d: %s", code, stderr)
-		}
-		snap := printedPath(t, stdout)
-		if got := queryOne(t, snap, "SELECT group_concat(body) FROM messages"); got != "committed only in WAL" {
-			t.Fatalf("rows %q", got)
-		}
-		if got := queryOne(t, snap, "PRAGMA integrity_check"); got != "ok" {
-			t.Fatalf("integrity %s", got)
-		}
-	}
-	previous := globNames(t, h, "state.db.pre-update-emergency-*.bak")
-	if len(previous) != 2 {
-		t.Fatalf("kept %v", previous)
-	}
-	closeQuietly(writer)
-	os.WriteFile(db, []byte("broken database"), 0o644)
-	if code, _, _ := runPreflight(context.Background(), h); code == 0 {
-		t.Fatal("broken database published")
-	}
-	if got := globNames(t, h, "state.db.pre-update-emergency-*.bak"); strings.Join(got, ",") != strings.Join(previous, ",") {
-		t.Fatalf("snapshots %v want %v", got, previous)
-	}
-	if got := globNames(t, h, "*.partial"); len(got) != 0 {
-		t.Fatalf("staging %v", got)
-	}
-}
-
 func TestRollbackJournalCopyLetsALiveWriterCommitBetweenSteps(t *testing.T) {
 	tmp := t.TempDir()
 	db := filepath.Join(tmp, "state.db")
@@ -232,35 +120,6 @@ func TestRollbackJournalCopyLetsALiveWriterCommitBetweenSteps(t *testing.T) {
 		}
 	} else if _, err := os.Stat(snapshot); err == nil {
 		t.Fatal("refused copy left its destination")
-	}
-}
-
-func TestANewPreflightReclaimsStagingAbandonedByAKilledOne(t *testing.T) {
-	h := filepath.Join(t.TempDir(), "home")
-	os.MkdirAll(h, 0o755)
-	messagesDB(t, filepath.Join(h, "state.db"), "WAL", 10)
-	abandoned := filepath.Join(h, "state.db.pre-update-emergency-killed.partial")
-	os.WriteFile(abandoned, bytes.Repeat([]byte("x"), 4096), 0o644)
-	hoursAgo := time.Now().Add(-3 * time.Hour)
-	os.Chtimes(abandoned, hoursAgo, hoursAgo)
-	inFlight := filepath.Join(h, "state.db.pre-update-emergency-running.partial")
-	os.WriteFile(inFlight, bytes.Repeat([]byte("x"), 4096), 0o644)
-	if code, _, stderr := runPreflight(context.Background(), h); code != 0 {
-		t.Fatalf("exit %d: %s", code, stderr)
-	}
-	if got := globNames(t, h, "state.db.pre-update-emergency-*.partial*"); len(got) != 1 || got[0] != filepath.Base(inFlight) {
-		t.Fatalf("staging %v", got)
-	}
-}
-
-func TestPreflightWithoutStateDBReportsAFreshInstall(t *testing.T) {
-	code, stdout, _ := runPreflight(context.Background(), t.TempDir())
-	if code != 0 || stdout != "{\"path\": null, \"message\": \"state.db not found (fresh install?)\"}\n" {
-		t.Fatalf("exit %d stdout %q", code, stdout)
-	}
-	var errOut bytes.Buffer
-	if code := PreflightStateDBMain(context.Background(), nil, &bytes.Buffer{}, &errOut); code != 1 || !strings.Contains(errOut.String(), "IndexError") {
-		t.Fatalf("missing argument exit %d %q", code, errOut.String())
 	}
 }
 

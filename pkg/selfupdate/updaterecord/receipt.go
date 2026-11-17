@@ -43,10 +43,10 @@ const (
 var (
 	receiptKeep = 20
 	// Follow-up steps whose failure leaves the source update tail owed
-	TailFollowups = map[string]bool{"dependencies": true, "launchers": true, "build": true, "maintenance": true,
+	TailFollowups = map[string]bool{"dependencies": true, "launchers": true, "maintenance": true,
 		"profile_sync": true, "config_migration": true, "completion": true}
 	// Follow-ups meaning the build stage did not succeed
-	BuildFollowups = map[string]bool{"launchers": true, "build": true, "completion": true}
+	BuildFollowups = map[string]bool{"launchers": true, "completion": true}
 
 	gitFilePermission = mustPyre(`Permission denied(?! *\()|\bEACCES\b`)
 	parkedReasonLabel = regexp.MustCompile(`^(?:[A-Z][A-Za-z0-9_]{0,63}:(?: \[(?:Errno|WinError) \d+\])?` +
@@ -67,7 +67,6 @@ var (
 
 	receiptHooks struct {
 		sync.Mutex
-		serve    ServeObligationHooks
 		recorder func(ctx context.Context, receipt map[string]any)
 	}
 )
@@ -83,19 +82,6 @@ func mustPyre(pattern string) func(string) bool {
 	}
 }
 
-// Serve obligation calls receipts carry forward rows through, installed by the update serve obligations owner
-type ServeObligationHooks struct {
-	IsReminderRow             func(row any) bool
-	RetainReceiptManualServes func(ctx context.Context, receipt map[string]any) []any
-}
-
-// Installs the reminder row predicate and the manual serve retention finalize applies
-func SetServeObligationHooks(hooks ServeObligationHooks) {
-	receiptHooks.Lock()
-	defer receiptHooks.Unlock()
-	receiptHooks.serve = hooks
-}
-
 // Installs the shared metrics recorder a final receipt is published through
 func SetUpdateReceiptRecorder(record func(ctx context.Context, receipt map[string]any)) {
 	receiptHooks.Lock()
@@ -103,10 +89,11 @@ func SetUpdateReceiptRecorder(record func(ctx context.Context, receipt map[strin
 	receiptHooks.recorder = record
 }
 
-func currentReceiptHooks() (ServeObligationHooks, func(context.Context, map[string]any)) {
+// Shared metrics recorder a final receipt is published through, nil until one is installed
+func currentReceiptRecorder() func(context.Context, map[string]any) {
 	receiptHooks.Lock()
 	defer receiptHooks.Unlock()
-	return receiptHooks.serve, receiptHooks.recorder
+	return receiptHooks.recorder
 }
 
 func init() {
@@ -243,8 +230,8 @@ func codeIdentity(refresh bool) *pyjson.Object {
 	return pyjson.Clone(identity).(*pyjson.Object)
 }
 
-// Mapping entries reduced to stringified keys, with an int pid first when requested
-func strRecords(entries any, keys []string, pid bool) ([]any, error) {
+// Mapping entries reduced to stringified keys
+func strRecords(entries any, keys []string) ([]any, error) {
 	items, err := pyList(entries)
 	if err != nil {
 		return nil, err
@@ -256,17 +243,6 @@ func strRecords(entries any, keys []string, pid bool) ([]any, error) {
 			continue
 		}
 		record := pyjson.NewObject()
-		if pid {
-			raw, present := m.Vals["pid"]
-			if !present || !truthy(raw) {
-				raw = 0
-			}
-			n, err := pyIntConvert(raw)
-			if err != nil {
-				return nil, err
-			}
-			record.Set("pid", n)
-		}
 		for _, key := range keys {
 			value, present := m.Vals[key]
 			if !present {
@@ -277,14 +253,6 @@ func strRecords(entries any, keys []string, pid bool) ([]any, error) {
 		records = append(records, record)
 	}
 	return records, nil
-}
-
-// Correlation id an external launcher exported, nil when absent
-func launcherCorrelationID() any {
-	if id := pystr.Strip(os.Getenv("ICEBATH_UPDATE_CORRELATION_ID")); id != "" {
-		return id
-	}
-	return nil
 }
 
 // Observable facts of one icebath update run
@@ -310,12 +278,6 @@ func NewUpdateReceipt() *UpdateReceipt {
 	)}
 	r.CorrelationID = uuid4Hex()
 	r.Data.Set("update_id", r.CorrelationID)
-	r.Data.Set("correlation_id", launcherCorrelationID())
-	if action := pystr.Strip(os.Getenv("ICEBATH_ACTION_ID")); action != "" {
-		r.Data.Set("action_id", action)
-	} else {
-		r.Data.Set("action_id", nil)
-	}
 	return r
 }
 
@@ -417,45 +379,11 @@ func (r *UpdateReceipt) GatewayRestartResult(g GatewayRestart) error {
 		if !present {
 			skippedRaw = []any{}
 		}
-		skipped, err := strRecords(skippedRaw, []string{"profile", "kind", "supervisor", "reason"}, false)
+		skipped, err := strRecords(skippedRaw, []string{"profile", "kind", "supervisor", "reason"})
 		if err != nil {
 			return err
 		}
 		persisted.Set("skipped", skipped)
-		serveUnits := pyjson.NewObject()
-		if raw := g.FreshRecovery["serve_units"]; truthy(raw) {
-			m, ok := pyjson.AsObject(raw)
-			if !ok {
-				return fmt.Errorf("'%s' object has no attribute 'get'", pyrepr.TypeName(raw))
-			}
-			serveUnits = m
-		}
-		units := pyjson.NewObject()
-		for _, key := range []string{"verified", "failed"} {
-			var raw any = []any{}
-			if v := serveUnits.Vals[key]; truthy(v) {
-				raw = v
-			}
-			items, err := pyList(raw)
-			if err != nil {
-				return err
-			}
-			out := make([]any, len(items))
-			for i, u := range items {
-				out[i] = pyrepr.Str(u)
-			}
-			units.Set(key, out)
-		}
-		persisted.Set("serve_units", units)
-		staleRaw, present := g.FreshRecovery["stale_runtimes"]
-		if !present {
-			staleRaw = []any{}
-		}
-		stale, err := strRecords(staleRaw, []string{"kind", "profile", "supervisor"}, true)
-		if err != nil {
-			return err
-		}
-		persisted.Set("stale_runtimes", stale)
 		result.Set("fresh_recovery", persisted)
 	}
 	r.Data.Set("gateway_restart", result)
@@ -788,11 +716,6 @@ func BeginUpdateReceipt(ctx context.Context, previous *pyjson.Object, correlatio
 	receipt.Data.Set("update_id", receipt.CorrelationID)
 	receipt.Data.Set("outcome", "running")
 	receipt.Data.Set("finished_at", nil)
-	if id := receipt.Data.Vals["correlation_id"]; truthy(id) {
-		receipt.Data.Set("correlation_id", id)
-	} else {
-		receipt.Data.Set("correlation_id", launcherCorrelationID())
-	}
 	if _, present := receipt.Data.Vals["pid_create_time"]; !present {
 		if pid, ok := pyIntValue(receipt.Data.Vals["pid"]); ok && pid > 0 && pid <= math.MaxInt32 {
 			if ct := ProcessCreateTime(int(pid)); ct != nil {
@@ -805,53 +728,12 @@ func BeginUpdateReceipt(ctx context.Context, previous *pyjson.Object, correlatio
 	if !hasPrevious {
 		ReconcileInterruptedRuns(ctx)
 	}
-	carried := false
-	if hasPrevious {
-		_, carried = previous.Vals["carried_manual_serves"]
-	}
-	if !carried {
-		if rows, err := carriedManualServes(ctx); err == nil {
-			receipt.Data.Set("carried_manual_serves", rows)
-		}
-	}
 	st := stateOf(ctx)
 	st.mu.Lock()
 	receipt.begun, receipt.prev, receipt.owner = true, st.current, st
 	st.current = receipt
 	st.mu.Unlock()
 	persistRunning(ctx, receipt.Data)
-}
-
-// Previous record's reminder rows snapshotted for finalize to carry forward
-func carriedManualServes(ctx context.Context) ([]any, error) {
-	serve, _ := currentReceiptHooks()
-	prior := readLatestReceipt(ctx)
-	plan := pyjson.NewObject()
-	if raw := mapGet(prior, "plan"); truthy(raw) {
-		m, ok := pyjson.AsObject(raw)
-		if !ok {
-			return nil, fmt.Errorf("'%s' object has no attribute 'get'", pyrepr.TypeName(raw))
-		}
-		plan = m
-	}
-	var rows []any
-	for _, raw := range []any{plan.Vals["runtimes"], mapGet(prior, "pending_manual_serves"), mapGet(prior, "carried_manual_serves")} {
-		items, err := pyList(orEmptyList(raw))
-		if err != nil {
-			return nil, err
-		}
-		rows = append(rows, items...)
-	}
-	if serve.IsReminderRow == nil {
-		return nil, errors.New("No module named 'update_serve_obligations'")
-	}
-	out := []any{}
-	for _, row := range rows {
-		if serve.IsReminderRow(pyjson.Plain(row)) {
-			out = append(out, row)
-		}
-	}
-	return out, nil
 }
 
 // Re-asserts the open running run on disk
@@ -1035,30 +917,17 @@ func GitOutputStopClass(output string, argv []string, returncode *int) *string {
 	return nil
 }
 
-// Delegate or partner when the update marker names this process's handoff, else empty
-func startedByHandoffPartner() (string, error) {
+// True when the update marker names this process or its parent as the delegate of a handoff
+func startedAsHandoffDelegate() (bool, error) {
 	raw, err := os.ReadFile(UpdateMarkerPath())
 	if err != nil {
-		return "", err
+		return false, err
 	}
 	m := parseMarker(raw, nil)
-	if m.startedAt == nil {
-		return "", nil
+	if m.startedAt == nil || m.delegatePID == nil {
+		return false, nil
 	}
-	pid, ppid := os.Getpid(), os.Getppid()
-	if m.delegatePID != nil && (*m.delegatePID == pid || *m.delegatePID == ppid) {
-		return "delegate", nil
-	}
-	partners := map[int]bool{}
-	for _, p := range []int{handoffPID(), ppid} {
-		if p != 0 && p != 1 && p != pid {
-			partners[p] = true
-		}
-	}
-	if partners[m.pid] || (m.delegatePID != nil && partners[*m.delegatePID]) {
-		return "partner", nil
-	}
-	return "", nil
+	return *m.delegatePID == os.Getpid() || *m.delegatePID == os.Getppid(), nil
 }
 
 // Counts an exit that fires before this run's receipt opens in shared metrics only
@@ -1073,15 +942,10 @@ func RecordStopWithoutReceipt(ctx context.Context, reason, outcome string) {
 		"outcome", final, "stop_class", reason, "pre_update", pyjson.NewObject(),
 		"stages", []any{}, "steps", []any{}, "fleet", []any{},
 	)
-	if claim, err := startedByHandoffPartner(); err == nil {
-		if claim != "" {
-			data.Set("initiator", "desktop")
-		}
-		if claim == "delegate" {
-			data.Set("outcome", "failed")
-		}
+	if delegate, err := startedAsHandoffDelegate(); err == nil && delegate {
+		data.Set("outcome", "failed")
 	}
-	if _, recorder := currentReceiptHooks(); recorder != nil {
+	if recorder := currentReceiptRecorder(); recorder != nil {
 		recorder(ctx, plainReceipt(data))
 	}
 }
@@ -1126,19 +990,6 @@ func finalizeReceipt(ctx context.Context, receipt *UpdateReceipt, outcome string
 	AdoptTerminalReceipt(ctx, data)
 	if fleet != nil {
 		data.Set("fleet", fleet)
-	}
-	serve, _ := currentReceiptHooks()
-	if serve.RetainReceiptManualServes == nil {
-		return "", errors.New("No module named 'update_serve_obligations'")
-	}
-	var prior *pyjson.Object
-	if carried, present := data.Pop("carried_manual_serves"); present {
-		prior = pyjson.ObjectOf("pending_manual_serves", orEmptyList(carried))
-	} else if prior = readLatestReceipt(ctx); prior == nil {
-		prior = pyjson.NewObject()
-	}
-	if pending := serve.RetainReceiptManualServes(ctx, plainReceipt(prior)); len(pending) > 0 {
-		data.Set("pending_manual_serves", pending)
 	}
 	embedPMSync(ctx, data, receipt.CorrelationID)
 	directory := receiptDir(ctx)
@@ -1256,17 +1107,13 @@ func metricReceipt(data *pyjson.Object) *pyjson.Object {
 	} else if reason != "" {
 		stopReason = "-"
 	}
-	var initiator any
-	if pyrepr.Equal(data.Vals["initiator"], "desktop") {
-		initiator = "desktop"
-	}
 	gateway := pyjson.NewObject()
 	for _, key := range []string{"incomplete", "phase_error", "failed_units"} {
 		gateway.Set(key, truthy(mapGet(restart, key)))
 	}
 	return pyjson.ObjectOf(
 		"schema", data.Vals["schema"], "update_id", data.Vals["update_id"], "started_at", data.Vals["started_at"],
-		"finished_at", data.Vals["finished_at"], "outcome", data.Vals["outcome"], "initiator", initiator,
+		"finished_at", data.Vals["finished_at"], "outcome", data.Vals["outcome"],
 		"pre_update", pyjson.ObjectOf("commit_date", mapGet(pre, "commit_date")), "stages", stages, "steps", steps,
 		"fleet", fleet, "stop_class", stopClass, "exit_code", exitCode, "stop_reason", stopReason,
 		"user_action", truthy(data.Vals["user_action"]), "gateway_restart", gateway, "runtime_outcomes", outcomes,
@@ -1329,7 +1176,7 @@ func publishSharedMetrics(ctx context.Context, data *pyjson.Object) {
 		_ = parkMetricReceipt(ctx, data, bareCollectionEnabled(ctx))
 		return
 	}
-	if _, recorder := currentReceiptHooks(); recorder != nil {
+	if recorder := currentReceiptRecorder(); recorder != nil {
 		recorder(ctx, plainReceipt(data))
 	}
 }
@@ -1519,42 +1366,6 @@ func LatestReceiptObject(ctx context.Context) *pyjson.Object { return readLatest
 func ReadLatestReceipt(ctx context.Context) map[string]any {
 	if latest := readLatestReceipt(ctx); latest != nil {
 		return plainReceipt(latest)
-	}
-	return nil
-}
-
-// Newest receipt written by a dashboard action, latest.json first then the retained archive
-func ReadReceiptForAction(ctx context.Context, actionID string) map[string]any {
-	if receipt := ReceiptObjectForAction(ctx, actionID); receipt != nil {
-		return plainReceipt(receipt)
-	}
-	return nil
-}
-
-// Newest receipt of a dashboard action keeping the ordered object, nil when none matches
-func ReceiptObjectForAction(ctx context.Context, actionID string) *pyjson.Object {
-	if latest := readLatestReceipt(ctx); latest != nil && latest.Len() > 0 && pyrepr.Equal(latest.Vals["action_id"], actionID) {
-		return latest
-	}
-	var archives []string
-	for _, d := range receiptDirs(ctx) {
-		paths, err := globDir(d, "update_*.json")
-		if err == nil {
-			archives = append(archives, paths...)
-		}
-	}
-	ordered, err := byMtime(archives)
-	if err != nil {
-		return nil
-	}
-	for i := len(ordered) - 1; i >= 0; i-- {
-		v, err := loadJSONFile(ordered[i])
-		if err != nil {
-			continue
-		}
-		if payload, ok := v.(*pyjson.Object); ok && pyrepr.Equal(payload.Vals["action_id"], actionID) {
-			return payload
-		}
 	}
 	return nil
 }

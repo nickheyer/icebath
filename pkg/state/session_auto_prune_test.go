@@ -72,7 +72,7 @@ func TestAutoPruneClosesStaleStateOwnedRowsButSparesLiveTurns(t *testing.T) {
 	profileExec(t, db, "UPDATE sessions SET started_at = ?, last_activity_at = ? WHERE id = ?", stale, stale, "unkeyed-gateway")
 	autoLease(t, db, "live-turn", "external-turn")
 	beat := now()
-	if err := db.RegisterBackendHeartbeat(ctx, BackendHeartbeat{BackendID: "unrelated-dashboard", PID: 12345, StartedAt: beat, LastHeartbeat: &beat}); err != nil {
+	if err := db.RegisterBackendHeartbeat(ctx, BackendHeartbeat{BackendID: "unrelated-backend", PID: 12345, StartedAt: beat, LastHeartbeat: &beat}); err != nil {
 		t.Fatal(err)
 	}
 	if first := autoPrune(t, db, 0); first.Pruned != 0 || first.Error != nil {

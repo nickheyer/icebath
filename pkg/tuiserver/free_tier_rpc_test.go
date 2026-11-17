@@ -10,27 +10,36 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/provider/anonportaltest"
-	"github.com/nickheyer/icebath/pkg/tools"
 )
 
-// Fake account service read on the local Desktop backend of a first install, with every portal memo reset
+// Fake account service of a first install, with every portal memo reset
 func freeTierNAS(t *testing.T) (*anonportaltest.Portal, context.Context) {
 	t.Helper()
 	provider.ResetAnonPortalMemosForTests()
 	portal := anonportaltest.Install(t)
 	t.Cleanup(provider.ResetAnonPortalMemosForTests)
-	t.Cleanup(tools.ConfineInstallProbeForTests(t.TempDir()))
-	return portal, tools.WithServingLocalDesktop(context.Background(), true)
+	return portal, context.Background()
 }
 
-// Guest that claimed the welcome trial through the fake portal on the local Desktop backend
+// Guest minted through the fake portal and stamped with the welcome trial claim
 func freeTierGuest(t *testing.T) (*anonportaltest.Portal, context.Context) {
 	t.Helper()
 	portal, ctx := freeTierNAS(t)
-	state, err := provider.ClaimDesktopFreeTier(scopedPoolEnv(ctx), false, false)
+	env := scopedPoolEnv(ctx)
+	state, err := provider.EnsurePortalIdentity(env, provider.PortalIdentityOptions{Explicit: true})
 	if err != nil || state == nil {
-		blocker, _ := provider.WelcomeClaimBlocker(scopedPoolEnv(ctx))
-		t.Fatalf("claim %v %v blocker %q", state, err, blocker)
+		t.Fatalf("mint %v %v", state, err)
+	}
+	state[provider.WelcomeClaimFlag] = true
+	data, err := env.Store.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := env.Store.StoreProviderState(data, "nous", state, false); err != nil {
+		t.Fatal(err)
+	}
+	if err := env.Store.Save(data); err != nil {
+		t.Fatal(err)
 	}
 	return portal, ctx
 }
@@ -86,101 +95,11 @@ func TestStatusIsPullFromLocalStateAndAckPersistsOnTheIdentity(t *testing.T) {
 	}
 }
 
-func TestStatusCarriesThePendingBrowserChallengeAndDropsItOnceCleared(t *testing.T) {
-	_, ctx := freeTierGuest(t)
-	if _, has := freeTierCall(t, ctx, "free_tier.status", nil)["challenge"]; has {
-		t.Fatal("a challenge before any was recorded")
-	}
-	env := scopedPoolEnv(ctx)
-	challenge := provider.BrowserChallenge{URL: "https://portal.example.test/challenge?code=t", Required: true,
-		ExpiresIn: 600 * 1e9, Interval: 2 * 1e9, Message: "A quick check first."}
-	provider.RecordChallengeForTests(env, challenge, false)
-	func() {
-		defer provider.ClearPendingChallengeForTests(env)
-		if got := freeTierCall(t, ctx, "free_tier.status", nil)["challenge"]; !pyjson.Equal(got, challenge.AsPayload()) {
-			t.Fatalf("challenge %v", got)
-		}
-	}()
-	if _, has := freeTierCall(t, ctx, "free_tier.status", nil)["challenge"]; has {
-		t.Fatal("the cleared challenge is still reported")
-	}
-}
-
-func TestWindowOutcomesAreScopedAndDoNotGrantAuth(t *testing.T) {
-	_, ctx := freeTierGuest(t)
-	a := provider.BrowserChallenge{URL: "https://portal.example.test/challenge?code=a", Required: true, ExpiresIn: 600 * 1e9, Interval: 2 * 1e9, Message: "check"}
-	b := provider.BrowserChallenge{URL: "https://portal.example.test/challenge?code=b", Required: false, ExpiresIn: 600 * 1e9, Interval: 2 * 1e9, Message: "check"}
-	provider.RecordChallengeForTests(scopedPoolEnv(ctx), a, false)
-	secondaryHome := filepath.Join(t.TempDir(), "secondary")
-	secondary := provider.HomePoolEnv(secondaryHome)
-	secondary.Ctx = home.WithOverride(ctx, secondaryHome)
-	provider.RecordChallengeForTests(secondary, b, false)
-	if provider.RecordHostOutcome(secondary, a.URL, 0, "done") {
-		t.Fatal("another home's window outcome was accepted")
-	}
-	if got := provider.PendingChallenge(secondary)["url"]; got != b.URL {
-		t.Fatalf("secondary pending %v", got)
-	}
-	if got := freeTierCall(t, ctx, "free_tier.status", nil)["challenge"].(map[string]any)["url"]; got != a.URL {
-		t.Fatalf("status challenge %v", got)
-	}
-	if got := freeTierCall(t, ctx, "free_tier.challenge_result", map[string]any{"url": a.URL, "outcome": "error"}); !pyjson.Equal(got, map[string]any{"accepted": true}) {
-		t.Fatalf("challenge_result %v", got)
-	}
-	if got := freeTierCall(t, ctx, "free_tier.status", nil)["challenge"].(map[string]any)["url"]; got != a.URL {
-		t.Fatalf("status challenge after the outcome %v", got)
-	}
-}
-
 func TestStatusWithoutAnIdentityIsAPureRead(t *testing.T) {
 	portal, ctx := freeTierNAS(t)
 	status := freeTierCall(t, ctx, "free_tier.status", nil)
-	if status["has_guest"] != false || status["available"] != false || status["enabled"] != true {
+	if status["has_guest"] != false || status["available"] != false || status["enabled"] != false {
 		t.Fatalf("status %v", status)
-	}
-	if calls := portal.Calls(); len(calls) != 0 {
-		t.Fatalf("portal calls %v", calls)
-	}
-}
-
-func TestProvisionClaimsTheTrialOnceWhileItIsClaimable(t *testing.T) {
-	portal, ctx := freeTierNAS(t)
-	claimed := map[string]any{"has_guest": true, "enabled": true}
-	if got := freeTierCall(t, ctx, "free_tier.provision", nil); !pyjson.Equal(got, claimed) {
-		t.Fatalf("provision %v", got)
-	}
-	if portal.Creates() != 1 || !provider.FreeInferenceActive(scopedPoolEnv(ctx)) {
-		t.Fatalf("creates %d", portal.Creates())
-	}
-	if got := freeTierCall(t, ctx, "free_tier.provision", nil); !pyjson.Equal(got, claimed) {
-		t.Fatalf("second provision %v", got)
-	}
-	if portal.Creates() != 1 {
-		t.Fatalf("minted again %d", portal.Creates())
-	}
-}
-
-func TestProvisionReportsARefusedClaimAndTheUsersRetrySkipsTheCooldown(t *testing.T) {
-	portal, ctx := freeTierNAS(t)
-	portal.SetGateClosed(true)
-	result := freeTierCall(t, ctx, "free_tier.provision", nil)
-	if result["has_guest"] != false || result["enabled"] != true || result["error_code"] != "anon_gate_closed" || result["retryable"] != false {
-		t.Fatalf("refused provision %v", result)
-	}
-	portal.SetGateClosed(false)
-	if got := freeTierCall(t, ctx, "free_tier.provision", nil); !pyjson.Equal(got, map[string]any{"has_guest": true, "enabled": true}) {
-		t.Fatalf("retry %v", got)
-	}
-	if !provider.FreeInferenceActive(scopedPoolEnv(ctx)) {
-		t.Fatal("the retry did not activate free inference")
-	}
-}
-
-func TestProvisionDoesNothingWithGuestsSwitchedOff(t *testing.T) {
-	portal, ctx := freeTierNAS(t)
-	freeTierGuestOff(t, ctx)
-	if got := freeTierCall(t, ctx, "free_tier.provision", nil); !pyjson.Equal(got, map[string]any{"has_guest": false, "enabled": false}) {
-		t.Fatalf("provision %v", got)
 	}
 	if calls := portal.Calls(); len(calls) != 0 {
 		t.Fatalf("portal calls %v", calls)

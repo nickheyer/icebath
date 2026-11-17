@@ -4,13 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"net/http"
-	"net/http/httptest"
-	"net/url"
 	"os"
 	"path/filepath"
 	"reflect"
-	"strconv"
 	"strings"
 	"testing"
 
@@ -46,18 +42,6 @@ func (f *fakeMCP) UtilityKinds() []string {
 func (f *fakeMCP) Status(context.Context) ([]map[string]any, error) { return f.status, nil }
 func (f *fakeMCP) SanitizeNameComponent(v string) string            { return strings.ReplaceAll(v, "-", "_") }
 func (f *fakeMCP) ToolNamePrefix() string                           { return "mcp__" }
-
-type fakeRendezvous struct {
-	records    map[string]*HostRecord
-	consistent map[string]bool
-	tokens     map[string]string
-	host       string
-}
-
-func (f *fakeRendezvous) ReadRecord(role string) (*HostRecord, error) { return f.records[role], nil }
-func (f *fakeRendezvous) RecordTokenIsConsistent(r *HostRecord) bool  { return f.consistent[r.Role] }
-func (f *fakeRendezvous) ReadToken(role string) (string, error)       { return f.tokens[role], nil }
-func (f *fakeRendezvous) DialHost(*HostRecord) string                 { return f.host }
 
 type gatewayCall struct{ target, profileHome string }
 
@@ -175,9 +159,9 @@ func TestPluginActivationSummaryReadsWhatThePluginRegistered(t *testing.T) {
 	for _, r := range [][2]string{{"command", "zeta"}, {"command", "alpha"}, {"hook", "pre_command"}, {"hook", "on_session_start"},
 		{"hook", "pre_command"}, {"slack_action_handler", "approve"}, {"locale", "fr.cli"}, {"tool", "ledger_tool"},
 		{"system_prompt_section", "intro"}, {"portable_mcp", "demo"}} {
-		m.trackRegistration(mf, r[0], r[1], nil, false)
+		m.trackRegistration(mf, r[0], r[1], nil)
 	}
-	gone := m.trackRegistration(mf, "command", "released", nil, false)
+	gone := m.trackRegistration(mf, "command", "released", nil)
 	gone.disposed = true
 	m.platformHandlerFactories["telegram"] = []*PlatformHandlerFactory{{Plugin: "other"}, {Plugin: "probe"}}
 	m.platformHandlerFactories["discord"] = []*PlatformHandlerFactory{{Plugin: "other"}}
@@ -205,13 +189,10 @@ func TestPluginActivationSummaryReadsWhatThePluginRegistered(t *testing.T) {
 	}
 }
 
-// Gateway answering with the given activations and no serve backend
-func depGatewayAnswers(t *testing.T, activations []any, backend *fakeRendezvous) {
+// Gateway answering with the given activations
+func depGatewayAnswers(t *testing.T, activations []any) {
 	calls := []gatewayCall{}
-	if backend == nil {
-		backend = &fakeRendezvous{}
-	}
-	installActivationServices(t, &Services{HostRendezvous: backend,
+	installActivationServices(t, &Services{
 		ReloadGatewayPlugins: fakeGateway(map[string]any{"reloaded": true, "plugins": []any{"depprobe"}, "activations": activations}, nil, &calls)})
 }
 
@@ -226,7 +207,7 @@ func depEntry(missing ...string) map[string]any {
 func activateHint(t *testing.T) (map[string]any, string) {
 	t.Helper()
 	ctx := context.Background()
-	result, err := activatePluginNowFrom(ctx, "depprobe", false)
+	result, err := gatewayActivation(ctx, "depprobe", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -237,44 +218,10 @@ func activateHint(t *testing.T) (map[string]any, string) {
 	return result, hint
 }
 
-// Serve backend answering every activation request with body, recording the token header
-func serveBackend(t *testing.T, body map[string]any, seen *[]string) *fakeRendezvous {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		*seen = append(*seen, r.URL.Path+" "+r.Header.Get("X-Icebath-Session-Token"))
-		var req map[string]any
-		_ = json.NewDecoder(r.Body).Decode(&req)
-		*seen = append(*seen, req["name"].(string))
-		_ = json.NewEncoder(w).Encode(body)
-	}))
-	t.Cleanup(srv.Close)
-	u, _ := url.Parse(srv.URL)
-	port, _ := strconv.Atoi(u.Port())
-	return &fakeRendezvous{records: map[string]*HostRecord{hostRoleServe: {Role: hostRoleServe, Port: port},
-		hostRoleDesktopServe: {Role: hostRoleDesktopServe, Port: port}}, consistent: map[string]bool{hostRoleDesktopServe: true},
-		tokens: map[string]string{hostRoleDesktopServe: "desktop-spawn-token"}, host: u.Hostname()}
-}
-
-// Port of the notify half of test_desktop_backend_does_not_claim_the_host_serve_record
-func TestNotifyServeBackendFindsTheDesktopRecord(t *testing.T) {
-	t.Setenv("no_proxy", "*")
-	seen := []string{}
-	backend := serveBackend(t, map[string]any{"ok": true}, &seen)
-	delete(backend.records, hostRoleServe)
-	installActivationServices(t, &Services{HostRendezvous: backend})
-	got := notifyServeBackend(context.Background(), "demo", t.TempDir())
-	if !reflect.DeepEqual(got, map[string]any{"ok": true}) || len(seen) != 2 || seen[0] != "/api/dashboard/agent-plugins/activate desktop-spawn-token" {
-		t.Fatalf("got %v, seen %v", got, seen)
-	}
-	installActivationServices(t, &Services{HostRendezvous: &fakeRendezvous{}})
-	if got := notifyServeBackend(context.Background(), "demo", t.TempDir()); got != nil {
-		t.Fatalf("no backend answered %v", got)
-	}
-}
-
 // Port of test_enable_needs_no_restart_when_the_gateway_imports_everything
 func TestEnableNeedsNoRestartWhenTheGatewayImportsEverything(t *testing.T) {
 	selectGeneration(t, true, "1.0")
-	depGatewayAnswers(t, []any{depEntry()}, nil)
+	depGatewayAnswers(t, []any{depEntry()})
 	result, hint := activateHint(t)
 	if result["restart_required"] != false || !strings.Contains(hint, "nothing of this plugin needs") {
 		t.Fatalf("result = %#v hint = %q", result, hint)
@@ -355,24 +302,17 @@ func TestEnableHintPrintsOnlyTheOutcomeThatApplies(t *testing.T) {
 	}
 }
 
-func TestReportActivationPrintsTheLiveCountsAndFailures(t *testing.T) {
+func TestReportActivationPrintsTheGatewayOutcome(t *testing.T) {
 	t.Setenv("ICEBATH_HOME", t.TempDir())
-	t.Setenv("no_proxy", "*")
-	seen := []string{}
-	backend := serveBackend(t, map[string]any{"activation": map[string]any{"name": "blender", "key": "blender",
-		"activated_now": map[string]any{}, "deferred": map[string]any{"tools": []any{"t"}},
-		"live_now": map[string]any{"skills": []any{map[string]any{"name": liveSkill}}, "mcp_servers": []any{
-			map[string]any{"name": "blender", "connected": true, "tools": liveTools},
-			map[string]any{"name": "render", "connected": false, "tools": []any{}}}}}}, &seen)
 	calls := []gatewayCall{}
-	installActivationServices(t, &Services{HostRendezvous: backend, ReloadGatewayPlugins: fakeGateway(map[string]any{"reloaded": true,
-		"activations": []any{map[string]any{"name": "blender", "key": "blender", "activated_now": map[string]any{"hooks": []any{"x"}}, "deferred": map[string]any{}}}}, nil, &calls)})
+	installActivationServices(t, &Services{ReloadGatewayPlugins: fakeGateway(map[string]any{"reloaded": true,
+		"activations": []any{map[string]any{"name": "blender", "key": "blender", "activated_now": map[string]any{"hooks": []any{"x"}},
+			"deferred": map[string]any{"tools": []any{"t"}}}}}, nil, &calls)})
 	var buf strings.Builder
 	if err := reportActivation(context.Background(), &Console{Out: &buf}, "blender"); err != nil {
 		t.Fatal(err)
 	}
-	want := "Live in open chats now: 3 MCP tools, 1 skills.\nMCP server render not connected: unknown error\n" +
-		"Gateway reloaded plugins — deferred: tools (next session).\n"
+	want := "Gateway reloaded plugins — active in the running gateway now: hooks; deferred: tools (next session).\n"
 	if buf.String() != want {
 		t.Fatalf("printed %q", buf.String())
 	}

@@ -191,7 +191,7 @@ type MSGraphWebhookAdapter struct {
 	maxSeenReceipts       int
 	maxBodyBytes          int64
 	allowedSourceNetworks []netip.Prefix
-	runner                *WebAppRunner
+	runner                *HTTPAppRunner
 	notificationScheduler NotificationScheduler
 	seenReceipts          map[string]struct{}
 	seenReceiptOrder      []string
@@ -297,7 +297,7 @@ func (a *MSGraphWebhookAdapter) ListenPort() int { return a.port }
 func (a *MSGraphWebhookAdapter) WebhookPath() string { return a.webhookPath }
 
 // Running listener, nil before connect or in shared listener mode
-func (a *MSGraphWebhookAdapter) Runner() *WebAppRunner { return a.runner }
+func (a *MSGraphWebhookAdapter) Runner() *HTTPAppRunner { return a.runner }
 
 // Replaces the source allowlist
 func (a *MSGraphWebhookAdapter) SetAllowedSourceNetworks(networks []netip.Prefix) {
@@ -334,7 +334,7 @@ func (a *MSGraphWebhookAdapter) Connect(ctx context.Context, isReconnect bool) (
 			"tunnel or reverse proxy.", pyHostText(a.host)))
 		return false, nil
 	}
-	app := NewWebApplication(a.maxBodyBytes)
+	app := NewHTTPApp(a.maxBodyBytes)
 	if err := app.AddGet(a.healthPath, a.handleHealth); err != nil {
 		return false, err
 	}

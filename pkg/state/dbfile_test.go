@@ -618,11 +618,6 @@ func TestHolderPIDHelpers(t *testing.T) {
 	if err != nil || !slices.Equal(pids, []int{5, 7}) {
 		t.Fatalf("pids = %v %v", pids, err)
 	}
-	if !isInactiveOrphanDesktopHolder(1, 60, 30, true, []string{"LISTEN"}) || isInactiveOrphanDesktopHolder(2, 60, 30, true, nil) ||
-		isInactiveOrphanDesktopHolder(0, 10, 30, true, nil) || isInactiveOrphanDesktopHolder(0, 60, 30, false, nil) ||
-		isInactiveOrphanDesktopHolder(0, 60, 30, true, []string{"ESTABLISHED"}) {
-		t.Fatal("orphan predicate wrong")
-	}
 	retain := prepareConnectionRetirement()
 	before := len(retainedConnections)
 	retain("conn")

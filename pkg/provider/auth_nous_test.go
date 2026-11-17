@@ -327,8 +327,8 @@ func TestGetNousAuthStatusChecksCredentialPool(t *testing.T) {
 	entry := PooledCredentialFromMap("nous", map[string]any{
 		"access_token": token, "refresh_token": "test-refresh-token", "portal_base_url": "https://portal.example.com",
 		"inference_base_url": "https://inference.example.com/v1", "agent_key": token, "agent_key_expires_at": futureISO(3600),
-		"scope": "inference:invoke", "label": "dashboard device_code", "auth_type": "oauth",
-		"source": "manual:dashboard_device_code", "base_url": "https://inference.example.com/v1",
+		"scope": "inference:invoke", "label": "device_code", "auth_type": "oauth",
+		"source": "manual:device_code", "base_url": "https://inference.example.com/v1",
 	})
 	if _, err := pool.AddEntry(entry); err != nil {
 		t.Fatal(err)
@@ -1035,9 +1035,6 @@ func TestLocalStatusNotLoggedInAfterTerminalQuarantine(t *testing.T) {
 	if status["logged_in"] != false || status["relogin_required"] != true || status["error_code"] != "invalid_grant" {
 		t.Fatalf("status = %v", status)
 	}
-	if got := GetNousSessionValidity(testEnv(t, h)); got != NousSessionTerminal {
-		t.Fatalf("validity = %s", got)
-	}
 }
 
 func TestLocalStatusRepeatedPollingNeverUsesLiveAuth(t *testing.T) {
@@ -1051,9 +1048,6 @@ func TestLocalStatusRepeatedPollingNeverUsesLiveAuth(t *testing.T) {
 		if GetNousAuthStatusLocal(env)["logged_in"] != true {
 			t.Fatalf("poll %d not logged in", i)
 		}
-	}
-	if got := GetNousSessionValidity(env); got != NousSessionValid {
-		t.Fatalf("validity = %s", got)
 	}
 }
 

@@ -58,11 +58,11 @@ func liveKernel(t *testing.T, source string) (registered, stopped func() bool) {
 // Session record of the kernel cases
 func kernelSession() *tuigateway.Session {
 	return tuigateway.NewSession(map[string]any{"active_session_lease": nil, "agent": nil, "history": []any{}, "history_lock": &sync.Mutex{},
-		"profile_home": nil, "session_key": kernelSessionKey, "slash_worker": nil, "source": "desktop"})
+		"profile_home": nil, "session_key": kernelSessionKey, "slash_worker": nil, "source": "tui"})
 }
 
 func TestTuiOwnedFinalizeDisposesTheSessionsKernels(t *testing.T) {
-	for _, tc := range []struct{ source, endReason string }{{"desktop", "tui_close"}, {"desktop", "ws_orphan_reap"}, {"", "idle_timeout"}} {
+	for _, tc := range []struct{ source, endReason string }{{"tui", "tui_close"}, {"tui", "ws_orphan_reap"}, {"", "idle_timeout"}} {
 		t.Run(fmt.Sprint(tc.source, "-", tc.endReason), func(t *testing.T) {
 			registered, stopped := liveKernel(t, tc.source)
 			finalizeSession(context.Background(), kernelSession(), tc.endReason)

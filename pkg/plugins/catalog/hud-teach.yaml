@@ -6,7 +6,7 @@ description: 'Click-through numbered marks on any live Mac window — chess, gam
   the user.'
 maintainer: iamlukethedev
 tier: community
-category: desktop
+category: tools
 requires_hermes: ">=0.20.0"
 docs_url: https://github.com/iamlukethedev/hermes-hud-teach
 version: "0.1.3"

@@ -21,7 +21,7 @@ func TestIsGatewayOwnedSourceBuiltinGatewayPlatformsAreOwned(t *testing.T) {
 
 func TestIsGatewayOwnedSourceTuiOwnedSourcesAreNot(t *testing.T) {
 	t.Setenv("ICEBATH_HOME", t.TempDir())
-	for _, src := range []string{"tui", "cli", "webui", "desktop", "cron", "subagent", "test", "acp", ""} {
+	for _, src := range []string{"tui", "cli", "cron", "subagent", "test", "acp", ""} {
 		if isGatewayOwnedSource(context.Background(), src) {
 			t.Fatal(src)
 		}
@@ -78,21 +78,8 @@ func TestViewerTeardownLeavesGatewayOwnedRowOpen(t *testing.T) {
 	}
 }
 
-func TestAutomaticReclaimLeavesDesktopRowOpen(t *testing.T) {
-	for _, reason := range []string{"ws_orphan_reap", "idle_timeout", "lru_evict"} {
-		t.Run(reason, func(t *testing.T) {
-			dbPath, session, a := realOwnedSession(t, "desktop", "desktop-"+reason)
-			teardownSession(context.Background(), session, reason)
-			endedAt, endReason := readRealRow(t, dbPath, "desktop-"+reason)
-			if endedAt != nil || endReason != nil || a.EndSessionOnClose() || a.OwnsSessionDB() {
-				t.Fatalf("ended_at %v end_reason %v end_on_close %v owns_db %v", endedAt, endReason, a.EndSessionOnClose(), a.OwnsSessionDB())
-			}
-		})
-	}
-}
-
-func TestExplicitCloseAndNonDesktopReapStillEndRow(t *testing.T) {
-	for _, tc := range [][2]string{{"desktop", "tui_close"}, {"tui", "ws_orphan_reap"}} {
+func TestExplicitCloseAndReapStillEndRow(t *testing.T) {
+	for _, tc := range [][2]string{{"tui", "tui_close"}, {"tui", "ws_orphan_reap"}} {
 		source, reason := tc[0], tc[1]
 		t.Run(source+"-"+reason, func(t *testing.T) {
 			dbPath, session, a := realOwnedSession(t, source, source+"-"+reason)

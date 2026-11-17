@@ -33,7 +33,7 @@ func LaunchShowsReasoningActive(ctx context.Context, a *SessionAuthority) (bool,
 	return launchShowsReasoning(ctx, policy, a)
 }
 
-// Whether the active launch is an Ink or Desktop launch whose viewer defaults reasoning from config
+// Whether the active launch is a TUI launch whose viewer defaults reasoning from config
 func ConfigDefaultLaunch(ctx context.Context) bool {
 	policy, _ := ActivePolicy(ctx).(*LocalSessionPolicy)
 	return policy != nil && configDefaultSources[policy.Source]

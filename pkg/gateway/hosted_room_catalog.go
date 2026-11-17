@@ -22,7 +22,7 @@ import (
 // Room protocol version this gateway speaks
 const HostedProtocolVersion = 2
 
-var hostedLinkModes = map[string]bool{"direct": true, "overlay": true, "relay": true, "pull": true, "desktop": true}
+var hostedLinkModes = map[string]bool{"direct": true, "overlay": true, "relay": true, "pull": true}
 
 var hostedCatalogFields = map[string]bool{
 	"installation_id": true, "protocol_versions": true, "link_modes": true, "persistent_process": true, "text": true,
@@ -263,7 +263,7 @@ type CatalogOptions struct {
 
 // Canonical catalog mapping with its digest for the served target profile
 func CatalogMapping(ctx context.Context, o CatalogOptions) (*pyjson.Object, error) {
-	persistent := o.PersistentProcess && os.Getenv("ICEBATH_DESKTOP") != "1"
+	persistent := o.PersistentProcess
 	profile, err := hostedIdentifier(o.TargetProfile, "target_profile")
 	if err != nil {
 		return nil, err
@@ -503,7 +503,7 @@ func ValidateRoomLinkURL(value any) (string, string, error) {
 	return "", "", &HostedRoomPeerError{"target_url must use https outside the local machine"}
 }
 
-// The one truthful catalog advertised by this local process, a persistent process unless Desktop managed
+// The one truthful catalog advertised by this local process, always a persistent process
 func LocalCatalogMapping(ctx context.Context, o CatalogOptions) (*pyjson.Object, error) {
 	o.PersistentProcess = true
 	return CatalogMapping(ctx, o)

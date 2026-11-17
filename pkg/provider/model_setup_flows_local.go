@@ -22,9 +22,9 @@ var localFlowDeps = struct {
 	hardware       func(ctx context.Context) (map[string]any, error)
 	status         func(ctx context.Context) (map[string]any, error)
 	catalog        func(ctx context.Context) (map[string]any, error)
-	quickstart     func(ctx context.Context, modelID, profile string) (map[string]any, error)
-	runtimeInstall func(ctx context.Context, backend, profile string) (map[string]any, error)
-	activate       func(ctx context.Context, modelID, profile string) (map[string]any, error)
+	quickstart     func(ctx context.Context, modelID string) (map[string]any, error)
+	runtimeInstall func(ctx context.Context, backend string) (map[string]any, error)
+	activate       func(ctx context.Context, modelID string) (map[string]any, error)
 	promptChoice   func(out io.Writer, choices []string, def int, title string) (int, bool)
 	promptYesNo    func(question string, def bool, description string) bool
 }{
@@ -324,7 +324,7 @@ func modelFlowLocal(r *ModelFlowRun) error {
 			}
 			rowID := anyString(row["id"])
 			done, err := runLocalModelsJob(r, func(ctx context.Context) (map[string]any, error) {
-				return localFlowDeps.quickstart(ctx, rowID, "")
+				return localFlowDeps.quickstart(ctx, rowID)
 			})
 			if err != nil || !done {
 				return err
@@ -343,14 +343,14 @@ func modelFlowLocal(r *ModelFlowRun) error {
 			return nil
 		}
 		done, err := runLocalModelsJob(r, func(ctx context.Context) (map[string]any, error) {
-			return localFlowDeps.runtimeInstall(ctx, "", "")
+			return localFlowDeps.runtimeInstall(ctx, "")
 		})
 		if err != nil || !done {
 			return err
 		}
 	}
 	done, err := runLocalModelsJob(r, func(ctx context.Context) (map[string]any, error) {
-		return localFlowDeps.activate(ctx, modelID, "")
+		return localFlowDeps.activate(ctx, modelID)
 	})
 	if err != nil {
 		return err

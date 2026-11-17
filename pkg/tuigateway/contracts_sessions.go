@@ -246,7 +246,7 @@ var SessionArchiveResult = pydantic.NewModel("SessionArchiveResult", ClosedConfi
 	pydantic.Req("session_key", pydantic.Str),
 )
 
-var _ = Method("session.archive", SessionArchiveParams, SessionArchiveResult, "Set/clear archived (soft-hide, messages kept) on a session + lineage; Desktop PATCH parity.")
+var _ = Method("session.archive", SessionArchiveParams, SessionArchiveResult, "Set/clear archived (soft-hide, messages kept) on a session + lineage.")
 
 var SessionWorkspaceMoveParams = pydantic.Extend(ProfileParams, "SessionWorkspaceMoveParams", ParamsConfig,
 	pydantic.Req("session_key", pydantic.Str),
@@ -329,7 +329,7 @@ var SessionSaveParams = pydantic.Extend(SessionParams, "SessionSaveParams", Para
 
 var SessionSaveResult = pydantic.NewModel("SessionSaveResult", OpenConfig,
 	pydantic.Def("file", pydantic.Nullable(pydantic.Str), nil),
-).Described("Under turn isolation the compute host's result passes through verbatim.")
+).Described("``file``: the saved transcript path.")
 
 var _ = Method("session.save", SessionSaveParams, SessionSaveResult, "Export the transcript to ~/.icebath/sessions/saved (/save).")
 
@@ -419,9 +419,7 @@ var SessionCompressResult = pydantic.NewModel("SessionCompressResult", OpenConfi
 	pydantic.Def("compressed", pydantic.Nullable(pydantic.Bool), nil),
 	pydantic.Def("lock_held", pydantic.Nullable(pydantic.Bool), nil),
 	pydantic.Def("message", pydantic.Nullable(pydantic.Str), nil),
-	pydantic.Def("turn_isolation", pydantic.Nullable(pydantic.Bool), nil),
-	pydantic.Def("host_ack", pydantic.Nullable(pydantic.Dict(pydantic.Any)), nil),
-).Described("In-process: the before/after summary + replacement transcript. Compute host: its result passes\nthrough (hence open) with ``turn_isolation``; a lock held elsewhere answers ``compressed: false``.")
+).Described("The before/after summary + replacement transcript; a lock held elsewhere answers ``compressed: false``.")
 
 var _ = Method("session.compress", SessionCompressParams, SessionCompressResult, "Manual /compress of an idle session, optionally focused on a topic.")
 
@@ -434,7 +432,6 @@ var InterruptStatus = pydantic.Enum("InterruptStatus", "interrupted", "interrupt
 var SessionInterruptResult = pydantic.NewModel("SessionInterruptResult", ClosedConfig,
 	pydantic.Req("status", InterruptStatus),
 	pydantic.Def("interrupted", pydantic.Nullable(pydantic.Bool), nil),
-	pydantic.Def("turn_isolation", pydantic.Nullable(pydantic.Bool), nil),
 )
 
 var _ = Method("session.interrupt", SessionInterruptParams, SessionInterruptResult, "Stop the running turn (and streaming TTS); retires the crash-recovery marker.")

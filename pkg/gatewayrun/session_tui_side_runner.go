@@ -62,24 +62,3 @@ func (r *GatewayRunner) SideQuestion(ctx context.Context, a *gateway.SessionAuth
 	opts.ShouldStop = shouldStop
 	return agent.AnswerSideQuestion(ctx, text, history, opts)
 }
-
-// Hidden terminal and file agent restarting the preview server, left open so the server it started keeps running
-func (r *GatewayRunner) SidePreviewRestart(ctx context.Context, env *tools.Env, a *gateway.SessionAuthority, policy *gateway.LocalSessionPolicy, live *gateway.LiveSession, taskID, prompt string, history []map[string]any, progress func(text string), hold func(agent any)) (string, error) {
-	side, err := r.sideAgent(ctx, a, policy, live, taskID, env, map[string]any{
-		"enabled_toolsets": []string{"terminal", "file"}, "disabled_toolsets": nil, "session_db": nil, "skip_memory": true,
-		"tool_start_callback": func(toolCallID, name string, args map[string]any) { progress("Running " + name) },
-	})
-	if err != nil {
-		return "", err
-	}
-	hold(side)
-	var priorHistory []map[string]any
-	if len(history) > 0 {
-		priorHistory = history
-	}
-	result, err := side.RunConversation(ctx, prompt, agent.RunConversationOptions{TaskID: taskID, ConversationHistory: priorHistory})
-	if err != nil {
-		return "", err
-	}
-	return sideFinalResponseText(result), nil
-}

@@ -4,8 +4,6 @@ package main
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/base64"
 	"encoding/json"
 	"io"
 	"net"
@@ -72,18 +70,13 @@ func ordinaryDaemonKeepsControlAuthAndLoopWitness(t *testing.T, layout string) {
 	if err := os.WriteFile(filepath.Join(h, "config.yaml"), config, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	secret := make([]byte, 32)
-	if _, err := rand.Read(secret); err != nil {
-		t.Fatal(err)
-	}
-	token := base64.RawURLEncoding.EncodeToString(secret)
 	var env []string
 	for _, name := range []string{"PATH", "LANG", "TZ"} {
 		if value, set := os.LookupEnv(name); set {
 			env = append(env, name+"="+value)
 		}
 	}
-	env = append(env, "HOME="+user, "USERPROFILE="+user, "ICEBATH_HOME="+h, "ICEBATH_DASHBOARD_SESSION_TOKEN="+token)
+	env = append(env, "HOME="+user, "USERPROFILE="+user, "ICEBATH_HOME="+h)
 	if layout == "long-temp" {
 		temp := filepath.Join(tmp, strings.Repeat("t", 120))
 		if err := os.Mkdir(temp, 0o755); err != nil {
@@ -130,8 +123,6 @@ func ordinaryDaemonKeepsControlAuthAndLoopWitness(t *testing.T, layout string) {
 	if filepath.Dir(controlPath) != h {
 		requirePrivateMode(t, filepath.Dir(controlPath))
 	}
-	origin, _ := descriptor["api_origin"].(string)
-	sid := createWithSessionToken(t, origin, token, "daemon-token", 15*time.Second)
 	heartbeat := filepath.Join(h, "state", "gateway.heartbeat")
 	for _, err := os.Stat(heartbeat); err != nil && time.Now().Before(deadline); _, err = os.Stat(heartbeat) {
 		time.Sleep(50 * time.Millisecond)
@@ -147,7 +138,7 @@ func ordinaryDaemonKeepsControlAuthAndLoopWitness(t *testing.T, layout string) {
 	pid := daemon.process.Process.Pid
 	tickPath := gateway.GetLoopTickSocketPath(context.Background(), h, &pid)
 	receipt, _ := json.Marshal(map[string]any{"layout": layout, "home_bytes": len(h), "tick_chars": len([]rune(tickPath)),
-		"tick_bytes": len(tickPath), "control": controlPath, "created_session": sid,
+		"tick_bytes": len(tickPath), "control": controlPath,
 		"loop_tick_socket": payload["loop_tick_socket"], "loop_tick_tcp_port": payload["loop_tick_tcp_port"]})
 	t.Log(string(receipt))
 	if payload["loop_tick_socket"] != true {

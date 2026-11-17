@@ -23,10 +23,9 @@ var localViewerMoaKeys = map[string][][2]string{
 	"moa.aggregating": {},
 }
 
-// Sinks a local viewer turn replaced and the desktop registration its restore releases
+// Sinks a local viewer turn replaced, put back by its restore
 type localViewerPrevious struct {
 	sinks agent.LocalViewerSinks
-	token *desktopUIToken
 }
 
 // Installs this turn's local viewer sinks on the agent and returns what restore needs
@@ -57,12 +56,12 @@ func wireLocalViewerEvents(ctx context.Context, t *TurnRunner, a *agent.AIAgent)
 			}
 		}
 	}
-	previous.token = wireLocalDesktopUI(t, a, &sinks)
+	wireLocalConnections(t, &sinks)
 	a.SetLocalViewerSinks(sinks)
 	return previous, nil
 }
 
-// Session reasoning display flag, else the launch default of an Ink or Desktop launch
+// Session reasoning display flag, else the launch default of a TUI launch
 func showLocalReasoning(ctx context.Context, t *TurnRunner) (bool, error) {
 	owner := t.approvalOwner
 	if owner == nil {
@@ -194,12 +193,11 @@ func publishLocalProgress(ctx context.Context, t *TurnRunner, eventType, name, p
 	return nil
 }
 
-// Puts the sinks a local viewer turn replaced back and releases its desktop registration
+// Puts the sinks a local viewer turn replaced back
 func restoreLocalViewerEvents(a *agent.AIAgent, previous *localViewerPrevious) {
 	if previous == nil {
 		return
 	}
-	releaseLocalDesktopUI(previous.token)
 	a.SetLocalViewerSinks(previous.sinks)
 }
 

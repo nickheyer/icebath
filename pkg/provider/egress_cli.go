@@ -620,7 +620,7 @@ func egressCmdReload(cli *egressCLI) (int, error) {
 	return 0, nil
 }
 
-// FormatEgressStatusText is the plain text egress status for slash commands, Dashboard and Desktop
+// FormatEgressStatusText is the plain text egress status for slash commands
 func FormatEgressStatusText(h string, showTokens bool) (string, error) {
 	cfg, err := secretsLoadConfig(h)
 	if err != nil {

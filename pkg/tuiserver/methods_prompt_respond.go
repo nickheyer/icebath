@@ -14,24 +14,6 @@ var promptRespondRegistry = &handlerRegistry{}
 func init() {
 	promptRespondRegistry.method("clarify.lock", clarifyLock)
 	promptRespondRegistry.method("request.answer", requestAnswer)
-	promptRespondRegistry.method("approval.pending", func(ctx context.Context, rid any, params map[string]any) map[string]any {
-		session, errResp := sess(ctx, params, rid)
-		if errResp != nil {
-			return errResp
-		}
-		return approvalReply(rid, "approvals", func() any { return tools.ListGatewayApprovals(strOr(session.Get("session_key"))) })
-	})
-	promptRespondRegistry.method("approval.received", func(ctx context.Context, rid any, params map[string]any) map[string]any {
-		session, errResp := sess(ctx, params, rid)
-		if errResp != nil {
-			return errResp
-		}
-		requestID, isStr := params["request_id"].(string)
-		if !isStr || requestID == "" {
-			return rpcErr(rid, 4006, "request_id required", nil)
-		}
-		return approvalReply(rid, "acknowledged", func() any { return tools.AckGatewayApproval(strOr(session.Get("session_key")), requestID) })
-	})
 	promptRespondRegistry.method("approval.respond", approvalRespond)
 	promptRespondRegistry.install()
 }
@@ -50,9 +32,6 @@ func clarifyLock(ctx context.Context, rid any, params map[string]any) map[string
 		encoded, err := pyjson.Dumps(answer, pyjson.EnsureASCII(false))
 		panicIf(err)
 		answer = encoded
-	}
-	if proxied := lockComputeHostClarify(ctx, rid, requestID, questionID, answer); proxied != nil {
-		return proxied
 	}
 	remaining, open, err := tuigateway.LockAnswer(requestID, questionID, answer)
 	if err != nil {
@@ -75,7 +54,7 @@ func requestAnswer(ctx context.Context, rid any, params map[string]any) map[stri
 	frame.Set("jsonrpc", "2.0")
 	frame.Set("id", requestID)
 	frame.Set("result", result)
-	if tuigateway.ResolveResponse(frame, nil) || relayComputeHostResponse(ctx, frame) {
+	if tuigateway.ResolveResponse(frame, nil) {
 		return ok(rid, map[string]any{"status": "ok"})
 	}
 	return ok(rid, map[string]any{"status": "expired"})

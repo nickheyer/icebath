@@ -11,7 +11,7 @@ func TestOpenRouterVariantBase(t *testing.T) {
 			t.Errorf("%q -> %q, want %q", in, got, want)
 		}
 	}
-	if OpenRouterModelsURL != "https://openrouter.ai/api/v1/models" || DefaultIndicatorStyle != "kaomoji" || WebappAttachmentMaxBytes != 16<<20 {
+	if OpenRouterModelsURL != "https://openrouter.ai/api/v1/models" || DefaultIndicatorStyle != "kaomoji" || AttachmentMaxBytes != 16<<20 {
 		t.Fatal("constants")
 	}
 }

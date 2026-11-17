@@ -37,8 +37,6 @@ func dbgHome(t *testing.T) string {
 			"2026-04-12 17:00:02 WARNING agent: high token usage\n",
 		"errors.log":  "2026-04-12 17:00:05 ERROR gateway.run: connection lost\n",
 		"gateway.log": "2026-04-12 17:00:10 INFO gateway.run: started\n",
-		"gui.log":     "2026-04-12 17:00:12 INFO hermes_cli.web_server: dashboard request\n",
-		"desktop.log": "2026-04-12 17:00:15 INFO desktop: backend spawned\n",
 	} {
 		dbgWrite(t, filepath.Join(logs, name), body)
 	}
@@ -176,37 +174,27 @@ func TestMissingLogNoteBackendWrittenLogReportsPlainAbsence(t *testing.T) {
 	}
 }
 
-func TestMissingLogNoteClientWrittenLogNamesItsWriterAndPath(t *testing.T) {
-	h := dbgHome(t)
-	os.Remove(filepath.Join(h, "logs", "desktop.log"))
-	snap := debugCaptureLogSnapshot(context.Background(), "desktop", 10, debugMaxLogBytes, true)
-	if snap.FullText != nil || !strings.Contains(snap.TailText, "not on this host") ||
-		!strings.Contains(snap.TailText, filepath.Join(h, "logs", "desktop.log")) {
-		t.Fatalf("%+v", snap)
-	}
-}
-
-func TestMissingLogNotePresentClientLogIsCapturedNormally(t *testing.T) {
+func TestMissingLogNotePresentLogIsCapturedNormally(t *testing.T) {
 	dbgHome(t)
-	snap := debugCaptureLogSnapshot(context.Background(), "desktop", 10, debugMaxLogBytes, true)
-	if !strings.Contains(snap.TailText, "backend spawned") || strings.Contains(snap.TailText, "not on this host") {
+	snap := debugCaptureLogSnapshot(context.Background(), "gateway", 10, debugMaxLogBytes, true)
+	if !strings.Contains(snap.TailText, "gateway.run: started") || snap.FullText == nil {
 		t.Fatalf("%+v", snap)
 	}
 }
 
-func TestMissingLogNoteEmptyClientLogIsEmptyNotAbsent(t *testing.T) {
+func TestMissingLogNoteEmptyLogIsEmptyNotAbsent(t *testing.T) {
 	h := dbgHome(t)
-	dbgWrite(t, filepath.Join(h, "logs", "desktop.log"), "")
-	if snap := debugCaptureLogSnapshot(context.Background(), "desktop", 10, debugMaxLogBytes, true); snap.TailText != "(file empty)" {
+	dbgWrite(t, filepath.Join(h, "logs", "gateway.log"), "")
+	if snap := debugCaptureLogSnapshot(context.Background(), "gateway", 10, debugMaxLogBytes, true); snap.TailText != "(file empty)" {
 		t.Fatalf("%+v", snap)
 	}
 }
 
-func TestMissingLogNoteReportCarriesTheNoteForARemoteBackend(t *testing.T) {
+func TestMissingLogNoteReportCarriesThePlainAbsence(t *testing.T) {
 	h := dbgHome(t)
-	os.Remove(filepath.Join(h, "logs", "desktop.log"))
+	os.Remove(filepath.Join(h, "logs", "gateway.log"))
 	report, err := debugCollectDebugReport(context.Background(), 10, "dump\n", nil)
-	if err != nil || !strings.Contains(report, "--- desktop.log") || !strings.Contains(report, "not on this host") {
+	if err != nil || !strings.Contains(report, "--- gateway.log (last 10 lines) ---\n(file not found)") {
 		t.Fatal(report, err)
 	}
 }
@@ -290,21 +278,21 @@ func dbgMagicArgs(over map[string]any) map[string]any {
 	return ns
 }
 
-func TestRunDebugShareShareUploadsFivePastes(t *testing.T) {
+func TestRunDebugShareShareUploadsThreePastes(t *testing.T) {
 	dbgHome(t)
 	dbgPinDump("--- icebath dump ---\nversion: test\n--- end dump ---")
 	captured := dbgRecordUploads()
 	out, _, _ := dbgRun(t, dbgMagicArgs(nil))
-	if len(*captured) != 5 {
+	if len(*captured) != 3 {
 		t.Fatal(len(*captured))
 	}
-	for _, want := range []string{"paste.rs/paste1", "paste.rs/paste2", "paste.rs/paste3", "paste.rs/paste4", "paste.rs/paste5",
-		"Report", "agent.log", "gateway.log", "gui.log", "desktop.log"} {
+	for _, want := range []string{"paste.rs/paste1", "paste.rs/paste2", "paste.rs/paste3",
+		"Report", "agent.log", "gateway.log"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("missing %q in %s", want, out)
 		}
 	}
-	for i, name := range []string{"agent.log", "gateway.log", "gui.log", "desktop.log"} {
+	for i, name := range []string{"agent.log", "gateway.log"} {
 		paste := (*captured)[i+1]
 		if !strings.Contains(paste, "--- icebath dump ---") || !strings.Contains(paste, "--- full "+name+" ---") {
 			t.Fatalf("%s paste %q", name, paste)

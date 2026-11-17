@@ -17,7 +17,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -26,8 +25,6 @@ const (
 	SetupMarkerDirname = "provider_setup_markers"
 	// SetupStaleAfter is how long a pending flow may run before it reads abandoned
 	SetupStaleAfter   = 3600.0
-	oauthSessionKey   = "_metrics_setup_flow"
-	oauthFailureKey   = "_metrics_setup_failure"
 	openRouterKeyName = "OPENROUTER_API_KEY"
 )
 
@@ -35,14 +32,6 @@ var (
 	notAProvider = Set("aux-config", "cancel", "reasoning", "remove-custom")
 	notFailures  = Set("cancelled", "expired")
 	sharedTokens = Set("GH_TOKEN", "GITHUB_TOKEN", "HF_TOKEN")
-	oauthEndings = map[string][2]string{
-		"approved": {"completed", "none"}, "cancelled": {"abandoned", "none"},
-		"denied": {"failed", "auth"}, "expired": {"abandoned", "none"},
-	}
-	oauthReasons = map[string][2]string{
-		"user_declined": {"abandoned", "none"}, "superseded": {"abandoned", "none"}, "timeout": {"abandoned", "none"},
-		"account_retired": {"failed", "auth"}, "anon_unreachable": {"failed", "network"},
-	}
 )
 
 // AuthErrorTraits answers the sign in error questions hermes_cli.auth_error_copy and hermes_cli.auth answer
@@ -83,16 +72,6 @@ func boundHome(ctx context.Context, homeDir string) context.Context {
 		return ctx
 	}
 	return home.WithOverride(ctx, homeDir)
-}
-
-// The owning profile's shared metrics gate
-func CollectionEnabled(ctx context.Context, homeDir string) (on bool) {
-	defer func() {
-		if recover() != nil {
-			on = false
-		}
-	}()
-	return relayEnabled(boundHome(ctx, homeDir))
 }
 
 // Bounded provider setup row, nil when the surface or event is outside the contract
@@ -320,25 +299,6 @@ func ProviderForAPIKeyEnv(envVar any, connecting bool) (string, bool) {
 	return ProviderForAPIKeyEnvHook(name)
 }
 
-// Counts a provider API key saved from a settings form, only for a new or changed non empty value
-func RecordAPIKeySaved(ctx context.Context, envVar, value, previous any, surface string, connecting bool) {
-	defer func() {
-		if r := recover(); r != nil {
-			slog.Debug("API key setup not recorded", "error", r)
-		}
-	}()
-	v, ok := value.(string)
-	if !ok || pystr.Strip(v) == "" || pyrepr.Equal(value, previous) {
-		return
-	}
-	if !relayEnabled(ctx) {
-		return
-	}
-	if provider, ok := ProviderForAPIKeyEnv(envVar, connecting); ok && provider != "" {
-		RecordProviderSetupDone(ctx, surface, provider, "", true)
-	}
-}
-
 // cliSetupState is the interactive CLI's provider flow state, the surface, open flow hints and a backed out flow
 type cliSetupState struct {
 	mu        sync.Mutex
@@ -547,74 +507,4 @@ func panicSetupClass(r any) string {
 		return SetupFailureClass(err)
 	}
 	return "other"
-}
-
-// Surface of a web setup, desktop when the Desktop owns this backend and dashboard otherwise
-func WebSetupSurface() string {
-	if tools.IsDesktopOwnedBackend(os.Args) {
-		return "desktop"
-	}
-	return "dashboard"
-}
-
-// Web surface resolver the OAuth flows start on
-var webSetupSurface = WebSetupSurface
-
-// Starts an OAuth setup flow on the web surface
-func BeginOAuthSetup(ctx context.Context, provider string, homeDir string) *SetupFlow {
-	return BeginProviderSetup(ctx, webSetupSurface(), provider, homeDir)
-}
-
-// Stores a started flow on its OAuth session
-func AttachOAuthSetup(sess map[string]any, flow *SetupFlow) {
-	if flow != nil && sess != nil {
-		sess[oauthSessionKey] = flow
-	}
-}
-
-// Keeps a dead sign in poller's closed failure class for the settle
-func NoteOAuthFailure(sess map[string]any, err error) {
-	defer func() { _ = recover() }()
-	if sess != nil {
-		sess[oauthFailureKey] = SetupFailureClass(err)
-	}
-}
-
-// Ends an OAuth session's flow from its status, nothing while pending or once ended
-func SettleOAuthSetup(ctx context.Context, sess map[string]any, abandoned bool) {
-	defer func() {
-		if r := recover(); r != nil {
-			slog.Debug("OAuth setup end not recorded", "error", r)
-		}
-	}()
-	if sess == nil || sess[oauthSessionKey] == nil {
-		return
-	}
-	status := pyText(sess["status"])
-	if pyrepr.Truthy(sess["cancelled"]) {
-		status = "cancelled"
-	}
-	ending, ok := [2]string{}, false
-	if status == "denied" || status == "error" {
-		ending, ok = oauthReasons[pyText(sess["reason"])]
-	}
-	if !ok {
-		ending, ok = oauthEndings[status]
-	}
-	if !ok && status == "error" {
-		failure := "other"
-		if v := sess[oauthFailureKey]; pyrepr.Truthy(v) {
-			failure = pyText(v)
-		}
-		ending, ok = [2]string{"failed", failure}, true
-	}
-	if !ok {
-		if !abandoned {
-			return
-		}
-		ending = [2]string{"abandoned", "none"}
-	}
-	flow, _ := sess[oauthSessionKey].(*SetupFlow)
-	delete(sess, oauthSessionKey)
-	FinishProviderSetup(ctx, flow, ending[0], ending[1])
 }

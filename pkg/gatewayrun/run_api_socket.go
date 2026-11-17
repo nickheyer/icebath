@@ -15,8 +15,31 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/tuiserver"
 )
+
+// Socket of one admitted session as the session handler drives it
+type SessionSocket interface {
+	SendText(ctx context.Context, text string) error
+	Close(code int) error
+	Accept(ctx context.Context, subprotocol *string) error
+	ReceiveText(ctx context.Context) (string, error)
+	Peer() (host string, port int, known bool)
+	RawConn() net.Conn
+	SessionAuthority() *gateway.SessionAuthority
+}
+
+// Peer close a session socket read reports, with its close code and reason
+type SessionSocketClosed struct {
+	Code   int
+	Reason string
+}
+
+func (e *SessionSocketClosed) Error() string {
+	return fmt.Sprintf("session socket closed (%d, %q)", e.Code, e.Reason)
+}
+
+// Session handler an admitted socket runs, assigned by the command wiring
+var ServeSessionSocket func(ctx context.Context, sock SessionSocket, identity map[string]any, subprotocol *string, operator bool) error
 
 // Largest frame a session socket reads
 const sessionSocketMaxBytes = 384 * 1024 * 1024
@@ -65,25 +88,23 @@ func (s *sessionSocket) BoundaryClient() (string, bool) {
 	return host, err == nil && host != ""
 }
 
-func (s *sessionSocket) Client() *tuiserver.SocketPeer {
+// Peer host and port of the request, not known when the server reports none
+func (s *sessionSocket) Peer() (string, int, bool) {
 	host, rawPort, err := net.SplitHostPort(s.req.RemoteAddr)
 	if err != nil {
-		return nil
+		return "", 0, false
 	}
 	port, err := strconv.Atoi(rawPort)
-	if err != nil {
-		return &tuiserver.SocketPeer{Host: host}
-	}
-	return &tuiserver.SocketPeer{Host: host, Port: &port}
+	return host, port, err == nil
 }
 
 // Peer as the refusal log names it, the host and port tuple or None
 func (s *sessionSocket) peerText() string {
-	peer := s.Client()
-	if peer == nil || peer.Port == nil {
+	host, port, known := s.Peer()
+	if !known {
 		return "None"
 	}
-	return fmt.Sprintf("(%s, %d)", pyrepr.Repr(peer.Host), *peer.Port)
+	return fmt.Sprintf("(%s, %d)", pyrepr.Repr(host), port)
 }
 
 func (s *sessionSocket) SessionAuthority() *gateway.SessionAuthority { return s.authority }
@@ -203,7 +224,7 @@ func (s *sessionSocket) ReceiveText(ctx context.Context) (string, error) {
 		s.mu.Lock()
 		s.left = true
 		s.mu.Unlock()
-		return "", &tuiserver.SocketDisconnect{Code: int64(frame.code), Reason: frame.reason}
+		return "", &SessionSocketClosed{Code: frame.code, Reason: frame.reason}
 	}
 	if frame.binary {
 		return "", errors.New("session socket received a binary frame")

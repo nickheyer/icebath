@@ -128,8 +128,8 @@ func TestExactRetryOfASessionCreatedBeforeClientEnv(t *testing.T) {
 	if !mustRetry(t, legacy, nil) || mustRetry(t, legacy, map[string]string{"PATH": "/x"}) || mustRetry(t, legacy, map[string]string{}) {
 		t.Fatal("a session committed without a map matches only a retry without one")
 	}
-	desktop := committedPolicy(t, map[string]string{}, clientEnvTestConfig, true)
-	if mustRetry(t, desktop, nil) {
+	committed := committedPolicy(t, map[string]string{}, clientEnvTestConfig, true)
+	if mustRetry(t, committed, nil) {
 		t.Fatal("a committed map never matches a retry without one")
 	}
 }

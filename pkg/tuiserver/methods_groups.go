@@ -669,7 +669,7 @@ func groupsDisband(ctx context.Context, rid any, params map[string]any, service 
 func groupsStop(_ context.Context, rid any, params map[string]any, service *gateway.HostedRoomService, _ string) (map[string]any, error) {
 	cancelID := relayString(params["cancel_id"])
 	if cancelID == "" {
-		cancelID = "desktop-stop"
+		cancelID = "groups-stop"
 	}
 	count, err := service.StopRoom(relayString(params["room_id"]), cancelID, false)
 	if err != nil {

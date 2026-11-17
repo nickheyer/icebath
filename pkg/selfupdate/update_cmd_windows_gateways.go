@@ -49,7 +49,6 @@ var (
 	}
 	winFindServices          = gatewaycli.FindWindowsGatewayServicesFor
 	winStopGateways          = stopWindowsGateways
-	winRecordAttested        = recordAttestedColdStartProfiles
 	winWriteAttestation      = gateway.WriteStartAttestation
 	winRecordRestart         = updaterecord.RecordGatewayRestart
 	winUnregisterExitHook    = unregisterUpdateExitHook
@@ -58,7 +57,6 @@ var (
 	winRestoreService        = restoreWindowsGatewayService
 	winServiceGatewayReady   = serviceGatewayReady
 	winOwnedGatewayPids      = ownedGatewayPids
-	winDesktopOwnsLifecycle  = desktopOwnsGatewayLifecycle
 	winColdStartGateway      = coldStartWindowsGatewayAfterUpdate
 	winRefreshLaunchers      = refreshWindowsGatewayLaunchers
 	winLaunchDetachedRestart = gateway.LaunchDetachedProfileGatewayRestart
@@ -327,7 +325,7 @@ func restoreWindowsGatewayService(ctx context.Context, name string, timeout floa
 	return nil
 }
 
-// Pause token of the no running gateway case when an autostart entry exists and Desktop does not own the lifecycle
+// Pause token of the no running gateway case when an autostart entry exists
 func windowsColdStartPlan(ctx context.Context) map[string]any {
 	installed, err := gateway.WindowsIsInstalled(ctx)
 	if err != nil {
@@ -337,20 +335,7 @@ func windowsColdStartPlan(ctx context.Context) map[string]any {
 	if !installed {
 		return nil
 	}
-	token := map[string]any{"resume_needed": true, "profiles": map[string]any{}, "unmapped_pids": []any{}, "unmapped": []any{}, "cold_start_if_installed": true}
-	if winDesktopOwnsLifecycle(ctx) {
-		generation, err := attestedDeathGeneration(ctx, []int{}, "")
-		if err != nil {
-			updateLog.DebugContext(ctx, fmt.Sprintf("Could not check Desktop gateway-lifecycle ownership before update: %s", launchErrorText(err)))
-			return token
-		}
-		if generation == "" {
-			updateLog.DebugContext(ctx, "Skipping Windows gateway cold-start plan: Desktop owns gateway lifecycle")
-			return nil
-		}
-		token["attested_generation"] = generation
-	}
-	return token
+	return map[string]any{"resume_needed": true, "profiles": map[string]any{}, "unmapped_pids": []any{}, "unmapped": []any{}, "cold_start_if_installed": true}
 }
 
 // A gateway service could not be stopped, with what the rollback could not restart
@@ -645,17 +630,6 @@ func pauseWindowsGatewaysForUpdate(ctx context.Context, w io.Writer) (map[string
 		return nil, err
 	}
 	token := map[string]any{"resume_needed": true, "profiles": paused, "unmapped_pids": intsAsAny(unmappedPids), "unmapped": unmapped}
-	runningProfiles := map[string]bool{}
-	for name := range paused {
-		runningProfiles[name] = true
-	}
-	for _, process := range processes {
-		runningProfiles[process.Profile] = true
-	}
-	for _, service := range services {
-		runningProfiles[service.Profile] = true
-	}
-	winRecordAttested(ctx, token, runningProfiles)
 	token, err = pauseWindowsGatewayServices(ctx, w, services, token, paused, unmapped)
 	if err != nil {
 		var failed *ServicePauseFailed
@@ -672,14 +646,6 @@ func pauseWindowsGatewaysForUpdate(ctx context.Context, w io.Writer) (map[string
 // The cold start plan of an install with no running gateway, plus any orphaned set adopted from a killed update
 func coldStartPauseToken(ctx context.Context, adopted map[string]any, claims []string) (map[string]any, error) {
 	token := windowsColdStartPlan(ctx)
-	probe := token
-	if probe == nil {
-		probe = map[string]any{"resume_needed": true, "profiles": map[string]any{}, "unmapped_pids": []any{}, "unmapped": []any{}}
-	}
-	winRecordAttested(ctx, probe, map[string]bool{})
-	if pyrepr.Truthy(probe["cold_start_profiles"]) {
-		token = probe
-	}
 	if adopted == nil {
 		if token == nil {
 			return nil, nil
@@ -763,99 +729,8 @@ func stopWindowsGateways(ctx context.Context, w io.Writer, runningPids []int, pr
 	return paused, nil
 }
 
-// Records a cold start obligation per known profile that is not running yet holds a dead start attestation
-func recordAttestedColdStartProfiles(ctx context.Context, token map[string]any, runningProfiles map[string]bool) {
-	if !winDesktopOwnsLifecycle(ctx) {
-		return
-	}
-	active := profiles.GetActiveProfileName(ctx)
-	if active == "" {
-		active = "default"
-	}
-	served, err := profiles.ProfilesToServe(ctx, true, true, false)
-	cold := map[string]any{}
-	for _, profile := range served {
-		if err != nil {
-			break
-		}
-		if runningProfiles[profile.Name] || (profile.Name == active && pyrepr.Truthy(token["cold_start_if_installed"])) {
-			continue
-		}
-		var generation string
-		if generation, err = attestedDeathGeneration(ctx, []int{}, profile.Home); err == nil && generation != "" {
-			cold[profile.Name] = generation
-		}
-	}
-	if err != nil {
-		updateLog.DebugContext(ctx, fmt.Sprintf("Could not evaluate per-profile attested cold-starts before update: %s", launchErrorText(err)))
-		return
-	}
-	if len(cold) > 0 {
-		token["cold_start_profiles"] = cold
-	}
-}
-
-// Spawns each attested profile under its own home and consumes exactly the generation that authorized it
-func coldStartAttestedProfiles(ctx context.Context, w io.Writer, token map[string]any) error {
-	pending := tokenMap(token["cold_start_profiles"])
-	if len(pending) == 0 {
-		return nil
-	}
-	remaining := map[string]any{}
-	for name, generation := range pending {
-		remaining[name] = generation
-	}
-	token["cold_start_profiles"] = remaining
-	for _, name := range sortedKeysOf(pending) {
-		err := func() error {
-			profileHome, err := profiles.GetProfileDir(name)
-			if err != nil {
-				return err
-			}
-			live, err := winLiveGatewayPids(ctx, profileHome, nil)
-			if err != nil {
-				return err
-			}
-			if len(live) == 0 {
-				pid, err := spawnDetached(ctx, profileHome)
-				if err != nil {
-					return err
-				}
-				if pid == 0 {
-					return errors.New("cold-start did not return a process ID")
-				}
-			}
-			ready, err := winWaitForGatewayReady(ctx, nil, profileHome, false, nil)
-			if err != nil {
-				return err
-			}
-			if len(ready) == 0 {
-				return fmt.Errorf("gateway profile %s did not become ready", name)
-			}
-			if err := consumeStartAttestation(ctx, pyrepr.Str(pending[name]), profileHome); err != nil {
-				return err
-			}
-			winWriteAttestation(home.WithOverride(ctx, profileHome), ready, fmt.Sprintf("cold-start after update (profile %s)", name))
-			fmt.Fprintf(w, "\n✓ Gateway profile %s started via cold-start after update (PID: %d)\n", name, ready[0])
-			delete(remaining, name)
-			return nil
-		}()
-		if err != nil {
-			if isUpdateExit(err) {
-				return err
-			}
-			updateLog.DebugContext(ctx, fmt.Sprintf("Could not cold-start Windows gateway profile %s after update: %s", name, launchErrorText(err)))
-		}
-	}
-	if len(remaining) > 0 {
-		return errors.New("Windows gateway cold-start was not verified for profile(s): " + strings.Join(sortedKeysOf(remaining), ", "))
-	}
-	delete(token, "cold_start_profiles")
-	return nil
-}
-
 // Spawns a detached gateway after the update for an installed but down autostart, verified by the liveness poll
-func coldStartWindowsGatewayAfterUpdate(ctx context.Context, w io.Writer, token map[string]any) (bool, error) {
+func coldStartWindowsGatewayAfterUpdate(ctx context.Context, w io.Writer) (bool, error) {
 	if !winIsWindows() {
 		return true, nil
 	}
@@ -870,17 +745,9 @@ func coldStartWindowsGatewayAfterUpdate(ctx context.Context, w io.Writer, token 
 	if len(owned) > 0 {
 		return true, nil
 	}
-	generation := ""
-	if recorded, carried := token["attested_generation"]; carried {
-		if recorded != nil {
-			generation = pyrepr.Str(recorded)
-		}
-	} else if generation, err = attestedDeathGeneration(ctx, []int{}, ""); err != nil {
+	generation, err := attestedDeathGeneration(ctx, []int{}, "")
+	if err != nil {
 		return false, abortOnError("Could not re-read the start attestation before cold-start", err)
-	}
-	if winDesktopOwnsLifecycle(ctx) && generation == "" {
-		updateLog.DebugContext(ctx, "Skipping Windows gateway cold-start: Desktop owns gateway lifecycle")
-		return true, nil
 	}
 	pid, err := spawnDetached(ctx, "")
 	if err != nil {
@@ -1568,7 +1435,7 @@ func resumePausedSetOf(ctx context.Context, w io.Writer, token map[string]any) e
 		}
 	case pyrepr.Truthy(token["cold_start_if_installed"]):
 		attempt(func() error {
-			started, err := winColdStartGateway(ctx, w, token)
+			started, err := winColdStartGateway(ctx, w)
 			if err != nil {
 				return err
 			}
@@ -1579,7 +1446,6 @@ func resumePausedSetOf(ctx context.Context, w io.Writer, token map[string]any) e
 			return nil
 		})
 	}
-	attempt(func() error { return coldStartAttestedProfiles(ctx, w, token) })
 	if len(failures) > 0 {
 		return errors.New(strings.Join(failures, "; "))
 	}

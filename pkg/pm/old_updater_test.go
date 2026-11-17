@@ -9,7 +9,6 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
-	"sort"
 	"strconv"
 	"strings"
 	"testing"
@@ -55,43 +54,25 @@ func ouTakeoverChild() int {
 		return fail("handoff pid %q", os.Getenv("ICEBATH_UPDATE_HANDOFF_PID"))
 	}
 	home := request["home"].(string)
-	_, cleanup := request["stopped_serves"]
 	runs, err := os.OpenFile(filepath.Join(home, "runs"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 	if err != nil {
 		return fail("%v", err)
 	}
 	defer runs.Close()
 	ack, status := os.Getenv(ouHelperEnv+"_ACK"), os.Getenv(ouHelperEnv+"_STATUS")
-	if cleanup {
-		var keys []string
-		for key := range request {
-			keys = append(keys, key)
+	want := map[string]any{"restart_update": false, "pre_update_snapshot_id": nil,
+		"pre_update_version": nil, "gateway_mode": true, "assume_yes": false, "windows_resume": nil}
+	for key, value := range want {
+		if got, ok := request[key]; !ok || got != value {
+			return fail("request %s %v want %v", key, got, value)
 		}
-		sort.Strings(keys)
-		if !reflect.DeepEqual(keys, []string{"argv", "home", "root", "stopped_serves"}) {
-			return fail("cleanup keys %v", keys)
-		}
-		serves := request["stopped_serves"].(map[string]any)
-		if serves["pending"] != true || serves["entries"].([]any)[0].(map[string]any)["profile"] != "work profile" {
-			return fail("stopped serves %v", serves)
-		}
-		runs.WriteString("cleanup\n")
-		ack, status = os.Getenv(ouHelperEnv+"_CLEANUP_ACK"), os.Getenv(ouHelperEnv+"_CLEANUP_STATUS")
-	} else {
-		want := map[string]any{"restart_update": false, "desktop": nil, "pre_update_snapshot_id": nil,
-			"pre_update_version": nil, "gateway_mode": true, "assume_yes": false, "windows_resume": nil}
-		for key, value := range want {
-			if got, ok := request[key]; !ok || got != value {
-				return fail("request %s %v want %v", key, got, value)
-			}
-		}
-		receipt, _ := request["receipt"].(map[string]any)
-		plan, _ := request["plan"].(map[string]any)
-		if receipt["update_id"] != "old-correlation" || plan["install_method"] != "git" {
-			return fail("receipt %v plan %v", request["receipt"], request["plan"])
-		}
-		runs.WriteString("child\n")
 	}
+	receipt, _ := request["receipt"].(map[string]any)
+	plan, _ := request["plan"].(map[string]any)
+	if receipt["update_id"] != "old-correlation" || plan["install_method"] != "git" {
+		return fail("receipt %v plan %v", request["receipt"], request["plan"])
+	}
+	runs.WriteString("child\n")
 	if ack != "" {
 		if err := os.WriteFile(resultPath, []byte(ack), 0o644); err != nil {
 			return fail("%v", err)
@@ -184,50 +165,6 @@ func TestOUTakeoverWaitsPropagatesStatusAndNeverReentersOldCode(t *testing.T) {
 					t.Fatalf("stdout %q", stdout.String())
 				}
 				if strings.Contains(stderr.String(), "run `icebath` again") || strings.Contains(stderr.String(), "failed") {
-					t.Fatalf("stderr %q", stderr.String())
-				}
-			})
-		}
-	}
-}
-
-func TestOUAtexitRecoversOnlyStoppedServesAfterCachedUpdate(t *testing.T) {
-	for _, acknowledged := range []bool{false, true} {
-		for _, cleanupStatus := range []int{0, 9} {
-			t.Run(fmt.Sprintf("%v-%d", acknowledged, cleanupStatus), func(t *testing.T) {
-				home := ouUseTestTakeover(t, map[string]string{"STATUS": "7", "ACK": "{}",
-					"CLEANUP_STATUS": strconv.Itoa(cleanupStatus), "CLEANUP_ACK": fmt.Sprintf(`{"serves_handled": %v}`, acknowledged)})
-				SetUpdateReceiptHooks(UpdateReceiptHooks{Current: func() map[string]any {
-					return map[string]any{"update_id": "old-correlation", "plan": map[string]any{"install_method": "git"}}
-				}})
-				var stdout, stderr bytes.Buffer
-				ctx := WithCLIStderr(withSyncOutput(context.Background(), &stdout), &stderr)
-				token := NewOrderedObject()
-				token.Set("pending", true)
-				entry := NewOrderedObject()
-				for _, kv := range [][2]any{{"purpose", "serve"}, {"profile", "work profile"}, {"host", "127.0.0.1"}, {"port", 8119}} {
-					entry.Set(kv[0].(string), kv[1])
-				}
-				token.Set("entries", []any{entry})
-				if got := ouExitCode(t, stopForRelaunch(ctx, false)); got != 7 {
-					t.Fatalf("update status %d, stderr %s", got, stderr.String())
-				}
-				if err := RelaunchStoppedServes(ctx, token); err != nil {
-					t.Fatal(err)
-				}
-				if pending, _ := token.Get("pending"); pending == false {
-					if err := RelaunchStoppedServes(ctx, token); err != nil {
-						t.Fatal(err)
-					}
-				}
-				runs, _ := os.ReadFile(filepath.Join(home, "runs"))
-				if string(runs) != "child\ncleanup\n" {
-					t.Fatalf("runs %q, stderr %s", runs, stderr.String())
-				}
-				if pending, _ := token.Get("pending"); pending != !acknowledged {
-					t.Fatalf("pending %v acknowledged %v", pending, acknowledged)
-				}
-				if got, want := strings.Contains(stderr.String(), "restart the affected"), !acknowledged || cleanupStatus != 0; got != want {
 					t.Fatalf("stderr %q", stderr.String())
 				}
 			})

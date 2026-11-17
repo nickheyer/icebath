@@ -52,7 +52,7 @@ const BlockRecurrenceLimit = 2
 // Workspace kinds a task may carry
 var ValidWorkspaceKinds = map[string]bool{"scratch": true, "worktree": true, "dir": true}
 
-// Attachment size cap shared by the dashboard, tools and CLI
+// Attachment size cap shared by the tools and CLI
 const KanbanAttachmentMaxBytes = 25 * 1024 * 1024
 
 const isWindows = runtime.GOOS == "windows"

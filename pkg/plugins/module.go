@@ -24,7 +24,6 @@ type Services struct {
 	InvokeLifecycleHook               func(ctx context.Context, hookName string, kwargs map[string]any) []any
 	RequestToolApproval               func(ctx context.Context, toolName, message, ruleKey, turnID, toolCallID, sessionID string) (map[string]any, error)
 	FailoverReason                    func(value any) (any, bool)
-	ClearDashboardAuthProviders       func()
 	MemoryProviderDir                 func(h, name string) (string, bool)
 	HostObject                        func(kind string, obj any) (name string, ok bool)
 	BindProfileSecretScope            func(ctx context.Context, home string) context.Context
@@ -39,7 +38,6 @@ type Services struct {
 	ResolveBuiltinCommand             func(name string) bool
 	DispatchTool                      func(ctx context.Context, scope, toolName string, args, kwargs map[string]any) (string, error)
 	RegisterContextReference          func(provider any) error
-	DashboardAuth                     DashboardAuthRegistry
 	Platforms                         PlatformRegistry
 	ProviderRegistries                map[string]ScopedRegistry
 	BuiltinAuxTaskKeys                func() []string
@@ -61,7 +59,6 @@ type Services struct {
 	PluginOAuthKey                    func(pluginDir string) string
 	ForgetPluginGrants                func(plugin string) error
 	ReloadGatewayPlugins              func(ctx context.Context, target, profileHome string) (map[string]any, error)
-	HostRendezvous                    HostRendezvous
 	GatewayRunningPid                 func(pidPath string, cleanupStale bool) (int, bool, error)
 	InstalledGatewayServiceKind       func(ctx context.Context) (string, bool, error)
 	RefreshPluginSessions             func(ctx context.Context, home, pluginKey, note string) error
@@ -80,21 +77,6 @@ type Services struct {
 	ParseServerLiveness               func(raw any) (ServerLiveness, error)
 	ParseCostPolicy                   func(costs, spendLimit, costUnit any, where string) error
 	DiscoverMemoryProviders           func(ctx context.Context) [][2]string
-}
-
-// Host rendezvous record of a running dashboard or Desktop backend, Record carried back to the rendezvous
-type HostRecord struct {
-	Role   string
-	Port   int
-	Record any
-}
-
-// Host rendezvous reads the activation path makes to find the running serve backend
-type HostRendezvous interface {
-	ReadRecord(role string) (*HostRecord, error)
-	RecordTokenIsConsistent(record *HostRecord) bool
-	ReadToken(role string) (string, error)
-	DialHost(record *HostRecord) string
 }
 
 // MCP configuration, registration and naming the activation path reaches through the wiring

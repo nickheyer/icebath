@@ -58,9 +58,7 @@ func takeoverRemove(path string) error {
 // Provisions the new dependency graph and returns the managed interpreter with its activation environment
 func prepare(ctx context.Context, request *pyjson.Object) (string, []string, error) {
 	root := pyrepr.Str(request.GetOr("root", nil))
-	ensurePanel(root)
 	tools.ConvertTreelessCheckoutFirst(ctx, root)
-	PublishStage("Updating Python dependencies (PM)")
 	if err := RefuseForeignOwnedVenv(ctx, root); err != nil {
 		return "", nil, err
 	}
@@ -251,22 +249,6 @@ func CmdUpdateTakeover(ctx context.Context, ns map[string]any, w io.Writer) (int
 		return 0, fmt.Errorf("KeyError: %s", pyrepr.Repr("root"))
 	}
 	root := pyrepr.Str(rootValue)
-	if _, stopped := request.Get("stopped_serves"); stopped {
-		python := pm.ResolveInstallBinary(root)
-		if python == "" {
-			fmt.Fprintln(takeoverStderr, "Cannot resume stopped backends: no selected Icebath interpreter")
-			return 1, nil
-		}
-		env, err := pm.ActivationEnvironment(ctx, root)
-		if err != nil {
-			return 0, err
-		}
-		argv := updateServeResumeArgv(python, contextPath, result)
-		child := exec.CommandContext(ctx, argv[0], argv[1:]...)
-		child.Dir, child.Env = root, env
-		child.Stdin, child.Stdout, child.Stderr = os.Stdin, w, takeoverStderr
-		return takeoverStatus(child.Run())
-	}
 	held, holder, release, err := takeoverAcquireLock(ctx, root)
 	if err != nil {
 		return 0, err

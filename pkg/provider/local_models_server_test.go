@@ -5,10 +5,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"path/filepath"
 	"reflect"
-	"strings"
 	"testing"
 	"time"
 )
@@ -50,7 +48,7 @@ func TestActivateRescansThroughStateEndpointWhenSupervisorIsNone(t *testing.T) {
 		return map[string]any{"data": known}, nil
 	}
 	lmDeps.setRuntimeEnabled = func(context.Context, bool) (map[string]any, error) { return map[string]any{}, nil }
-	lmDeps.applyAssignment = func(context.Context, string, string, string, string, string, string) (map[string]any, error) {
+	lmDeps.applyAssignment = func(context.Context, string, string, string, string) (map[string]any, error) {
 		return map[string]any{"ok": true}, nil
 	}
 	cfg := map[string]any{"local_runtime": map[string]any{"enabled": true}}
@@ -94,50 +92,6 @@ func lmRuntimeEnabled(t *testing.T) any {
 	return cfg["local_runtime"].(map[string]any)["enabled"]
 }
 
-func TestStopDisablesAndTearsDown(t *testing.T) {
-	lmTestHome(t, ".icebath")
-	stopped := false
-	lmDeps.getSupervisor = func() localModelsSupervisor { return &lmFakeSupervisor{} }
-	lmDeps.shutdownLocalRuntime = func() error { stopped = true; return nil }
-	if _, err := LocalModelsServer(context.Background(), "stop"); err != nil {
-		t.Fatal(err)
-	}
-	if !stopped {
-		t.Fatal("server not torn down")
-	}
-	if got := lmRuntimeEnabled(t); got != false {
-		t.Fatalf("enabled %v", got)
-	}
-}
-
-func TestStartEnablesAndBoots(t *testing.T) {
-	lmTestHome(t, ".icebath")
-	booted := false
-	lmDeps.ensureLocalRuntime = func(ctx context.Context, cfg map[string]any, force bool) (localModelsSupervisor, error) {
-		booted = true
-		if !force {
-			t.Fatal("start must force the boot")
-		}
-		return &lmFakeSupervisor{}, nil
-	}
-	if _, err := LocalModelsServer(context.Background(), "start"); err != nil {
-		t.Fatal(err)
-	}
-	if !booted {
-		t.Fatal("server not booted")
-	}
-	if got := lmRuntimeEnabled(t); got != true {
-		t.Fatalf("enabled %v", got)
-	}
-}
-
-func TestBogusActionRejected(t *testing.T) {
-	lmTestHome(t, ".icebath")
-	if _, err := LocalModelsServer(context.Background(), "reboot"); lmStatusOf(err) != 400 {
-		t.Fatalf("reboot %v", err)
-	}
-}
-
 func TestStatusReportsLoadedModelsFromLiveRouter(t *testing.T) {
 	lmTestHome(t, ".icebath")
 	router := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -162,55 +116,5 @@ func TestStatusReportsLoadedModelsFromLiveRouter(t *testing.T) {
 	want := map[string]any{"m-loaded": "loaded", "m-loading": "loading"}
 	if !reflect.DeepEqual(payload["loaded_models"], want) {
 		t.Fatalf("loaded %v", payload["loaded_models"])
-	}
-}
-
-func TestStopForwardsRecoveryAndPreservesConflict(t *testing.T) {
-	for _, refuse := range []bool{false, true} {
-		t.Run(map[bool]string{false: "refuse=False", true: "refuse=True"}[refuse], func(t *testing.T) {
-			lmTestHome(t, ".icebath")
-			if err := os.MkdirAll(RuntimesRoot(), 0o755); err != nil {
-				t.Fatal(err)
-			}
-			if err := os.WriteFile(localRuntimeStatePath(), []byte("{}"), 0o644); err != nil {
-				t.Fatal(err)
-			}
-			lmDeps.getSupervisor = func() localModelsSupervisor { return nil }
-			lmDeps.stateEndpoint = func() (map[string]any, error) { return nil, nil }
-			var called []bool
-			var disabled []bool
-			lmDeps.terminateStatePID = func() error {
-				called = append(called, true)
-				if refuse {
-					return httpException(409, "Another Icebath process owns this server, or its ownership could not be verified")
-				}
-				return nil
-			}
-			lmDeps.setRuntimeEnabled = func(ctx context.Context, enabled bool) (map[string]any, error) {
-				disabled = append(disabled, enabled)
-				return map[string]any{}, nil
-			}
-			_, err := LocalModelsServer(context.Background(), "stop")
-			wantStatus := 0
-			if refuse {
-				wantStatus = 409
-			}
-			if lmStatusOf(err) != wantStatus || (!refuse && err != nil) {
-				t.Fatalf("stop %v", err)
-			}
-			if refuse && !strings.Contains(err.(*HTTPException).Detail, "ownership could not be verified") {
-				t.Fatalf("detail %v", err)
-			}
-			if len(called) != 1 {
-				t.Fatalf("recovery calls %v", called)
-			}
-			want := []bool{false}
-			if refuse {
-				want = nil
-			}
-			if !reflect.DeepEqual(disabled, want) {
-				t.Fatalf("disabled %v", disabled)
-			}
-		})
 	}
 }

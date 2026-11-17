@@ -17,7 +17,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/tuigateway"
 )
 
-// Seconds of a dashboard orphan knob, the env override winning when set and the default on a bad value
+// Seconds of a sessions orphan knob, the env override winning when set and the default on a bad value
 func wsOrphanSetting(ctx context.Context, envVar, cfgKey string, def float64) float64 {
 	var raw any
 	if value, set := os.LookupEnv(envVar); set && strings.TrimSpace(value) != "" {
@@ -29,8 +29,8 @@ func wsOrphanSetting(ctx context.Context, envVar, cfgKey string, def float64) fl
 			if err != nil {
 				return
 			}
-			if dashboard, isDict := cfg["dashboard"].(map[string]any); isDict {
-				raw = dashboard[cfgKey]
+			if sessions, isDict := cfg["sessions"].(map[string]any); isDict {
+				raw = sessions[cfgKey]
 			}
 		}()
 	}
@@ -53,7 +53,7 @@ var wsOrphanReapGraceS = sync.OnceValue(func() float64 {
 var sessionTTLS = math.Max(0, envFloat("ICEBATH_TUI_SESSION_TTL_S", float64(6*3600)))
 
 // Session sources the startup sweep may close
-var orphanSweepSources = []string{"tui", "desktop", "subagent", "unknown"}
+var orphanSweepSources = []string{"tui", "subagent", "unknown"}
 
 var (
 	startupOrphanSweepMu  sync.Mutex
@@ -92,8 +92,8 @@ func orphanReaperEnabled(ctx context.Context) (enabled bool) {
 		}
 	}()
 	cfg := reaperLoadCfg(ctx)
-	if dashboard, isDict := cfg["dashboard"].(map[string]any); isDict {
-		if value, present := dashboard["startup_orphan_sweep"]; present {
+	if sessions, isDict := cfg["sessions"].(map[string]any); isDict {
+		if value, present := sessions["startup_orphan_sweep"]; present {
 			if value == nil {
 				return true
 			}
@@ -103,7 +103,7 @@ func orphanReaperEnabled(ctx context.Context) (enabled bool) {
 	return true
 }
 
-// Ends the tui, desktop and subagent rows a dead process left open, sparing every id this process holds
+// Ends the tui and subagent rows a dead process left open, sparing every id this process holds
 func sweepOrphanedSessionRows(ctx context.Context) []string {
 	db := reaperDB(ctx)
 	if db == nil || sessionTTLS <= 0 {

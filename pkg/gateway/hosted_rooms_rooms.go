@@ -711,7 +711,7 @@ func DeleteRoomLinkRecords(ctx context.Context, dbPath, roomID string) (int64, e
 	return deleted, err
 }
 
-// Whether a live target side RoomLink reservation fences Desktop
+// Whether a live target side RoomLink reservation fences direct local prompts
 func PeerRoomIsReserved(ctx context.Context, dbPath string, roomID, targetProfile any, now *float64) (bool, error) {
 	room, err := hostedRoomID(roomID)
 	if err != nil {

@@ -8,7 +8,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/provider"
 )
 
-func TestDesktopSurfacesCarryTheExactTierUltrafastIsNeverPlainFast(t *testing.T) {
+func TestModelSurfacesCarryTheExactTierUltrafastIsNeverPlainFast(t *testing.T) {
 	t.Setenv("ICEBATH_HOME", t.TempDir())
 	rows := []map[string]any{
 		{"slug": "openai-codex", "models": []any{"gpt-6-astra-900k", "gpt-6.1-sol", "gpt-6.1-sol-900k", "gpt-6-sol", "gpt-daybreak-blue-latest-900k"}},

@@ -122,10 +122,7 @@ func (a *chArchive) reader(t *testing.T, repository string) *ChannelReader {
 }
 
 func chIdentity(name, token string) map[string]any {
-	pascal := "IcebathChannel" + token
-	return map[string]any{"token": token, "displayName": "Icebath " + name, "appId": "ai.icebath.channel.h" + token,
-		"appNamePascal": pascal, "artifactNamePascal": pascal, "cliName": "icebath-" + name,
-		"windowsExecutableName": pascal, "msixAppIdWithOrg": "NickHeyer." + pascal}
+	return map[string]any{"token": token, "displayName": "Icebath " + name, "cliName": "icebath-" + name}
 }
 
 func chHex(t *testing.T, n int) string {
@@ -148,13 +145,13 @@ func (a *chArchive) create(t *testing.T, name string) map[string]any {
 func (a *chArchive) allocate(t *testing.T, name, commit, sourceVersion string) map[string]any {
 	record := a.get(t, "releases/channels/"+name+".json")
 	seq, _ := record["nextSequence"].(json.Number).Int64()
-	version, windows, err := channelPackageVersions(seq)
+	version, err := channelSequenceVersion(seq)
 	if err != nil {
 		t.Fatal(err)
 	}
 	request := map[string]any{"schema": 1, "buildId": chHex(t, 16), "channel": name, "sequence": seq,
 		"repository": "example/icebath-agent", "commit": commit, "sourceVersion": sourceVersion, "version": version,
-		"windowsVersion": windows, "identity": record["identity"], "bundleEnv": map[string]any{}, "publicBase": a.url + "/bucket"}
+		"identity": record["identity"], "publicBase": a.url + "/bucket"}
 	rev, _ := record["revision"].(json.Number).Int64()
 	record["revision"], record["nextSequence"] = rev+1, seq+1
 	record["lastAllocation"] = map[string]any{"buildId": request["buildId"], "sequence": seq}
@@ -163,15 +160,10 @@ func (a *chArchive) allocate(t *testing.T, name, commit, sourceVersion string) m
 	return request
 }
 
-// Darwin manifest of a request published as its channel head
+// Manifest of a request published as its channel head
 func (a *chArchive) seedManifest(t *testing.T, request map[string]any) (map[string]any, map[string]any) {
 	prefix := "releases/channel-builds/" + request["buildId"].(string) + "/"
-	identity := request["identity"].(map[string]any)
-	manifest := map[string]any{"schema": 1, "receiverProtocol": 1, "request": request, "packages": []any{map[string]any{
-		"platform": "darwin", "arch": "arm64", "variant": "bundled",
-		"artifact": map[string]any{"key": prefix + "darwin/package.zip", "sha256": strings.Repeat("f", 64), "size": 123},
-		"version":  request["version"], "identity": identity["appId"], "teamId": "ABCDEFGHIJ",
-		"feed": map[string]any{"key": prefix + "darwin/stable-mac.yml", "channel": "stable"}}}}
+	manifest := map[string]any{"schema": 1, "receiverProtocol": 1, "request": request}
 	body := a.put(t, prefix+"build.json", manifest)
 	sum := sha256.Sum256(body)
 	head := map[string]any{"buildId": request["buildId"], "sequence": request["sequence"], "manifestKey": prefix + "build.json",
@@ -198,7 +190,7 @@ func TestChannelResolveVerifiesExactManifestAndPreservesRetirementConstraints(t 
 		a.create(t, name)
 	}
 	request := a.allocate(t, "next-preview", strings.Repeat("a", 40), "1.2.3")
-	request["version"], request["windowsVersion"], request["releaseTag"] = "1.2.3", "1.2.3.0", "v1.2.3"
+	request["version"], request["releaseTag"] = "1.2.3", "v1.2.3"
 	manifest, record := a.seedManifest(t, request)
 	record["policy"] = "stable-release"
 	a.put(t, "releases/channels/next-preview.json", record)
@@ -219,7 +211,7 @@ func TestChannelResolveVerifiesExactManifestAndPreservesRetirementConstraints(t 
 	}
 	newer := chCopy(t, request)
 	newer["buildId"], newer["sequence"], newer["sourceVersion"] = strings.Repeat("f", 32), 2, "1.3.0"
-	newer["version"], newer["windowsVersion"], newer["releaseTag"] = "1.3.0", "1.3.0.0", "v1.3.0"
+	newer["version"], newer["releaseTag"] = "1.3.0", "v1.3.0"
 	record["nextSequence"] = 3
 	a.put(t, "releases/channels/next-preview.json", record)
 	a.seedManifest(t, newer)
@@ -361,7 +353,7 @@ func TestChannelReaderRejectsCyclesIdentitySubstitutionAndCrossAuthority(t *test
 	manifest, record := a.seedManifest(t, request)
 	reader := a.reader(t, "example/icebath-agent")
 	substituted := chCopy(t, manifest)
-	substituted["request"].(map[string]any)["identity"].(map[string]any)["appId"] = "ai.other.identity"
+	substituted["request"].(map[string]any)["identity"].(map[string]any)["cliName"] = "icebath-other"
 	head := record["head"].(map[string]any)
 	raw := a.put(t, head["manifestKey"].(string), substituted)
 	sum := sha256.Sum256(raw)
@@ -382,26 +374,21 @@ func TestChannelReaderRejectsCyclesIdentitySubstitutionAndCrossAuthority(t *test
 	chExpectErr(t, err, "cycle")
 }
 
-func TestChannelLegacyBootstrapUsesRealArchiveKeys(t *testing.T) {
+func TestChannelReleasePoliciesResolveTheirTaggedBuilds(t *testing.T) {
 	a := newChArchive(t)
 	ctx := context.Background()
 	preview := a.create(t, "temporary")
 	request := a.allocate(t, "temporary", strings.Repeat("a", 40), "2.0.0")
 	manifest, _ := a.seedManifest(t, request)
 	reader := a.reader(t, "example/icebath-agent")
-	for _, c := range []struct{ name, policy, tag, build, windows string }{
-		{"stable", "stable-release", "v2.0.0", strings.Repeat("a", 32), "2.0.0.0"},
-		{"canary", "canary-release", "v2.1.0+canary.20260913T000100Z", strings.Repeat("b", 32), "2.1.0.10"},
+	for _, c := range []struct{ name, policy, tag, build string }{
+		{"stable", "stable-release", "v2.0.0", strings.Repeat("a", 32)},
+		{"canary", "canary-release", "v2.1.0+canary.20260913T000100Z", strings.Repeat("b", 32)},
 	} {
-		legacy := chCopy(t, manifest)
-		req := legacy["request"].(map[string]any)
-		req["channel"], req["buildId"], req["releaseTag"] = c.name, c.build, c.tag
-		req["version"], req["windowsVersion"] = c.tag[1:], c.windows
-		pkg := legacy["packages"].([]any)[0].(map[string]any)
-		pkg["version"] = c.tag[1:]
-		pkg["artifact"].(map[string]any)["key"] = "releases/tag/" + c.tag + "/actual.zip"
-		pkg["feed"].(map[string]any)["key"] = "releases/tag/" + c.tag + "/stable-mac.yml"
-		body := chCanon(t, legacy)
+		release := chCopy(t, manifest)
+		req := release["request"].(map[string]any)
+		req["channel"], req["buildId"], req["releaseTag"], req["version"] = c.name, c.build, c.tag, c.tag[1:]
+		body := chCanon(t, release)
 		sum := sha256.Sum256(body)
 		record := chCopy(t, preview)
 		record["name"], record["policy"], record["nextSequence"] = c.name, c.policy, 2
@@ -411,53 +398,24 @@ func TestChannelLegacyBootstrapUsesRealArchiveKeys(t *testing.T) {
 		a.putRaw("releases/channel-builds/"+c.build+"/build.json", body)
 		a.put(t, "releases/channels/"+c.name+".json", record)
 		res, err := reader.Resolve(ctx, c.name)
-		if err != nil || !pyjson.Equal(res.Manifest, jv(t, legacy)) {
+		if err != nil || !pyjson.Equal(res.Manifest, jv(t, release)) {
 			t.Fatalf("%s resolve %v", c.name, err)
 		}
-		invalid := []string{"2.1.0.65536", "65536.1.0.0", "2.1.0.-1", "2.1.0.1.0", "2.1.0.x"}
-		if c.policy == "stable-release" {
-			invalid = append(invalid, "2.0.0.10")
-		}
-		for _, windows := range invalid {
-			bad := chCopy(t, req)
-			bad["windowsVersion"] = windows
-			_, err := validateChannelRequest(jv(t, bad), nil, nil, c.policy)
-			chExpectErr(t, err, "Windows version")
-		}
+		bad := chCopy(t, req)
+		bad["version"] = "9.9.9"
+		_, err = validateChannelRequest(jv(t, bad), nil, nil, c.policy)
+		chExpectErr(t, err, "Release version mismatch")
 	}
 }
 
-func TestChannelSequenceVersionsRemainMonotonicAtNativeRollover(t *testing.T) {
-	quad := func(text string) [4]int64 {
-		var out [4]int64
-		for i, part := range strings.Split(text, ".") {
-			n, _ := json.Number(part).Int64()
-			out[i] = n
-		}
-		return out
-	}
+func TestChannelSequenceVersionsCoverTheRangeAndNeverWrap(t *testing.T) {
 	for _, seq := range []int64{1, 65535, 65536, 1<<32 - 1} {
-		version, windows, err := channelPackageVersions(seq)
-		if err != nil {
-			t.Fatal(err)
-		}
-		q := quad(windows)
-		if version != fmt.Sprintf("0.0.%d", seq) || q[1]*65536+q[2] != seq || q[0] > 65535 || q[1] > 65535 || q[2] > 65535 || q[3] > 65535 {
-			t.Fatalf("%d gave %s %s", seq, version, windows)
-		}
-		if seq > 1 {
-			_, prev, _ := channelPackageVersions(seq - 1)
-			p := quad(prev)
-			if !(q[0] > p[0] || (q[0] == p[0] && (q[1] > p[1] || (q[1] == p[1] && q[2] > p[2])))) {
-				t.Fatalf("%d quad %s not above %s", seq, windows, prev)
-			}
+		if version, err := channelSequenceVersion(seq); err != nil || version != fmt.Sprintf("0.0.%d", seq) {
+			t.Fatalf("%d gave %s %v", seq, version, err)
 		}
 	}
-}
-
-func TestChannelSequenceExhaustionNeverWraps(t *testing.T) {
 	for _, seq := range []any{int64(0), int64(-1), true, int64(1 << 32), "1"} {
-		_, _, err := channelPackageVersions(seq)
+		_, err := channelSequenceVersion(seq)
 		chExpectErr(t, err, "Invalid sequence")
 	}
 }
@@ -475,7 +433,7 @@ func TestChannelMalformedRecordAndUnqualifiedRetirementNeverResolve(t *testing.T
 	a.put(t, "releases/channels/preview.json", record)
 	a.create(t, "destination")
 	request := a.allocate(t, "destination", strings.Repeat("a", 40), "1.0.0")
-	request["version"], request["windowsVersion"], request["releaseTag"] = "1.0.0", "1.0.0.0", "v1.0.0"
+	request["version"], request["releaseTag"] = "1.0.0", "v1.0.0"
 	_, target := a.seedManifest(t, request)
 	target["policy"] = "stable-release"
 	a.put(t, "releases/channels/destination.json", target)
@@ -500,45 +458,56 @@ func TestChannelMalformedWireTypesAreChannelErrors(t *testing.T) {
 func chStableRequest(version, archiveRef string) map[string]any {
 	request := map[string]any{"schema": 1, "buildId": strings.Repeat("a", 32), "channel": "stable", "sequence": 1,
 		"repository": "example/icebath-agent", "commit": strings.Repeat("b", 40), "sourceVersion": version, "version": version,
-		"windowsVersion": version + ".0", "releaseTag": "v" + version, "identity": chIdentity("stable", strings.Repeat("a", 16)),
-		"bundleEnv": map[string]any{}, "publicBase": "https://releases.example"}
+		"releaseTag": "v" + version, "identity": chIdentity("stable", strings.Repeat("a", 16)), "publicBase": "https://releases.example"}
 	if archiveRef != "" {
 		request["archiveRef"] = archiveRef
 	}
 	return request
 }
 
-func chStableManifest(request map[string]any, archivePrefix string) (map[string]any, map[string]any) {
-	identity := request["identity"].(map[string]any)
-	manifest := map[string]any{"schema": 1, "receiverProtocol": 1, "request": request, "packages": []any{map[string]any{
-		"platform": "darwin", "arch": "arm64", "variant": "bundled", "identity": identity["appId"], "version": request["version"],
-		"teamId": "ABCDEFGHIJ", "artifact": map[string]any{"key": archivePrefix + "Icebath.dmg", "sha256": strings.Repeat("d", 64), "size": 100},
-		"feed": map[string]any{"key": archivePrefix + "stable-mac.yml", "channel": "stable"}}}}
+// Stable manifest of the request and the active record whose head it is
+func chStableManifest(request map[string]any) (map[string]any, map[string]any) {
+	manifest := map[string]any{"schema": 1, "receiverProtocol": 1, "request": request}
 	record := map[string]any{"schema": 1, "name": request["channel"], "repository": request["repository"], "policy": "stable-release",
-		"state": "active", "revision": 1, "nextSequence": 2, "identity": identity,
+		"state": "active", "revision": 1, "nextSequence": 2, "identity": request["identity"],
 		"head": map[string]any{"buildId": request["buildId"], "sequence": request["sequence"],
 			"manifestKey": "releases/channel-builds/" + request["buildId"].(string) + "/build.json", "sha256": strings.Repeat("a", 64)}}
 	return manifest, record
 }
 
-func TestChannelArchiveRefNamesTheProtectedArchivePrefix(t *testing.T) {
-	for _, c := range []struct{ ref, prefix string }{{"rc.2-v1.2.3", "releases/tag/rc.2-v1.2.3/"}, {"v1.2.3", "releases/tag/v1.2.3/"}} {
-		request := chStableRequest("1.2.3", c.ref)
+func TestChannelArchiveRefAcceptsAttemptAndTagRefs(t *testing.T) {
+	for _, ref := range []string{"rc.2-v1.2.3", "v1.2.3"} {
+		request := chStableRequest("1.2.3", ref)
 		if _, err := validateChannelRequest(jv(t, request), nil, nil, "stable-release"); err != nil {
-			t.Fatalf("%s request %v", c.ref, err)
+			t.Fatalf("%s request %v", ref, err)
 		}
-		manifest, record := chStableManifest(request, c.prefix)
+		manifest, record := chStableManifest(request)
 		got, err := validateChannelManifest(jv(t, manifest), jv(t, record).(*pyjson.Object), "https://releases.example")
 		if err != nil || !pyjson.Equal(got, jv(t, manifest)) {
-			t.Fatalf("%s manifest %v", c.ref, err)
+			t.Fatalf("%s manifest %v", ref, err)
 		}
 	}
 }
 
-func TestChannelStableManifestWithoutArchiveRefFailsClosedOutsideTheTagPrefix(t *testing.T) {
-	manifest, record := chStableManifest(chStableRequest("1.2.3", ""), "releases/tag/rc.2-v1.2.3/")
-	_, err := validateChannelManifest(jv(t, manifest), jv(t, record).(*pyjson.Object), "https://releases.example")
-	chExpectErr(t, err, "namespace")
+func TestChannelManifestIgnoresFieldsOutsideTheChannelSchema(t *testing.T) {
+	request := chStableRequest("1.2.3", "")
+	manifest, record := chStableManifest(request)
+	record["identity"] = chCopy(t, request["identity"].(map[string]any))
+	got, err := validateChannelManifest(jv(t, manifest), jv(t, record).(*pyjson.Object), "https://releases.example")
+	if err != nil || !pyjson.Equal(got, jv(t, manifest)) {
+		t.Fatalf("manifest without extra fields %v", err)
+	}
+	identity := request["identity"].(map[string]any)
+	identity["appId"], identity["msixAppIdWithOrg"], identity["windowsExecutableName"] = "not an app id", "", 7
+	request["windowsVersion"], request["bundleEnv"] = "x", []any{"not an object"}
+	manifest["packages"] = []any{map[string]any{"platform": "win32", "arch": "x64", "variant": "bundled", "publisher": "", "teamId": "bad"}, "x"}
+	got, err = validateChannelManifest(jv(t, manifest), jv(t, record).(*pyjson.Object), "https://releases.example")
+	if err != nil || !pyjson.Equal(got, jv(t, manifest)) {
+		t.Fatalf("manifest with extra fields %v", err)
+	}
+	identity["cliName"] = "icebath-other"
+	_, err = validateChannelManifest(jv(t, manifest), jv(t, record).(*pyjson.Object), "https://releases.example")
+	chExpectErr(t, err, "identity mismatch")
 }
 
 func TestChannelArchiveRefMustNameTheReleaseVersion(t *testing.T) {

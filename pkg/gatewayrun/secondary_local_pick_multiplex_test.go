@@ -88,7 +88,7 @@ func TestSecondaryPickReachesNextTurnAfterPrimaryLocalSession(t *testing.T) {
 
 	owner := connect(secondary)
 	ref, err := gateway.CreateLocalSession(gateway.OwnerScope(ctx, secondary, false), secondary, owner.Actor(), map[string]any{
-		"request_id": "desktop", "source": "tui", "cwd": t.TempDir(), "model": "default-a", "toolsets": []any{}})
+		"request_id": "secondary-pick", "source": "tui", "cwd": t.TempDir(), "model": "default-a", "toolsets": []any{}})
 	if err != nil {
 		t.Fatal(err)
 	}

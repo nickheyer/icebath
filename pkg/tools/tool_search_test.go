@@ -92,7 +92,7 @@ func TestToolSearchClassification(t *testing.T) {
 	ctx := context.Background()
 	registerSearchTool(t, "mcp__srv__thing", "mcp-srv", nil)
 	registerSearchTool(t, "plugin_tool_x", "myplugin", nil)
-	registerSearchTool(t, "preview_open_x", "desktop_ui", nil)
+	registerSearchTool(t, "project_probe_x", "project", nil)
 	defer_ := LoadToolSearchConfig(env).EffectiveDeferTools()
 	for _, core := range []string{"terminal", "read_file", "write_file", "clarify"} {
 		if IsDeferrableToolName(ctx, env, core, defer_) {
@@ -107,10 +107,10 @@ func TestToolSearchClassification(t *testing.T) {
 	if !IsDeferrableToolName(ctx, env, "mcp__srv__thing", defer_) || !IsDeferrableToolName(ctx, env, "plugin_tool_x", defer_) {
 		t.Fatal("mcp or plugin tool not deferrable")
 	}
-	if IsDeferrableToolName(ctx, env, "preview_open_x", defer_) {
-		t.Fatal("gui surface tool deferred")
+	if IsDeferrableToolName(ctx, env, "project_probe_x", defer_) {
+		t.Fatal("client surface tool deferred")
 	}
-	if !IsDeferrableToolName(ctx, env, "preview_open_x", map[string]bool{"preview_open_x": true}) {
+	if !IsDeferrableToolName(ctx, env, "project_probe_x", map[string]bool{"project_probe_x": true}) {
 		t.Fatal("defer override ignored")
 	}
 	if !IsDeferrableToolName(ctx, env, "todo_list", defer_) {

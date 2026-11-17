@@ -102,7 +102,7 @@ func blueprintSlotDefault(b *AutomationBlueprint, names ...string) any {
 	return nil
 }
 
-// JSON a dashboard or GUI form renderer needs for the blueprint
+// JSON a form renderer needs for the blueprint
 func blueprintFormSchema(b *AutomationBlueprint) *pyjson.Object {
 	o := pyjson.NewObject()
 	o.Set("key", b.Key)
@@ -235,7 +235,7 @@ func humanizeBlueprintSchedule(b *AutomationBlueprint) string {
 	return "on a schedule"
 }
 
-// Unified serializable shape for docs and the dashboard API
+// Unified serializable shape of a blueprint for docs
 func blueprintCatalogEntry(b *AutomationBlueprint) *pyjson.Object {
 	o := blueprintFormSchema(b)
 	if b.Plugin != "" {

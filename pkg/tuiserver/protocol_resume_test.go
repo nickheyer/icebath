@@ -104,7 +104,7 @@ func TestSessionResumeDeferredAndOmittedPathsGuardTheTipOnly(t *testing.T) {
 	}
 	runawayLineage(t, db, "deep-lineage")
 	for _, params := range []map[string]any{
-		{"defer_history": true, "omit_messages": true, "source": "desktop"},
+		{"defer_history": true, "omit_messages": true, "source": "tui"},
 		{"omit_messages": true},
 		{"lazy": true},
 	} {
@@ -148,7 +148,7 @@ func TestDeferredHydrationFallsBackToTipWhenLineageExceedsLimit(t *testing.T) {
 	session.Set("resume_hydrating", true)
 	session.Set("resume_message_count", 28_730)
 	swapSessions(t, map[string]*tuigateway.Session{"hyd": session})
-	scheduleResumeHydration(context.Background(), "hyd", "deep-lineage", db, false, false)
+	scheduleResumeHydration(context.Background(), "hyd", "deep-lineage", db, false)
 	if !ready.Wait(5) {
 		t.Fatal("hydration never finished")
 	}
@@ -175,7 +175,7 @@ func TestSessionBranchStoredAcceptsIdempotencyKey(t *testing.T) {
 	storeTranscript(t, db, "parent", "",
 		map[string]any{"role": "user", "content": "first question", "timestamp": 1},
 		map[string]any{"role": "assistant", "content": "first answer", "timestamp": 2})
-	params := map[string]any{"cols": 96, "parent_session_id": "parent", "source": "desktop", "idempotency_key": "branch-stored-retry-abc"}
+	params := map[string]any{"cols": 96, "parent_session_id": "parent", "source": "tui", "idempotency_key": "branch-stored-retry-abc"}
 	call := func(rid string) string {
 		t.Helper()
 		return createdSID(t, handleRequest(context.Background(), map[string]any{"id": rid, "method": "session.branch_stored", "params": maps.Clone(params)}))

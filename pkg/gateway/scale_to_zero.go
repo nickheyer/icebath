@@ -2,22 +2,18 @@ package gateway
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"log/slog"
-	"math"
 	"net"
 	"net/http"
 	"net/url"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
@@ -37,9 +33,6 @@ const (
 	scaleToZeroResponseReadLimit    = 65536
 	scaleToZeroRejectedBodyMaxBytes = 500
 )
-
-// Dashboard client liveness marker relative to the process home
-var DashboardClientHeartbeatRel = filepath.Join("state", "dashboard_clients.heartbeat")
 
 var (
 	scaleToZeroTruthy         = map[string]bool{"1": true, "true": true, "yes": true, "on": true}
@@ -92,60 +85,6 @@ func ShouldArm(enabled, relayOnlyOrAbsent bool, wakeURL *string) bool {
 // No active work, no live background work and no inbound within the idle window
 func IsIdle(activeWorkCount int, secondsSinceLastInbound, idleTimeoutSeconds float64, hasLiveBackgroundWork bool) bool {
 	return activeWorkCount <= 0 && !hasLiveBackgroundWork && secondsSinceLastInbound >= idleTimeoutSeconds
-}
-
-// Dashboard client liveness marker under the given home, the process home when empty
-func DashboardClientHeartbeatPath(hermesHome string) string {
-	if hermesHome == "" {
-		hermesHome = home.Process()
-	}
-	return filepath.Join(hermesHome, DashboardClientHeartbeatRel)
-}
-
-// Stamps the dashboard client marker now, false when the touch fails
-func TouchDashboardClientHeartbeat(path string) bool {
-	if path == "" {
-		path = DashboardClientHeartbeatPath("")
-	}
-	err := func() error {
-		if err := os.MkdirAll(filepath.Dir(path), 0o777); err != nil {
-			return err
-		}
-		f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o666)
-		if err != nil {
-			return err
-		}
-		if err := f.Close(); err != nil {
-			return err
-		}
-		now := time.Now()
-		return os.Chtimes(path, now, now)
-	}()
-	if err != nil {
-		scaleToZeroLog().Debug("scale-to-zero: dashboard heartbeat touch failed", "error", err)
-		return false
-	}
-	return true
-}
-
-// Epoch seconds a dashboard client was last seen clamped to now, nil when never, now when unreadable
-func DashboardClientLastSeen(path string, now *float64) *float64 {
-	current := float64(time.Now().UnixNano()) / 1e9
-	if now != nil {
-		current = *now
-	}
-	if path == "" {
-		path = DashboardClientHeartbeatPath("")
-	}
-	info, err := os.Stat(path)
-	if errors.Is(err, os.ErrNotExist) {
-		return nil
-	}
-	if err != nil {
-		return &current
-	}
-	mtime := math.Min(float64(info.ModTime().UnixNano())/1e9, current)
-	return &mtime
 }
 
 // True when Fly machine identity is present and the local Machines API socket exists

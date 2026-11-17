@@ -339,26 +339,11 @@ func doFullMCPReload(ctx context.Context) {
 
 // Reloads MCP servers behind the prompt cache confirm gate, coalescing a follower onto a completed leader reload
 func reloadMCP(ctx context.Context, rid any, params map[string]any, _ *tuigateway.Session) (map[string]any, error) {
-	session := tuigateway.SessionRecord(strOr(params["session_id"]))
 	if !truthy(params["confirm"]) && mcpReloadConfirmRequired(ctx) {
 		message := "⚠️  /reload-mcp invalidates the prompt cache (next message re-sends full input tokens). " +
 			"Reply `/reload-mcp now` to proceed, or `/reload-mcp always` to proceed and " +
 			"silence this prompt permanently."
 		return ok(rid, map[string]any{"status": "confirm_required", "message": message}), nil
-	}
-	if session != nil && len(session.Fields()) > 0 && sessionUsesComputeHost(ctx, session, nil) {
-		var ack any
-		failure := catchPanic(func() {
-			supervisor, err := getComputeHostSupervisor(ctx, nil)
-			panicIf(err)
-			reply, err := supervisor.ReloadMCP(strOr(params["session_id"]), "reload-mcp-"+pyrepr.Str(rid))
-			panicIf(err)
-			ack = reply
-		})
-		if failure != nil {
-			return rpcErr(rid, 5019, "compute-host reload_mcp failed: "+panicMessage(failure), nil), nil
-		}
-		return ok(rid, map[string]any{"status": "reloaded", "turn_isolation": true, "host_ack": ack}), nil
 	}
 	reqRev := strOr(params["rev"])
 	if mcpReloadLock.TryLock() {

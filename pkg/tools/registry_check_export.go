@@ -6,6 +6,3 @@ import "context"
 func (r *Registry) CheckCached(ctx context.Context, env *Env, fn func(*Env) bool) bool {
 	return r.checkCached(ctx, env, fn)
 }
-
-// Identity of a probe function value, equal for the same registered check
-func CheckFnID(fn func(*Env) bool) uintptr { return fnPointer(fn) }

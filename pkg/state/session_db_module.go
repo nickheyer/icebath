@@ -79,8 +79,8 @@ func NewSessionResumeTooLargeError(messageCount int) *SessionResumeTooLargeError
 
 func (e *SessionResumeTooLargeError) Error() string {
 	return fmt.Sprintf("This session is too long to reload safely (%d messages; limit %d). "+
-		"Start a fresh chat and keep a copy with the dashboard Sessions page's Export action or "+
-		"`icebath sessions export --format md --session-id <id>` (neither is capped), or raise the limit "+
+		"Start a fresh chat and keep a copy with "+
+		"`icebath sessions export --format md --session-id <id>` (not capped), or raise the limit "+
 		"with `icebath config set sessions.max_resume_messages 0`.", e.MessageCount, e.Limit)
 }
 
@@ -95,8 +95,8 @@ type SessionExportTooLargeError struct {
 func (e *SessionExportTooLargeError) Error() string {
 	limit, _ := pyrepr.Format(int64(e.Limit), ",")
 	return fmt.Sprintf("Session '%s' has more than %s exportable messages; the JSON/JSONL "+
-		"backup is built in memory and capped per session. Use the dashboard Sessions page's streaming "+
-		"Export action, or set sessions.max_export_messages: 0 in config.yaml to disable the guard.", e.SessionID, limit)
+		"backup is built in memory and capped per session. Use the uncapped "+
+		"`icebath sessions export --format md --session-id <id>`, or set sessions.max_export_messages: 0 in config.yaml to disable the guard.", e.SessionID, limit)
 }
 
 func (e *SessionExportTooLargeError) PyTypeName() string { return "ValueError" }

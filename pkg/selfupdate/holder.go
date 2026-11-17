@@ -23,7 +23,6 @@ var holderFlags struct {
 
 func init() {
 	updaterecord.SetRuntimeHostMatcher(isRuntimeHost)
-	gateway.HolderSubcommand = hermesHolderSubcommand
 }
 
 // Installs the top level parser's value consuming option strings, called by the command tree
@@ -104,12 +103,7 @@ func hermesHolderSubcommand(cmdline string) (string, bool) {
 	return "", false
 }
 
-// Reports whether a command line is a long lived icebath host, a gateway run, serve or dashboard
+// Reports whether a command line is a long lived icebath gateway host
 func isRuntimeHost(cmdline []string) bool {
-	line := strings.Join(cmdline, " ")
-	if gateway.LooksLikeGatewayCommandLine(line) {
-		return true
-	}
-	sub, ok := hermesHolderSubcommand(line)
-	return ok && (sub == "serve" || sub == "dashboard")
+	return gateway.LooksLikeGatewayCommandLine(strings.Join(cmdline, " "))
 }

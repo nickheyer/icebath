@@ -29,7 +29,7 @@ func TestHealStatsSurface(t *testing.T) {
 		}
 		empty := LogSnapshot{}
 		snapshots := map[string]LogSnapshot{}
-		for _, name := range []string{"agent", "errors", "gateway", "gui", "desktop"} {
+		for _, name := range []string{"agent", "errors", "gateway"} {
 			snapshots[name] = empty
 		}
 		report, err := debugCollectDebugReport(ctx, 5, "dump", snapshots)

@@ -35,7 +35,7 @@ func (*dropTransport) Write(obj *pyjson.Object) bool { return false }
 
 func (*dropTransport) Close() {}
 
-// Sink of every session whose WebSocket client left, in place of stdio that an embedding desktop captures
+// Sink of every session whose WebSocket client left, in place of the stdio sink
 var detachedWSTransport Transport = &dropTransport{}
 
 // Installs the predicate that mutes freeform events of the session whose turn is diagnostic only

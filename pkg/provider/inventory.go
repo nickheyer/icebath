@@ -346,7 +346,7 @@ func stripAggregatorOverlaps(ctx context.Context, rows []map[string]any) {
 	}
 }
 
-// BuildModelOptionsPayload is the shared dashboard, API server and TUI payload with limits and usage attached
+// BuildModelOptionsPayload is the shared API server and TUI payload with limits and usage attached
 func BuildModelOptionsPayload(ctx context.Context, pc PickerConfigContext, explicitOnly, includeUnconfigured, refresh bool) (map[string]any, error) {
 	if ctx == nil {
 		ctx = context.Background()

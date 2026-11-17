@@ -30,9 +30,9 @@ func makeAdapter(t *testing.T, apiKey string, corsOrigins []any) *APIServerAdapt
 }
 
 // Application of the adapter with the CORS and security header middlewares and its routes, not started
-func createApp(t *testing.T, adapter *APIServerAdapter) *gateway.WebApplication {
+func createApp(t *testing.T, adapter *APIServerAdapter) *gateway.HTTPApp {
 	t.Helper()
-	app := gateway.NewWebApplication(1024 * 1024)
+	app := gateway.NewHTTPApp(1024 * 1024)
 	app.Middlewares = []gateway.WebMiddleware{corsMiddlewareFor(app), securityHeadersMiddleware}
 	app.State["api_server_adapter"] = adapter
 	for _, route := range adapter.httpRouteTable() {
@@ -50,10 +50,10 @@ type testClient struct {
 }
 
 // Starts the application on a loopback port for the test's lifetime
-func newTestClient(t *testing.T, app *gateway.WebApplication) *testClient {
+func newTestClient(t *testing.T, app *gateway.HTTPApp) *testClient {
 	t.Helper()
 	host := "127.0.0.1"
-	runner, err := gateway.StartWebApp(context.Background(), app, &host, 0, gateway.ListenOptions{})
+	runner, err := gateway.StartHTTPApp(context.Background(), app, &host, 0, gateway.ListenOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}

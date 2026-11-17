@@ -16,6 +16,3 @@ func ProbeSingleServerDetails(ctx context.Context, env *tools.Env, name string, 
 
 // Whether a usable OAuth token for the server is stored in the home of ctx
 func OAuthTokensPresent(ctx context.Context, name string) bool { return oauthTokensPresent(ctx, name) }
-
-// Probe or display text with every credential header value and auth scheme span replaced
-func RedactProbeText(text string) string { return redactProbeText(text) }

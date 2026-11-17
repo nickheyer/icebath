@@ -199,7 +199,7 @@ func (e *MessageEvent) ExtendMedia(other *MessageEvent) {
 	e.MediaTypes = append(e.MediaTypes, other.MediaTypes...)
 }
 
-// Message text with the leading desktop attachment reference tags stripped
+// Message text with the leading attachment reference tags stripped
 func (e *MessageEvent) commandText() string {
 	return pystr.Lstrip(attachmentRefRE.ReplaceAllString(pystr.Lstrip(e.Text), ""))
 }

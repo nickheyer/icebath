@@ -11,7 +11,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 )
 
-// Command that hands a URL to the desktop, nil on a platform without one
+// Command that opens a URL with the OS default handler, nil on a platform without one
 func openCommand(platformID string) []string {
 	switch platformID {
 	case "darwin":
@@ -139,13 +139,12 @@ func usageLimitDialog(limit map[string]any) billingDialog {
 // Title of the setup required panel
 func setupRequiredTitle() string { return tr("content.setup.title") }
 
-// Sections of the setup required panel, the intro, the actions and the footer
+// Sections of the setup required panel, the intro and the actions
 func buildSetupRequiredSections() []panelSection {
-	intro, actions, footer := tr("content.setup.intro"), tr("content.setup.actions"), tr("content.setup.footer")
+	intro, actions := tr("content.setup.intro"), tr("content.setup.actions")
 	return []panelSection{
 		{Text: &intro},
 		{Rows: [][2]string{{"/setup", tr("content.setup.setupRow")}, {"/model", tr("content.setup.modelRow")}, {"Ctrl+C", tr("content.setup.exitRow")}}, Title: &actions},
-		{Text: &footer},
 	}
 }
 

@@ -81,7 +81,7 @@ func TestInterruptWithPendingBroadcastsApprovalCancelled(t *testing.T) {
 	session := loudDenySession(t)
 	events := captureBroadcasts(t)
 	entry := loudDenyPending(t)
-	interruptSessionTurn(context.Background(), loudDenySID, session, "client-gone-"+loudDenySID, true)
+	interruptSessionTurn(context.Background(), loudDenySID, session, true)
 	assertCancelledPayload(t, cancelledEvents(events), "ws_orphan_reap")
 	if entry.Result != "deny" || !entryWoken(entry) || len(tools.ListGatewayApprovals(loudDenySessionKey)) != 0 {
 		t.Fatalf("entry result %q woken %v queue %v", entry.Result, entryWoken(entry), tools.ListGatewayApprovals(loudDenySessionKey))
@@ -92,7 +92,7 @@ func TestInterruptEmptyQueueEmitsNothing(t *testing.T) {
 	session := loudDenySession(t)
 	events := captureBroadcasts(t)
 	tools.UnregisterGatewayNotify(loudDenySessionKey)
-	interruptSessionTurn(context.Background(), loudDenySID, session, "", false)
+	interruptSessionTurn(context.Background(), loudDenySID, session, false)
 	if got := cancelledEvents(events); len(got) != 0 {
 		t.Fatalf("cancelled %v", got)
 	}
@@ -116,7 +116,7 @@ func TestBroadcastFailureStillDenyResolves(t *testing.T) {
 	broadcastGlobalEvent = func(string, map[string]any) { panic("transport gone") }
 	t.Cleanup(func() { broadcastGlobalEvent = prev })
 	entry := loudDenyPending(t)
-	interruptSessionTurn(context.Background(), loudDenySID, session, "client-gone-"+loudDenySID, true)
+	interruptSessionTurn(context.Background(), loudDenySID, session, true)
 	if entry.Result != "deny" || !entryWoken(entry) {
 		t.Fatalf("entry result %q woken %v", entry.Result, entryWoken(entry))
 	}
@@ -126,7 +126,7 @@ func TestUserInterruptReasonIsInterrupt(t *testing.T) {
 	session := loudDenySession(t)
 	events := captureBroadcasts(t)
 	entry := loudDenyPending(t)
-	interruptSessionTurn(context.Background(), loudDenySID, session, "client-gone-"+loudDenySID, false)
+	interruptSessionTurn(context.Background(), loudDenySID, session, false)
 	cancelled := cancelledEvents(events)
 	if len(cancelled) == 0 || cancelled[0]["reason"] != "interrupt" || entry.Result != "deny" {
 		t.Fatalf("cancelled %v entry result %q", cancelled, entry.Result)
@@ -137,7 +137,7 @@ func TestOrphanKwargLabelsWsOrphanReapWithoutClientGonePrefix(t *testing.T) {
 	session := loudDenySession(t)
 	events := captureBroadcasts(t)
 	entry := loudDenyPending(t)
-	interruptSessionTurn(context.Background(), loudDenySID, session, "interrupt-manual", true)
+	interruptSessionTurn(context.Background(), loudDenySID, session, true)
 	cancelled := cancelledEvents(events)
 	if len(cancelled) == 0 || cancelled[0]["reason"] != "ws_orphan_reap" || entry.Result != "deny" {
 		t.Fatalf("cancelled %v entry result %q", cancelled, entry.Result)
@@ -167,7 +167,7 @@ func TestTeardownWithoutPendingStaysSilent(t *testing.T) {
 func TestInterruptMissingSessionKeyDoesNotCrash(t *testing.T) {
 	t.Setenv("ICEBATH_HOME", t.TempDir())
 	events := captureBroadcasts(t)
-	interruptSessionTurn(context.Background(), loudDenySID, tuigateway.NewSession(map[string]any{"running": false}), "", false)
+	interruptSessionTurn(context.Background(), loudDenySID, tuigateway.NewSession(map[string]any{"running": false}), false)
 	if got := cancelledEvents(events); len(got) != 0 {
 		t.Fatalf("cancelled %v", got)
 	}

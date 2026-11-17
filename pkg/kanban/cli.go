@@ -1026,7 +1026,7 @@ func rowsByTask(ctx context.Context, conn state.SQLiteConn, table string, ids []
 	return by, nil
 }
 
-// Lists active diagnostics for one task or the whole board through the dashboard rule engine
+// Lists active diagnostics for one task or the whole board through the diagnostics rule engine
 func (c *kanbanCLI) cmdDiagnostics() (int, error) {
 	cfg, err := loadKanbanConfigTree(c.ctx, false)
 	if err != nil {

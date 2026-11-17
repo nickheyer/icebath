@@ -5,8 +5,6 @@ import (
 	"slices"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/state"
-	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 // Runs body under the session's frozen launch policy, the policy scope of a turn
@@ -14,17 +12,13 @@ func PolicyScope(ctx context.Context, policy *LocalSessionPolicy, a *SessionAuth
 	return policyScope(ctx, policy, a, body)
 }
 
-// Toolsets of a local turn, the policy's current set plus onboarding for an onboarding chat
-func PolicyTurnToolsets(ctx context.Context, authority *SessionAuthority, policy *LocalSessionPolicy, cfg map[string]any, sessionID string) ([]string, error) {
+// Toolsets of a local turn, a copy of the policy's current set
+func PolicyTurnToolsets(ctx context.Context, policy *LocalSessionPolicy, cfg map[string]any) ([]string, error) {
 	current, err := policy.currentToolsets(ctx, cfg)
 	if err != nil {
 		return nil, err
 	}
-	var db *state.DB
-	if authority != nil {
-		db = authority.DB
-	}
-	return tools.OnboardingChatToolsets(ctx, slices.Clone(current), db, sessionID), nil
+	return slices.Clone(current), nil
 }
 
 // Records an owner side terminal failure on the executing admission and returns it

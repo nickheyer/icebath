@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
 )
 
@@ -24,12 +25,10 @@ func pinFleetRows(t *testing.T, rows *[]*pyjson.Object) {
 	vsSwap(t, &fleetCollectVersionsWith, func([]int, []int) []*pyjson.Object { return read() })
 }
 
-// Fakes the legacy unit check, the dashboard refresh and the surviving serve probe of the verification pass
+// Fakes the legacy unit check of the verification pass
 func quietVerification(t *testing.T) {
 	t.Helper()
 	vsSwap(t, &fleetPrintLegacyUnits, func(context.Context, io.Writer) {})
-	vsSwap(t, &fleetRefreshDashboard, func(context.Context, io.Writer, map[string]bool) map[int]bool { return nil })
-	vsSwap(t, &fleetSurvivingServeRuntimes, func(context.Context, *UpdatePlan) ([]any, error) { return []any{}, nil })
 }
 
 func unmappedStopOutcome(pids ...int) *gatewayRestartOutcome {
@@ -52,7 +51,7 @@ func gatewayRuntime(profile string, pid int) *RuntimeRecord {
 
 func owesFleetRestart(t *testing.T, h *fleetHarness) bool {
 	t.Helper()
-	owed, err := updateOwesFleetRestart(h.ctx, map[string]any{}, []any{}, true)
+	owed, err := updateOwesFleetRestart(h.ctx, map[string]any{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -172,7 +171,7 @@ func TestUnmappedStopDebtSurvivesStartupUntilACurrentGatewayRuns(t *testing.T) {
 	if !owesFleetRestart(t, h) {
 		t.Fatal("the unmapped stop was not owed")
 	}
-	needed, err := pendingFleetRestartNeeded(h.ctx, map[string]any{}, []any{}, true)
+	needed, err := pendingFleetRestartNeeded(h.ctx, map[string]any{})
 	if err != nil || !needed || !h.armed() {
 		t.Fatalf("needed=%v armed=%v err=%v", needed, h.armed(), err)
 	}
@@ -319,43 +318,35 @@ func TestEveryOwedIdentityRequiresCurrentEvidence(t *testing.T) {
 	}
 }
 
-func TestSupervisedServeRowNeverVetoesGatewayDischarge(t *testing.T) {
-	for _, supervisor := range []string{"desktop", "launchd", "systemd"} {
-		t.Run(supervisor, func(t *testing.T) {
-			h := newFleetHarness(t)
-			h.receipt(map[string]any{
-				"outcome":         "failed",
-				"post_update":     map[string]any{"sha": "pulled"},
-				"gateway_restart": map[string]any{"restarted_services": []any{"icebath-gateway"}, "incomplete": false},
-				"plan": map[string]any{"runtimes": []any{
-					map[string]any{"kind": "gateway", "profile": "default", "code_sha": "old", "supervisor": "manual"},
-					map[string]any{"kind": "dashboard", "profile": "default", "code_sha": nil, "supervisor": supervisor, "restart_via": "respawn-argv"},
-				}},
-			})
-			h.checkout("new")
-			h.fleet(map[string]any{"profile": "default", "state": "current", "code_sha": "new"})
-			owed, err := updateOwesFleetRestart(h.ctx, nil, nil, false)
-			if err != nil || owed {
-				t.Fatalf("owed=%v err=%v", owed, err)
-			}
-			if h.pendingNeeded() {
-				t.Fatal("a supervised serve row kept the gateway restart pending")
-			}
-		})
+func TestCompletedRestartOfAPlannedGatewayDischargesTheReceipt(t *testing.T) {
+	h := newFleetHarness(t)
+	h.receipt(map[string]any{
+		"outcome":         "failed",
+		"post_update":     map[string]any{"sha": "pulled"},
+		"gateway_restart": map[string]any{"restarted_services": []any{"icebath-gateway"}, "incomplete": false},
+		"plan": map[string]any{"runtimes": []any{
+			map[string]any{"kind": "gateway", "profile": "default", "code_sha": "old", "supervisor": "manual"},
+		}},
+	})
+	h.checkout("new")
+	h.fleet(map[string]any{"profile": "default", "state": "current", "code_sha": "new"})
+	owed, err := updateOwesFleetRestart(h.ctx, nil)
+	if err != nil || owed {
+		t.Fatalf("owed=%v err=%v", owed, err)
+	}
+	if h.pendingNeeded() {
+		t.Fatal("a current gateway kept the restart pending")
 	}
 }
 
 // Runs verification over one fleet row in the given state with the restart phase's outcome
-func verifyDashboardCase(t *testing.T, restart *gatewayRestartOutcome, fleetState string, dashboardsDown map[int]bool) (*fleetHarness, []map[string]bool, map[string]any, string) {
+func verifyRestartCase(t *testing.T, restart *gatewayRestartOutcome, fleetState string) (*fleetHarness, map[string]any, string) {
 	t.Helper()
 	h := newFleetHarness(t)
 	ctx := updaterecord.UpdateReceiptScope(h.ctx)
-	refreshed := []map[string]bool{}
 	vsSwap(t, &fleetPrintLegacyUnits, func(context.Context, io.Writer) {})
-	vsSwap(t, &fleetSurvivingServeRuntimes, func(context.Context, *UpdatePlan) ([]any, error) { return []any{}, nil })
-	vsSwap(t, &fleetRefreshDashboard, func(_ context.Context, _ io.Writer, already map[string]bool) map[int]bool {
-		refreshed = append(refreshed, already)
-		return dashboardsDown
+	vsSwap(t, &fleetSystemctl, func(_ context.Context, cmd []string, _ float64) (*pysubprocess.Completed, error) {
+		return completedText(cmd, "LoadState=not-found\nMainPID=0\n"), nil
 	})
 	vsSwap(t, &fleetAutoMigrate, func(context.Context, io.Writer) error { return nil })
 	vsSwap(t, &fleetSignalStaleSurvivors, func(context.Context, io.Writer, []any, *gatewayRestartOutcome, float64) []int { return nil })
@@ -368,15 +359,15 @@ func verifyDashboardCase(t *testing.T, restart *gatewayRestartOutcome, fleetStat
 	if err := verifyFleetAfterUpdate(ctx, &out, restart, nil, nil, true); err != nil {
 		t.Fatal(err)
 	}
-	return h, refreshed, readLatestReceipt(t, h.home), out.String()
+	return h, readLatestReceipt(t, h.home), out.String()
 }
 
-func declinedDashboardRestart() *gatewayRestartOutcome {
+func declinedGatewayUnitRestart() *gatewayRestartOutcome {
 	restart := newGatewayRestartOutcome()
 	restart.Incomplete = true
 	restart.PreRestartGatewayPIDs = []int{1234}
 	restart.RestartedServices = []string{"icebath-gateway"}
-	restart.FailedOrStaleUnits = []string{"icebath-dashboard"}
+	restart.FailedOrStaleUnits = []string{"icebath-gateway-work"}
 	return restart
 }
 
@@ -390,73 +381,41 @@ func firstFollowupReason(t *testing.T, receipt map[string]any) string {
 	return reason
 }
 
-func TestFieldCaseForwardsTheDeclinedUnitAndBlamesOnlyTheDashboard(t *testing.T) {
-	h, refreshed, receipt, out := verifyDashboardCase(t, declinedDashboardRestart(), "current", nil)
-	if !reflect.DeepEqual(refreshed, []map[string]bool{{"icebath-gateway": true, "icebath-dashboard": true}}) {
-		t.Fatalf("refreshed = %v", refreshed)
-	}
-	if !reflect.DeepEqual(followupSteps(receipt), []string{"gateway_restart"}) {
-		t.Fatalf("followups = %v", followupSteps(receipt))
-	}
-	reason := firstFollowupReason(t, receipt)
-	if !strings.Contains(reason, "icebath-dashboard were not restarted onto the new code") || strings.Contains(reason, "icebath gateway restart") ||
-		strings.Contains(reason, "gateways may still run") || strings.Contains(out, "gateways may still run") {
-		t.Fatalf("reason = %q out = %q", reason, out)
-	}
-	if !h.armed() {
-		t.Fatal("the obligation was cleared")
-	}
-}
-
-func TestGatewayDebtStillNamesGatewayRestart(t *testing.T) {
-	for _, name := range []string{"stale-gateway", "failed-gateway-unit", "phase-error"} {
+func TestGatewayDebtNamesGatewayRestart(t *testing.T) {
+	for _, name := range []string{"declined-unit", "stale-gateway", "phase-error"} {
 		t.Run(name, func(t *testing.T) {
-			restart, state := declinedDashboardRestart(), "current"
+			restart, state := declinedGatewayUnitRestart(), "current"
 			switch name {
 			case "stale-gateway":
 				state = "stale"
-			case "failed-gateway-unit":
-				restart.FailedOrStaleUnits = append(restart.FailedOrStaleUnits, "icebath-gateway-work")
-			default:
+			case "phase-error":
 				restart.PhaseErrors = append(restart.PhaseErrors, "boom")
 			}
-			_, _, receipt, _ := verifyDashboardCase(t, restart, state, nil)
+			h, receipt, _ := verifyRestartCase(t, restart, state)
+			if !reflect.DeepEqual(followupSteps(receipt), []string{"gateway_restart"}) {
+				t.Fatalf("followups = %v", followupSteps(receipt))
+			}
 			reason := firstFollowupReason(t, receipt)
-			if !strings.Contains(reason, "icebath gateway restart") || !strings.Contains(reason, "icebath-dashboard") {
+			if reason != gatewayOwedReason+gatewayRecovery {
 				t.Fatalf("reason = %q", reason)
+			}
+			if !h.armed() {
+				t.Fatal("the obligation was cleared")
 			}
 		})
 	}
 }
 
-func TestIsServeUnitMatchesTheFleetLoopGate(t *testing.T) {
-	for _, name := range []string{"icebath-dashboard", "icebath-serve-work.service", "icebath-dashboard-Work.Two"} {
-		if !isServeUnit(name) {
-			t.Fatalf("%q is a serve unit", name)
-		}
-	}
-	for _, name := range []string{"icebath-gateway", "icebath-gateway-work", "icebath-dashboardd", "ai.icebath.gateway", "systemd-user (listing failed)"} {
-		if isServeUnit(name) {
-			t.Fatalf("%q is not a serve unit", name)
-		}
-	}
-}
-
-func TestDashboardStoppedAndNotBroughtBackIsNotCalledStillRunning(t *testing.T) {
-	restart := declinedDashboardRestart()
-	restart.Incomplete, restart.FailedOrStaleUnits = false, []string{}
-	_, _, receipt, _ := verifyDashboardCase(t, restart, "current", map[int]bool{4242: true})
-	reason := firstFollowupReason(t, receipt)
-	if !strings.Contains(reason, "4242 were stopped during the update and not brought back") ||
-		strings.Contains(reason, "still run pre-update code") || strings.Contains(reason, "icebath gateway restart") {
-		t.Fatalf("reason = %q", reason)
+func TestGatewayDebtNamesTheUnmappedStops(t *testing.T) {
+	if got, want := owedRestartReason([]int{11, 7}), gatewayOwedReason+" (stopped PIDs 11, 7)"+gatewayRecovery; got != want {
+		t.Fatalf("reason = %q, want %q", got, want)
 	}
 }
 
 func TestIncompleteRunNeverSettlesTheHostObligationMidVerification(t *testing.T) {
 	calls := 0
 	vsSwap(t, &fleetNamedStillOwed, func(context.Context) (bool, error) { calls++; return false, nil })
-	h, _, _, _ := verifyDashboardCase(t, declinedDashboardRestart(), "current", nil)
+	h, _, _ := verifyRestartCase(t, declinedGatewayUnitRestart(), "current")
 	if calls != 0 || !h.armed() {
 		t.Fatalf("owed check ran %d times, armed = %v", calls, h.armed())
 	}

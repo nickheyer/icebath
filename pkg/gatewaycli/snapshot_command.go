@@ -40,7 +40,6 @@ type SnapshotRestore struct {
 var ownerStopHints = map[string]string{
 	"systemd":  "stop its systemd unit with systemctl before retrying",
 	"launchd":  "stop its LaunchAgent with launchctl before retrying",
-	"desktop":  "quit the owning desktop app before retrying",
 	"external": "stop the gateway through its external supervisor before retrying",
 }
 

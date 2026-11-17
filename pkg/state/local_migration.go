@@ -10,9 +10,12 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
-var legacyLocalSources = map[string]bool{"cli": true, "tui": true, "gui": true, "desktop": true, "oneshot": true, "tool": true, "acp": true}
+// Source label older builds stored client app chats under, also given to a bound client app history row
+const ClientHistorySource = "desktop"
 
-var legacyCreationSources = map[string]string{"desktop": "gui"}
+var legacyLocalSources = map[string]bool{"cli": true, "tui": true, "gui": true, ClientHistorySource: true, "oneshot": true, "tool": true, "acp": true}
+
+var legacyCreationSources = map[string]string{ClientHistorySource: "gui"}
 
 var notClientLabelSet = map[string]bool{"cron": true, "subagent": true, "kanban": true, "bot_room": true, "a2a": true, "webhook": true,
 	"api_server": true, "import": true, "recovered": true, "curator": true, "batch": true, "homeassistant": true, "webui": true,
@@ -108,17 +111,17 @@ func LegacyCreationSource(row *pyjson.Object) (any, error) {
 	return source, nil
 }
 
-// Whether the row's user_id is the Nous account label a Desktop chat carried, not an owner
+// Whether the row's user_id is the Nous account label a legacy client history row carried, not an owner
 func LegacyAccountLabel(row *pyjson.Object) (bool, error) {
 	source, err := rowSource(row)
 	if err != nil {
 		return false, err
 	}
 	userID, ok := rowGet(row, "user_id").(string)
-	return source == "desktop" && ok && strings.HasPrefix(userID, "nous:"), nil
+	return source == ClientHistorySource && ok && strings.HasPrefix(userID, "nous:"), nil
 }
 
-// Whether the subject owns the dashboard login stamp a served build put on the row
+// Whether the subject owns the login stamp a legacy row carries
 func LoginOwnedBy(row *pyjson.Object, subject any) bool {
 	userID, ok := rowGet(row, "user_id").(string)
 	if !ok || !pyTruthy(subject) {
@@ -222,7 +225,7 @@ func (d *SessionDB) bindLegacyTarget(ctx context.Context, conn SQLiteConn, recei
 	}
 	label := rowGet(row, "source")
 	if ClientHistoryRow(row) {
-		label = "desktop"
+		label = ClientHistorySource
 	}
 	route, err := receiptItem(receipt, "route")
 	if err != nil {

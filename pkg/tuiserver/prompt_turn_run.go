@@ -240,7 +240,7 @@ func stageFirstContactOnboardingNote(ctx context.Context, session *tuigateway.Se
 			panic(err)
 		}
 		note := tools.FirstContactTurnNote(ctx, cfg, filepath.Join(home.Dir(ctx), "config.yaml"), historyEmpty,
-			installHasPriorSessions(ctx, session), a.ValidToolNames()["setup_beat"])
+			installHasPriorSessions(ctx, session))
 		if note == nil || *note == "" {
 			return
 		}
@@ -296,7 +296,6 @@ func prepareTurnInput(ctx context.Context, sid string, session *tuigateway.Sessi
 	st.historyVersion = intOr(session.Get("history_version"))
 	unlock()
 	stageFirstContactOnboardingNote(ctx, session, a, len(st.history) == 0)
-	stageOnboardingTurnNote(ctx, sid, a, len(st.history) == 0)
 	cwd := sessionCwd(ctx, session)
 	registerSessionCwd(ctx, session)
 	cols := 80
@@ -356,23 +355,6 @@ func profileHomeScope(ctx context.Context, profileHome string) context.Context {
 	}
 	return home.WithOverride(ctx, launchHome())
 }
-
-// Scripted opening steps of an onboarding turn fed one by one to the conversation loop
-type onboardingPreludeSteps struct {
-	steps []tools.OnboardingPreludeStep
-	next  int
-}
-
-func (p *onboardingPreludeSteps) Next(*string) (agent.PreludeStep, bool) {
-	if p.next >= len(p.steps) {
-		return agent.PreludeStep{}, false
-	}
-	step := p.steps[p.next]
-	p.next++
-	return agent.PreludeStep{Content: step.Text, ToolName: step.Tool, Args: step.Args}, true
-}
-
-func (p *onboardingPreludeSteps) Close() {}
 
 // Wires the streaming callbacks and runs the conversation into the turn result
 func invokeAgent(ctx context.Context, sid string, session *tuigateway.Session, st *turnRun, prompt, runMessage any, streamer streamRenderer, images []string, displayKind string, displayMetadata, turnAuthor map[string]any, text any) {
@@ -436,9 +418,6 @@ func invokeAgent(ctx context.Context, sid string, session *tuigateway.Session, s
 	}
 	if len(turnAuthor) > 0 {
 		opts.TurnAuthor = turnAuthor
-	}
-	if steps := tools.OnboardingPrelude(a, opts.ConversationHistory); steps != nil {
-		opts.Prelude = &onboardingPreludeSteps{steps: steps}
 	}
 	st.runOpts = opts
 	adoptSubmitUserRow(ctx, session, a, persistUserMessage, text)

@@ -143,7 +143,7 @@ func sourceCheckoutBuildsBinary(root string) bool {
 	return err == nil && st.IsDir()
 }
 
-// Rebuilds the dashboard bundle and the checkout binary from the pulled source as setup-icebath does
+// Rebuilds the checkout binary from the pulled source as setup-icebath does
 func buildCheckoutBinary(ctx context.Context, w io.Writer, root string) error {
 	gobin, err := exec.LookPath("go")
 	if err != nil {
@@ -158,14 +158,10 @@ func buildCheckoutBinary(ctx context.Context, w io.Writer, root string) error {
 		}
 		return nil
 	}
-	fmt.Fprintln(w, "→ Building the dashboard bundle...")
-	if err := run(nil, "run", "./cmd/icebath-build", "web"); err != nil {
-		return err
-	}
 	binary := filepath.Join(root, filepath.Base(install.InstallBinaryPath(root)))
 	staged := binary + ".build"
 	fmt.Fprintln(w, "→ Building the icebath binary...")
-	if err := run([]string{"CGO_ENABLED=0"}, "build", "-tags", "webdist,goolm", "-trimpath", "-o", staged, "./cmd/icebath"); err != nil {
+	if err := run([]string{"CGO_ENABLED=0"}, "build", "-tags", "goolm", "-trimpath", "-o", staged, "./cmd/icebath"); err != nil {
 		os.Remove(staged)
 		return err
 	}
@@ -181,7 +177,7 @@ func rebuildSourceCheckout(ctx context.Context, w io.Writer, root string) error 
 	if !sourceCheckoutBuildsBinary(root) {
 		return nil
 	}
-	if err := BuildSourceTUI(ctx, w, root); err != nil {
+	if err := checkoutBinaryBuild(ctx, w, root); err != nil {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}

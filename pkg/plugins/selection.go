@@ -18,9 +18,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
-// Bundled dashboard auth plugin keys that must never sit in the deny list while basic auth is configured
-var basicAuthPluginKeys = map[string]bool{"basic": true, "dashboard_auth/basic": true}
-
 // Manifest kinds active by default when bundled
 var bundledDefaultOnKinds = map[string]bool{"backend": true, "platform": true, "model-provider": true}
 
@@ -109,29 +106,6 @@ func UnknownPluginMessage(name string, downloadedOnly bool) string {
 
 // Frozen old updater entry that stops for relaunch instead of writing a raw plugin selection
 func saveEnabledSet(ctx context.Context) error { return pm.StopForRelaunch(ctx) }
-
-// Drops the bundled basic dashboard auth plugin from plugins.disabled, true when the config changed
-func EnsureBasicAuthPluginEnabledInConfig(cfg map[string]any) bool {
-	pluginsCfg, _ := cfg["plugins"].(map[string]any)
-	disabled, ok := pluginsCfg["disabled"].([]any)
-	if pluginsCfg == nil || !ok {
-		return false
-	}
-	kept, hit := map[string]bool{}, false
-	for _, v := range disabled {
-		name := scalarString(v)
-		if basicAuthPluginKeys[name] {
-			hit = true
-			continue
-		}
-		kept[name] = true
-	}
-	if !hit {
-		return false
-	}
-	pluginsCfg["disabled"] = anyList(sortedSet(kept))
-	return true
-}
 
 // Removes a key and its bare leaf from a name set
 func discardKeyAndLeaf(names map[string]bool, key string) {
@@ -655,8 +629,8 @@ func togglePluginToolset(ctx context.Context, h, name string, enable bool, tools
 	})
 }
 
-// Enables or disables a plugin for the dashboard, loading an enabled plugin live
-func DashboardSetAgentPluginEnabled(ctx context.Context, name string, enabled bool) (map[string]any, error) {
+// Enables or disables a plugin without prompts, loading an enabled plugin live
+func SetAgentPluginEnabled(ctx context.Context, name string, enabled bool) (map[string]any, error) {
 	h := home.Dir(ctx)
 	key, err := resolveNamedPluginKey(ctx, name)
 	if err != nil {

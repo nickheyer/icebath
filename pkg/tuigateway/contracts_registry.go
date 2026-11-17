@@ -81,7 +81,7 @@ func UnknownMethodMessage(method string) string {
 
 // Topic modules in the order importing the contracts package runs them, which fixes the catalog order
 var contractModules = []string{"billing_delegation_pets", "config_free_tier_control", "connectors_operation", "connectors",
-	"server_requests", "display", "events", "groups_bot_relay", "i18n", "liveness", "machine",
+	"server_requests", "display", "events", "groups_bot_relay", "i18n", "liveness",
 	"profiles_vault_complete_foreign_subagents", "projects_pets", "prompt_voice", "sessions", "tools_commands",
 	"tools_mcp_plugins", "canonical", "canonical_sessions", "canonical_projections"}
 

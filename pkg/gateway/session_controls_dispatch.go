@@ -19,9 +19,7 @@ func (c *AuthorityConnection) handlers() map[string]controlHandler {
 		"slash.exec": c.slashExec, "command.dispatch": c.commandDispatch,
 		"session.list": c.listSessions, "session.info": c.info,
 		"session.mutate": c.mutate, "bot_relay.deliver": c.botDeliver,
-		"bot_relay.settle":      c.botSettle,
-		"bot_relay.roster.sync": c.botRoster, "bot_relay.outbox.drain": c.botOutbox,
-		"bot_relay.reply": c.botReply, "a2a.forward": c.a2aForward,
+		"bot_relay.settle": c.botSettle, "a2a.forward": c.a2aForward,
 		"kanban.run":  c.kanbanRun,
 		"cron.submit": c.cronSubmit, "cron.status": c.cronStatus,
 		"cron.cancel": c.cronCancel, "cron.recover": c.cronRecover,
@@ -54,15 +52,11 @@ func (c *AuthorityConnection) handlers() map[string]controlHandler {
 	verbs["session.stats"] = bind(stats)
 	verbs["session.active_list"] = bind(activeList)
 	verbs["session.automation"] = bind(automation)
-	verbs["message.react"] = bind(react)
 	verbs["clarify.lock"] = bind(clarifyLock)
 	for name, handler := range connectionHandlers(c) {
 		verbs[name] = handler
 	}
 	verbs["session.control"] = bind(control)
-	for name, handler := range onboardingHandlers(c) {
-		verbs[name] = handler
-	}
 	return verbs
 }
 

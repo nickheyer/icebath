@@ -4,7 +4,7 @@ repo: https://github.com/yuzushi-dev/hermes-handoff
 sha: 2bab6cf77a436544f58f5b528cd0d838e6d60309
 version: "0.3.0"
 description: >-
-  Profile-bound semantic session handoffs for CLI and Desktop with independent
+  Profile-bound semantic session handoffs for CLI with independent
   destination and optional summary-writer models. Derived from yuzushi-dev/session-handoff.
   Disclosure — reads bounded persisted session evidence from the originating profile's
   state.db and project/Git metadata; runs local Git and foreground Hermes subprocesses

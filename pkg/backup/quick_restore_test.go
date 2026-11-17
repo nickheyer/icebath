@@ -151,7 +151,7 @@ func TestRestoreCronJobsIfEmptiedRestoresWhenPartialJobLoss(t *testing.T) {
 	}
 	seedJobs(t, jobs, ids...)
 	snapID := snapshotOf(t, h, "pre-update", 5)
-	seedJobs(t, jobs, "desktop-watchdog")
+	seedJobs(t, jobs, "nightly-watchdog")
 	result, err := RestoreCronJobsIfEmptied(snapID, h)
 	if err != nil || result == nil {
 		t.Fatalf("%v %v", result, err)

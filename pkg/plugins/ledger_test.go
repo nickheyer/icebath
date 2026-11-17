@@ -15,9 +15,9 @@ func TestUnloadDisposesInReverseOrderAndForgetsTargetedPlugin(t *testing.T) {
 	var order []string
 	for _, name := range []string{"one", "two", "three"} {
 		name := name
-		a.track("thing", name, func() error { order = append(order, name); return nil }, false)
+		a.track("thing", name, func() error { order = append(order, name); return nil })
 	}
-	b.track("thing", "b", func() error { order = append(order, "b"); return nil }, false)
+	b.track("thing", "b", func() error { order = append(order, "b"); return nil })
 	m.plugins["cat/alpha"] = &LoadedPlugin{Manifest: a.manifest, Enabled: true}
 	if !m.Unload("alpha") {
 		t.Fatal("unload by manifest name found nothing")
@@ -40,9 +40,9 @@ func TestOnUnloadErrorDoesNotBlockOtherTeardown(t *testing.T) {
 	m := NewManager(t.TempDir())
 	c := newContext(&Manifest{Name: "p"}, m)
 	ran := false
-	c.track("unload", "ok", func() error { ran = true; return nil }, false)
-	c.track("unload", "bad", func() error { return errors.New("boom") }, false)
-	c.track("unload", "panics", func() error { panic("kaboom") }, false)
+	c.track("unload", "ok", func() error { ran = true; return nil })
+	c.track("unload", "bad", func() error { return errors.New("boom") })
+	c.track("unload", "panics", func() error { panic("kaboom") })
 	m.Unload(nil)
 	if !ran || len(m.registrationOrder) != 0 || len(m.ownershipLedger) != 0 {
 		t.Fatal("teardown stopped at a failing release")
@@ -69,29 +69,6 @@ func TestOnUnloadExceptionDoesNotBlockOtherTeardown(t *testing.T) {
 	}
 	if _, kept := m.ownershipLedger["boom_probe"]; kept {
 		t.Fatal("the ownership ledger kept the unloaded plugin")
-	}
-}
-
-func TestPersistentRegistrationsSurviveUnloadAllAndEvictWhenNotReRegistered(t *testing.T) {
-	m := NewManager(t.TempDir())
-	c := newContext(&Manifest{Name: "auth"}, m)
-	released := map[string]int{}
-	keep := c.track("dashboard_auth", "keep", func() error { released["keep"]++; return nil }, true)
-	c.track("dashboard_auth", "drop", func() error { released["drop"]++; return nil }, true)
-	m.Unload(nil)
-	if len(released) != 0 || len(m.persistentCarryover) != 2 {
-		t.Fatalf("persistent disposed by unload-all %v", released)
-	}
-	m.mu.Lock()
-	m.ownershipLedger["auth"] = []*Registration{keep}
-	m.mu.Unlock()
-	m.evictStalePersistentRegistrations()
-	if released["drop"] != 1 || released["keep"] != 0 || len(m.persistentCarryover) != 0 {
-		t.Fatalf("eviction %v", released)
-	}
-	m.Unload("auth")
-	if released["keep"] != 1 {
-		t.Fatal("targeted unload kept a persistent registration")
 	}
 }
 
@@ -172,24 +149,20 @@ func TestHoldStreamOnlyOnTransformHook(t *testing.T) {
 	}
 }
 
-func TestExportedLedgerViewsAndEvictionPass(t *testing.T) {
+func TestExportedLedgerViews(t *testing.T) {
 	m := NewManager(t.TempDir())
 	c := newContext(&Manifest{Name: "auth"}, m)
 	released := 0
-	plain := c.track("thing", "plain", func() error { return nil }, false)
-	persistent := c.track("dashboard_auth", "drop", func() error { released++; return nil }, true)
-	if order := m.RegistrationOrder(); len(order) != 1 || order[0] != plain {
+	plain := c.track("thing", "plain", func() error { released++; return nil })
+	other := c.track("thing", "other", func() error { released++; return nil })
+	if order := m.RegistrationOrder(); len(order) != 2 || order[0] != plain || order[1] != other {
 		t.Fatalf("registration order %v", order)
 	}
-	if owned := m.OwnedRegistrations("auth"); len(owned) != 2 || owned[1] != persistent {
+	if owned := m.OwnedRegistrations("auth"); len(owned) != 2 || owned[1] != other {
 		t.Fatalf("owned %v", owned)
 	}
 	m.Unload(nil)
-	if parked := m.PersistentCarryover(); len(parked) != 1 || parked[0] != persistent || released != 0 {
-		t.Fatalf("parked %v released %d", parked, released)
-	}
-	m.EvictStalePersistentRegistrations()
-	if released != 1 || len(m.PersistentCarryover()) != 0 || len(m.OwnedRegistrations("auth")) != 0 {
-		t.Fatalf("eviction released %d", released)
+	if released != 2 || len(m.RegistrationOrder()) != 0 || len(m.OwnedRegistrations("auth")) != 0 {
+		t.Fatalf("unload released %d", released)
 	}
 }

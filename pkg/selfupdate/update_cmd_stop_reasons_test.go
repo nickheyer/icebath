@@ -33,7 +33,7 @@ func ucMarker(t *testing.T, lines ...any) {
 	}
 }
 
-func TestAnExitBeforeTheReceiptReadsDesktopOnlyUnderItsOwnHandOff(t *testing.T) {
+func TestAnExitBeforeTheReceiptCountsAsACliRun(t *testing.T) {
 	ctx, _, runs := ucMetricRows(t)
 	ucUnsetenv(t, "ICEBATH_UPDATE_HANDOFF_PID")
 	pid, other := os.Getpid(), 999_999
@@ -52,7 +52,7 @@ func TestAnExitBeforeTheReceiptReadsDesktopOnlyUnderItsOwnHandOff(t *testing.T) 
 	for _, row := range runs() {
 		got = append(got, [2]string{row["failure_class"], row["kind"]})
 	}
-	want := [][2]string{{"lock_held", "desktop"}, {"git_in_progress", "desktop"}, {"lock_held", "cli"}, {"managed_install", "cli"}}
+	want := [][2]string{{"lock_held", "cli"}, {"git_in_progress", "cli"}, {"lock_held", "cli"}, {"managed_install", "cli"}}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("rows = %v, want %v", got, want)
 	}
@@ -82,7 +82,7 @@ func TestALockRefusalOfTheHandOffsOwnUpdateChildIsAFailedRun(t *testing.T) {
 			t.Fatalf("row %v carries dimensions outside the contract", row)
 		}
 	}
-	want := [][3]string{{"failed", "desktop", "lock_held"}, {"failed", "desktop", "lock_held"}, {"refused", "desktop", "lock_held"},
+	want := [][3]string{{"failed", "cli", "lock_held"}, {"failed", "cli", "lock_held"}, {"refused", "cli", "lock_held"},
 		{"refused", "cli", "lock_held"}}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("rows = %v, want %v", got, want)

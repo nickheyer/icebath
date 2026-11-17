@@ -1,24 +1,16 @@
 package plugins
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"path/filepath"
 	"sort"
-	"strconv"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 )
 
 var goLiveMu sync.Mutex
@@ -27,12 +19,6 @@ var gatewayTransformHooks = map[string]bool{
 	"transform_llm_output": true, "transform_tool_result": true, "transform_terminal_output": true,
 	"pre_gateway_dispatch": true, "gateway_platform_event": true, "pre_command": true,
 }
-
-const (
-	hostRoleServe        = "serve"
-	hostRoleDesktopServe = "desktop-serve"
-	serveBackendTimeout  = 60 * time.Second
-)
 
 // Sorted copy of a string list, duplicates kept
 func sortedStrings(items []string) []string {
@@ -269,27 +255,19 @@ func summaryItems(summaries []map[string]any) []any {
 
 // Loads the plugin here, hands it to open chats and nudges the running gateway, reporting what applies now
 func activatePluginNow(ctx context.Context, name string) (map[string]any, error) {
-	return activatePluginNowFrom(ctx, name, true)
+	live, err := LoadAndGoLive(ctx, name)
+	if err != nil {
+		return nil, err
+	}
+	var activation any
+	if live != nil {
+		activation = live
+	}
+	return gatewayActivation(ctx, name, activation)
 }
 
-// Activation from this process, or through the running serve backend when the caller is another process
-func activatePluginNowFrom(ctx context.Context, name string, inProcess bool) (map[string]any, error) {
-	var activation any
-	if inProcess {
-		live, err := LoadAndGoLive(ctx, name)
-		if err != nil {
-			return nil, err
-		}
-		if live != nil {
-			activation = live
-		}
-	} else {
-		backend, err := pyDictOr(notifyServeBackend(ctx, name, home.Dir(ctx)))
-		if err != nil {
-			return nil, err
-		}
-		activation = backend["activation"]
-	}
+// Nudges the running gateway and merges its activation of the plugin with the one already made here
+func gatewayActivation(ctx context.Context, name string, activation any) (map[string]any, error) {
 	answer := reloadRunningGateway(ctx)
 	reloaded := answer != nil && pyrepr.Truthy(answer["reloaded"])
 	var gatewayActivation map[string]any
@@ -447,73 +425,6 @@ func goLive(ctx context.Context, name string) (map[string]any, error) {
 	return activation, nil
 }
 
-// Host owner record, else the Desktop child record, that names a port and a consistent token
-func serveBackendRecord(hr HostRendezvous) (*HostRecord, error) {
-	for _, role := range []string{hostRoleServe, hostRoleDesktopServe} {
-		record, err := hr.ReadRecord(role)
-		if err != nil {
-			return nil, err
-		}
-		if record != nil && record.Port != 0 && hr.RecordTokenIsConsistent(record) {
-			return record, nil
-		}
-	}
-	return nil, nil
-}
-
-// Asks the running dashboard or Desktop backend to take the plugin live in a home, nil when none answers
-func notifyServeBackend(ctx context.Context, name, h string) any {
-	v, err := guardedValue(func() (any, error) {
-		s := installedServices()
-		if s == nil || s.HostRendezvous == nil {
-			return nil, &ServiceMissingError{Name: "HostRendezvous"}
-		}
-		record, err := serveBackendRecord(s.HostRendezvous)
-		if err != nil || record == nil {
-			return nil, err
-		}
-		token, err := s.HostRendezvous.ReadToken(record.Role)
-		if err != nil {
-			return nil, err
-		}
-		body, err := pyjson.Dumps(map[string]any{"name": name, "home": h})
-		if err != nil {
-			return nil, err
-		}
-		url := "http://" + pyurl.FormatURLHost(s.HostRendezvous.DialHost(record)) + ":" + strconv.Itoa(record.Port) +
-			"/api/dashboard/agent-plugins/activate"
-		req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader([]byte(body)))
-		if err != nil {
-			return nil, err
-		}
-		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("X-Icebath-Session-Token", token)
-		client := &http.Client{Timeout: serveBackendTimeout, Transport: &http.Transport{Proxy: pyurl.UrlopenProxy}}
-		resp, err := client.Do(req)
-		if err != nil {
-			return nil, err
-		}
-		defer resp.Body.Close()
-		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-			return nil, fmt.Errorf("HTTP Error %d: %s", resp.StatusCode, http.StatusText(resp.StatusCode))
-		}
-		raw, err := io.ReadAll(resp.Body)
-		if err != nil {
-			return nil, err
-		}
-		var out any
-		if err := json.Unmarshal(raw, &out); err != nil {
-			return nil, err
-		}
-		return out, nil
-	})
-	if err != nil {
-		logDebug(fmt.Sprintf("serve backend activation for %s failed", pyrepr.Repr(name)), "error", err)
-		return nil
-	}
-	return v
-}
-
 // Reports whether a gateway runs for this profile or its root, or a gateway service is installed
 func gatewayPresent(ctx context.Context) (bool, error) {
 	s := installedServices()
@@ -544,9 +455,9 @@ func gatewayPresent(ctx context.Context) (bool, error) {
 	return installed, err
 }
 
-// After a CLI install or enable, takes the plugin live where it can and prints the resulting hint
+// After a CLI install or enable, has the running gateway take the plugin live and prints the resulting hint
 func reportActivation(ctx context.Context, console *Console, name string) error {
-	result, err := activatePluginNowFrom(ctx, name, false)
+	result, err := gatewayActivation(ctx, name, nil)
 	if err != nil {
 		return err
 	}

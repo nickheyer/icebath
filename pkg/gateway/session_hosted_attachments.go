@@ -52,7 +52,7 @@ func AppendUserEvent(ctx context.Context, service *HostedRoomService, roomID, ev
 		}
 	}
 	event, err := AppendEvent(ctx, service.DBPath, AppendEventInput{RoomID: roomID, EventID: eventID, Kind: "message.user",
-		Actor: map[string]any{"kind": "user", "id": "desktop"}, Payload: payload, AuthorityGatewayID: gatewayID, AuthorityEpoch: epoch})
+		Actor: map[string]any{"kind": "user", "id": "local-user"}, Payload: payload, AuthorityGatewayID: gatewayID, AuthorityEpoch: epoch})
 	if err != nil {
 		if len(transitioned) > 0 {
 			if _, abortErr := store.AbortMessageCommit(roomID, eventID, transitioned); abortErr != nil {

@@ -37,7 +37,7 @@ func init() {
 	}
 }
 
-func TestLivePinnedCudaDownloadPauseResumeAndExecute(t *testing.T) {
+func TestLivePinnedCudaDownloadPauseRerunAndExecute(t *testing.T) {
 	dir := t.TempDir()
 	h := lmTestHome(t, "home")
 	store := filepath.Join(h, "tools")
@@ -123,7 +123,7 @@ func TestLivePinnedCudaDownloadPauseResumeAndExecute(t *testing.T) {
 		}
 	}
 	ctx := context.Background()
-	resp, err := LocalModelsRuntimeInstall(ctx, "cuda", "")
+	resp, err := LocalModelsRuntimeInstall(ctx, "cuda")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -133,12 +133,11 @@ func TestLivePinnedCudaDownloadPauseResumeAndExecute(t *testing.T) {
 		select {
 		case <-flowing:
 		case <-time.After(240 * time.Second):
-			view, _ := LocalModelsJob(ctx, jobID)
+			view, _ := LocalModelsJobView(jobID)
 			t.Fatalf("download never flowed: %v", view)
 		}
-		paused, err := LocalModelsDownloadPause(ctx, jobID)
-		if err != nil || paused["paused"] != true {
-			t.Fatalf("pause %v %v", paused, err)
+		if !LocalModelsPauseJob(jobID) {
+			t.Fatal("pause refused")
 		}
 	}()
 	pausedJob := lmPoll(t, jobID, 240*time.Second, "paused", "done", "error")
@@ -148,10 +147,11 @@ func TestLivePinnedCudaDownloadPauseResumeAndExecute(t *testing.T) {
 	if engine, err := InstalledEngine(ctx, "cuda", true); err != nil || engine != nil {
 		t.Fatalf("paused install left an engine %v %v", engine, err)
 	}
-	if resumed, err := LocalModelsDownloadResume(ctx, jobID); err != nil || resumed["resumed"] != true {
-		t.Fatalf("resume %v %v", resumed, err)
+	rerun, err := LocalModelsRuntimeInstall(ctx, "cuda")
+	if err != nil {
+		t.Fatal(err)
 	}
-	completed := lmPoll(t, jobID, 240*time.Second, "done", "error")
+	completed := lmPoll(t, rerun["job_id"].(string), 240*time.Second, "done", "error")
 	if completed["status"] != "done" {
 		t.Fatalf("job %v", completed)
 	}

@@ -5,15 +5,16 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
 	"github.com/nickheyer/icebath/pkg/pm"
 )
 
@@ -141,87 +142,6 @@ func TestStagedRuntimeVenvNothingStagedKeepsLegacyInterpreterProbe(t *testing.T)
 	}
 	if strings.Contains(out.String(), "Runtime venv staged") || !strings.Contains(out.String(), "Not in virtual environment") {
 		t.Fatalf("output:\n%s", out.String())
-	}
-}
-
-// Stands a desktop bundle on a macOS host, with a canned designated requirement unless real is set
-func darwinBundle(t *testing.T, dr string, readable, real bool) (*Doctor, *bytes.Buffer) {
-	t.Helper()
-	d, out := toolsDoctor(t)
-	toolsSeam(t, &doctorSysPlatform, "darwin")
-	app := filepath.Join(t.TempDir(), "Icebath.app")
-	toolsSeam(t, &doctorDesktopAppBundle, func(*Doctor) string { return app })
-	if !real {
-		toolsSeam(t, &doctorMacosDesktopDR, func(context.Context, string) (string, bool) { return dr, readable })
-	}
-	return d, out
-}
-
-func TestMacOSTCCGrantsSilentWithoutDesktopBundle(t *testing.T) {
-	d, out := toolsDoctor(t)
-	toolsSeam(t, &doctorSysPlatform, "darwin")
-	toolsSeam(t, &doctorDesktopAppBundle, func(*Doctor) string { return "" })
-	doctorCheckMacosTCCGrants(context.Background(), d)
-	if out.String() != "" {
-		t.Fatalf("output:\n%s", out.String())
-	}
-}
-
-func TestMacOSTCCGrantsWarnsOnCdhashPinnedDr(t *testing.T) {
-	d, out := darwinBundle(t, `designated => identifier "ai.icebath" and cdhash H"97e692f3890f781fa0ad5ad6cb9d769cfaf42628"`, true, false)
-	doctorCheckMacosTCCGrants(context.Background(), d)
-	text := out.String()
-	if !strings.Contains(text, "TCC grants will reset after every update") || !strings.Contains(text, "icebath update") || strings.Contains(text, "signing identity is stable") {
-		t.Fatalf("output:\n%s", text)
-	}
-}
-
-func TestMacOSTCCGrantsIdentifierDrIsStableWithUpgradeHintAndRepairInfo(t *testing.T) {
-	d, out := darwinBundle(t, `designated => identifier "ai.icebath"`, true, false)
-	doctorCheckMacosTCCGrants(context.Background(), d)
-	text := out.String()
-	if !strings.Contains(text, "TCC signing identity is stable") || !strings.Contains(text, "--setup-tcc-identity") ||
-		!strings.Contains(text, "tccutil reset ScreenCapture ai.icebath") {
-		t.Fatalf("output:\n%s", text)
-	}
-}
-
-func TestMacOSTCCGrantsCertificateAnchoredDrIsStableWithoutUpgradeHint(t *testing.T) {
-	d, out := darwinBundle(t, `designated => identifier "ai.icebath" and certificate root = H"aabbcc"`, true, false)
-	doctorCheckMacosTCCGrants(context.Background(), d)
-	text := out.String()
-	if !strings.Contains(text, "TCC signing identity is stable") || strings.Contains(text, "--setup-tcc-identity") ||
-		!strings.Contains(text, "tccutil reset ScreenCapture ai.icebath") {
-		t.Fatalf("output:\n%s", text)
-	}
-}
-
-func TestMacOSTCCGrantsUnreadableDrWarnsAndNeverClaimsStable(t *testing.T) {
-	for _, failure := range []string{"none", "empty", "timeout", "no_codesign"} {
-		t.Run(failure, func(t *testing.T) {
-			var d *Doctor
-			var out *bytes.Buffer
-			switch failure {
-			case "none":
-				d, out = darwinBundle(t, "", false, false)
-			case "empty":
-				d, out = darwinBundle(t, "", true, false)
-			case "timeout":
-				d, out = darwinBundle(t, "", false, true)
-				toolsSeam(t, &doctorWhich, func(string) string { return "/usr/bin/codesign" })
-				toolsSeam(t, &doctorSubprocessRun, func(context.Context, []string, pysubprocess.Options) (*pysubprocess.Completed, error) {
-					return nil, &pysubprocess.TimeoutExpired{}
-				})
-			default:
-				d, out = darwinBundle(t, "", false, true)
-				toolsSeam(t, &doctorWhich, func(string) string { return "" })
-			}
-			doctorCheckMacosTCCGrants(context.Background(), d)
-			text := out.String()
-			if !strings.Contains(text, "could not read code-signing requirement") || strings.Contains(text, "stable") {
-				t.Fatalf("output:\n%s", text)
-			}
-		})
 	}
 }
 
@@ -536,95 +456,46 @@ func TestCheckPythonEnvironmentReportsAMissingInterpreterWithTheRepairHint(t *te
 }
 
 func TestCheckPythonEnvironmentGradesTheInterpreterVersion(t *testing.T) {
+	const rlHint = "Python 3.11+ recommended for RL Training tools (tinker requires >= 3.11)"
 	for _, tc := range []struct {
 		version [3]int
-		want    string
-		issues  int
+		line    string
+		issues  []string
+		rl      bool
 	}{
-		{[3]int{3, 7, 9}, "✗ Python 3.7.9 (3.10+ required)", 1},
-		{[3]int{3, 9, 1}, "⚠ Python 3.9.1 (3.10+ recommended)", 0},
-		{[3]int{3, 10, 4}, "Python 3.11+ recommended for RL Training tools", 0},
-		{[3]int{3, 12, 0}, "✓ Python 3.12.0", 0},
+		{[3]int{2, 7, 18}, "✗ Python 2.7.18 (3.10+ required)", []string{"Upgrade Python to 3.10+"}, false},
+		{[3]int{3, 7, 17}, "✗ Python 3.7.17 (3.10+ required)", []string{"Upgrade Python to 3.10+"}, false},
+		{[3]int{3, 8, 0}, "⚠ Python 3.8.0 (3.10+ recommended)", nil, false},
+		{[3]int{3, 9, 19}, "⚠ Python 3.9.19 (3.10+ recommended)", nil, false},
+		{[3]int{3, 10, 14}, "✓ Python 3.10.14", nil, true},
+		{[3]int{3, 11, 0}, "✓ Python 3.11.0", nil, false},
+		{[3]int{3, 13, 1}, "✓ Python 3.13.1", nil, false},
+		{[3]int{4, 0, 0}, "✓ Python 4.0.0", nil, false},
 	} {
-		d, out := toolsDoctor(t)
-		toolsSeam(t, &doctorStagedVenvDir, func(context.Context) string { return "" })
-		toolsSeam(t, &doctorRuntimePython, func(context.Context) (*doctorPython, error) {
-			return &doctorPython{Version: tc.version, Prefix: "/venv", BasePrefix: "/usr"}, nil
+		t.Run(fmt.Sprintf("%d.%d.%d", tc.version[0], tc.version[1], tc.version[2]), func(t *testing.T) {
+			d, out := toolsDoctor(t)
+			toolsSeam(t, &doctorStagedVenvDir, func(context.Context) string { return "" })
+			toolsSeam(t, &doctorRuntimePython, func(context.Context) (*doctorPython, error) {
+				return &doctorPython{Version: tc.version, Prefix: "/usr", BasePrefix: "/usr"}, nil
+			})
+			f, err := checkPythonEnvironment(context.Background(), d, false)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !slices.Equal(f.Issues, tc.issues) {
+				t.Fatalf("issues = %q, want %q", f.Issues, tc.issues)
+			}
+			text := out.String()
+			if toolsLineWith(t, text, "Python "+fmt.Sprintf("%d.%d.%d", tc.version[0], tc.version[1], tc.version[2])) != "  "+tc.line {
+				t.Fatalf("version row is not %q in:\n%s", tc.line, text)
+			}
+			if strings.Contains(text, rlHint) != tc.rl {
+				t.Fatalf("RL training hint shown = %v, want %v in:\n%s", !tc.rl, tc.rl, text)
+			}
+			if strings.Contains(text, "Python (missing)") || !strings.Contains(text, "SQLite ") {
+				t.Fatalf("output:\n%s", text)
+			}
 		})
-		f, err := checkPythonEnvironment(context.Background(), d, false)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if !strings.Contains(out.String(), tc.want) || len(f.Issues) != tc.issues || !strings.Contains(out.String(), "Virtual environment active") {
-			t.Fatalf("version %v: issues = %q, output:\n%s", tc.version, f.Issues, out.String())
-		}
-	}
-}
-
-// Runs the dashboard load check against a canned child result, recording the child invocations
-func runDashboardCheck(t *testing.T, returncode int, stderr string, recorded *[]dashboardProbeCall) (*Finding, string) {
-	t.Helper()
-	d, out := toolsDoctor(t)
-	toolsSeam(t, &doctorDashboardProbeArgv, func(context.Context, string) ([]string, error) {
-		return []string{"/opt/icebath/icebath", "dashboard-load-probe"}, nil
-	})
-	toolsSeam(t, &doctorSubprocessRun, func(_ context.Context, argv []string, opts pysubprocess.Options) (*pysubprocess.Completed, error) {
-		*recorded = append(*recorded, dashboardProbeCall{argv, opts})
-		return &pysubprocess.Completed{Args: argv, Returncode: returncode, Stderr: []byte(stderr)}, nil
-	})
-	f, err := checkWebDashboardImport(context.Background(), d, false)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return f, out.String()
-}
-
-// One recorded child invocation of the dashboard load check
-type dashboardProbeCall struct {
-	argv []string
-	opts pysubprocess.Options
-}
-
-func TestDriftedPairIsAReportedIssue(t *testing.T) {
-	stderr := "File \".../fastapi/routing.py\", line 835, in __init__\n" +
-		"TypeError: Router.__init__() got an unexpected keyword argument 'on_startup'\n"
-	var recorded []dashboardProbeCall
-	finding, out := runDashboardCheck(t, 1, stderr, &recorded)
-	if !strings.Contains(out, "Dashboard web surface") || !strings.Contains(out, "✗") ||
-		!strings.Contains(out, "Router.__init__() got an unexpected keyword argument 'on_startup'") {
-		t.Fatalf("output:\n%s", out)
-	}
-	found := false
-	for _, issue := range finding.Issues {
-		found = found || strings.Contains(issue, "icebath pm repair")
-	}
-	if !found {
-		t.Fatalf("issues = %q", finding.Issues)
-	}
-}
-
-func TestProbeRunsWithoutLazyInstalls(t *testing.T) {
-	var recorded []dashboardProbeCall
-	t.Setenv(pm.EnvDisableLazyInstalls, "0")
-	runDashboardCheck(t, 0, "", &recorded)
-	if len(recorded) != 1 {
-		t.Fatalf("child ran %d times", len(recorded))
-	}
-	call := recorded[0]
-	if strings.Join(call.argv, " ") != "/opt/icebath/icebath dashboard-load-probe" {
-		t.Fatalf("argv = %q", call.argv)
-	}
-	lazy := []string{}
-	for _, entry := range call.opts.Env {
-		if strings.HasPrefix(entry, pm.EnvDisableLazyInstalls+"=") {
-			lazy = append(lazy, entry)
-		}
-	}
-	if len(lazy) != 1 || lazy[0] != pm.EnvDisableLazyInstalls+"=1" {
-		t.Fatalf("lazy install env = %q", lazy)
-	}
-	if call.opts.Timeout.Seconds() < 60 {
-		t.Fatalf("timeout = %v", call.opts.Timeout)
 	}
 }
 

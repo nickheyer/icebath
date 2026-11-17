@@ -166,10 +166,10 @@ func TestLaunchEnvironReadsTheExecTimeBlock(t *testing.T) {
 	}
 }
 
-func TestServerProcessArgvRecognisesLongLivedServers(t *testing.T) {
+func TestServerProcessArgvRecognisesTheForegroundGateway(t *testing.T) {
 	t.Cleanup(func() { pm.SetCommandArgv(nil) })
 	pm.SetCommandArgv(nil)
-	if _, err := ServerProcessArgv([]string{"serve"}); err == nil {
+	if _, err := ServerProcessArgv([]string{"gateway"}); err == nil {
 		t.Fatal("unregistered parser produced an answer")
 	}
 	pm.SetCommandArgv(func(argv []string) []string {
@@ -183,7 +183,7 @@ func TestServerProcessArgvRecognisesLongLivedServers(t *testing.T) {
 		}
 		return out
 	})
-	for argv, want := range map[string]bool{"serve": true, "dashboard --port 1": true, "--profile p gateway": true, "gateway run": true,
+	for argv, want := range map[string]bool{"--profile p gateway": true, "gateway run": true,
 		"gateway --replace": true, "gateway status": false, "sessions list": false, "": false, "--profile p": false} {
 		got, err := ServerProcessArgv(strings.Fields(argv))
 		if err != nil || got != want {

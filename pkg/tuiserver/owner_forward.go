@@ -22,7 +22,7 @@ import (
 // Ledger states a forwarded prompt may wait behind, each ends on its own
 var forwardableLedgerStates = map[string]bool{"started": true, "queued": true, "registered": true, "running": true}
 
-// Owner admission wait, relay ceiling and the idle relay recheck of the desktop session
+// Owner admission wait, relay ceiling and the idle relay recheck of the forwarding session
 const (
 	ownerAdmitTimeout      = 30 * time.Second
 	ownerRelayTimeout      = 6 * time.Hour
@@ -117,7 +117,7 @@ type ownerAdmission struct {
 	err     error
 }
 
-// One forwarded prompt, its admission future and the relay of its owner frames onto the desktop session
+// One forwarded prompt, its admission future and the relay of its owner frames onto the forwarding session
 type ownerRelay struct {
 	sid, key, home, text string
 	session              *tuigateway.Session
@@ -187,7 +187,7 @@ func (r *ownerRelay) attach(ctx context.Context) error {
 		return &OwnerUnavailableError{Msg: "the gateway did not admit it"}
 	}
 	r.settle(receipt, nil)
-	logger().Info(fmt.Sprintf("forwarded Desktop prompt for %s to the owner FIFO: admission=%s", r.key, admissionID))
+	logger().Info(fmt.Sprintf("forwarded prompt for %s to the owner FIFO: admission=%s", r.key, admissionID))
 	return r.relay(ctx, client, admissionID)
 }
 
@@ -290,7 +290,7 @@ func (r *ownerRelay) relay(ctx context.Context, client *gateway.GatewayClient, a
 	return nil
 }
 
-// One request and answer on the owner serving the home under the host scoped grant native Desktop holds
+// One request and answer on the owner serving the home under the host scoped grant of this host
 func forwardRPC(ctx context.Context, profileHome string, endpoint *gateway.GatewayEndpoint, method string, params map[string]any) (any, error) {
 	frame := int64((gateway.MaxAttachmentBytes+2)/3*4 + 1<<20)
 	client, err := connectOwner(ctx, profileHome, endpoint, "host", frame)
@@ -325,7 +325,7 @@ func forwardPrompt(ctx context.Context, sid string, session *tuigateway.Session,
 		emit = func(event, sid string, payload map[string]any) { tuigateway.Emit(ctx, event, sid, payload) }
 	}
 	relay := &ownerRelay{sid: sid, session: session, key: key, home: resolved, endpoint: endpoint, text: text, emit: emit,
-		requestID: "desktop-forward-" + strings.ReplaceAll(uuid.NewString(), "-", ""), admitted: make(chan ownerAdmission, 1)}
+		requestID: "owner-forward-" + strings.ReplaceAll(uuid.NewString(), "-", ""), admitted: make(chan ownerAdmission, 1)}
 	name := []rune(key)
 	if len(name) > 24 {
 		name = name[:24]

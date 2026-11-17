@@ -16,7 +16,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/pm"
 )
 
-// Isolated ICEBATH_HOME with test serve obligation hooks and a fresh receipt scope
+// Isolated ICEBATH_HOME with a fresh receipt scope
 func rcHome(t *testing.T) (context.Context, string) {
 	t.Helper()
 	h := filepath.Join(t.TempDir(), ".icebath")
@@ -24,33 +24,7 @@ func rcHome(t *testing.T) (context.Context, string) {
 		t.Fatal(err)
 	}
 	t.Setenv("ICEBATH_HOME", h)
-	t.Setenv("ICEBATH_UPDATE_CORRELATION_ID", "")
-	rcHooks(t)
 	return pm.WithReceiptScope(UpdateReceiptScope(context.Background())), h
-}
-
-// Serve obligation hooks keeping manual serve rows that carry no creation time
-func rcHooks(t *testing.T) {
-	t.Helper()
-	isReminder := func(row any) bool {
-		m, ok := row.(map[string]any)
-		return ok && (m["kind"] == "serve" || m["kind"] == "dashboard") && m["supervisor"] == "manual-serve"
-	}
-	SetServeObligationHooks(ServeObligationHooks{
-		IsReminderRow: isReminder,
-		RetainReceiptManualServes: func(_ context.Context, receipt map[string]any) []any {
-			pending := []any{}
-			plan, _ := receipt["plan"].(map[string]any)
-			rows := append(listItems(mapGet(plan, "runtimes")), listItems(receipt["pending_manual_serves"])...)
-			for _, row := range append(rows, listItems(receipt["carried_manual_serves"])...) {
-				if isReminder(row) {
-					pending = append(pending, row)
-				}
-			}
-			return pending
-		},
-	})
-	t.Cleanup(func() { SetServeObligationHooks(ServeObligationHooks{}) })
 }
 
 func rcLoad(t *testing.T, path string) map[string]any {
@@ -122,8 +96,8 @@ func TestReceiptFreshRecoveryResultReachesPersistedReceipt(t *testing.T) {
 	recovery := map[string]any{
 		"requested": []any{"coder", "default", "ops"}, "verified": []any{"default"},
 		"relaunch_attempted": []any{"ops"}, "failed": []any{"coder"},
-		"skipped": []any{map[string]any{"profile": "desk", "kind": "serve", "supervisor": "desktop",
-			"reason": "desktop app owns and respawns this serve backend"}},
+		"skipped": []any{map[string]any{"profile": "box", "kind": "gateway", "supervisor": "manual",
+			"reason": "manual gateway has no supervisor relaunch authority"}},
 	}
 	BeginUpdateReceipt(ctx, nil, "")
 	RecordGatewayRestart(ctx, GatewayRestart{Incomplete: true, PhaseError: "boom: module vanished mid-pull", FreshRecovery: recovery})
@@ -133,8 +107,7 @@ func TestReceiptFreshRecoveryResultReachesPersistedReceipt(t *testing.T) {
 			t.Fatalf("%s: %v != %v", key, persisted[key], want)
 		}
 	}
-	if !reflect.DeepEqual(persisted["serve_units"], map[string]any{"verified": []any{}, "failed": []any{}}) ||
-		!reflect.DeepEqual(persisted["stale_runtimes"], []any{}) {
+	if len(persisted) != len(recovery) {
 		t.Fatalf("persisted %v", persisted)
 	}
 	if _, ok := persisted["succeeded"]; ok {
@@ -238,10 +211,8 @@ func TestReceiptNoopWhenNeverBegun(t *testing.T) {
 	}
 }
 
-const rcCorrelation = "1e7cb007-a6f8-4f6c-badb-d80e204942bf"
-
-// Desktop's managed SSH receipt lookup, newest finished archive carrying the correlation id
-func rcDesktopCorrelated(t *testing.T, h, correlation string) map[string]any {
+// Newest finished archive of a home carrying the update id
+func rcFinishedArchive(t *testing.T, h, updateID string) map[string]any {
 	t.Helper()
 	paths := rcArchives(t, filepath.Join(h, "logs", "update_receipts"))
 	ordered, err := byMtime(paths)
@@ -250,7 +221,7 @@ func rcDesktopCorrelated(t *testing.T, h, correlation string) map[string]any {
 	}
 	for i := len(ordered) - 1; i >= 0; i-- {
 		payload := rcLoad(t, ordered[i])
-		if payload["correlation_id"] != correlation || payload["outcome"] == "running" || payload["finished_at"] == nil {
+		if payload["update_id"] != updateID || payload["outcome"] == "running" || payload["finished_at"] == nil {
 			continue
 		}
 		return payload
@@ -258,48 +229,40 @@ func rcDesktopCorrelated(t *testing.T, h, correlation string) map[string]any {
 	return nil
 }
 
-func TestReceiptCarriesLauncherCorrelation(t *testing.T) {
+func TestReceiptHandoffKeepsTheUpdateID(t *testing.T) {
 	ctx, h := rcHome(t)
-	t.Setenv("ICEBATH_UPDATE_CORRELATION_ID", rcCorrelation)
-	BeginUpdateReceipt(ctx, nil, "")
-	updateID := *CurrentCorrelationID(ctx)
-	FinalizeUpdateReceipt(ctx, "success", nil, "")
-	payload := rcDesktopCorrelated(t, h, rcCorrelation)
-	if payload == nil || payload["outcome"] != "success" || payload["update_id"] != updateID || updateID == rcCorrelation {
-		t.Fatalf("payload %v", payload)
-	}
-}
-
-func TestReceiptHandoffKeepsCorrelation(t *testing.T) {
-	ctx, h := rcHome(t)
-	t.Setenv("ICEBATH_UPDATE_CORRELATION_ID", rcCorrelation)
 	BeginUpdateReceipt(ctx, nil, "")
 	preSwap := rcCurrent(ctx).Data.Copy()
+	updateID := preSwap.Vals["update_id"].(string)
 	inner := UpdateReceiptScope(ctx)
-	t.Setenv("ICEBATH_UPDATE_CORRELATION_ID", "")
-	BeginUpdateReceipt(inner, preSwap, preSwap.Vals["update_id"].(string))
+	BeginUpdateReceipt(inner, preSwap, updateID)
 	FinalizeUpdateReceipt(inner, "success", nil, "")
-	if rcDesktopCorrelated(t, h, rcCorrelation) == nil {
-		t.Fatal("handoff receipt lost the launcher correlation")
+	if payload := rcFinishedArchive(t, h, updateID); payload == nil || payload["outcome"] != "success" {
+		t.Fatalf("handoff receipt lost the update id: %v", payload)
 	}
 }
 
-func TestReceiptLegacyHandoffGainsCorrelation(t *testing.T) {
+func TestReceiptLegacyHandoffKeepsItsUpdateID(t *testing.T) {
 	ctx, h := rcHome(t)
-	t.Setenv("ICEBATH_UPDATE_CORRELATION_ID", rcCorrelation)
 	BeginUpdateReceipt(ctx, pyjson.ObjectOf("update_id", "abc123", "steps", []any{}), "abc123")
 	FinalizeUpdateReceipt(ctx, "success", nil, "")
-	if payload := rcDesktopCorrelated(t, h, rcCorrelation); payload == nil || payload["update_id"] != "abc123" {
-		t.Fatalf("payload %v", payload)
+	if payload := rcFinishedArchive(t, h, "abc123"); payload == nil {
+		t.Fatal("legacy handoff receipt was not archived under its update id")
 	}
 }
 
-func TestReceiptNoLauncherCorrelationIsNull(t *testing.T) {
+func TestReceiptCarriesOnlyItsOwnUpdateID(t *testing.T) {
 	ctx, _ := rcHome(t)
 	BeginUpdateReceipt(ctx, nil, "")
 	FinalizeUpdateReceipt(ctx, "success", nil, "")
-	if latest := ReadLatestReceipt(ctx); latest["correlation_id"] != nil {
-		t.Fatalf("correlation %v", latest["correlation_id"])
+	latest := ReadLatestReceipt(ctx)
+	if id, _ := latest["update_id"].(string); len(id) != 32 {
+		t.Fatalf("update id %v", latest["update_id"])
+	}
+	for _, key := range []string{"correlation_id", "action_id", "initiator"} {
+		if _, present := latest[key]; present {
+			t.Fatalf("receipt carries %s: %v", key, latest)
+		}
 	}
 }
 
@@ -442,11 +405,8 @@ func TestReceiptNamedProfileSeesUpdateAndPMReceiptsInBothDirections(t *testing.T
 		t.Fatal(err)
 	}
 	t.Setenv("ICEBATH_HOME", profile)
-	t.Setenv("ICEBATH_UPDATE_CORRELATION_ID", "")
-	rcHooks(t)
-	action := strings.Repeat("a", 32)
 	if err := os.WriteFile(filepath.Join(old, "update_20260101_000000_1_old.json"),
-		[]byte(`{"update_id": "old", "action_id": "`+action+`", "outcome": "success"}`), 0o644); err != nil {
+		[]byte(`{"update_id": "old", "outcome": "success"}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	ctx := pm.WithReceiptScope(UpdateReceiptScope(context.Background()))
@@ -471,8 +431,14 @@ func TestReceiptNamedProfileSeesUpdateAndPMReceiptsInBothDirections(t *testing.T
 	if kind := mapGet(ReadLatestReceipt(ctx), "kind"); kind != "sync" {
 		t.Fatalf("updater sees %v", kind)
 	}
-	if got := mapGet(ReadReceiptForAction(ctx, action), "update_id"); got != "old" {
-		t.Fatalf("old archive %v", got)
+	oldSeen := false
+	for _, dir := range receiptDirs(ctx) {
+		if _, err := os.Stat(filepath.Join(dir, "update_20260101_000000_1_old.json")); err == nil {
+			oldSeen = true
+		}
+	}
+	if !oldSeen {
+		t.Fatalf("the profile receipt store left the searched stores %v", receiptDirs(ctx))
 	}
 }
 

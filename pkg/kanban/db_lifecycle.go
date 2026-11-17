@@ -250,28 +250,6 @@ func countsByAssignee(ctx context.Context, conn state.SQLiteConn) (*pyjson.Objec
 	return counts, nil
 }
 
-// Age metrics of one task in seconds, nil where the stamp is absent
-func TaskAge(task *Task) *pyjson.Object {
-	now := time.Now().Unix()
-	var createdAge, startedAge, timeToComplete any
-	if task.CreatedAt != nil {
-		createdAge = now - *task.CreatedAt
-	}
-	if task.StartedAt != nil {
-		startedAge = now - *task.StartedAt
-	}
-	if task.CompletedAt != nil {
-		base := task.CreatedAt
-		if task.StartedAt != nil && *task.StartedAt != 0 {
-			base = task.StartedAt
-		}
-		if base != nil {
-			timeToComplete = *task.CompletedAt - *base
-		}
-	}
-	return payload("created_age_seconds", createdAge, "started_age_seconds", startedAge, "time_to_complete_seconds", timeToComplete)
-}
-
 // Garbage collection window, a negative one refused because it would select everything
 func retentionSeconds(olderThanSeconds int64) (int64, error) {
 	if olderThanSeconds < 0 {
@@ -504,57 +482,4 @@ func LatestSummary(ctx context.Context, conn state.SQLiteConn, taskID string) (*
 		return nil, err
 	}
 	return cellOptStr(row.Get("summary")), nil
-}
-
-// Newest non empty run summary per task in one window query, tasks without one omitted
-func LatestSummaries(ctx context.Context, conn state.SQLiteConn, taskIDs []string) (map[string]string, error) {
-	out := map[string]string{}
-	if len(taskIDs) == 0 {
-		return out, nil
-	}
-	params := make([]any, len(taskIDs))
-	for i, id := range taskIDs {
-		params[i] = id
-	}
-	rows, err := QueryRows(ctx, conn, `
-        SELECT task_id, summary FROM (
-            SELECT task_id, summary,
-                   ROW_NUMBER() OVER (
-                       PARTITION BY task_id
-                       ORDER BY COALESCE(ended_at, started_at) DESC, id DESC
-                   ) AS rn
-              FROM task_runs
-             WHERE task_id IN (`+sqlMarks(len(taskIDs))+`)
-               AND summary IS NOT NULL AND summary != ''
-        ) WHERE rn = 1
-        `, params...)
-	if err != nil {
-		return nil, err
-	}
-	for _, r := range rows {
-		out[cellStr(r.Get("task_id"))] = cellStr(r.Get("summary"))
-	}
-	return out, nil
-}
-
-// Started at of the run each task current_run_id points at, tasks without an active run omitted
-func CurrentRunStartedAts(ctx context.Context, conn state.SQLiteConn, taskIDs []string) (map[string]int64, error) {
-	out := map[string]int64{}
-	if len(taskIDs) == 0 {
-		return out, nil
-	}
-	params := make([]any, len(taskIDs))
-	for i, id := range taskIDs {
-		params[i] = id
-	}
-	rows, err := QueryRows(ctx, conn, "SELECT t.id AS task_id, r.started_at AS started_at FROM tasks t "+
-		"JOIN task_runs r ON r.id = t.current_run_id "+
-		"WHERE t.id IN ("+sqlMarks(len(taskIDs))+")", params...)
-	if err != nil {
-		return nil, err
-	}
-	for _, r := range rows {
-		out[cellStr(r.Get("task_id"))] = cellInt(r.Get("started_at"))
-	}
-	return out, nil
 }

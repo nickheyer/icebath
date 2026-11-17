@@ -379,7 +379,7 @@ func browserVaultUnlock(ctx context.Context, env *tools.Env, backendName string)
 		return vaultDumps(vaultFail("error_type", "unlock_unavailable", "error", backend.DisplayName()+
 			" is locked and this session cannot prompt for the "+
 			"master password (headless/cron/API). Unlock it from an interactive Icebath "+
-			"session or the Desktop app first.")), nil
+			"session first.")), nil
 	}
 	master := ""
 	if prompt := GetUnlockPromptCallback(ctx); prompt != nil {
@@ -421,7 +421,7 @@ func browserVaultSaveLogin(ctx context.Context, env *tools.Env, label, taskID st
 	if prompt == nil || !vaultCanPromptHere(ctx, env) {
 		return vaultDumps(vaultFail("error_type", "prompt_unavailable", "error",
 			"This session cannot ask the user for a login (headless/cron/API). Tell them to run "+
-				"`icebath vault add` or use Desktop → Settings → Passwords & Logins for "+origin+".")), nil
+				"`icebath vault add` for "+origin+".")), nil
 	}
 	host := originHost(origin)
 	site := pystr.Strip(label)
@@ -717,8 +717,7 @@ func fillVaultHandle(ctx context.Context, env *tools.Env, handle, taskID string)
 	}
 	if meta == nil {
 		return vaultDumps(vaultFail("error", "No vault item with handle "+pyrepr.Repr(handle)+". Use browser_vault action=list. "+
-			"To save a credential: run `icebath vault add` in a terminal, or "+
-			"in the desktop app open Settings → Credential Vault.")), nil
+			"To save a credential: run `icebath vault add` in a terminal.")), nil
 	}
 	pageOrigin, refusal := boundVaultPageOrigin(ctx, env, taskID, meta, meta.Kind)
 	if refusal != nil {

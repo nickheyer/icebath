@@ -104,7 +104,6 @@ func TestOptedOutStartPurgesMarkersLeftWhileOptedIn(t *testing.T) {
 	left := []string{
 		filepath.Join(processMarkersDir(m.home), "cli-1.json"),
 		filepath.Join(setupMarkersDir(m.home), "tui-1-1.json"),
-		filepath.Join(m.home, "telemetry", "shared_metrics", OnboardingLatchDirname, "provider.completed"),
 	}
 	for _, marker := range left {
 		mustMkdir(t, filepath.Dir(marker))

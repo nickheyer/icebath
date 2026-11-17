@@ -14,7 +14,7 @@ description: >-
   supervisors, optionally owns a GPU runtime, and stores inputs, logs and assets
   in profile plugin data. Client/runtime installation and model downloads require
   separate explicit opt-ins; no model weights are bundled. No credentials or
-  telemetry are required. No Desktop viewer or hosted service is included.
+  telemetry are required. No hosted service is included.
 maintainer: remesher
 tier: community
 category: tools

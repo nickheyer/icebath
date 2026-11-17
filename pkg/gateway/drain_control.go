@@ -8,7 +8,6 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -21,15 +20,12 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 )
 
 const (
-	RestartWaitReason          = "restart_wait"
-	drainRequestFilename       = ".drain_request.json"
-	DrainRequestMaxAgeSeconds  = 3600.0
-	webSessionGatewaySocket    = "gateway"
-	restartWaitSocketTicketURL = "/api/webapp/socket-ticket"
+	RestartWaitReason         = "restart_wait"
+	drainRequestFilename      = ".drain_request.json"
+	DrainRequestMaxAgeSeconds = 3600.0
 )
 
 // DrainRunner is the runner state the restart wait checks read and the descriptor they stamp
@@ -64,26 +60,10 @@ func RestartWaitOpen(runner DrainRunner) bool {
 	return runner.Draining() && runner.Running() && reason == RestartWaitReason
 }
 
-var restartWaitReads = regexp.MustCompile(`\A(?:/api/(?:health|status|profiles/sessions(?:/sidebar)?|sessions/[^/]+(?:/messages(?:/around)?|/timeline)?))\z`)
-
-// True for an allowlisted GET while the runner is in a restart after turn wait
-func RestartWaitRead(runner DrainRunner, method, path string) bool {
-	return method == "GET" && restartWaitReads.MatchString(path) && RestartWaitOpen(runner)
-}
-
-// True for a gateway socket ticket mint during the restart wait, exempting it from the drain refusal only
-func RestartWaitSocketTicket(runner DrainRunner, method, path, query string) bool {
-	if method != "POST" || path != restartWaitSocketTicketURL {
-		return false
-	}
-	socket := pyurl.ParseQS(query, false)["socket"]
-	return len(socket) == 1 && socket[0] == webSessionGatewaySocket && RestartWaitOpen(runner)
-}
-
 var restartWaitWSMethods = map[string]bool{
 	"ping": true, "runtime.describe": true, "session.resume": true, "session.detach": true, "session.events.since": true,
 	"session.info": true, "session.list": true, "prompt.submit": true, "prompt.receipt": true, "session.interrupt": true,
-	"approval.pending": true, "approval.received": true, "approval.respond": true, "clarify.respond": true, "clarify.lock": true,
+	"approval.respond": true, "clarify.respond": true, "clarify.lock": true,
 }
 
 // True when an interactive WebSocket verb is refused because the runner is draining

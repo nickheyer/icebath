@@ -13,8 +13,7 @@ description: >-
   (hermes whatsapp-voice calls). Speech runs on Gemini Live (gemini-3.8-live by default), reusing the
   Gemini key Hermes already has; every call setting (languages, pauses, timeouts, any Live setup
   field) is configurable. Optional chat-session mode (context_mode: core_session, off by default)
-  makes the call part of the owner's WhatsApp chat with Hermes. Setup is a dashboard tab (pairing QR,
-  settings, test call) or an agent runbook skill.
+  makes the call part of the owner's WhatsApp chat with Hermes. Setup is an agent runbook skill.
   Disclosure — runs a separate sidecar process (Rust, built on whatsapp-rust) that the user starts or
   installs as a systemd/launchd user service; the binary is downloaded from this repo's GitHub
   release, built and attested by its release workflow, and checked against checksums pinned in the
@@ -25,10 +24,7 @@ description: >-
   with the persona briefing, the outgoing call's reason and ask_hermes results as text. It calls the
   local api_server with API_SERVER_KEY for ask_hermes (a full Hermes turn with the owner's tools), the
   persona briefing (at startup and after each call) and the post-call summary, a run that may write
-  to Hermes memory and whose result is sent to the owner on WhatsApp. The
-  dashboard tab's backend saves only this plugin's settings (through hermes config set), starts and
-  stops pairing, places test calls to the owner, and restarts the sidecar service (systemctl --user
-  or launchctl). A pre_gateway_dispatch hook sends the owner's WhatsApp DM texts into an active
+  to Hermes memory and whose result is sent to the owner on WhatsApp. A pre_gateway_dispatch hook sends the owner's WhatsApp DM texts into an active
   chat-session call instead of a second text reply (slash commands, media, groups and other chats are
   untouched). Chat-session mode (opt-in) also runs a loopback service inside Hermes's process that
   reads the owner's WhatsApp DM session (system prompt, recent history, tool schemas) and sends it to
