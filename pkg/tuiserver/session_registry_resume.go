@@ -157,7 +157,7 @@ func claimParkedRuntimes(ctx context.Context, sessionKey, keepSID, profileHomeDi
 	var stale []tuigateway.LiveSession
 	for _, candidate := range candidates {
 		cancelWSOrphanReap(candidate.SID)
-		if popped := popSessionByID(ctx, candidate.SID); popped != nil {
+		if popped := popSessionByID(candidate.SID); popped != nil {
 			stale = append(stale, tuigateway.LiveSession{SID: candidate.SID, Session: popped})
 		}
 	}

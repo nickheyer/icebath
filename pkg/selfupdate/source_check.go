@@ -665,14 +665,14 @@ func checkBranch(ctx context.Context, result *pyjson.Object, co sourceCheckout, 
 
 // Inputs of one passive source update check, empty strings and nil pointers take the running install's defaults
 type SourceCheckOptions struct {
-	InstallRoot      string
-	Home             string
-	Branch           *string
-	Channel          *string
-	CachePath        string
-	Force            bool
-	Passive          bool
-	Git              string
+	InstallRoot string
+	Home        string
+	Branch      *string
+	Channel     *string
+	CachePath   string
+	Force       bool
+	Passive     bool
+	Git         string
 }
 
 // Presentation ready source update status of one install and profile, never fetching or writing git state

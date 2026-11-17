@@ -61,7 +61,7 @@ const SkillLockRecordRefusal = "skills/.usage.json holds the user's skill locks,
 
 // SkillUnlockRefusal is shown when the agent tries to unlock a skill itself
 const SkillUnlockRefusal = "Only the user can unlock a skill. Ask them to run `icebath curator unlock <skill>` " +
-	"themselves or use the lock switch in Desktop."
+	"themselves."
 
 // lockedSkill is one locked skill name with the real path of its directory
 type lockedSkill struct {
@@ -142,7 +142,7 @@ func SkillLockRefusal(name string) string {
 	return fmt.Sprintf("Skill '%s' is locked by the user, so the agent cannot change it: skill_manage, "+
 		"write_file, patch and terminal all refuse. Don't retry or work around it (no copying it "+
 		"under another name); tell the user what you would change. They can unlock it with "+
-		"`icebath curator unlock %s` or the lock switch in Desktop.", name, name)
+		"`icebath curator unlock %s`.", name, name)
 }
 
 // Real paths of every skills root

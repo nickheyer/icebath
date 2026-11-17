@@ -57,7 +57,7 @@ func runAccounts(t *testing.T, env *Env, args map[string]any, gw *accountsGatewa
 	old := PortalAccounts
 	PortalAccounts = func(context.Context, *Env) ([]map[string]any, error) { return accounts, accountsErr }
 	t.Cleanup(func() { PortalAccounts = old })
-	return runManaged(t, context.Background(), env, args, gw, func(*pyjson.Object) string { return "" }, 0, "desktop")
+	return runManaged(t, context.Background(), env, args, gw, func(*pyjson.Object) string { return "" }, 0, "tui")
 }
 
 func aliasTarget(alias string, extra ...string) map[string]any {

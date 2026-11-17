@@ -36,15 +36,6 @@ tools:
     - configure_neon_auth
     - get_neon_auth_config
 
-# Composer-suggestion triggers (desktop brand pills).
-suggest:
-  keywords:
-    - neon
-    - postgres
-  hosts:
-    - neon.tech
-    - neon.com
-
 post_install: |
   On first connection icebath opens a browser to authorize with
   Neon (or run `icebath mcp login neon`). Approve access,

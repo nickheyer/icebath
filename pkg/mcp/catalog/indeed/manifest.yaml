@@ -19,14 +19,6 @@ transport:
 auth:
   type: oauth
 
-# Composer-suggestion triggers (desktop brand pills).
-suggest:
-  keywords:
-    - indeed
-    - job search
-  hosts:
-    - indeed.com
-
 post_install: |
   On first connection icebath opens a browser to authorize with
   Indeed (or run `icebath mcp login indeed`). Approve access,

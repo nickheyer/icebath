@@ -28,7 +28,6 @@ const (
 	emptyPayloadError             = "Cron job has nothing to run: the prompt is blank and no script or skill(s) are set. Provide a prompt, a script, or at least one skill."
 	rearmRecurringError           = "Cannot re-arm recurring jobs: re-arm is one-shot-only; use plain resume or cron run."
 	createdPausedReason           = "Created paused; awaiting operator approval."
-	maxFireForwardFailureDetail   = 500
 	completedOneshotRetentionDays = 7
 )
 
@@ -1394,13 +1393,4 @@ func (s *Store) markPreflightAlerted(ctx context.Context, jobID string) (bool, e
 func (s *Store) clearPreflightAlerted(ctx context.Context, jobID string) error {
 	_, err := s.setPreflightAlerted(home.WithOverride(ctx, s.home), jobID, false)
 	return err
-}
-
-// Records that a scheduled fire could not be handed to the runner
-func (s *Store) noteFireForwardFailure(ctx context.Context, jobID, detail string) (bool, error) {
-	ok, _, err := withJob(home.WithOverride(ctx, s.home), s, jobID, func(tx *jobsTx, jobs []*Job, i int, job *Job) (bool, error) {
-		job.LastFireError = &Stamp{At: s.clk.nowISO(), Detail: firstRunes(detail, maxFireForwardFailureDetail)}
-		return true, s.saveJobsLocked(home.WithOverride(ctx, s.home), tx, jobs, nil, false)
-	})
-	return ok, err
 }

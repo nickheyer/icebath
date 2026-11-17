@@ -244,16 +244,7 @@ func TestCLIConfigWriters(t *testing.T) {
 	if ok, _ := SaveServer(ctx, ui, "evil", bad); ok || !strings.Contains(ui.out.String(), "was NOT saved") {
 		t.Fatalf("suspicious entry saved %v %q", ok, ui.out.String())
 	}
-	if ok, issues, _ := ReplaceServers(ctx, map[string]any{"a": map[string]any{"url": "https://a"}, "b": "x"}); ok || len(issues) != 1 || issues[0] != "Server 'b': expected an object" {
-		t.Fatalf("replace accepted %v %v", ok, issues)
-	}
-	if ok, _, err := ReplaceServers(ctx, map[string]any{"a": map[string]any{"url": "https://a"}}); !ok || err != nil {
-		t.Fatal(ok, err)
-	}
-	if s := readServers(t); len(s) != 1 || s["a"] == nil {
-		t.Fatalf("replace result %v", s)
-	}
-	if ok, err := RemoveServer(ctx, "a"); !ok || err != nil {
+	if ok, err := RemoveServer(ctx, "srv"); !ok || err != nil {
 		t.Fatal(ok, err)
 	}
 	raw, _ := config.ReadUser(os.Getenv("ICEBATH_HOME"))

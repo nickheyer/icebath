@@ -1,21 +1,10 @@
 package builtin
 
 import (
-	"context"
-	"errors"
-	"fmt"
-	"strings"
-
 	"github.com/nickheyer/icebath/pkg/commands"
-	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/skills"
 )
-
-// Surface a slash command hands a built skill turn to, implemented by the CLI, TUI and gateway hosts
-type TurnSubmitter interface {
-	SubmitUserTurn(ctx context.Context, message string) error
-}
 
 // Compiled-in impeccable design plugin
 type impeccablePlugin struct{}
@@ -47,9 +36,7 @@ func (impeccablePlugin) Register(ctx *plugins.Context) error {
 	if _, err := ctx.RegisterSkill(name, skillMD, desc, fm); err != nil {
 		return err
 	}
-	def, err := impeccableCommandDef(ctx.PluginID(), func(c context.Context, cmdKey, instruction string) (string, bool, error) {
-		return skills.NewScope(home.Dir(c), nil).BuildSkillInvocationMessage(c, cmdKey, instruction, "", "")
-	})
+	def, err := impeccableCommandDef(ctx.PluginID())
 	if err != nil {
 		return err
 	}
@@ -61,7 +48,7 @@ func (impeccablePlugin) Register(ctx *plugins.Context) error {
 }
 
 // The /impeccable command with the 24 metadata commands as subcommands and the rendered argument hint
-func impeccableCommandDef(plugin string, build func(ctx context.Context, cmdKey, instruction string) (string, bool, error)) (commands.Def, error) {
+func impeccableCommandDef(plugin string) (commands.Def, error) {
 	names, err := impeccableCommandNames()
 	if err != nil {
 		return commands.Def{}, err
@@ -78,42 +65,10 @@ func impeccableCommandDef(plugin string, build func(ctx context.Context, cmdKey,
 	argsHint := fmString(fm, "argument-hint")
 	argsHint = replaceFirst(argsHint, "{{command_hint}}", hint)
 	description := fmString(fm, "description")
-	cmdKey := "/impeccable:impeccable"
 	return commands.Def{
 		Name: "impeccable", Description: description, Category: "Plugins", ArgsHint: argsHint,
 		Subcommands: names, Plugin: plugin,
-		Handler: func(ctx context.Context, inv *commands.Invocation) error {
-			host, ok := inv.Host.(TurnSubmitter)
-			if !ok {
-				return errors.New("impeccable: this surface cannot start a skill turn")
-			}
-			msg, found, err := build(ctx, cmdKey, impeccableRouteAlias(inv.Args))
-			if err != nil {
-				return err
-			}
-			if !found {
-				return fmt.Errorf("impeccable: skill %s is not available", cmdKey[1:])
-			}
-			return host.SubmitUserTurn(ctx, msg)
-		},
 	}, nil
-}
-
-// Command aliases the SKILL.md routing rules name, teach running init
-var impeccableAliases = map[string]string{"teach": "init"}
-
-// Rewrites a leading aliased command word to the command it aliases, keeping the rest of the request
-func impeccableRouteAlias(args string) string {
-	trimmed := strings.TrimLeft(args, " \t\n")
-	word := trimmed
-	if i := strings.IndexAny(trimmed, " \t\n"); i >= 0 {
-		word = trimmed[:i]
-	}
-	target, ok := impeccableAliases[word]
-	if !ok {
-		return args
-	}
-	return target + trimmed[len(word):]
 }
 
 func replaceFirst(s, old, repl string) string {

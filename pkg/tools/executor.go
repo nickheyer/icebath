@@ -286,7 +286,6 @@ type ExecutorHost interface {
 	SyncRewrittenToolRows(batch []*state.Message, contentsBefore []any)
 	ApplyPendingSteer(messages *[]*state.Message, numTools int)
 	MarkTrimAfterToolBatch()
-	SessionSource() string
 	RedactToolArgsForDisplay(name string, args map[string]any) map[string]any
 	BuildToolPreview(name string, args map[string]any) string
 	ToolRowEmoji(name string, args map[string]any) string
@@ -762,7 +761,6 @@ type dispatchOnceInput struct {
 	displayIndex   int
 	beginExecution func(callback func()) error
 	gate           *AuthorizationGate
-	slot           *terminalSlot
 }
 
 // Icebath policy then the one real dispatch, advancing the start order exactly once on every path
@@ -819,11 +817,6 @@ func (e *Executor) dispatchAuthorizedOnce(ctx context.Context, st *ManagedToolRe
 		return e.blockedToolResult(ctx, ref, blockBody, blockErrorType, decision), nil
 	}
 	e.Host.NoteToolDispatched(ref.Name)
-	if in.slot != nil && ref.Name == "terminal" {
-		if err := in.slot.prepare(ctx, ref); err != nil {
-			return "", err
-		}
-	}
 	ctx = WithActivityCallback(ctx, e.Host.TouchActivity)
 	if err := advance(func() { e.beginToolExecution(ref, in.displayIndex) }); err != nil {
 		return "", err
@@ -845,7 +838,6 @@ type managedInput struct {
 	trace          []map[string]any
 	beginExecution func(callback func()) error
 	gate           *AuthorizationGate
-	slot           *terminalSlot
 }
 
 // Runs relay rewrites before icebath policy and dispatches exactly once
@@ -868,14 +860,9 @@ func (e *Executor) runToolExecutionMiddleware(ctx context.Context, in managedInp
 		st.Blocked = false
 		st.Args = finalArgs
 		dispatchMu.Unlock()
-		if in.slot != nil {
-			if err := in.slot.checkCancelled(); err != nil {
-				return "", err
-			}
-		}
 		ref := &ToolCallRef{Name: in.name, Args: finalArgs, TaskID: in.taskID, CallID: in.toolCallID, Trace: trace}
 		return e.dispatchAuthorizedOnce(dctx, st, ref, dispatchOnceInput{execute: in.execute, scopeBlock: in.scopeBlock,
-			displayIndex: in.displayIndex, beginExecution: in.beginExecution, gate: in.gate, slot: in.slot})
+			displayIndex: in.displayIndex, beginExecution: in.beginExecution, gate: in.gate})
 	}
 	pipeline := func(pctx context.Context, relayArgs map[string]any) (string, error) {
 		requestArgs, _, requestTrace := e.Dispatcher.ApplyToolRequestMiddleware(pctx, env, in.name, relayArgs, in.args, ids)
@@ -2072,7 +2059,7 @@ type sequentialResult struct {
 }
 
 // Runs one sequential call on a worker goroutine under the executor's deadline
-func (e *Executor) runSequentialToolExecutionMiddleware(ctx context.Context, in managedInput, prepared *terminalSlot) (*ManagedToolResult, error) {
+func (e *Executor) runSequentialToolExecutionMiddleware(ctx context.Context, in managedInput) (*ManagedToolResult, error) {
 	host := e.Host
 	env := host.Env()
 	var timeout time.Duration
@@ -2084,32 +2071,21 @@ func (e *Executor) runSequentialToolExecutionMiddleware(ctx context.Context, in 
 	if NeverParallelTools[in.name] {
 		return e.runToolExecutionMiddleware(ctx, in)
 	}
-	var gate *AuthorizationGate
-	var done chan struct{}
-	var outcome *sequentialResult
 	var workerIDs []WorkerID
 	var workerMu sync.Mutex
-	if prepared != nil {
-		gate = prepared.batch.authGate
-		done = prepared.done
-		workerIDs = prepared.workerIDs()
-		outcome = prepared.result()
-	} else {
-		gate = NewAuthorizationGate(env, 0)
-		done = make(chan struct{})
-		result := &sequentialResult{}
-		outcome = result
-		in.gate = gate
-		go func() {
-			defer close(done)
-			wctx, id, release := e.registerWorker(ctx)
-			defer release()
-			workerMu.Lock()
-			workerIDs = append(workerIDs, id)
-			workerMu.Unlock()
-			result.managed, result.err = e.runToolExecutionMiddleware(wctx, in)
-		}()
-	}
+	gate := NewAuthorizationGate(env, 0)
+	done := make(chan struct{})
+	outcome := &sequentialResult{}
+	in.gate = gate
+	go func() {
+		defer close(done)
+		wctx, id, release := e.registerWorker(ctx)
+		defer release()
+		workerMu.Lock()
+		workerIDs = append(workerIDs, id)
+		workerMu.Unlock()
+		outcome.managed, outcome.err = e.runToolExecutionMiddleware(wctx, in)
+	}()
 	started := time.Now()
 	deadline := started.Add(timeout)
 	st := e.pollSequentialFuture(ctx, done, in.name, deadline, timeout > 0, started, gate)
@@ -2117,17 +2093,12 @@ func (e *Executor) runSequentialToolExecutionMiddleware(ctx context.Context, in 
 		return outcome.managed, outcome.err
 	}
 	if st == "keyboard_interrupt" {
-		if prepared == nil {
-			<-done
-		}
+		<-done
 		return nil, ErrKeyboardInterrupt
 	}
 	workerMu.Lock()
 	ids := append([]WorkerID(nil), workerIDs...)
 	workerMu.Unlock()
-	if prepared != nil {
-		ids = prepared.workerIDs()
-	}
 	var message string
 	var managed *ManagedToolResult
 	if st == "interrupted" {
@@ -2150,12 +2121,6 @@ func (e *Executor) runSequentialToolExecutionMiddleware(ctx context.Context, in 
 		toolsLogger(env).Warn("sequential tool timed out", "tool", in.name, "seconds", fmt.Sprintf("%.1f", timeout.Seconds()))
 		managed = e.abandonedSequentialResult(ctx, ref, message, int(timeout.Milliseconds()), "timeout", "tool_timeout", message, false)
 	}
-	if prepared != nil {
-		prepared.batch.close()
-		if st == "timeout" {
-			host.Interrupt("", "terminal batch timeout")
-		}
-	}
 	if st == "timeout" {
 		interruptWorkerIDs(ids, "")
 		e.cancelWorkerContexts(ids, errToolCallTimedOut)
@@ -2175,13 +2140,13 @@ func (e *Executor) appendInvalidArgumentsResult(ctx context.Context, messages *[
 }
 
 // Runs one sequential call with its spinner and error policy, a keyboard interrupt answering every remaining call then propagating
-func (e *Executor) runSequentialCall(ctx context.Context, dispatch *sequentialDispatch, ref *ToolCallRef, scopeBlock string, messages *[]*state.Message, remaining []state.ToolCall, displayIndex int, start time.Time, prepared *terminalSlot) (*ManagedToolResult, float64, error) {
+func (e *Executor) runSequentialCall(ctx context.Context, dispatch *sequentialDispatch, ref *ToolCallRef, scopeBlock string, messages *[]*state.Message, remaining []state.ToolCall, displayIndex int, start time.Time) (*ManagedToolResult, float64, error) {
 	host := e.Host
 	var spinnerResult any
 	var raised error
 	in := ref.middlewareKwargs()
 	in.execute, in.scopeBlock, in.displayIndex, in.trace = dispatch.execute, scopeBlock, displayIndex, dispatch.trace
-	managed, err := e.runSequentialToolExecutionMiddleware(ctx, in, prepared)
+	managed, err := e.runSequentialToolExecutionMiddleware(ctx, in)
 	switch {
 	case err == nil:
 		ref.Args = managed.Args
@@ -2248,7 +2213,6 @@ func (e *Executor) publishSequentialResult(ctx context.Context, messages *[]*sta
 	if c == nil {
 		return false
 	}
-	markTerminalBatchOutcome(ctx, isError || managed.Blocked)
 	e.emitToolCompleteAndRisk(ref, c.display, c.risk, managed.Blocked)
 	if e.toolProgressEnabled() {
 		e.printToolCompleted(index, duration, c.persisted)
@@ -2256,18 +2220,13 @@ func (e *Executor) publishSequentialResult(ctx context.Context, messages *[]*sta
 	return true
 }
 
-// ExecuteToolCallsSequential runs calls one at a time with adjacent terminal calls batched for approval
+// ExecuteToolCallsSequential runs calls one at a time
 func (e *Executor) ExecuteToolCallsSequential(ctx context.Context, toolCalls []state.ToolCall, messages *[]*state.Message, taskID string, finalize bool) error {
-	for _, run := range e.terminalApprovalRuns(ctx, toolCalls) {
-		bctx, closeBatch := e.terminalApprovalBatch(ctx, run, messages, taskID)
-		err := e.executeToolCallsSequential(bctx, run, messages, taskID)
-		closeBatch()
-		if err != nil {
-			return err
-		}
-		if e.Host.IncrementalPersistenceFailed() {
-			return nil
-		}
+	if err := e.executeToolCallsSequential(ctx, toolCalls, messages, taskID); err != nil {
+		return err
+	}
+	if e.Host.IncrementalPersistenceFailed() {
+		return nil
 	}
 	if finalize {
 		e.finalizeToolBatch(ctx, messages, taskID, len(toolCalls), e.budget())
@@ -2299,9 +2258,8 @@ func (e *Executor) executeToolCallsSequential(ctx context.Context, toolCalls []s
 			continue
 		}
 		start := time.Now()
-		prepared := takePreparedCall(ctx, ref.CallID)
 		dispatch := e.resolveSequentialDispatch(ctx, ref, messages)
-		managed, duration, err := e.runSequentialCall(ctx, dispatch, ref, pc.ScopeBlock, messages, toolCalls[i:], i+1, start, prepared)
+		managed, duration, err := e.runSequentialCall(ctx, dispatch, ref, pc.ScopeBlock, messages, toolCalls[i:], i+1, start)
 		if err != nil {
 			return err
 		}

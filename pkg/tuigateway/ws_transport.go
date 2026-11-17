@@ -90,13 +90,6 @@ func (l *fifoLock) waiting() int {
 	return len(l.waiters)
 }
 
-// Whether some place owns the lock
-func (l *fifoLock) locked() bool {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	return l.held
-}
-
 // Per connection WebSocket transport, safe to write from any goroutine with batches kept in wire order
 type WSTransport struct {
 	ws   WSConn

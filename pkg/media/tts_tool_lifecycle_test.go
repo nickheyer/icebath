@@ -282,11 +282,11 @@ func TestReleaseWithNothingResidentIsZero(t *testing.T) {
 
 func TestAcquireWarmsAndCounts(t *testing.T) {
 	fakePiper(t)
-	result := AcquireTTSLease(context.Background(), nil, "desktop:read-aloud", nil)
+	result := AcquireTTSLease(context.Background(), nil, "tui:read-aloud", nil)
 	if result["leases"] != 1 || result["action"] != "loaded" {
 		t.Fatalf("result %v", result)
 	}
-	if got := TTSLeaseHolders(); !reflect.DeepEqual(got, []string{"desktop:read-aloud"}) {
+	if got := TTSLeaseHolders(); !reflect.DeepEqual(got, []string{"tui:read-aloud"}) {
 		t.Fatalf("holders %q", got)
 	}
 }
@@ -295,12 +295,12 @@ func TestLastReleaseUnloadsButEarlierReleaseDoesNot(t *testing.T) {
 	fakePiper(t)
 	timers := fakeTimers(t)
 	ctx := context.Background()
-	AcquireTTSLease(ctx, nil, "desktop:read-aloud", nil)
+	AcquireTTSLease(ctx, nil, "tui:read-aloud", nil)
 	AcquireTTSLease(ctx, nil, "tui:voice-tts", nil)
 	if len(piperVoiceCache.Keys()) != 1 {
 		t.Fatal("voice not resident")
 	}
-	if first := ReleaseTTSLease(ctx, nil, "desktop:read-aloud"); !reflect.DeepEqual(first, map[string]any{"leases": 1, "released": 0}) {
+	if first := ReleaseTTSLease(ctx, nil, "tui:read-aloud"); !reflect.DeepEqual(first, map[string]any{"leases": 1, "released": 0}) {
 		t.Fatalf("first %v", first)
 	}
 	if len(piperVoiceCache.Keys()) != 1 || len(pendingTimers(timers)) != 0 {
@@ -347,11 +347,11 @@ func TestAcquireFailureStillRegistersLease(t *testing.T) {
 	swap(t, &resolvePiperVoice, func(context.Context, string, string) (speech.PiperVoice, error) {
 		return speech.PiperVoice{}, errors.New("engine missing")
 	})
-	result := AcquireTTSLease(context.Background(), nil, "desktop:conversation", map[string]any{"provider": "piper"})
+	result := AcquireTTSLease(context.Background(), nil, "tui:conversation", map[string]any{"provider": "piper"})
 	if result["action"] != "error" || result["leases"] != 1 {
 		t.Fatalf("result %v", result)
 	}
-	if got := TTSLeaseHolders(); !reflect.DeepEqual(got, []string{"desktop:conversation"}) {
+	if got := TTSLeaseHolders(); !reflect.DeepEqual(got, []string{"tui:conversation"}) {
 		t.Fatalf("holders %q", got)
 	}
 }
@@ -411,11 +411,11 @@ func TestPluginProviderWarmAndReleaseFollowTheLease(t *testing.T) {
 	swap(t, &loadTTSConfig, func(context.Context, *tools.Env) map[string]any { return cfg })
 	swap(t, &ttsEnsurePluginsDiscovered, func(context.Context, bool) {})
 	ctx := context.Background()
-	if got := AcquireTTSLease(ctx, nil, "desktop:read-aloud", cfg)["action"]; got != "warmed" {
+	if got := AcquireTTSLease(ctx, nil, "tui:read-aloud", cfg)["action"]; got != "warmed" {
 		t.Fatalf("action %v", got)
 	}
 	AcquireTTSLease(ctx, nil, "tui:voice-tts", cfg)
-	ReleaseTTSLease(ctx, nil, "desktop:read-aloud")
+	ReleaseTTSLease(ctx, nil, "tui:read-aloud")
 	if got := p.snapshot(); !reflect.DeepEqual(got, []string{"warm", "warm"}) {
 		t.Fatalf("calls %q", got)
 	}
@@ -470,11 +470,11 @@ func TestCommandProviderRunsWarmAndReleaseCommands(t *testing.T) {
 	}}}
 	swap(t, &loadTTSConfig, func(context.Context, *tools.Env) map[string]any { return cfg })
 	ctx := context.Background()
-	if got := AcquireTTSLease(ctx, nil, "desktop:read-aloud", cfg)["action"]; got != "warmed" {
+	if got := AcquireTTSLease(ctx, nil, "tui:read-aloud", cfg)["action"]; got != "warmed" {
 		t.Fatalf("action %v", got)
 	}
 	waitHook(t, done)
-	ReleaseTTSLease(ctx, nil, "desktop:read-aloud")
+	ReleaseTTSLease(ctx, nil, "tui:read-aloud")
 	pendingTimers(timers)[0].fire()
 	waitHook(t, done)
 	quote := "'kokoro v1'"
@@ -517,7 +517,7 @@ func TestCommandHookThreadResolvesPassthroughUnderTheCallersScope(t *testing.T) 
 	env := &tools.Env{Home: profile, Secrets: config.NewSecrets(profile)}
 	tools.SetMultiplexActive(true)
 	t.Cleanup(func() { tools.SetMultiplexActive(false) })
-	if got := AcquireTTSLease(context.Background(), env, "desktop:read-aloud", cfg)["action"]; got != "warmed" {
+	if got := AcquireTTSLease(context.Background(), env, "tui:read-aloud", cfg)["action"]; got != "warmed" {
 		t.Fatalf("action %v", got)
 	}
 	waitHook(t, done)
@@ -533,8 +533,8 @@ func TestLastReleaseKeepsModelWarmForConfiguredWindow(t *testing.T) {
 	timers := fakeTimers(t)
 	cfg["keep_warm_seconds"] = 30
 	ctx := context.Background()
-	AcquireTTSLease(ctx, nil, "desktop:conversation", nil)
-	if got := ReleaseTTSLease(ctx, nil, "desktop:conversation"); !reflect.DeepEqual(got, map[string]any{"leases": 0, "released": 0}) {
+	AcquireTTSLease(ctx, nil, "tui:conversation", nil)
+	if got := ReleaseTTSLease(ctx, nil, "tui:conversation"); !reflect.DeepEqual(got, map[string]any{"leases": 0, "released": 0}) {
 		t.Fatalf("release %v", got)
 	}
 	if len(piperVoiceCache.Keys()) != 1 {
@@ -554,14 +554,14 @@ func TestReacquireWithinWindowReusesTheLoadedVoice(t *testing.T) {
 	engine, _ := fakePiper(t)
 	timers := fakeTimers(t)
 	ctx := context.Background()
-	AcquireTTSLease(ctx, nil, "desktop:conversation", nil)
-	ReleaseTTSLease(ctx, nil, "desktop:conversation")
+	AcquireTTSLease(ctx, nil, "tui:conversation", nil)
+	ReleaseTTSLease(ctx, nil, "tui:conversation")
 	pending := pendingTimers(timers)
 	if len(pending) != 1 {
 		t.Fatalf("pending %d", len(pending))
 	}
 	stale := pending[0]
-	again := AcquireTTSLease(ctx, nil, "desktop:conversation", nil)
+	again := AcquireTTSLease(ctx, nil, "tui:conversation", nil)
 	if again["action"] != "cached" || engine.loadCount() != 1 || len(pendingTimers(timers)) != 0 {
 		t.Fatalf("again %v loads %d pending %d", again, engine.loadCount(), len(pendingTimers(timers)))
 	}

@@ -6,8 +6,6 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
-	"io"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -21,19 +19,15 @@ import (
 )
 
 const (
-	attachmentMaxBytes     = 256 * 1024 * 1024
-	attachBytesMaxBytes    = 25 * 1024 * 1024
-	pdfAttachMaxBytes      = 50 * 1024 * 1024
-	pdfAttachMaxPages      = 25
-	attachmentCopyChunkLen = 1024 * 1024
+	attachBytesMaxBytes = 25 * 1024 * 1024
+	pdfAttachMaxBytes   = 50 * 1024 * 1024
+	pdfAttachMaxPages   = 25
 )
 
 var imageMagic = []struct {
 	sig []byte
 	ext string
 }{{[]byte("\x89PNG\r\n\x1a\n"), ".png"}, {[]byte("\xff\xd8\xff"), ".jpg"}, {[]byte("GIF87a"), ".gif"}, {[]byte("GIF89a"), ".gif"}, {[]byte("BM"), ".bmp"}}
-
-var attachmentRefNeedsQuoting = regexp.MustCompile("[\\s()\\[\\]{}<>\"'`]")
 
 var anyMediaDataURL = regexp.MustCompile(`(?is)^data:[^;,]*(?:;[^;,=]+=[^;,]+)*;base64,(.*)$`)
 
@@ -229,152 +223,8 @@ func queueAttachedImage(ctx context.Context, session *tuigateway.Session, imgByt
 	return path, nil
 }
 
-// Context reference value quoted when it holds whitespace, brackets or quotes
-func formatRefValue(value string) string {
-	if value == "" || !attachmentRefNeedsQuoting.MatchString(value) {
-		return value
-	}
-	for _, q := range []string{"`", `"`, "'"} {
-		if !strings.Contains(value, q) {
-			return q + value + q
-		}
-	}
-	return value
-}
-
-// Workspace relative path of an attachment, absolute when outside the workspace
-func attachmentRefPath(ctx context.Context, session *tuigateway.Session, target string) string {
-	workspace := resolveLax(sessionCwd(ctx, session))
-	resolved := resolveLax(target)
-	if rel, ok := relativeTo(resolved, workspace); ok {
-		return filepath.ToSlash(rel)
-	}
-	return resolved
-}
-
-// Lexical path of target below base like PurePath.relative_to, the base itself giving a dot
-func relativeTo(target, base string) (string, bool) {
-	rel, err := filepath.Rel(base, target)
-	if err != nil || filepath.IsAbs(rel) || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-		return "", false
-	}
-	return rel, true
-}
-
-var controlRun = regexp.MustCompile("[\x00-\x1f]+")
-
-// File name of an attachment with control characters replaced and dots trimmed
-func sanitizeAttachmentName(name string) string {
-	candidate := controlRun.ReplaceAllString(pypath.Name(pystr.Strip(name)), "_")
-	candidate = strings.Trim(pystr.Strip(candidate), ".")
-	if candidate == "" {
-		return "attachment"
-	}
-	return candidate
-}
-
 // ValueError of an attachment staging step
 type attachmentError struct{ msg string }
 
 func (e *attachmentError) Error() string      { return e.msg }
 func (e *attachmentError) PyTypeName() string { return "ValueError" }
-
-// Whether an attached host file is referenced where it is, inside the workspace
-func referencedInPlace(path, workspace string) bool {
-	_, inside := relativeTo(path, workspace)
-	return inside
-}
-
-// Makes a file attachment visible to the agent as the stored path and whether it was copied
-func stageSessionFileAttachment(ctx context.Context, session *tuigateway.Session, rawPath, dataURL, name string) (string, bool, error) {
-	workspace := resolveLax(sessionCwd(ctx, session))
-	resolved := ""
-	if rawPath != "" {
-		if dropped := filedrop.DetectFileDrop(rawPath); dropped != nil {
-			resolved = resolveLax(dropped.Path)
-		} else {
-			token, _ := filedrop.SplitPathInput(rawPath)
-			if found := filedrop.ResolveAttachmentPath(token); found != "" {
-				resolved = resolveLax(found)
-			}
-		}
-	}
-	var payload []byte
-	filename := ""
-	if resolved != "" {
-		if referencedInPlace(resolved, workspace) {
-			return resolved, false, nil
-		}
-		filename = pypath.Name(resolved)
-	} else {
-		if dataURL == "" {
-			return "", false, &attachmentError{"file not found on gateway and no data_url provided"}
-		}
-		data, err := b64Payload(dataURL, anyMediaDataURL, attachmentMaxBytes, "attachment")
-		var over *payloadTooLarge
-		if errors.As(err, &over) {
-			return "", false, err
-		}
-		if err != nil {
-			return "", false, &attachmentError{"invalid data_url payload"}
-		}
-		payload = data
-		if payload == nil {
-			payload = []byte{}
-		}
-		source := name
-		if source == "" {
-			source = pypath.Name(rawPath)
-		}
-		filename = sanitizeAttachmentName(source)
-	}
-	root := sessionHomeDir(ctx, session, "attachments")
-	if err := os.MkdirAll(root, 0o777); err != nil {
-		return "", false, err
-	}
-	filename = sanitizeAttachmentName(filename)
-	target := filepath.Join(root, filename)
-	suffix := pypath.Suffix(filename)
-	stem := strings.TrimSuffix(filename, suffix)
-	if stem == "" {
-		stem = "attachment"
-	}
-	var upload *os.File
-	for counter := 2; ; counter++ {
-		if _, err := os.Lstat(target); err == nil {
-			target = filepath.Join(root, fmt.Sprintf("%s-%d%s", stem, counter, suffix))
-			continue
-		}
-		f, err := os.OpenFile(target, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o666)
-		if errors.Is(err, fs.ErrExist) {
-			target = filepath.Join(root, fmt.Sprintf("%s-%d%s", stem, counter, suffix))
-			continue
-		}
-		if err != nil {
-			return "", false, err
-		}
-		upload = f
-		break
-	}
-	writeErr := func() error {
-		if payload != nil {
-			_, err := upload.Write(payload)
-			return err
-		}
-		source, err := os.Open(resolved)
-		if err != nil {
-			return err
-		}
-		defer source.Close()
-		_, err = io.CopyBuffer(upload, source, make([]byte, attachmentCopyChunkLen))
-		return err
-	}()
-	if closeErr := upload.Close(); writeErr == nil {
-		writeErr = closeErr
-	}
-	if writeErr != nil {
-		_ = os.Remove(target)
-		return "", false, writeErr
-	}
-	return resolveLax(target), true, nil
-}

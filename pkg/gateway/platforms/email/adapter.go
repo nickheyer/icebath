@@ -591,7 +591,9 @@ func (a *EmailAdapter) pollLoop(ctx context.Context) error {
 
 // Fetches unseen messages off the caller, dispatches what arrived and escalates a failed fetch as a fatal error
 func (a *EmailAdapter) checkInbox(ctx context.Context) error {
-	gate := func(candidate *fetchedMessage) (bool, error) { return a.senderAccepted(ctx, candidate.senderAddr, candidate) }
+	gate := func(candidate *fetchedMessage) (bool, error) {
+		return a.senderAccepted(ctx, candidate.senderAddr, candidate)
+	}
 	fetched := make(chan []*fetchedMessage, 1)
 	go func() { fetched <- a.fetchNewMessages(context.WithoutCancel(ctx), gate) }()
 	var messages []*fetchedMessage

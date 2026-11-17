@@ -19,15 +19,6 @@ transport:
 auth:
   type: oauth
 
-# Composer-suggestion triggers (desktop brand pills).
-suggest:
-  keywords:
-    - strava
-    - running
-    - cycling
-  hosts:
-    - strava.com
-
 post_install: |
   On first connection icebath opens a browser to authorize with
   Strava (or run `icebath mcp login strava`). Approve access,

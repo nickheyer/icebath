@@ -106,6 +106,7 @@ func completeSourceLocked(ctx context.Context, root string, o SourceCompletion) 
 	if o.BeforeMaintenance != nil {
 		o.BeforeMaintenance()
 	}
+	step(featureDependenciesFollowup, func() error { return refreshConfiguredFeatures(ctx, root, o.Stdout) })
 	if o.Announce != "" {
 		fmt.Fprintln(o.Stdout, o.Announce)
 	}
@@ -113,7 +114,7 @@ func completeSourceLocked(ctx context.Context, root string, o SourceCompletion) 
 	step("maintenance", func() error {
 		ok, err := sourceCompletionMaintenance(ctx, PostUpdateMaintenance{
 			AssumeYes: o.AssumeYes, GatewayMode: o.GatewayMode, PreUpdateSnapshotID: o.PreUpdateSnapshotID,
-			PreUpdateVersion: o.PreUpdateVersion,
+			PreUpdateVersion:  o.PreUpdateVersion,
 			CompletionMessage: o.CompletionMessage, Followups: &owed, Stdout: o.Stdout, Stderr: o.Stderr})
 		if err != nil {
 			return err

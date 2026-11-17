@@ -97,9 +97,6 @@ type (
 	fireClaimedHook interface {
 		FireClaimed(ctx context.Context, job *Job, o FireOptions) (bool, error)
 	}
-	fireDueKeywordsHook interface {
-		FireDueKeywords() (names []string, varKeyword bool)
-	}
 )
 
 type cronStoreKey struct{}
@@ -343,30 +340,6 @@ func defaultFireClaimed(ctx context.Context, p CronScheduler, job *Job, o FireOp
 		return false, err
 	}
 	return true, nil
-}
-
-// Whether fire_due can safely receive the force keyword
-func providerSupportsForceFire(p CronScheduler) bool { return providerFireDueAccepts(p, "force") }
-
-// Whether the provider fire_due takes the keyword, read from a hosted signature when it reports one
-func providerFireDueAccepts(p CronScheduler, name string) bool {
-	if h, ok := p.(fireDueKeywordsHook); ok {
-		names, varKeyword := h.FireDueKeywords()
-		if varKeyword {
-			return true
-		}
-		for _, n := range names {
-			if n == name {
-				return true
-			}
-		}
-		return false
-	}
-	switch name {
-	case "job_id", "adapters", "loop", "force", "manual":
-		return true
-	}
-	return false
 }
 
 // Whether the provider implements the two phase fire contract instead of a legacy fire_due only override

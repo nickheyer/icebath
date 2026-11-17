@@ -16,7 +16,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/mcp"
 	"github.com/nickheyer/icebath/pkg/observability"
-	"github.com/nickheyer/icebath/pkg/provider"
 )
 
 const (
@@ -65,14 +64,9 @@ func (s *Store) logTickYieldOnce(reason string) {
 // Ledger receipt creation of a tick dispatch, the scheduler create_execution attribute tests patch
 var tickCreateExecution = (*Ledger).Create
 
-// Runs one tick inside retirement admission, zero when the profile is retiring
+// Runs one tick with the store bound to the context
 func schedulerTick(ctx context.Context, s *Store, o tickOptions) (int, error) {
-	admitted, release := provider.Retirement.Work()
-	defer release()
-	if !admitted {
-		return 0, nil
-	}
-	return s.tickAdmitted(withCronStore(ctx, s), o)
+	return s.tickLocked(withCronStore(ctx, s), o)
 }
 
 // Opens and nonblocking locks the tick file, nil on contention and the error for any real failure
@@ -168,7 +162,7 @@ type tickRun struct {
 type registrationOwner struct{ _ byte }
 
 // Scans, advances and dispatches due jobs under the tick lock, returning how many ran
-func (s *Store) tickAdmitted(ctx context.Context, o tickOptions) (int, error) {
+func (s *Store) tickLocked(ctx context.Context, o tickOptions) (int, error) {
 	if boot, disk, ok := s.shouldYieldTickToFreshGateway(); ok {
 		s.logTickYieldOnce(fmt.Sprintf("boot=%s disk=%s", boot, disk))
 		return 0, &CronTickYielded{BootRev: boot, DiskRev: disk}

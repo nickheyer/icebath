@@ -23,16 +23,16 @@ const (
 	breakdownSubagentTool = "delegate_task"
 )
 
-// Category ids in display order with their dashboard color and context grid glyph
-var breakdownCategories = []struct{ id, color, glyph string }{
-	{"system_prompt", "var(--context-usage-system)", "■"},
-	{"tool_definitions", "var(--context-usage-tools)", "▣"},
-	{"rules", "var(--context-usage-rules)", "▩"},
-	{"skills", "var(--context-usage-skills)", "▤"},
-	{"mcp", "var(--context-usage-mcp)", "▥"},
-	{"subagent_definitions", "var(--context-usage-subagents)", "▦"},
-	{"memory", "var(--context-usage-memory)", "▧"},
-	{"conversation", "var(--context-usage-conversation)", "▨"},
+// Category ids in display order with their context grid glyph
+var breakdownCategories = []struct{ id, glyph string }{
+	{"system_prompt", "■"},
+	{"tool_definitions", "▣"},
+	{"rules", "▩"},
+	{"skills", "▤"},
+	{"mcp", "▥"},
+	{"subagent_definitions", "▦"},
+	{"memory", "▧"},
+	{"conversation", "▨"},
 }
 
 // Occupancy sources the source line localizes, any other value printed verbatim
@@ -40,7 +40,6 @@ var contextSources = map[string]bool{"local_estimate": true, "provider_usage": t
 
 // ContextCategory is one estimated slice of the context window
 type ContextCategory struct {
-	Color  string `json:"color"`
 	ID     string `json:"id"`
 	Label  string `json:"label"`
 	Tokens int    `json:"tokens"`
@@ -232,7 +231,7 @@ func breakdownCategoriesOf(ctx context.Context, systemPrompt, skills string, too
 	for _, c := range breakdownCategories {
 		out.EstimatedTotal += tokens[c.id]
 		if tokens[c.id] > 0 || c.id == "conversation" {
-			out.Categories = append(out.Categories, ContextCategory{Color: c.color, ID: c.id, Label: contextCategoryLabel(ctx, c.id), Tokens: tokens[c.id]})
+			out.Categories = append(out.Categories, ContextCategory{ID: c.id, Label: contextCategoryLabel(ctx, c.id), Tokens: tokens[c.id]})
 		}
 	}
 	return out

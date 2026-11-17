@@ -994,11 +994,6 @@ func cpProjectWithHistory(t *testing.T, f *cpFixture, work string) {
 	}
 }
 
-// Reports whether the project's metadata survived
-func cpHistorySurvives(f *cpFixture, work string) bool {
-	return f.exists(checkpointProjectMetaPath(f.store(), checkpointProjectHash(work)))
-}
-
 func TestCheckpointAbsentWorkdirWithoutDeletionEvidenceKeepsHistory(t *testing.T) {
 	f := newCPFixture(t)
 	vanishedMount := filepath.Join(f.tmp, "mnt-a")

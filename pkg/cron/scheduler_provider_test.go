@@ -39,25 +39,12 @@ type minimalProvider struct{ name string }
 func (m *minimalProvider) Name() string                                         { return m.name }
 func (m *minimalProvider) Start(context.Context, <-chan struct{}, StartOptions) {}
 
-// Provider whose fire_due predates force, fire_due(job_id, *, adapters=None, loop=None)
+// Provider overriding fire_due alone, fire_due(job_id, *, adapters=None, loop=None)
 type legacyProvider struct{ minimalProvider }
 
 func (l *legacyProvider) FireDue(context.Context, string, FireOptions) (bool, error) {
 	return true, nil
 }
-func (l *legacyProvider) FireDueKeywords() ([]string, bool) {
-	return []string{"job_id", "adapters", "loop"}, false
-}
-
-// Provider whose fire_due takes force positionally only, fire_due(job_id, force=False, /)
-type positionalOnlyProvider struct{ legacyProvider }
-
-func (p *positionalOnlyProvider) FireDueKeywords() ([]string, bool) { return nil, false }
-
-// Provider whose fire_due accepts any keyword, fire_due(job_id, **kwargs)
-type sinkProvider struct{ legacyProvider }
-
-func (k *sinkProvider) FireDueKeywords() ([]string, bool) { return []string{"job_id"}, true }
 
 // Legacy provider that also overrides the two phase claim
 type splitProvider struct{ legacyProvider }
@@ -172,21 +159,6 @@ func TestAbcGrowthStaysAdditive(t *testing.T) {
 	p := &minimalProvider{"current"}
 	if schedulerOnJobsChanged(p) != nil || schedulerRegisterJob(p, &Job{}) != nil || schedulerReconcile(p) != nil || !schedulerIsAvailable(p) {
 		t.Fatal("optional hooks must default safely")
-	}
-}
-
-func TestForceFireCapabilityDetectsLegacyOverride(t *testing.T) {
-	if !providerSupportsForceFire(&minimalProvider{"current"}) {
-		t.Fatal("the base fire_due accepts force")
-	}
-	if providerSupportsForceFire(&legacyProvider{}) {
-		t.Fatal("a legacy fire_due without force")
-	}
-	if providerSupportsForceFire(&positionalOnlyProvider{}) {
-		t.Fatal("a positional only force is not a keyword")
-	}
-	if !providerSupportsForceFire(&sinkProvider{}) {
-		t.Fatal("a keyword sink accepts force")
 	}
 }
 

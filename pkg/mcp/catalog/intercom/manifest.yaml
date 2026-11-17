@@ -19,14 +19,6 @@ transport:
 auth:
   type: oauth
 
-# Composer-suggestion triggers (desktop brand pills).
-suggest:
-  keywords:
-    - intercom
-  hosts:
-    - intercom.com
-    - intercom.io
-
 post_install: |
   On first connection icebath opens a browser to authorize with
   Intercom (or run `icebath mcp login intercom`). Approve access,

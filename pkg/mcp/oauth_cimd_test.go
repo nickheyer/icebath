@@ -139,11 +139,11 @@ func TestCIMDConfigThatConflictsWithTheDocumentFallsBackToDCR(t *testing.T) {
 	}
 }
 
-func TestCIMDDashboardFlowFallsBackToDCR(t *testing.T) {
+func TestCIMDClientFlowFallsBackToDCR(t *testing.T) {
 	privateCIMDPorts(t)
-	flow := &DashboardOAuthFlow{RedirectURI: "https://agent.example/api/mcp/oauth/callback/srv"}
+	flow := &ClientOAuthFlow{RedirectURI: "https://agent.example/api/mcp/oauth/callback/srv"}
 	cfg := map[string]any{}
-	if _, err := configureCallbackPort(withDashboardOAuthFlow(context.Background(), flow), cfg, NewTokenStorage(context.Background(), "srv", "")); err != nil {
+	if _, err := configureCallbackPort(withClientOAuthFlow(context.Background(), flow), cfg, NewTokenStorage(context.Background(), "srv", "")); err != nil {
 		t.Fatal(err)
 	}
 	if _, ok := cfg["_cimd_url"]; ok || cfg["redirect_uri"] != flow.RedirectURI {

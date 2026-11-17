@@ -88,7 +88,7 @@ const (
 )
 
 var (
-	ExecutionSurfaces = Set("acp", "api", "batch", "cli", "desktop", "gateway", "python", "scheduled_task", "tui",
+	ExecutionSurfaces = Set("acp", "api", "batch", "cli", "gateway", "python", "scheduled_task", "tui",
 		"other", "unknown")
 	TaskOutcomes   = Set("cancelled", "failed", "success", "timed_out", "unknown")
 	TaskEndReasons = Set("approval_denied", "completed", "failed", "guardrail_blocked", "iteration_limit",
@@ -113,7 +113,7 @@ var (
 	SkillPostPatchStates  = Set("no_new_patch", "not_applicable", "reused_after_patch")
 	ClientOSFamilies      = Set("linux", "macos", "unknown", "windows")
 	ClientArchitectures   = Set("arm", "arm64", "unknown", "x86", "x86_64")
-	ClientInstallMethods  = Set("apt", "docker", "git", "home-manager", "homebrew", "microsoft-store", "nixos", "pip",
+	ClientInstallMethods  = Set("apt", "docker", "git", "home-manager", "homebrew", "nixos", "pip",
 		"unknown")
 	ClientResourceKeys = Set("architecture", "icebath_version", "install_method", "os_family")
 
@@ -150,7 +150,7 @@ var (
 	Milestones             = Set("setup_completed", "first_task_started", "first_task_success", "first_tool_success",
 		"first_gateway_message", "first_scheduled_task", "first_delegation", "first_skill_created",
 		"first_skill_reused", "first_mcp_tool_success", "first_long_session")
-	SetupSurfaces = Set("cli", "desktop", "other")
+	SetupSurfaces = Set("cli", "other")
 	TokenTypes    = Set("input", "output", "cache_read", "cache_write", "reasoning")
 	TTFTBuckets   = Set("lt_500ms", "500ms_to_1s", "1s_to_2s", "2s_to_5s", "5s_to_15s", "gte_15s", "not_streamed",
 		"unknown")
@@ -224,7 +224,7 @@ var (
 	CronRunOutcomes        = Set("success", "failed", "missed", "skipped", "cancelled")
 	CronDeliveryKinds      = Set("local", "platform", "webhook", "none", "other")
 
-	StartupSurfaces             = Set("cli", "desktop_attach", "gateway_boot", "serve_boot", "tui")
+	StartupSurfaces             = Set("cli", "gateway_boot", "tui")
 	StartupLatencyBuckets       = Set("lt_500ms", "500ms_to_1s", "1s_to_2s", "2s_to_5s", "5s_to_10s", "gte_10s")
 	ReleaseChannels             = Set("dev", "main", "stable", "unknown")
 	VersionAgeBuckets           = Set("lt_7d", "7d_to_30d", "30d_to_90d", "gte_90d", "unknown")
@@ -237,7 +237,7 @@ var (
 		"ram_bucket": RAMBuckets, "release_channel": ReleaseChannels, "version_age_bucket": VersionAgeBuckets,
 	}
 
-	EngagementSurfaces       = Set("acp", "cli", "cron", "desktop", "gateway", "tui")
+	EngagementSurfaces       = Set("acp", "cli", "cron", "gateway", "tui")
 	ActiveMinutesBuckets     = Set("0", "lt_5m", "5m_to_30m", "30m_to_2h", "2h_to_6h", "gte_6h")
 	SurfacesUsedBuckets      = Set("0", "1", "2", "3", "gte_4")
 	TurnsBeforeSwitchBuckets = Set("1", "2_to_3", "4_to_10", "11_to_30", "gte_31")
@@ -273,30 +273,29 @@ const (
 )
 
 var (
-	UpdateKinds              = Set("cli", "desktop")
+	UpdateKinds              = Set("cli")
 	UpdateOutcomes           = Set("failed", "noop", "refused", "success")
 	UpdateRunOutcomes        = UpdateOutcomes.Union(Set("partial"))
 	UpdateStageOrder         = []string{"plan", "snapshot", "apply", "deps", "build", "restart", "verify"}
 	UpdateStages             = Set(UpdateStageOrder...)
-	DesktopUpdateStages      = Set("apply", "download", "restart", "verify")
-	UpdateFailedStages       = UpdateStages.Union(DesktopUpdateStages, Set("none", "other"))
+	UpdateFailedStages       = UpdateStages.Union(Set("none", "other"))
 	UpdateStageOutcomes      = Set("failed", "skipped", "success")
 	UpdateDurationBuckets    = Set("lt_30s", "30s_to_2m", "2m_to_5m", "5m_to_15m", "gte_15m")
 	UpdateApplyModes         = Set("external", "git", "package", "unknown", "zip")
-	ProcessKinds             = Set("cli", "cron", "gateway", "other", "serve", "tui")
+	ProcessKinds             = Set("cli", "cron", "gateway", "other", "tui")
 	ProcessExitKinds         = Set("clean", "crash", "killed", "watchdog")
 	CrashClasses             = Set("import_error", "memory_error", "none", "os_error", "other", "runtime_error")
 	updateDurationThresholds = []threshold{{30_000, "lt_30s"}, {120_000, "30s_to_2m"}, {300_000, "2m_to_5m"}, {900_000, "5m_to_15m"}}
 	versionAgeThresholds     = []threshold{{7 * dayMS, "lt_7d"}, {30 * dayMS, "7d_to_30d"}, {90 * dayMS, "30d_to_90d"}}
 
-	ProviderSetupSurfaces       = Set("cli_model", "cli_setup", "dashboard", "desktop", "tui")
+	ProviderSetupSurfaces       = Set("cli_model", "cli_setup", "tui")
 	ProviderSetupEvents         = Set("abandoned", "completed", "failed", "started")
 	ProviderSetupFailureClasses = Set("auth", "cancelled", "network", "no_models", "none", "other")
-	Features                    = Set("browser", "bot_mode", "cron", "curator", "delegation", "desktop", "gateway_platform", "kanban",
+	Features                    = Set("browser", "bot_mode", "cron", "curator", "delegation", "gateway_platform", "kanban",
 		"mcp", "memory", "plugins", "projects", "skills_created", "tui", "voice")
 	DaysSinceInstallBuckets = Set("same_day", "1d_to_7d", "7d_to_30d", "30d_to_90d", "gte_90d", "unknown")
 	FeatureDisabledKinds    = Set("compression", "curator", "memory", "platform", "plugin", "setting", "skill", "toolset")
-	FeatureDisabledSurfaces = Set("cli_config", "cli_slash", "cli_tools", "dashboard", "desktop", "tui")
+	FeatureDisabledSurfaces = Set("cli_config", "cli_slash", "cli_tools", "tui")
 	FeatureDisabledEvents   = Set("disabled", "re_enabled")
 
 	ExtensionCommonFailureClasses = Set("exception", "filesystem_error", "network", "none", "other", "permission")

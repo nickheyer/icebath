@@ -289,29 +289,23 @@ func (r *Runner) stageConfig(ctx context.Context) error {
 }
 
 func (r *Runner) stageProducts(ctx context.Context) error {
-	desktop := r.opts.IncludeDesktop || DesktopProductPresent(r.installDir)
 	if _, err := os.Stat(InstallBinaryPath(r.installDir)); err != nil {
-		return fail("app products or command publication failed: no icebath binary in "+r.installDir, "products_build_failed")
+		return fail("command publication failed: no icebath binary in "+r.installDir, "products_build_failed")
 	}
 	res, err := pm.ExposeCLI(ctx, r.installDir, true)
 	if err != nil {
-		return fail("app products or command publication failed: "+err.Error(), "products_build_failed")
+		return fail("command publication failed: "+err.Error(), "products_build_failed")
 	}
 	if !res.OK {
-		return fail("app products or command publication failed: "+res.Error, "products_build_failed")
+		return fail("command publication failed: "+res.Error, "products_build_failed")
 	}
 	for _, name := range res.Written {
 		r.logSuccess("published " + name)
 	}
-	if desktop {
-		if err := r.installDesktop(ctx); err != nil {
-			return err
-		}
-	}
 	if err := r.wireShellPath(); err != nil {
 		return err
 	}
-	r.logSuccess("app products and icebath command ready")
+	r.logSuccess("icebath command ready")
 	return nil
 }
 

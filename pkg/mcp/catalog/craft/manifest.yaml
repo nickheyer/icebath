@@ -19,13 +19,6 @@ transport:
 auth:
   type: oauth
 
-# Composer-suggestion triggers (desktop brand pills).
-suggest:
-  keywords:
-    - craft docs
-  hosts:
-    - craft.do
-
 post_install: |
   On first connection icebath opens a browser to authorize with
   Craft (or run `icebath mcp login craft`). Approve access,

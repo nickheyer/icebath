@@ -135,12 +135,12 @@ func (g *gatewayFake) readIDs() []string {
 }
 
 // Card callback recording each payload and answering at once
-type desktopCard struct {
+type connectCard struct {
 	mu   sync.Mutex
 	seen []map[string]any
 }
 
-func (c *desktopCard) cb(payload *pyjson.Object) string {
+func (c *connectCard) cb(payload *pyjson.Object) string {
 	var m map[string]any
 	_ = json.Unmarshal([]byte(connDumps(payload)), &m)
 	c.mu.Lock()
@@ -202,12 +202,12 @@ func targetsOf(out map[string]any) map[string]map[string]any {
 	return by
 }
 
-func TestManagedDesktopConnectMintsOnceEmitsTheCardAndReturnsOutcomesWithoutURLs(t *testing.T) {
+func TestManagedCardConnectMintsOnceEmitsTheCardAndReturnsOutcomesWithoutURLs(t *testing.T) {
 	env := managedTestSetup(t)
 	gw := newGatewayFake()
 	gw.flips = map[string]int{"gmail": 2, "notion": 3}
-	card := &desktopCard{}
-	out := runManaged(t, context.Background(), env, connectArgs("connect", "gmail", "notion"), gw, card.cb, 0, "desktop")
+	card := &connectCard{}
+	out := runManaged(t, context.Background(), env, connectArgs("connect", "gmail", "notion"), gw, card.cb, 0, "tui")
 	if len(gw.mints) != 1 || gw.mints[0]["connectors"] != "gmail,notion" {
 		t.Fatalf("mints %v", gw.mints)
 	}
@@ -234,7 +234,7 @@ func TestManagedDesktopConnectMintsOnceEmitsTheCardAndReturnsOutcomesWithoutURLs
 	}
 }
 
-func TestManagedDesktopConnectURLStaysOnTheLiveOperationForThePanel(t *testing.T) {
+func TestManagedCardConnectURLStaysOnTheLiveOperationForThePanel(t *testing.T) {
 	env := managedTestSetup(t)
 	gw := newGatewayFake()
 	gw.flips = map[string]int{"gmail": 2}
@@ -244,7 +244,7 @@ func TestManagedDesktopConnectURLStaysOnTheLiveOperationForThePanel(t *testing.T
 		captured = LiveGet(OperationSessionKey(env, "s1"), id.(string), "")
 		return ""
 	}
-	runManaged(t, context.Background(), env, connectArgs("connect", "gmail"), gw, cb, 0, "desktop")
+	runManaged(t, context.Background(), env, connectArgs("connect", "gmail"), gw, cb, 0, "tui")
 	targets, _ := captured.Result(context.Background(), env, true).Get("targets")
 	url, _ := targets.([]any)[0].(*pyjson.Object).Get("connect_url")
 	if s, _ := url.(string); !strings.HasPrefix(s, "https://connect.example/gmail/") {
@@ -256,7 +256,7 @@ func TestManagedWatcherTransitionsOnFlipAndSettlesByDeadlineWhenNothingFlips(t *
 	env := managedTestSetup(t)
 	gw := newGatewayFake()
 	OperationDeadlineSeconds = 0.05
-	out := runManaged(t, context.Background(), env, connectArgs("connect", "gmail"), gw, (&desktopCard{}).cb, 0.01, "desktop")
+	out := runManaged(t, context.Background(), env, connectArgs("connect", "gmail"), gw, (&connectCard{}).cb, 0.01, "tui")
 	if out["settled_by"] != "deadline" || targetsOf(out)["gmail"]["state"] != "not_connected" || len(gw.readIDs()) < 2 {
 		t.Fatalf("out %v reads %v", out, gw.readIDs())
 	}
@@ -266,7 +266,7 @@ func TestManagedWatcherReadsOneAccountPerTargetPerTickAndNeverTheList(t *testing
 	env := managedTestSetup(t)
 	gw := newGatewayFake()
 	gw.flips = map[string]int{"gmail": 3, "notion": 2}
-	runManaged(t, context.Background(), env, connectArgs("connect", "gmail", "notion"), gw, (&desktopCard{}).cb, 0, "desktop")
+	runManaged(t, context.Background(), env, connectArgs("connect", "gmail", "notion"), gw, (&connectCard{}).cb, 0, "tui")
 	reads := gw.readIDs()
 	count := func(id string) int {
 		n := 0
@@ -298,7 +298,7 @@ func TestManagedRespondFromTheCardSkipsATargetAndWakesTheLoop(t *testing.T) {
 		})
 		return ""
 	}
-	out := runManaged(t, context.Background(), env, connectArgs("connect", "gmail", "notion"), gw, cb, 0.01, "desktop")
+	out := runManaged(t, context.Background(), env, connectArgs("connect", "gmail", "notion"), gw, cb, 0.01, "tui")
 	<-done
 	by := targetsOf(out)
 	if by["gmail"]["state"] != "connected" || by["notion"]["state"] != "skipped" || out["settled_by"] != "all_resolved" {
@@ -313,17 +313,17 @@ func TestManagedMintFailureDetailSurvivesAndOnlyAnUnlistedCatalogNameIsMisrouted
 	gw.mintStatus, gw.statusReason = "failed", "vendor: bad scope"
 	OperationDeadlineSeconds = 0.05
 	patchCatalog(t, []string{"notion"}, []string{"gmail", "notion"}, true)
-	by := targetsOf(runManaged(t, ctx, env, connectArgs("connect", "gmail", "notion"), gw, (&desktopCard{}).cb, 0.01, "desktop"))
+	by := targetsOf(runManaged(t, ctx, env, connectArgs("connect", "gmail", "notion"), gw, (&connectCard{}).cb, 0.01, "tui"))
 	if by["gmail"]["state"] != "not_connected" || by["gmail"]["detail"] != "vendor: bad scope" || by["notion"]["detail"] != "vendor: bad scope" {
 		t.Fatalf("first %v", by)
 	}
 
 	gw = newGatewayFake()
 	gw.flips, gw.mintOverrides = map[string]int{"gmail": 1}, map[string]string{"notion": "failed"}
-	card := &desktopCard{}
+	card := &connectCard{}
 	OperationDeadlineSeconds = 0.2
 	patchCatalog(t, []string{"notion"}, []string{"gmail"}, true)
-	by = targetsOf(runManaged(t, ctx, env, connectArgs("connect", "gmail", "notion"), gw, card.cb, 0.01, "desktop"))
+	by = targetsOf(runManaged(t, ctx, env, connectArgs("connect", "gmail", "notion"), gw, card.cb, 0.01, "tui"))
 	if len(gw.mints) != 1 || len(card.seen) == 0 || by["gmail"]["state"] != "connected" ||
 		!strings.HasPrefix(by["notion"]["detail"].(string), "notion is a local MCP server") {
 		t.Fatalf("second %v", by)
@@ -331,10 +331,10 @@ func TestManagedMintFailureDetailSurvivesAndOnlyAnUnlistedCatalogNameIsMisrouted
 
 	gw = newGatewayFake()
 	gw.mintStatus = "failed"
-	card = &desktopCard{}
+	card = &connectCard{}
 	OperationDeadlineSeconds = 30
 	patchCatalog(t, []string{"notion"}, nil, true)
-	out := runManaged(t, ctx, env, connectArgs("connect", "notion"), gw, card.cb, 0.01, "desktop")
+	out := runManaged(t, ctx, env, connectArgs("connect", "notion"), gw, card.cb, 0.01, "tui")
 	if len(card.seen) != 0 || out["settled_by"] != "all_resolved" || !strings.HasPrefix(targetsOf(out)["notion"]["detail"].(string), "notion is a local MCP server") {
 		t.Fatalf("third %v", out)
 	}
@@ -343,7 +343,7 @@ func TestManagedMintFailureDetailSurvivesAndOnlyAnUnlistedCatalogNameIsMisrouted
 	gw.mintStatus, gw.statusReason = "failed", "gateway hiccup"
 	OperationDeadlineSeconds = 0.05
 	patchCatalog(t, []string{"notion"}, nil, false)
-	out = runManaged(t, ctx, env, connectArgs("connect", "notion"), gw, (&desktopCard{}).cb, 0.01, "desktop")
+	out = runManaged(t, ctx, env, connectArgs("connect", "notion"), gw, (&connectCard{}).cb, 0.01, "tui")
 	if targetsOf(out)["notion"]["detail"] != "gateway hiccup" {
 		t.Fatalf("fourth %v", out)
 	}
@@ -358,22 +358,22 @@ func TestManagedAGuessedSlugFailsNamingTheListedOneAndStatusNamesItToo(t *testin
 		gw.instruction = "This connector is not allowed by your organization's policy."
 		return gw
 	}
-	card := &desktopCard{}
+	card := &connectCard{}
 	OperationDeadlineSeconds = 30
 	patchCatalog(t, nil, nil, false)
-	out := runManaged(t, ctx, env, connectArgs("connect", "granola"), fake(), card.cb, 0.01, "desktop")
+	out := runManaged(t, ctx, env, connectArgs("connect", "granola"), fake(), card.cb, 0.01, "tui")
 	if len(card.seen) != 0 || out["settled_by"] != "all_resolved" || targetsOf(out)["granola"]["detail"] != "'granola' is not a connector slug; use granola_mcp" {
 		t.Fatalf("granola %v", out)
 	}
 	OperationDeadlineSeconds = 0.05
-	out = runManaged(t, ctx, env, connectArgs("connect", "gmail"), fake(), (&desktopCard{}).cb, 0.01, "desktop")
+	out = runManaged(t, ctx, env, connectArgs("connect", "gmail"), fake(), (&connectCard{}).cb, 0.01, "tui")
 	if targetsOf(out)["gmail"]["detail"] != "This connector is not allowed by your organization's policy." {
 		t.Fatalf("gmail %v", out)
 	}
 	old := PortalAccounts
 	PortalAccounts = func(context.Context, *Env) ([]map[string]any, error) { return nil, nil }
 	defer func() { PortalAccounts = old }()
-	out = runManaged(t, ctx, env, connectArgs("status", "granola"), fake(), nil, 0, "desktop")
+	out = runManaged(t, ctx, env, connectArgs("status", "granola"), fake(), nil, 0, "tui")
 	unknown, _ := out["unknown"].(map[string]any)
 	if len(out["connectors"].([]any)) != 0 || len(unknown) != 1 || unknown["granola"] != "'granola' is not a connector slug; use granola_mcp" {
 		t.Fatalf("status %v", out)
@@ -384,7 +384,7 @@ func TestManagedReconnectOnAnActiveTargetMakesNoGatewayMint(t *testing.T) {
 	env := managedTestSetup(t)
 	gw := newGatewayFake()
 	gw.connected["gmail"] = true
-	out := runManaged(t, context.Background(), env, connectArgs("reconnect", "gmail"), gw, (&desktopCard{}).cb, 0, "desktop")
+	out := runManaged(t, context.Background(), env, connectArgs("reconnect", "gmail"), gw, (&connectCard{}).cb, 0, "tui")
 	if len(gw.mints) != 0 || targetsOf(out)["gmail"]["state"] != "connected" || out["settled_by"] != "all_resolved" {
 		t.Fatalf("mints %v out %v", gw.mints, out)
 	}
@@ -397,7 +397,7 @@ func TestManagedReconnectForceAlwaysReinitiatesEvenWhenActive(t *testing.T) {
 	OperationDeadlineSeconds = 0.05
 	args := connectArgs("reconnect", "gmail")
 	args["force"] = true
-	runManaged(t, context.Background(), env, args, gw, (&desktopCard{}).cb, 0.01, "desktop")
+	runManaged(t, context.Background(), env, args, gw, (&connectCard{}).cb, 0.01, "tui")
 	if len(gw.mints) != 1 || gw.mints[0]["connectors"] != "gmail" || gw.mints[0]["reinitiate"] != true {
 		t.Fatalf("mints %v", gw.mints)
 	}
@@ -407,13 +407,13 @@ func TestManagedReconnectOnADisconnectedTargetReinitiates(t *testing.T) {
 	env := managedTestSetup(t)
 	gw := newGatewayFake()
 	gw.flips = map[string]int{"gmail": 2}
-	runManaged(t, context.Background(), env, connectArgs("reconnect", "gmail"), gw, (&desktopCard{}).cb, 0, "desktop")
+	runManaged(t, context.Background(), env, connectArgs("reconnect", "gmail"), gw, (&connectCard{}).cb, 0, "tui")
 	if len(gw.mints) != 1 || gw.mints[0]["connectors"] != "gmail" || gw.mints[0]["reinitiate"] != true {
 		t.Fatalf("mints %v", gw.mints)
 	}
 }
 
-func TestManagedOffDesktopConnectReturnsLinksAndDoesNotBlock(t *testing.T) {
+func TestManagedCardlessConnectReturnsLinksAndDoesNotBlock(t *testing.T) {
 	env := managedTestSetup(t)
 	gw := newGatewayFake()
 	out := runManaged(t, context.Background(), env, connectArgs("connect", "gmail"), gw, nil, 0, "cli")
@@ -430,7 +430,7 @@ func TestManagedCallbackPresenceDecidesTheCardPathOnTUI(t *testing.T) {
 	env := managedTestSetup(t)
 	gw := newGatewayFake()
 	gw.flips = map[string]int{"gmail": 1}
-	card := &desktopCard{}
+	card := &connectCard{}
 	out := runManaged(t, context.Background(), env, connectArgs("connect", "gmail"), gw, card.cb, 0, "tui")
 	row := targetsOf(out)["gmail"]
 	if _, has := row["connect_url"]; len(card.seen) != 1 || row["state"] != "connected" || has {
@@ -445,7 +445,7 @@ func TestManagedSecondConnectWhileAnOperationIsOpenIsRefused(t *testing.T) {
 	if err := LiveOpen(context.Background(), op); err != nil {
 		t.Fatal(err)
 	}
-	out := runManaged(t, context.Background(), env, connectArgs("connect", "notion"), gw, (&desktopCard{}).cb, 0, "desktop")
+	out := runManaged(t, context.Background(), env, connectArgs("connect", "notion"), gw, (&connectCard{}).cb, 0, "tui")
 	msg, _ := out["error"].(string)
 	if !strings.Contains(msg, "already open") || !strings.Contains(msg, op.OpID) || len(gw.mints) != 0 {
 		t.Fatalf("out %v mints %v", out, gw.mints)
@@ -457,7 +457,7 @@ func TestManagedConnectedReadOnAFailedTargetIsIgnoredNotAnError(t *testing.T) {
 	gw := newGatewayFake()
 	gw.mintStatus, gw.statusReason, gw.flips = "failed", "denied", map[string]int{"gmail": 1}
 	OperationDeadlineSeconds = 0.05
-	out := runManaged(t, context.Background(), env, connectArgs("connect", "gmail"), gw, (&desktopCard{}).cb, 0.01, "desktop")
+	out := runManaged(t, context.Background(), env, connectArgs("connect", "gmail"), gw, (&connectCard{}).cb, 0.01, "tui")
 	row := targetsOf(out)["gmail"]
 	if _, has := out["error"]; has || !slices.Contains([]any{"failed", "not_connected"}, row["state"]) || row["detail"] != "denied" {
 		t.Fatalf("out %v", out)
@@ -480,7 +480,7 @@ func TestManagedContinueDuringAConnectedReadKeepsTheSettledResult(t *testing.T) 
 		opID = id.(string)
 		return ""
 	}
-	out := runManaged(t, context.Background(), env, connectArgs("connect", "gmail"), gw, cb, 0.01, "desktop")
+	out := runManaged(t, context.Background(), env, connectArgs("connect", "gmail"), gw, cb, 0.01, "tui")
 	if _, has := out["error"]; !settled || has || out["settled_by"] != "continue" || targetsOf(out)["gmail"]["state"] != "not_connected" {
 		t.Fatalf("out %v", out)
 	}
@@ -498,7 +498,7 @@ func TestManagedInterruptWakesTheLoopAndSettlesBeforeTheNextTick(t *testing.T) {
 	}
 	OperationDeadlineSeconds = 10
 	started := time.Now()
-	out := runManaged(t, ctx, env, connectArgs("connect", "gmail"), gw, cb, 5.0, "desktop")
+	out := runManaged(t, ctx, env, connectArgs("connect", "gmail"), gw, cb, 5.0, "tui")
 	if out["settled_by"] != "interrupt" || time.Since(started) >= 2*time.Second {
 		t.Fatalf("out %v after %s", out, time.Since(started))
 	}

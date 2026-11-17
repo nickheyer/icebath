@@ -19,14 +19,6 @@ transport:
 auth:
   type: oauth
 
-# Composer-suggestion triggers (desktop brand pills).
-suggest:
-  keywords:
-    - notion
-  hosts:
-    - notion.so
-    - notion.site
-
 post_install: |
   On first connection icebath opens a browser to authorize with
   Notion (or run `icebath mcp login notion`). Approve access,

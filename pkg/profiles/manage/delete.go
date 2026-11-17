@@ -30,7 +30,7 @@ import (
 // Reader behind the delete confirmation prompt, swapped by tests
 var stdin io.Reader = os.Stdin
 
-var backendTokens = map[string]bool{"serve": true, "dashboard": true, "gateway": true}
+var backendTokens = map[string]bool{"gateway": true}
 
 var icebathArgvMarkers = []string{"icebath_cli.main", "icebath-gateway", "tui_gateway"}
 

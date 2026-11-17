@@ -36,20 +36,6 @@ var launcherScript []byte
 //go:embed wallpaper.png
 var wallpaperPNG []byte
 
-const rfbRelay = "import os,socket,sys,threading\n" +
-	"s=socket.socket(socket.AF_UNIX);s.connect(sys.argv[1])\n" +
-	"def up():\n" +
-	"  while True:\n" +
-	"    d=os.read(0,65536)\n" +
-	"    if not d: break\n" +
-	"    s.sendall(d)\n" +
-	"  s.shutdown(socket.SHUT_WR)\n" +
-	"threading.Thread(target=up,daemon=True).start()\n" +
-	"while True:\n" +
-	"  d=s.recv(65536)\n" +
-	"  if not d: break\n" +
-	"  os.write(1,d)\n"
-
 // Python class name of a terminal environment as hermes logs and records it, the bare type name otherwise
 func envClassName(e tools.Environment) string {
 	if c, ok := e.(interface{ ClassName() string }); ok {
@@ -525,15 +511,6 @@ func SandboxStop(env *tools.Env, e tools.Environment, profile string) (bool, err
 		return false, err
 	}
 	return proc.ReturnCode == 0, nil
-}
-
-// Process whose stdin and stdout carry the RFB bytes of the sandbox Xvnc
-func SandboxOpenRFBStream(e tools.Environment, profile string) (*tools.StreamProcess, error) {
-	user, err := userFor(e)
-	if err != nil {
-		return nil, err
-	}
-	return tools.OpenStream(e, []string{"python3", "-c", rfbRelay, remoteDir(e, profile) + "/rfb.sock"}, nil, user, nil)
 }
 
 // Command and args running cua-driver mcp on the sandbox display through the backend exec prefix

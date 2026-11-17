@@ -112,7 +112,7 @@ func TestSessionsExportRejectsOversizedSingleBeforeTouchingOutput(t *testing.T) 
 		t.Fatal(err)
 	}
 	result := consoleExecute(t, NewConsoleEngine(context.Background(), 20000), "sessions export "+output+" --session-id too-large", true)
-	if result.Status != ConsoleError || !strings.Contains(result.Output, "too-large") || !strings.Contains(result.Output, "streaming Export") {
+	if result.Status != ConsoleError || !strings.Contains(result.Output, "too-large") || !strings.Contains(result.Output, "--format md") {
 		t.Fatalf("result %+v", result)
 	}
 	if strings.Contains(strings.ToLower(result.Output), "resume") || len(materialized) != 0 {
@@ -168,7 +168,7 @@ func TestSessionsExportAllRejectsSingleOversizedSession(t *testing.T) {
 	if result.Status != ConsoleError {
 		t.Fatalf("result %+v", result)
 	}
-	for _, want := range []string{"runaway", "more than 3 exportable", "streaming Export", "max_export_messages"} {
+	for _, want := range []string{"runaway", "more than 3 exportable", "--format md", "max_export_messages"} {
 		if !strings.Contains(result.Output, want) {
 			t.Fatalf("output %q lacks %q", result.Output, want)
 		}

@@ -604,7 +604,7 @@ type ProcessRegistry struct {
 	globalWatchWindowHits           int
 	globalWatchSuppressedDuringTrip int
 	// OnOutput streams live output chunks from reader goroutines to a driver installed sink
-	OnOutput func(s *ProcessSession, chunk string)
+	OnOutput            func(s *ProcessSession, chunk string)
 	heartbeatRunning    bool
 	completionsRestored bool
 	jobsOutliveHost     bool

@@ -119,10 +119,10 @@ func (h *fakeExecutorHost) AppendGuardrailObservation(_ string, _ map[string]any
 	return result
 }
 func (h *fakeExecutorHost) RecordFileMutationResult(string, map[string]any, string, bool, string) {}
-func (h *fakeExecutorHost) ObserveToolOutcome(string, bool)                 {}
-func (h *fakeExecutorHost) NoteToolResult(string, string, string, string)   {}
-func (h *fakeExecutorHost) RecordToolBatch([]*state.Message, []any)         {}
-func (h *fakeExecutorHost) SubdirectoryHints(string, map[string]any) string { return "" }
+func (h *fakeExecutorHost) ObserveToolOutcome(string, bool)                                       {}
+func (h *fakeExecutorHost) NoteToolResult(string, string, string, string)                         {}
+func (h *fakeExecutorHost) RecordToolBatch([]*state.Message, []any)                               {}
+func (h *fakeExecutorHost) SubdirectoryHints(string, map[string]any) string                       { return "" }
 func (h *fakeExecutorHost) ToolResultContentForActiveModel(_ string, result string) any {
 	return result
 }
@@ -190,7 +190,6 @@ func (h *fakeExecutorHost) ApplyPendingSteer(messages *[]*state.Message, numTool
 	}
 }
 func (h *fakeExecutorHost) MarkTrimAfterToolBatch() {}
-func (h *fakeExecutorHost) SessionSource() string   { return "" }
 func (h *fakeExecutorHost) RedactToolArgsForDisplay(_ string, args map[string]any) map[string]any {
 	return args
 }

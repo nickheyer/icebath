@@ -59,9 +59,6 @@ func winregStr(subkey, name string) string {
 	return v
 }
 
-func cpuModelImpl() string  { return winregStr(cpuKey, "ProcessorNameString") }
-func cpuVendorImpl() string { return winregStr(cpuKey, "VendorIdentifier") }
-
 func ramTotalImpl() int64 {
 	var status struct {
 		Length, MemoryLoad                                                                                   uint32
@@ -115,10 +112,6 @@ func gpuClassImpl() string {
 		vendors[i] = a.VendorID
 	}
 	return ClassifyGPUVendors(vendors)
-}
-
-func nvidiaGPUsImpl() []NvidiaGPU {
-	return NvidiaGPUsFromAdapters(displayAdaptersOnce().adapters)
 }
 
 func interactiveSessionImpl() bool {

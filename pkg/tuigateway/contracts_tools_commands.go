@@ -4,8 +4,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pydantic"
 )
 
-var open = pydantic.NewModel("_Open", OpenConfig)
-
 var BatteryCategory = pydantic.Enum("BatteryCategory", "good", "good", "warn", "warn", "bad", "bad", "critical", "critical", "dim", "dim").Described("``agent/battery.py::battery_category`` colour bucket.")
 
 var SystemBatteryParams = pydantic.NewModel("SystemBatteryParams", ParamsConfig,

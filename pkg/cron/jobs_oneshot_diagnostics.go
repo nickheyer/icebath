@@ -3,8 +3,9 @@ package cron
 import (
 	"context"
 	"fmt"
-	"github.com/nickheyer/icebath/pkg/home"
 	"strconv"
+
+	"github.com/nickheyer/icebath/pkg/home"
 )
 
 // Writes a diagnostic into the job output directory, false when the write failed

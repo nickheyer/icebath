@@ -48,16 +48,6 @@ var HelpSessionSubgroups = []Subgroup{
 		"refine", "loop", "proactive", "moa", "journey", "learning", "memory-graph"}},
 }
 
-// BusyRejectText maps a busy handler key to the refusal shown while the agent runs
-var BusyRejectText = map[string]string{
-	"model":         "Agent is running — wait or /stop first, then switch models.",
-	"codex-runtime": "Agent is running — wait or /stop first, then change runtime.",
-	"moa":           "Agent is running — wait or /stop first, then run /moa.",
-}
-
-// BusySpecialHandlers lists the busy handler keys that have a mid run variant
-var BusySpecialHandlers = []string{"start", "stop", "new", "queue", "steer", "egress", "goal", "loop"}
-
 var builtinMeta = map[string]Meta{}
 
 func def(name, description, category string, meta Meta, d Def) Def {

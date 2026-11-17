@@ -10,8 +10,6 @@ import (
 	"sync"
 	"testing"
 	"time"
-
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 // Environment double whose Execute is a closure, with the hermes test attribute shape

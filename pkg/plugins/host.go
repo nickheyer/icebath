@@ -637,14 +637,6 @@ func (h *PluginHost) instanceRef(ctx context.Context, key, method string, params
 	return ref, nil
 }
 
-// Runs a user memory provider config_schema.py in the child and returns its CONFIG_SCHEMA
-func (h *PluginHost) ConfigSchema(ctx context.Context, path string) (any, error) {
-	if _, err := h.ensureStarted(ctx); err != nil {
-		return nil, err
-	}
-	return h.call(ctx, "config_schema", map[string]any{"path": path}, nil, 0, nil)
-}
-
 // Runs a model provider profile overridden method or callable field in the child
 func (h *PluginHost) ProfileCall(ctx context.Context, pluginDir, moduleName, profile, attr string, args []any, kwargs map[string]any) (any, error) {
 	if _, err := h.ensureStarted(ctx); err != nil {

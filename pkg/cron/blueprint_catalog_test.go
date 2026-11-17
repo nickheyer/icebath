@@ -18,11 +18,13 @@ import (
 
 func mustBlueprint(t *testing.T, key string) *AutomationBlueprint {
 	t.Helper()
-	b := getBlueprint(context.Background(), key)
-	if b == nil {
-		t.Fatalf("no blueprint %s", key)
+	for _, b := range listBlueprints(context.Background()) {
+		if b.Key == key {
+			return &b
+		}
 	}
-	return b
+	t.Fatalf("no blueprint %s", key)
+	return nil
 }
 
 func mustFill(t *testing.T, key string, values map[string]any) *pyjson.Object {
@@ -114,34 +116,6 @@ func TestBlueprintValidation(t *testing.T) {
 	}
 	if got, _ := spec.Get("origin"); !pyrepr.Equal(got, origin) {
 		t.Fatalf("origin %#v", got)
-	}
-}
-
-func TestBlueprintDeeplinkShape(t *testing.T) {
-	url := blueprintDeeplink(mustBlueprint(t, "morning-brief"), map[string]any{"time": "07:15"})
-	if !strings.HasPrefix(url, "icebath://blueprint/morning-brief?") || !strings.Contains(url, "time=07") {
-		t.Fatalf("url %q", url)
-	}
-}
-
-func TestBlueprintDocsIndexEntries(t *testing.T) {
-	var index []any
-	for i := range blueprintCatalog {
-		index = append(index, blueprintCatalogEntry(&blueprintCatalog[i]))
-	}
-	if len(index) != len(blueprintCatalog) {
-		t.Fatalf("index %d", len(index))
-	}
-	if _, err := pyjson.Dumps(index); err != nil {
-		t.Fatal(err)
-	}
-	for _, e := range index {
-		o := e.(*pyjson.Object)
-		_, hasCommand := o.Get("command")
-		_, hasURL := o.Get("appUrl")
-		if !hasCommand || !hasURL {
-			t.Fatalf("entry %v", o.Keys)
-		}
 	}
 }
 

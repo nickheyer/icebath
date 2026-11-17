@@ -141,11 +141,10 @@ func launchKey(launchID any) string {
 	return ""
 }
 
-// Records a TUI or Desktop client's own launch to ready measurement once per surface and launch
+// Records a TUI client's own launch to ready measurement once per launch
 func RecordRpcStartupLatency(ctx context.Context, clientSurface, elapsedMS, launchID any) {
-	name, _ := clientSurface.(string)
-	surface, known := map[string]string{"desktop": "desktop_attach", "desktop_attach": "desktop_attach", "tui": "tui"}[name]
-	if !known {
+	surface, _ := clientSurface.(string)
+	if surface != "tui" {
 		return
 	}
 	if _, ok := LatencyBucket(elapsedMS); ok && startupClaim(surface, launchKey(launchID)) {

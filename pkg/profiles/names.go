@@ -45,7 +45,7 @@ var CloneAllDefaultExcludeRoot = map[string]bool{
 // Per profile history never copied by a full clone from any source
 var CloneAllHistoryExcludeRoot = map[string]bool{
 	"state.db": true, "state.db-wal": true, "state.db-shm": true, "sessions": true, "backups": true,
-	"state-snapshots": true, "checkpoints": true, "cron": true, "webapp": true,
+	"state-snapshots": true, "checkpoints": true, "cron": true,
 }
 
 // Marker file at a profile root opting out of bundled skill seeding

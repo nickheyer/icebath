@@ -17,25 +17,6 @@ func nativeArchImpl() string {
 	return ProcessArch()
 }
 
-func cpuModelImpl() string {
-	s, err := unix.Sysctl("machdep.cpu.brand_string")
-	if err != nil {
-		return ""
-	}
-	return s
-}
-
-func cpuVendorImpl() string {
-	if NativeArch() == "arm64" {
-		return "Apple"
-	}
-	s, err := unix.Sysctl("machdep.cpu.vendor")
-	if err != nil {
-		return ""
-	}
-	return s
-}
-
 func ramTotalImpl() int64 {
 	v, err := unix.SysctlUint64("hw.memsize")
 	if err != nil {
@@ -54,7 +35,5 @@ func gpuClassImpl() string {
 	}
 	return ClassifyGPUVendors(vendors)
 }
-
-func nvidiaGPUsImpl() []NvidiaGPU { return nil }
 
 func interactiveSessionImpl() bool { return true }

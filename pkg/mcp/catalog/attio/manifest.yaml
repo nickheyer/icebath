@@ -27,14 +27,6 @@ tools:
     - whoami
     - query-particle-sql
 
-# Composer-suggestion triggers (desktop brand pills).
-suggest:
-  keywords:
-    - attio
-    - crm
-  hosts:
-    - attio.com
-
 post_install: |
   On first connection icebath opens a browser to authorize with
   Attio (or run `icebath mcp login attio`). Approve access,

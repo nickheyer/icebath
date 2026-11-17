@@ -2,36 +2,16 @@ package scenario
 
 import "testing"
 
-func TestScenarioBotModeDMRunnerWaitsForRepliesAndRunsTransports(t *testing.T) {
+func TestScenarioBotModeDMRunnerRunsTransports(t *testing.T) {
 	s := Start(t, Setup{Home: map[string]string{
-		"dm/reply.json":    `{"reply": "pong from the peer"}`,
-		"dm/failed.json":   `{"error": "peer offline", "reason": " runtime_unavailable "}`,
-		"dm/untagged.json": `{"error": "refused"}`,
-		"dm/empty.json":    `{}`,
-		"dm/piped.txt":     "line one\r\nline two\n",
-		"dm/kept.txt":      "kept\n",
-		"dm/status.txt":    "status\n",
-		"dm/missing.txt":   "missing\n",
-		"dm/local.txt":     "local\n",
+		"dm/piped.txt":   "line one\r\nline two\n",
+		"dm/kept.txt":    "kept\n",
+		"dm/status.txt":  "status\n",
+		"dm/missing.txt": "missing\n",
+		"dm/local.txt":   "local\n",
 	}})
 	entry := "__icebath_bot_mode_dm__"
 
-	if out := s.Run(entry, "--wait-reply", "${ICEBATH_HOME}/dm/reply.json", "Peer", "5").Exit(0).Stdout; out != "Reply from Peer:\npong from the peer\n" {
-		s.Failf("reply output %q", out)
-	}
-	if out := s.Run(entry, "--wait-reply", "${ICEBATH_HOME}/dm/empty.json", "Peer", "5").Exit(0).Stdout; out != "Reply from Peer:\n(empty reply)\n" {
-		s.Failf("empty reply output %q", out)
-	}
-	if out := s.Run(entry, "--wait-reply", "${ICEBATH_HOME}/dm/failed.json", "Peer", "5").Exit(1).Stdout; out != "Delivery to Peer failed [reason: runtime_unavailable]: peer offline\n" {
-		s.Failf("failed delivery output %q", out)
-	}
-	if out := s.Run(entry, "--wait-reply", "${ICEBATH_HOME}/dm/untagged.json", "Peer", "5").Exit(1).Stdout; out != "Delivery to Peer failed: refused\n" {
-		s.Failf("untagged failure output %q", out)
-	}
-	s.Run(entry, "--wait-reply", "${ICEBATH_HOME}/dm/absent.json", "Peer", "0.3").Exit(1).
-		Has("No reply from Peer within 0.3s. The message may still be delivered when the Desktop reconnects; do not resend blindly.")
-	s.Run(entry, "--wait-reply", "${ICEBATH_HOME}/dm/reply.json", "Peer", "soon").Exit(2)
-	s.Run(entry, "--wait-reply", "${ICEBATH_HOME}/dm/reply.json").Exit(2)
 	s.Run(entry, "--deliver").Exit(2)
 	s.Run(entry, "--run-delivery", "inline", "${ICEBATH_HOME}/dm/kept.txt", "cat").Exit(2)
 	s.Run(entry, "--run-delivery", "--author", "not json", "stdin", "${ICEBATH_HOME}/dm/kept.txt", "cat").Exit(2)

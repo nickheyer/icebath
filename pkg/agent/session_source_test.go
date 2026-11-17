@@ -25,10 +25,10 @@ func TestSessionSourceSets(t *testing.T) {
 			t.Fatalf("cli family lacks %s", src)
 		}
 	}
-	if len(CLIFamilySources) != 2 || len(DaybreakSources) != 3 || len(AttendedSources) != 4 {
+	if len(CLIFamilySources) != 2 || len(DaybreakSources) != 2 || len(AttendedSources) != 3 {
 		t.Fatalf("set sizes %d %d %d", len(CLIFamilySources), len(DaybreakSources), len(AttendedSources))
 	}
-	for _, src := range []string{"tui", "desktop", "cli"} {
+	for _, src := range []string{"tui", "cli"} {
 		if !DaybreakSources[src] || !AttendedSources[src] {
 			t.Fatalf("%s missing", src)
 		}
@@ -38,20 +38,11 @@ func TestSessionSourceSets(t *testing.T) {
 	}
 }
 
-func TestCreateSurface(t *testing.T) {
-	cases := map[string]string{"desktop": "gui", "tui": "tui", "cli": "cli", "": "", "telegram": "telegram"}
-	for in, want := range cases {
-		if got := CreateSurface(in); got != want {
-			t.Fatalf("CreateSurface(%q) = %q, want %q", in, got, want)
-		}
-	}
-}
-
 func TestIsAttended(t *testing.T) {
 	if IsAttended(nil) || IsAttended(attendedTestAgent(t, "", nil)) || IsAttended(attendedTestAgent(t, "subagent", nil)) {
 		t.Fatal("library caller or subagent reported attended")
 	}
-	for _, platform := range []string{"cli", "tui", "desktop", "acp"} {
+	for _, platform := range []string{"cli", "tui", "acp"} {
 		if !IsAttended(attendedTestAgent(t, platform, nil)) {
 			t.Fatalf("%s not attended", platform)
 		}

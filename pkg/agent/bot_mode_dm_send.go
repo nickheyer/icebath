@@ -181,25 +181,16 @@ func messageAgentTool(ctx context.Context, a *AIAgent, target, message, taskID s
 			fmt.Sprintf("@%s on peer '%s'", who, peerName), true, taskID, a, "", peerAuthor)
 	}
 
-	if strings.Contains(rawTarget, "@") {
-		if relayed, ok := tryRelayDelivery(ctx, h, rawTarget, content, me, taskID, a); ok {
-			return relayed, nil
-		}
-	}
 	resolved, found := resolveLocalName(rawTarget, roster, &root)
-	if !found && !botLocalTargetRE.MatchString(rawTarget) && !strings.Contains(rawTarget, "@") {
+	if !found && !botLocalTargetRE.MatchString(rawTarget) {
 		return rosterErr(fmt.Sprintf("Invalid target: %s.", pyrepr.StrRepr(rawTarget))), nil
 	}
 	if !found || resolved == me {
-		if relayed, ok := tryRelayDelivery(ctx, h, rawTarget, content, me, taskID, a); ok {
-			return relayed, nil
-		}
 		if found {
 			return botDMErr("You can't message yourself. Pick a teammate from the roster.", nil, nil), nil
 		}
-		return rosterErr(fmt.Sprintf("No teammate named '%s' on this install, on a connected "+
-			"machine, or on a registered peer. Pick a name from the roster "+
-			"(roles are listed in your system prompt).", rawTarget)), nil
+		return rosterErr(fmt.Sprintf("No teammate named '%s' on this install or on a registered peer. "+
+			"Pick a name from the roster (roles are listed in your system prompt).", rawTarget)), nil
 	}
 	return startDelivery(ctx, []string{botmode.IcebathCLI(), "-p", resolved}, content, "@"+botmode.Handle(resolved, roster),
 		false, taskID, a, rosterHomes[resolved], author)
@@ -221,78 +212,6 @@ func botModeGate(a *AIAgent, h string) (refusal string, refused bool) {
 			"message_agent is unavailable. Do not retry.", nil, nil), true
 	}
 	return "", false
-}
-
-// Cross connection delivery through the Desktop relay, false when the target resolves against no relay roster row
-func tryRelayDelivery(ctx context.Context, root, rawTarget, content, me, taskID string, a *AIAgent) (answer string, ok bool) {
-	defer func() {
-		if rec := recover(); rec != nil {
-			botModeDMLog().Debug("relay delivery attempt failed", "error", rec)
-			answer, ok = "", false
-		}
-	}()
-	failed := func(err error) (string, bool) {
-		botModeDMLog().Debug("relay delivery attempt failed", "error", err)
-		return "", false
-	}
-	roster := botmode.ReadRemoteRoster(root)
-	if len(roster) == 0 {
-		return "", false
-	}
-	match, ambiguous := botmode.ResolveRemoteTarget(rawTarget, roster)
-	if ambiguous {
-		want, _, _ := strings.Cut(strings.TrimLeft(pystr.Strip(rawTarget), "@"), "@")
-		want = pystr.Lower(want)
-		taken, err := botmode.LocalTakenForms(root)
-		if err != nil {
-			return failed(err)
-		}
-		var forms []string
-		for i, form := range botmode.RemoteTargetForms(roster, taken) {
-			if i < len(roster) && botmode.TargetAliases(roster[i])[want] {
-				forms = append(forms, form)
-			}
-		}
-		return botDMErr(fmt.Sprintf("'%s' exists on several connected machines — disambiguate with one of: %s.",
-			rawTarget, strings.Join(forms, ", ")), nil, nil), true
-	}
-	if match == nil {
-		return "", false
-	}
-	var names []string
-	for _, profile := range botmode.Roster(botmode.InstallRoot(root)) {
-		names = append(names, profile.Name)
-	}
-	envelope, err := botmode.EnqueueEnvelope(ctx, root, *match, content, me, botmode.Handle(me, names))
-	var refusedErr *botmode.EnvelopeRefusedError
-	if errors.As(err, &refusedErr) {
-		return botDMDumps(pyjson.ObjectOf("error", refusedErr.Error(), "reason", refusedErr.Reason)), true
-	}
-	if err != nil {
-		return failed(err)
-	}
-	where := match.ConnectionLabel
-	if where == "" {
-		where = match.ConnectionID
-	}
-	label := fmt.Sprintf("@%s on %s", match.Handle, where)
-	command, err := botmode.WaiterCommand(root, envelope)
-	if err != nil {
-		return failed(err)
-	}
-	envelopeID := pyrepr.Str(envelope.GetOr("id", ""))
-	raw := spawnDelivery(ctx, command, label, "", envelopeID, taskID, a)
-	parsed, err := pyjson.LoadsDict(raw)
-	if err != nil {
-		return failed(err)
-	}
-	waiterError := parsed.GetOr("error", nil)
-	if !pyrepr.Truthy(waiterError) {
-		return raw, true
-	}
-	return botDMDumps(pyjson.ObjectOf("status", "queued", "delivery_id", envelopeID, "to", label, "notification_error", waiterError,
-		"detail", fmt.Sprintf("Message queued for %s; the relay delivers it on its own, but the reply "+
-			"waiter did not start, so the reply will NOT wake you. Do NOT resend.", label))), true
 }
 
 // Shell command of the cleanup owning background runner for one DM file, every argv word quoted

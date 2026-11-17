@@ -478,7 +478,7 @@ func spawnOnLoop(ctx context.Context, fn func(ctx context.Context)) error {
 	if l == nil {
 		return errors.New("MCP event loop is not running")
 	}
-	taskCtx := wrapWithDashboardOAuthFlow(ctx, wrapWithHomeOverride(ctx, newLoopTaskContext(ctx, l.ctx)))
+	taskCtx := wrapWithClientOAuthFlow(ctx, wrapWithHomeOverride(ctx, newLoopTaskContext(ctx, l.ctx)))
 	if !l.spawn(taskCtx, fn) {
 		return errors.New("MCP event loop unavailable (failed to schedule)")
 	}
@@ -512,13 +512,13 @@ func wrapWithHomeOverride(caller, task context.Context) context.Context {
 	return home.WithOverride(task, override)
 }
 
-// Task context carrying the caller's dashboard OAuth flow, the task context itself when there is none
-func wrapWithDashboardOAuthFlow(caller, task context.Context) context.Context {
-	flow := dashboardOAuthFlowFrom(caller)
+// Task context carrying the caller's client OAuth flow, the task context itself when there is none
+func wrapWithClientOAuthFlow(caller, task context.Context) context.Context {
+	flow := clientOAuthFlowFrom(caller)
 	if flow == nil {
 		return task
 	}
-	return withDashboardOAuthFlow(task, flow)
+	return withClientOAuthFlow(task, flow)
 }
 
 // ErrInterrupted ends a loop call when the user sent a new message
@@ -550,7 +550,7 @@ func runOnLoop[T any](ctx context.Context, timeout time.Duration, fn func(ctx co
 	if l == nil {
 		return zero, errors.New("MCP event loop is not running")
 	}
-	taskCtx, cancel := context.WithCancel(wrapWithDashboardOAuthFlow(ctx, wrapWithHomeOverride(ctx, newLoopTaskContext(ctx, l.ctx))))
+	taskCtx, cancel := context.WithCancel(wrapWithClientOAuthFlow(ctx, wrapWithHomeOverride(ctx, newLoopTaskContext(ctx, l.ctx))))
 	type outcome struct {
 		v   T
 		err error

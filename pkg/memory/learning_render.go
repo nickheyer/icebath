@@ -11,7 +11,7 @@ import (
 	"unicode/utf8"
 )
 
-// Recency of the oldest node, just off zero like the desktop time axis
+// Recency of the oldest node, just off zero on the time axis
 const LeadIn = 0.06
 
 // Age gradient inks, old quiet and recent bright
@@ -31,7 +31,7 @@ const (
 	StyleDim    = "dim"
 )
 
-// Legend glyphs mirroring the desktop node shapes
+// Legend glyphs of the node shapes
 const (
 	SkillGlyph  = "\u25cf"
 	MemoryGlyph = "\u25c6"
@@ -235,7 +235,7 @@ type Recency struct {
 	MaxTS *float64
 }
 
-// Recency of nodes ported from the desktop time axis
+// Recency of nodes along the time axis
 func ComputeRecency(nodes []map[string]any) Recency {
 	var minTS, maxTS *float64
 	for _, n := range nodes {

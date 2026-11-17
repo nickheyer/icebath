@@ -310,11 +310,6 @@ func (h *hostedCronScheduler) Reconcile() error {
 	return err
 }
 
-// Keyword parameters of the child fire_due signature
-func (h *hostedCronScheduler) FireDueKeywords() ([]string, bool) {
-	return h.obj.MethodParams("fire_due")
-}
-
 // Child fire_due with the transport, force and manual passed only when set as callers gate them
 func (h *hostedCronScheduler) FireDue(ctx context.Context, jobID string, o FireOptions) (bool, error) {
 	kwargs := map[string]any{"adapters": o.Adapters, "loop": o.Loop}

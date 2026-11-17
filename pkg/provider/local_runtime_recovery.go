@@ -420,34 +420,6 @@ func lrPyTypeName(v any) string {
 	return "NoneType"
 }
 
-// Windows legacy stop recovery of a parentless router three levels under the runtimes root
-func legacyOrphanProcess(state map[string]any) (localRuntimeProc, error) {
-	if lrOSName() != "nt" {
-		return nil, nil
-	}
-	proc, err := lrLegacyRecordedProcess(state)
-	if err != nil || proc == nil {
-		return nil, err
-	}
-	exe, err := proc.Exe()
-	if err != nil {
-		return nil, nil
-	}
-	relative, ok := lrRelativeParts(exe, filepath.Dir(lrStatePath()))
-	if !ok || len(relative) != 3 || strings.ToLower(relative[2]) != "llama-server.exe" {
-		return nil, nil
-	}
-	parent, err := proc.Parent()
-	if err != nil || parent != nil {
-		return nil, nil
-	}
-	ppid, err := proc.PPID()
-	if err != nil || ppid <= 0 {
-		return nil, nil
-	}
-	return proc, nil
-}
-
 // Pathlib comparison key of a path, separators and dot parts collapsed and case folded on Windows
 func lrPathKey(p string) (string, []string) {
 	windows := runtime.GOOS == "windows"

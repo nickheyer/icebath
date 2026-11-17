@@ -407,7 +407,7 @@ const syntheticNote = "[System note: Your previous turn was interrupted mid-run 
 
 func syntheticAgent(t *testing.T) (*AIAgent, *state.SessionDB) {
 	t.Helper()
-	db := restoreRealDB(t, "sess-synthetic", "desktop")
+	db := restoreRealDB(t, "sess-synthetic", "tui")
 	a := newFixtureAgent(t, AIAgentOptions{BaseURL: "https://openrouter.ai/api/v1", SessionDB: db, SessionID: "sess-synthetic", EnabledToolsets: []string{}})
 	t.Cleanup(func() { a.Close() })
 	a.sessionDBCreated, a.cachedSystemPrompt, a.skipMCPRefresh = true, "SYSTEM", true

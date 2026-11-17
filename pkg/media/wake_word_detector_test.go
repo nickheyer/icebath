@@ -3,7 +3,6 @@ package media
 import (
 	"bufio"
 	"context"
-	"encoding/binary"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -361,7 +360,7 @@ func TestDetectionCallbackCanPauseAndCloseStream(t *testing.T) {
 		}
 		return nil
 	}
-	if _, err := StartListening(context.Background(), onWake, owner, map[string]any{}, false); err != nil {
+	if _, err := StartListening(context.Background(), onWake, owner, map[string]any{}); err != nil {
 		t.Fatal(err)
 	}
 	select {
@@ -414,7 +413,7 @@ func TestWedgedStreamHaltsWithoutBlockingReadAndAbortsBeforeClose(t *testing.T) 
 	}
 	_, readCalls, calls := log.first().snapshot()
 	if readCalls != 0 {
-		t.Fatal("read() must not be entered while read_available < frame_length")
+		t.Fatal("read() must not be entered while read_available is below the frame length")
 	}
 	if len(calls) < 2 || !slices.Equal(calls[:2], []string{"abort", "close"}) {
 		t.Fatalf("calls %v", calls)
@@ -597,7 +596,7 @@ func TestStartupFailureReleasesOwnerAndMachineLock(t *testing.T) {
 	buildWith(t, newFakeWakeEngine(false))
 	path := lockIn(t)
 	owner := new(int)
-	_, err := StartListening(context.Background(), noWake, owner, map[string]any{}, false)
+	_, err := StartListening(context.Background(), noWake, owner, map[string]any{})
 	var we *WakeWordError
 	if !errors.As(err, &we) || we.Class != "RuntimeError" || !strings.Contains(we.Msg, "Failed to open") {
 		t.Fatalf("start error %v", err)
@@ -620,7 +619,7 @@ func TestStreamFailureReleasesOwnerAndMachineLock(t *testing.T) {
 	buildWith(t, engine)
 	path := lockIn(t)
 	owner := new(int)
-	det, err := StartListening(context.Background(), noWake, owner, map[string]any{}, false)
+	det, err := StartListening(context.Background(), noWake, owner, map[string]any{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -712,53 +711,4 @@ func TestMachineLockIsReleasedWhenOwnerProcessExits(t *testing.T) {
 		t.Fatal(err)
 	}
 	releaseMachineLock(handle)
-}
-
-func TestClientCaptureFeedFires(t *testing.T) {
-	buildWith(t, newFakeWakeEngine(true))
-	lockIn(t)
-	swap(t, &importAudio, func() (pysounddevice.Module, error) {
-		return nil, &os.PathError{Op: "open", Path: "mic", Err: errors.New("no local mic")}
-	})
-	owner := new(int)
-	fired := make(chan struct{})
-	var once sync.Once
-	onWake := func() error { once.Do(func() { close(fired) }); return nil }
-	if _, err := StartListening(context.Background(), onWake, owner, map[string]any{}, true); err != nil {
-		t.Fatal(err)
-	}
-	if !IsListening() {
-		t.Fatal("client listener not listening")
-	}
-	fl := DetectorFrameInfo().FrameLength
-	pcm := make([]byte, 2*fl)
-	for i := 0; i < fl; i++ {
-		binary.NativeEndian.PutUint16(pcm[2*i:], uint16(5000))
-	}
-	if ok, err := FeedAudio(owner, pcm); err != nil || !ok {
-		t.Fatalf("feed = %v, %v", ok, err)
-	}
-	select {
-	case <-fired:
-	case <-time.After(2 * time.Second):
-		t.Fatal("fed frame never fired")
-	}
-	if !StopListening(owner) {
-		t.Fatal("owner could not stop its listener")
-	}
-}
-
-func TestFeedAudioRejectsWrongOwner(t *testing.T) {
-	buildWith(t, newFakeWakeEngine(false))
-	lockIn(t)
-	owner := new(int)
-	if _, err := StartListening(context.Background(), noWake, owner, map[string]any{}, true); err != nil {
-		t.Fatal(err)
-	}
-	if ok, err := FeedAudio(new(int), []byte{0, 0}); err != nil || ok {
-		t.Fatalf("foreign feed = %v, %v", ok, err)
-	}
-	if !StopListening(owner) {
-		t.Fatal("owner could not stop its listener")
-	}
 }

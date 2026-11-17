@@ -679,6 +679,9 @@ security.website_blocklist.shared_files
 session.terminal_continue
 sessions.auto_archive
 sessions.auto_archive_days
+sessions.auto_continue.enabled
+sessions.auto_continue.freshness_minutes
+sessions.auto_continue.max_attempts
 sessions.auto_prune
 sessions.cjk_fts
 sessions.fts_optimize_notice
@@ -690,7 +693,10 @@ sessions.orphan_end_grace_s
 sessions.retention_days
 sessions.search_slow_ms
 sessions.show_subagents
+sessions.startup_orphan_sweep
 sessions.vacuum_after_prune
+sessions.ws_orphan_activity_stale_s
+sessions.ws_orphan_reap_grace_s
 skills.auto_load
 skills.create_dir
 skills.external_dirs
@@ -889,7 +895,6 @@ voice.stop_phrases
 voice.submit_mode
 voice.thinking_sound
 voice.voice_chat_mode
-wake_word.capture
 wake_word.confirmation_frames
 wake_word.enabled
 wake_word.input_device
@@ -981,8 +986,8 @@ func TestDefaultsRootsAreKnownAndContainerSlotsFollowThem(t *testing.T) {
 			t.Errorf("container slot %s is missing", path)
 		}
 	}
-	if Defaults()["_config_version"] != 54 || Version != 54 {
-		t.Errorf("schema version %v, want 54", Defaults()["_config_version"])
+	if Defaults()["_config_version"] != 55 || Version != 55 {
+		t.Errorf("schema version %v, want 55", Defaults()["_config_version"])
 	}
 }
 

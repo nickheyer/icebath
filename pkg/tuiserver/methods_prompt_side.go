@@ -76,9 +76,7 @@ func spawnSideAgent(ctx context.Context, rid any, session *tuigateway.Session, t
 		}
 		tuigateway.Emit(bound, event, parent, payload)
 	}
-	if startSessionWork(ctx, run, "side-agent-"+taskID, nil) == nil {
-		return rpcErr(rid, 5035, "backend is retiring; reconnect to continue", nil)
-	}
+	startSessionWork(ctx, run, "side-agent-"+taskID, nil)
 	return ok(rid, map[string]any{"task_id": taskID})
 }
 

@@ -1,8 +1,11 @@
 package scenario
 
 import (
+	"fmt"
 	"strings"
 	"testing"
+
+	"github.com/nickheyer/icebath/pkg/config"
 )
 
 // Configuration values are read, written to config.yaml or .env by kind, removed, and migrated to the current version
@@ -54,8 +57,8 @@ func TestScenarioConfigGetSetUnsetMigrate(t *testing.T) {
 	s.Write("config.yaml", old)
 	s.Run("config", "check").Exit(0)
 	migrated := s.RunStep(Step{Args: []string{"config", "migrate"}, Stdin: strings.Repeat("n\n", 12)}).Exit(0)
-	migrated.Has("Checking configuration for updates", "Config version: 12 → 52")
-	s.HasJSON(s.YAML("config.yaml"), `{"_config_version": 52, "model": {"provider": "custom", "default": "fake-model"}}`)
+	migrated.Has("Checking configuration for updates", fmt.Sprintf("Config version: 12 → %d", config.Version))
+	s.HasJSON(s.YAML("config.yaml"), fmt.Sprintf(`{"_config_version": %d, "model": {"provider": "custom", "default": "fake-model"}}`, config.Version))
 	s.RunStep(Step{Args: []string{"config", "migrate"}, Stdin: strings.Repeat("n\n", 12)}).Exit(0).Lacks("Config version: 12 →")
 
 	ancient := strings.Replace(s.Expand(old), "_config_version: 12", "_config_version: 1", 1)

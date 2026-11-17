@@ -8,7 +8,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 )
 
-// HTTPException is a refusal carrying a status code and the detail the user sees
+// Refusal carrying a status code and the detail the user sees
 type HTTPException struct {
 	StatusCode int
 	Detail     string

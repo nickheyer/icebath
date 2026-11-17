@@ -384,50 +384,11 @@ func TestSteerIsAppliedOnceAfterTurnBudgetInEveryDispatchPath(t *testing.T) {
 	}
 }
 
-func TestSoftInterruptWithToolReasonIsAttributedToTheSystem(t *testing.T) {
-	swapDuration(t, &sequentialInterruptPollInterval, 20*time.Millisecond)
-	host := &fakeExecutorHost{env: newTestToolEnv(t)}
-	e := NewExecutor(host, NewDispatcher(NewRegistry()))
-	var msgs []*state.Message
-	prepared := func(id string) *terminalSlot {
-		pc := &ParsedCall{ToolCall: segCall("terminal", "{}", id), Name: "terminal", Args: map[string]any{}, Trace: []map[string]any{}}
-		return e.newTerminalBatch(&msgs, "t", []*ParsedCall{pc}).slots[0]
-	}
-	in := func(id string) managedInput {
-		return managedInput{name: "terminal", args: map[string]any{}, taskID: "t", toolCallID: id,
-			execute: func(context.Context, map[string]any) (string, error) { return "", nil }}
-	}
-	t.Setenv("ICEBATH_CONCURRENT_TOOL_TIMEOUT_S", "0.05")
-	slot := prepared("c1")
-	managed, err := e.runSequentialToolExecutionMiddleware(context.Background(), in("c1"), slot)
-	if err != nil || managed == nil || !managed.TimedOut || !slot.batch.isCancelled() {
-		t.Fatalf("batch timeout guard %+v %v", managed, err)
-	}
-	if !host.Interrupted() || fmt.Sprint(host.interrupts) != "[|terminal batch timeout]" {
-		t.Fatalf("system stop booked as %q", host.interrupts)
-	}
-	host.interrupted.Store(false)
-	host.interrupts = nil
-	host.Interrupt("fix the login bug", ReasonUserInterrupt)
-	t.Setenv("ICEBATH_CONCURRENT_TOOL_TIMEOUT_S", "60")
-	slot = prepared("c2")
-	managed, err = e.runSequentialToolExecutionMiddleware(context.Background(), in("c2"), slot)
-	if err != nil || managed == nil || !managed.Cancelled || !slot.batch.isCancelled() {
-		t.Fatalf("user stop of a wedged batch %+v %v", managed, err)
-	}
-	if fmt.Sprint(host.interrupts) != "[fix the login bug|"+ReasonUserInterrupt+"]" || host.ToolInterruptReason() != ReasonUserInterrupt {
-		t.Fatalf("user stop rebooked %q", host.interrupts)
-	}
-	if got := InterruptSkipWording("guard {x}"); got != "Turn aborted — guard {x}" {
-		t.Fatalf("system wording %q", got)
-	}
-}
-
 // Human stop reasons read capitalized, an empty reason reads interrupted, any other reason reads aborted
 func TestInterruptSkipWordingReadsTheRecordedReason(t *testing.T) {
 	for reason, want := range map[string]string{
 		"": "Turn interrupted", "explicit stop requested": "Explicit stop requested", "user sent a new message": "User sent a new message",
-		ReasonUserInterrupt: "User interrupt", "terminal_batch_timeout": "Turn aborted — terminal batch timeout",
+		ReasonUserInterrupt: "User interrupt", "guard {x}": "Turn aborted — guard {x}",
 	} {
 		if got := InterruptSkipWording(reason); got != want {
 			t.Errorf("%q gives %q, want %q", reason, got, want)

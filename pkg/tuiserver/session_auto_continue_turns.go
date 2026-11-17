@@ -98,10 +98,7 @@ func maybeScheduleAutoContinue(ctx context.Context, sid string, session *tuigate
 			notifReleaseTurn(session)
 		}
 	}
-	if startSessionWork(ctx, kickoff, "auto-continue-"+sid, nil) == nil {
-		session.Set("_auto_continue_scheduled", false)
-		return nil
-	}
+	startSessionWork(ctx, kickoff, "auto-continue-"+sid, nil)
 	logger().Info(fmt.Sprintf("auto-continue scheduled for session %s (attempt %d, interrupted %.0fs ago, writer pid %s: %s, reader pid %d)",
 		sessionKey, attempt, age, pyrepr.Str(marker["writer_pid"]), writerState, os.Getpid()))
 	return map[string]any{"attempt": attempt, "interrupted_at": startedAt}
@@ -293,9 +290,9 @@ func drainQueuedPrompt(ctx context.Context, rid any, sid string, session *tuigat
 	var queued map[string]any
 	var generation int64
 	claimed := false
-	sessionTurnAdmission(session, func(admitted bool) {
+	underHistoryLock(session, func() {
 		q, _ := session.Get("queued_prompt").(map[string]any)
-		if !admitted || truthy(session.Get("_closing")) || len(q) == 0 || truthy(session.Get("running")) {
+		if truthy(session.Get("_closing")) || len(q) == 0 || truthy(session.Get("running")) {
 			return
 		}
 		queued, claimed = q, true

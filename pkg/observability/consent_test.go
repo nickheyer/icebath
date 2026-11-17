@@ -20,9 +20,7 @@ func consentTerminal(t *testing.T, ask func(title string, items []cliui.RadioIte
 	h := filepath.Join(t.TempDir(), "home")
 	mustMkdir(t, h)
 	t.Setenv("ICEBATH_HOME", h)
-	t.Setenv("ICEBATH_DESKTOP", "")
 	t.Setenv("ICEBATH_NONINTERACTIVE", "")
-	os.Unsetenv("ICEBATH_DESKTOP")
 	os.Unsetenv("ICEBATH_NONINTERACTIVE")
 	savedConsole, savedFlush, savedAsk, savedManaged := consentConsole, consentFlushStdin, consentRadiolist, consentIsManaged
 	t.Cleanup(func() {

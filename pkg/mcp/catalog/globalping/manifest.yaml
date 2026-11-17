@@ -26,15 +26,6 @@ tools:
     - compareLocations
     - limits
 
-# Composer-suggestion triggers (desktop brand pills).
-suggest:
-  keywords:
-    - globalping
-    - traceroute
-    - ping
-  hosts:
-    - globalping.io
-
 post_install: |
   On first connection icebath opens a browser to authorize with
   Globalping (or run `icebath mcp login globalping`). Approve access,

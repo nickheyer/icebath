@@ -287,8 +287,8 @@ func TestChronosNoRearmWhenJobGoneClaimLostOrRunFailed(t *testing.T) {
 
 func TestChronosIsSplitFireCapable(t *testing.T) {
 	prov, _, _, _ := chronosFixture(t)
-	if !providerSupportsSplitFire(prov) || !providerSupportsForceFire(prov) {
-		t.Fatal("chronos must be split fire and force fire capable")
+	if !providerSupportsSplitFire(prov) {
+		t.Fatal("chronos must be split fire capable")
 	}
 }
 

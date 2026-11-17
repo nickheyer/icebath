@@ -52,52 +52,9 @@ func TestGPUClassification(t *testing.T) {
 	}
 }
 
-func TestClassifyNvidiaPlatform(t *testing.T) {
-	if ClassifyNvidiaPlatform("win32", "arm64", "Snapdragon", "nvidia", []NvidiaGPU{{"x", 0x2E03<<16 | 0x10DE}}) != "rtx_spark" {
-		t.Fatal("n1x by pci id")
-	}
-	if ClassifyNvidiaPlatform("win32", "arm64", "NVIDIA N1X", "none", nil) != "rtx_spark" {
-		t.Fatal("n1x by cpu")
-	}
-	if ClassifyNvidiaPlatform("linux", "arm64", "NVIDIA_GB10", "nvidia", nil) != "dgx_spark" || ClassifyNvidiaPlatform("linux", "arm64", "x", "nvidia", []NvidiaGPU{{"NVIDIA GB10", 0}}) != "dgx_spark" {
-		t.Fatal("dgx")
-	}
-	if ClassifyNvidiaPlatform("linux", "amd64", "x", "nvidia", nil) != "discrete" || ClassifyNvidiaPlatform("linux", "amd64", "x", "amd", nil) != "" {
-		t.Fatal("discrete")
-	}
-	if MachineKind("darwin", "") != "Mac" || MachineKind("win32", "rtx_spark") != "Spark" || MachineKind("linux", "discrete") != "computer" {
-		t.Fatal("kind")
-	}
-}
-
-func TestFullNameAndLocale(t *testing.T) {
-	if FullNameFrom("nick", "Nicholas  Heyer") != "Nicholas Heyer" {
-		t.Fatal("full name")
-	}
-	for _, bad := range []string{"", "n", "root", "nick", "p14", "CD_01.05", "lowercase name", "a@b"} {
-		if FullNameFrom("nick", bad) != "" {
-			t.Fatalf("%q accepted", bad)
-		}
-	}
-	if LinuxLocaleFrom("# x\nLANG=\"de_DE.UTF-8\"\n") != "de-DE" || LinuxLocaleFrom("LC_ALL=C\n") != "" {
-		t.Fatal("locale")
-	}
-	if roundHalfEvenAdjust(62.5) != -1 || roundHalfEvenAdjust(63.5) != 0 || roundHalfEvenAdjust(63.2) != 0 {
-		t.Fatal("rounding")
-	}
-}
-
-func TestRuntimePredicatesAndSummary(t *testing.T) {
+func TestRuntimePredicatesAndCacheReset(t *testing.T) {
 	if rootMountHasMarker("/nonexistent", []string{"x"}) {
 		t.Fatal("missing file")
-	}
-	s := HostSummary()
-	if s.MachineKind == "" || s.Machine["os_family"] == nil || s.Machine["native_arch"] == nil {
-		t.Fatalf("%+v", s)
-	}
-	m := s.AsMap()
-	if _, ok := m["machine"]; !ok || m["machine_kind"] != s.MachineKind {
-		t.Fatal(m)
 	}
 	ClearCaches()
 	if NativeArch() == "" {

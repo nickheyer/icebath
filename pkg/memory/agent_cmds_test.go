@@ -8,9 +8,10 @@ import (
 	"strings"
 	"testing"
 
+	"testing/iotest"
+
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/state"
-	"testing/iotest"
 
 	"github.com/nickheyer/icebath/pkg/cliui"
 )

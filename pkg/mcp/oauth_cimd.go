@@ -137,7 +137,7 @@ func maybeUseCIMD(ctx context.Context, cfg map[string]any, storage *TokenStorage
 		!isStr || !isValidCIMDURL(url) ||
 		pyTruthy(cfg["client_id"]) || pyTruthy(cfg["client_secret"]) ||
 		pyTruthy(cfg["client_name"]) || authMethod != "none" ||
-		dashboardOAuthFlowFrom(ctx) != nil ||
+		clientOAuthFlowFrom(ctx) != nil ||
 		pyTruthy(cfg["redirect_uri"]) || pyTruthy(cfg["redirect_port"]) ||
 		!hostIsStr || !cimdRedirectHosts[hostStr] ||
 		cachedClientInfo(storage) != nil ||

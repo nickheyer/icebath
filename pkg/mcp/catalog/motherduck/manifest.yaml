@@ -34,14 +34,6 @@ tools:
     - query_rw
     - search_catalog
 
-# Composer-suggestion triggers (desktop brand pills).
-suggest:
-  keywords:
-    - motherduck
-    - duckdb
-  hosts:
-    - motherduck.com
-
 post_install: |
   On first connection icebath opens a browser to authorize with
   MotherDuck (or run `icebath mcp login motherduck`). Approve access,

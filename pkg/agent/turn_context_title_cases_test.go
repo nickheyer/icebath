@@ -59,7 +59,7 @@ func storedTitle(t *testing.T, db *state.SessionDB) (string, string) {
 }
 
 func TestPrologueTitlesTheSurfacesAPersonReads(t *testing.T) {
-	for _, platform := range []string{"cli", "telegram", "desktop", "acp", ""} {
+	for _, platform := range []string{"cli", "telegram", "tui", "acp", ""} {
 		if calls, _ := titleTurn(t, platform, []map[string]any{{"role": "user", "content": "Fix the login button"}}); len(*calls) != 1 {
 			t.Fatalf("platform %q titler calls %d", platform, len(*calls))
 		}
@@ -90,7 +90,7 @@ func TestPrologueLeavesCronRunsUntitled(t *testing.T) {
 }
 
 func TestPrologueForwardsTheSubmitTitlePreviewToTheTitler(t *testing.T) {
-	calls, _ := titleTurn(t, "desktop", []map[string]any{{"role": "user", "content": strings.Repeat("x", 5000),
+	calls, _ := titleTurn(t, "tui", []map[string]any{{"role": "user", "content": strings.Repeat("x", 5000),
 		"display_metadata": map[string]any{"title_preview": "Pasted 5000 chars"}}})
 	if len(*calls) != 1 || (*calls)[0].options.TitlePreview == nil || *(*calls)[0].options.TitlePreview != "Pasted 5000 chars" {
 		t.Fatalf("titler calls %+v", *calls)

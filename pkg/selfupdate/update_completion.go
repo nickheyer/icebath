@@ -691,7 +691,7 @@ func completeSelected(ctx context.Context, w, errw io.Writer, request map[string
 		announce = ""
 	}
 	safe, err := completionCompleteTail(ctx, root, SourceCompletion{
-		AssumeYes: pyrepr.Truthy(values["assume_yes"]),
+		AssumeYes:   pyrepr.Truthy(values["assume_yes"]),
 		GatewayMode: pyrepr.Truthy(values["gateway_mode"]), PreUpdateSnapshotID: optionalText(values["snapshot_id"]),
 		PreUpdateVersion: optionalText(values["pre_update_version"]), CompletionMessage: optionalText(request["completion_message"]),
 		Announce: announce, Followups: &followups, BeforeMaintenance: func() { resumePausedBeforeMaintenance(ctx, w, request) },

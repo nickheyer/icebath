@@ -29,9 +29,6 @@ func dispatchDelegationRecoveryChild() {
 	}
 	h := os.Getenv("ICEBATH_HOME")
 	env := &tools.Env{Home: h, Config: config.Defaults(), Secrets: config.NewSecrets(h), Values: &sync.Map{}}
-	if tools.AsyncDelegationRetirement == nil {
-		tools.AsyncDelegationRetirement = reviewRetirementDouble{}
-	}
 	parent := &AIAgent{sessionID: "diagnostic-parent", env: env}
 	started := make(chan struct{})
 	var startOnce sync.Once

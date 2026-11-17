@@ -13,12 +13,10 @@ import (
 	"sort"
 	"strings"
 	"syscall"
-	"time"
 
 	"github.com/nickheyer/icebath/pkg/botmode"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -228,67 +226,8 @@ func runTransport(argv []string, input []byte, env map[string]string, stdout, st
 	return 0, nil
 }
 
-// Seconds since the epoch as time.time reads them
-func epochSeconds() float64 {
-	return float64(time.Now().UnixNano()) / 1e9
-}
-
-// Relay reply waiter printing the reply file as the sender's completion notification, exit 1 on failure or budget
-func WaitReplyMain(replyPath, label, budgetSeconds string, stdout io.Writer) (int, error) {
-	budget, err := pyint.ParseFloat(budgetSeconds)
-	if err != nil {
-		return 2, nil
-	}
-	deadline := epochSeconds() + budget
-	for epochSeconds() < deadline {
-		if _, err := os.Stat(replyPath); err == nil {
-			decoded, err := readJSON(replyPath)
-			if err != nil {
-				return 0, err
-			}
-			d, ok := pyjson.Dict(decoded)
-			if !ok {
-				return 0, &pyError{"AttributeError", fmt.Sprintf("'%s' object has no attribute 'get'", pyrepr.TypeName(decoded))}
-			}
-			if failure := d["error"]; pyrepr.Truthy(failure) {
-				reason := d["reason"]
-				if !pyrepr.Truthy(reason) {
-					reason = ""
-				}
-				tag := ""
-				if code := pystr.Strip(pyrepr.Str(reason)); code != "" {
-					tag = " [reason: " + code + "]"
-				}
-				fmt.Fprintf(stdout, "Delivery to %s failed%s: %s\n", label, tag, pyrepr.Str(failure))
-				return 1, nil
-			}
-			fmt.Fprintf(stdout, "Reply from %s:\n", label)
-			reply := d["reply"]
-			if !pyrepr.Truthy(reply) {
-				reply = "(empty reply)"
-			}
-			fmt.Fprintln(stdout, pyrepr.Str(reply))
-			return 0, nil
-		}
-		time.Sleep(250 * time.Millisecond)
-	}
-	fmt.Fprintf(stdout, "No reply from %s within %ss. The message may still be delivered when the Desktop reconnects; do not resend blindly.\n", label, budgetSeconds)
-	return 1, nil
-}
-
-// Exit status of the runner for the argv the delivery command and the relay waiter build, malformed argv 2
+// Exit status of the runner for the argv the delivery command builds, malformed argv 2
 func DeliveryMain(ctx context.Context, args []string, stdout, stderr io.Writer) int {
-	if len(args) > 0 && args[0] == "--wait-reply" {
-		if len(args) != 4 {
-			return 2
-		}
-		code, err := WaitReplyMain(args[1], args[2], args[3], stdout)
-		if err != nil {
-			fmt.Fprintf(stderr, "Traceback (most recent call last):\n%s: %s\n", pyrepr.ExceptionName(err), excText(err))
-			return 1
-		}
-		return code
-	}
 	parsed, ok := runnerArgv(args)
 	if !ok {
 		return 2

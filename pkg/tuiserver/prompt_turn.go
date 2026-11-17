@@ -488,8 +488,8 @@ func runPostTurnFollowups(ctx context.Context, rid any, sid string, session *tui
 	}
 	if goalFollowup != "" {
 		dispatch := false
-		sessionTurnAdmission(session, func(admitted bool) {
-			if !admitted || truthy(session.Get("running")) || truthy(session.Get("_turn_cancel_requested")) {
+		underHistoryLock(session, func() {
+			if truthy(session.Get("running")) || truthy(session.Get("_turn_cancel_requested")) {
 				return
 			}
 			session.Set("running", true)

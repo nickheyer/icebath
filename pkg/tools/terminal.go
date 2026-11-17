@@ -187,21 +187,12 @@ type approvalVerdict struct {
 	approvedRun bool
 }
 
-// Runs the command guards, a prepared batch decision first, force skips them entirely
+// Runs the command guards, force skips them entirely
 func runApprovalGuards(ctx context.Context, env *Env, command, envType string, cfg map[string]any, force bool) (approvalVerdict, error) {
 	if force {
 		return approvalVerdict{approvedRun: true}, nil
 	}
-	hasHostAccess := dockerHasHostAccessConfig(cfg)
-	var approval GuardResult
-	consumed := false
-	if slot := terminalSlotOf(ctx); slot != nil {
-		approval, consumed = slot.ConsumePreparedGuard(ctx, env, command, envType, hasHostAccess)
-	}
-	if !consumed {
-		approval = checkAllGuardsFn(ctx, env, command, envType, hasHostAccess)
-	}
-	markTerminalBatchOutcome(ctx, !approval.Approved)
+	approval := checkAllGuardsFn(ctx, env, command, envType, dockerHasHostAccessConfig(cfg))
 	if !approval.Approved {
 		if approval.Status == "pending_approval" {
 			cmd := approval.Command
@@ -744,9 +735,6 @@ func argInt(v any) (int, bool) {
 // Dispatch wrapper mapping the advertised notify argument onto the legacy flags
 func handleTerminal(ctx context.Context, call *Call) string {
 	args := call.Args
-	if err := ValidatePreparedTerminal(ctx, args); err != nil {
-		return errorJSON(err.Error(), -1, "error", nil)
-	}
 	if _, ok := args["command"]; !ok {
 		if _, hasCode := args["code"]; hasCode {
 			return toolErrorJSON("terminal received a 'code' parameter, but it requires a shell "+

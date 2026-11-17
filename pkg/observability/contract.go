@@ -695,7 +695,7 @@ func AdapterPlatform(ctx context.Context, value any) string {
 }
 
 var surfaceEntrypoints = map[string]string{
-	"acp": "interactive", "cli": "interactive", "desktop": "interactive", "tui": "interactive",
+	"acp": "interactive", "cli": "interactive", "tui": "interactive",
 	"api": "api", "batch": "batch", "python": "python", "scheduled_task": "scheduled_task", "unknown": "unknown",
 	"gateway": "gateway_message",
 }

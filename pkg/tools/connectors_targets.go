@@ -13,7 +13,7 @@ import (
 )
 
 var (
-	ConnectorActions = []string{"display", "status", "connect", "reconnect", "rename"}
+	ConnectorActions = []string{"status", "connect", "reconnect", "rename"}
 	MCPActions       = []string{"install", "enable", "authorize"}
 	AllActions       = append(append([]string{}, ConnectorActions...), MCPActions...)
 )
@@ -182,9 +182,6 @@ func connValidateAccounts(action string, managed []HostedTarget) string {
 	}
 	if action != "rename" && anyTo {
 		return "'to' is the new name of an account and applies to action rename only."
-	}
-	if action == "display" && anyAlias {
-		return "display takes connector slugs to suggest (e.g. [\"gmail\"]); accounts are named on connect."
 	}
 	if action == "rename" {
 		if len(managed) != 1 || managed[0].Alias == nil || *managed[0].Alias == "" || managed[0].To == nil || *managed[0].To == "" {

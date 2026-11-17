@@ -19,13 +19,6 @@ transport:
 auth:
   type: oauth
 
-# Composer-suggestion triggers (desktop brand pills).
-suggest:
-  keywords:
-    - algolia
-  hosts:
-    - algolia.com
-
 post_install: |
   On first connection icebath opens a browser to authorize with
   Algolia (or run `icebath mcp login algolia`). Approve access,

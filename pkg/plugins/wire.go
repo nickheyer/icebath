@@ -10,7 +10,6 @@ import (
 	"math"
 	"math/big"
 	"reflect"
-	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -97,19 +96,6 @@ func raiseRemote(e map[string]any) error {
 		return &HostBuiltinError{Type: typeName, Message: message, Bases: bases}
 	}
 	return &PluginHostError{TypeName: typeName, RemoteMessage: message, ExitCode: wireStr(e["code"]), Bases: bases}
-}
-
-// Whether a remote raise is an instance of the named Python exception class, by its own name or a base
-func RemoteIsInstance(err error, class string) bool {
-	var builtin *HostBuiltinError
-	if errors.As(err, &builtin) {
-		return builtin.Type == class || slices.Contains(builtin.Bases, class)
-	}
-	var remote *PluginHostError
-	if errors.As(err, &remote) {
-		return remote.TypeName == class || slices.Contains(remote.Bases, class)
-	}
-	return false
 }
 
 // Python str() of an optional wire field, empty for null or missing

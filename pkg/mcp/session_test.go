@@ -185,7 +185,7 @@ func TestLoopHomeOverridePropagation(t *testing.T) {
 		t.Fatalf("after scopes %q", got)
 	}
 	task := context.Background()
-	if wrapWithHomeOverride(context.Background(), task) != task || wrapWithDashboardOAuthFlow(context.Background(), task) != task {
+	if wrapWithHomeOverride(context.Background(), task) != task || wrapWithClientOAuthFlow(context.Background(), task) != task {
 		t.Fatal("wrapping without an override must hand back the task context")
 	}
 }

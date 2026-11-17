@@ -40,7 +40,7 @@ func TestGuardrailConfigParsesNestedThresholds(t *testing.T) {
 		cfg.NoProgressWarnAfter != 5 || cfg.ExactFailureBlockAfter != 6 || cfg.SameToolFailureHaltAfter != 7 || cfg.NoProgressBlockAfter != 8 {
 		t.Fatalf("got %+v", cfg)
 	}
-	for _, platform := range []string{"cli", "tui", "desktop", "acp", "subagent", "api_server"} {
+	for _, platform := range []string{"cli", "tui", "acp", "subagent", "api_server"} {
 		if ToolCallGuardrailConfigFromMap(nil, platform).HardStopEnabled {
 			t.Fatalf("%s hard stop on", platform)
 		}
@@ -345,8 +345,8 @@ func TestIdenticalStreakIgnoresVolatileExecutionMetadata(t *testing.T) {
 	if c3.HaltDecision() != nil {
 		t.Fatal("other tool metadata treated as volatile")
 	}
-	desktop := ToolCallGuardrailConfigFromMap(nil, "desktop")
-	c4 := NewToolCallGuardrailController(&desktop)
+	tuiCfg := ToolCallGuardrailConfigFromMap(nil, "tui")
+	c4 := NewToolCallGuardrailController(&tuiCfg)
 	var notices []string
 	for i := 1; i <= 6; i++ {
 		notices = append(notices, c4.ObserveCall("execute_code", map[string]any{"code": `print("...")`}, executeCodeResult(i), fmt.Sprintf("c%d", i), false).Notice)

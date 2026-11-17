@@ -25,14 +25,6 @@ tools:
     - get_mcp_server_version
     - list_duo_sessions
 
-# Composer-suggestion triggers (desktop brand pills).
-suggest:
-  keywords:
-    - gitlab
-    - merge request
-  hosts:
-    - gitlab.com
-
 post_install: |
   On first connection icebath opens a browser to authorize with
   GitLab (or run `icebath mcp login gitlab`). Approve access,

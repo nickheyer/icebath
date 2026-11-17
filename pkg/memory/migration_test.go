@@ -12,6 +12,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 // Swaps the migration seams for one test, presence read from <home>/plugins/<name>
@@ -80,7 +81,7 @@ func TestMigratePresenceIsCheckedInTheHomeBeingMigrated(t *testing.T) {
 	writeMigrationHome(t, b, "memory:\n  provider: twin\n")
 	withMigrationSteps(t, catalogAll)
 	migrationSteps.providerPresent = MemoryProviderPresent
-	registerUserFlow(t, "twin", b, nil)
+	registerUserProvider(t, "twin", b)
 	ctx := home.WithOverride(context.Background(), a)
 	var installs []string
 	quiet := func(string) {}
@@ -228,7 +229,7 @@ func TestCloneHonchoForProfileRunsThePluginCLIInTheHost(t *testing.T) {
 	if _, err := CloneHonchoForProfile(ctx, "work"); !errors.As(err, &ie) || ie.Msg != "memory provider 'honcho' is not installed" {
 		t.Fatalf("err %v", err)
 	}
-	registerUserFlow(t, "honcho", h, nil)
+	registerUserProvider(t, "honcho", h)
 	saved := providerModuleCall
 	t.Cleanup(func() { providerModuleCall = saved })
 	var gotModule string
@@ -379,4 +380,14 @@ func TestStartupHintInstallsIntoTheProfileThatPrintedIt(t *testing.T) {
 			t.Fatalf("%s %v %v said %q", tc.h, ok, err, said)
 		}
 	}
+}
+
+// Registers a user directory provider under home h, retracted when the test ends
+func registerUserProvider(t *testing.T, name, h string) {
+	t.Helper()
+	RegisterProvider(ProviderRegistration{
+		Name: name, Source: SourceUser, Home: h, Dir: filepath.Join(h, "plugins", name),
+		New: func(ctx context.Context, env *tools.Env, opts LoadOptions) (Provider, error) { return nil, nil },
+	})
+	t.Cleanup(func() { UnregisterProviders(SourceUser, h) })
 }

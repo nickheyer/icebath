@@ -13,7 +13,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/provider"
 )
 
 // Floor in minutes of the stale in flight allowance
@@ -287,14 +286,12 @@ func (s *Store) recordExternalCronWorker(jobID string, pid any, scopeIsolated bo
 	}
 }
 
-// Adds the job to the in flight set unless retirement refuses work or a run is already registered
+// Adds the job to the in flight set unless a run is already registered
 func (s *Store) tryRegisterRunningJob(jobID string, owner any, future *poolFuture) bool {
 	k := s.inflightKey(jobID, rememberInflightHome(s.Home()))
-	admitted, release := provider.Retirement.Work()
-	defer release()
 	inflight.Lock()
 	defer inflight.Unlock()
-	if !admitted || inflight.running[k] {
+	if inflight.running[k] {
 		return false
 	}
 	inflight.running[k] = true

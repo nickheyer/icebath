@@ -362,7 +362,6 @@ var _ = Method("session.usage", SessionUsageParams, SessionUsageResult, "Token /
 var SessionContextBreakdownParams = pydantic.Extend(SessionParams, "SessionContextBreakdownParams", ParamsConfig)
 
 var ContextCategory = pydantic.NewModel("ContextCategory", ClosedConfig,
-	pydantic.Req("color", pydantic.Str),
 	pydantic.Req("id", pydantic.Str),
 	pydantic.Req("label", pydantic.Str),
 	pydantic.Req("tokens", pydantic.Int),

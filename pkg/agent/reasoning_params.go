@@ -1,10 +1,11 @@
 package agent
 
 import (
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"maps"
 	"slices"
 	"strings"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"

@@ -599,15 +599,15 @@ func TestRetainDBToolDispatch(t *testing.T) {
 	}
 }
 
-func TestRetainDBInitializeReadsRealDashboardConfigFile(t *testing.T) {
+func TestRetainDBInitializeReadsTheSavedConfigFile(t *testing.T) {
 	h := rdbHome(t)
-	writeConfig(t, h, "memory:\n  provider: retaindb\n  retaindb:\n    base_url: https://retaindb.saved.example/\n    project: dashboard-project\n")
+	writeConfig(t, h, "memory:\n  provider: retaindb\n  retaindb:\n    base_url: https://retaindb.saved.example/\n    project: saved-project\n")
 	p := NewRetainDBProvider(nil)
 	if err := p.Initialize(context.Background(), "sess-1", InitOptions{}); err != nil {
 		t.Fatal(err)
 	}
 	defer p.Shutdown(context.Background())
-	if p.client.baseURL != "https://retaindb.saved.example" || p.client.project != "dashboard-project" {
+	if p.client.baseURL != "https://retaindb.saved.example" || p.client.project != "saved-project" {
 		t.Fatalf("client %+v", p.client)
 	}
 }
@@ -626,17 +626,17 @@ func TestRetainDBInitializeEnvOverridesConfigYAML(t *testing.T) {
 	}
 }
 
-func TestRetainDBInitializeCombinesScopedSecretWithDashboardConfig(t *testing.T) {
+func TestRetainDBInitializeCombinesScopedSecretWithSavedConfig(t *testing.T) {
 	h := rdbHome(t)
 	t.Setenv("RETAINDB_API_KEY", "env-other-profile")
-	writeConfig(t, h, "memory:\n  retaindb:\n    base_url: https://dashboard.example.com/\n    project: dashboard-project\n")
+	writeConfig(t, h, "memory:\n  retaindb:\n    base_url: https://retaindb.selfhosted.example/\n    project: saved-project\n")
 	ctx := provider.WithSecretScope(provider.WithMultiplexContext(context.Background(), true), map[string]string{"RETAINDB_API_KEY": "scoped-key"}, "")
 	p := NewRetainDBProvider(nil)
 	if err := p.Initialize(ctx, "sess-1", InitOptions{}); err != nil {
 		t.Fatal(err)
 	}
 	defer p.Shutdown(ctx)
-	if p.client.apiKey != "scoped-key" || p.client.baseURL != "https://dashboard.example.com" || p.client.project != "dashboard-project" {
+	if p.client.apiKey != "scoped-key" || p.client.baseURL != "https://retaindb.selfhosted.example" || p.client.project != "saved-project" {
 		t.Fatalf("client %+v", p.client)
 	}
 }

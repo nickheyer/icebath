@@ -15,16 +15,10 @@ type Profile struct {
 	Calls  map[string]Func
 }
 
-var (
-	profiles     []Profile
-	configSchema any
-)
+var profiles []Profile
 
 // Names a model provider profile the plugin offers, called from an init function
 func RegisterProfile(p Profile) { profiles = append(profiles, p) }
-
-// Names the config schema of a memory provider plugin, called from an init function
-func RegisterConfigSchema(schema any) { configSchema = schema }
 
 // Registration a category load keeps here in place of sending it to the host
 type capture struct {

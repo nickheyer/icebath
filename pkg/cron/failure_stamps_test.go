@@ -92,21 +92,18 @@ func TestLastFailureStampDeliveryFailureKeepsItsOwnChannel(t *testing.T) {
 	}
 }
 
-func noteForwardFailure(t *testing.T, s *Store, id, detail string) bool {
+// Stamps a refused fire on one job through the live gateway gate writer
+func refuseFire(t *testing.T, s *Store, id, detail string) {
 	t.Helper()
-	ok, err := s.noteFireForwardFailure(context.Background(), id, detail)
-	if err != nil {
+	if err := s.noteFireRefused(context.Background(), []string{id}, detail); err != nil {
 		t.Fatal(err)
 	}
-	return ok
 }
 
-func TestNoteFireForwardFailureStampsLastFireError(t *testing.T) {
+func TestNoteFireRefusedStampsLastFireError(t *testing.T) {
 	s, _ := newTestStore(t)
 	job := watchedJob(t, s, "Daily invoice triage")
-	if !noteForwardFailure(t, s, job.ID, "gateway unreachable") {
-		t.Fatal("the stamp was refused")
-	}
+	refuseFire(t, s, job.ID, "gateway unreachable")
 	stamp := mustGet(t, s, job.ID).LastFireError
 	if stamp == nil || stamp.Detail != "gateway unreachable" {
 		t.Fatalf("stamp %+v", stamp)
@@ -114,27 +111,20 @@ func TestNoteFireForwardFailureStampsLastFireError(t *testing.T) {
 	parsesAsISO(t, stamp.At)
 }
 
-func TestNoteFireForwardFailureUnknownJobReturnsFalse(t *testing.T) {
-	s, _ := newTestStore(t)
-	if noteForwardFailure(t, s, "nope", "gateway unreachable") {
-		t.Fatal("an unknown job was stamped")
-	}
-}
-
-func TestNoteFireForwardFailureRepeatedFailuresOverwriteLatestWins(t *testing.T) {
+func TestNoteFireRefusedRepeatedFailuresOverwriteLatestWins(t *testing.T) {
 	s, _ := newTestStore(t)
 	job := watchedJob(t, s, "Daily invoice triage")
-	noteForwardFailure(t, s, job.ID, "first miss")
-	noteForwardFailure(t, s, job.ID, "second miss")
+	refuseFire(t, s, job.ID, "first miss")
+	refuseFire(t, s, job.ID, "second miss")
 	if stamp := mustGet(t, s, job.ID).LastFireError; stamp == nil || stamp.Detail != "second miss" {
 		t.Fatalf("stamp %+v", stamp)
 	}
 }
 
-func TestNoteFireForwardFailureSuccessfulRunClearsStamp(t *testing.T) {
+func TestNoteFireRefusedSuccessfulRunClearsStamp(t *testing.T) {
 	s, _ := newTestStore(t)
 	job := watchedJob(t, s, "Daily invoice triage")
-	noteForwardFailure(t, s, job.ID, "gateway unreachable")
+	refuseFire(t, s, job.ID, "gateway unreachable")
 	if mustGet(t, s, job.ID).LastFireError == nil {
 		t.Fatal("no stamp before the run")
 	}
@@ -144,10 +134,10 @@ func TestNoteFireForwardFailureSuccessfulRunClearsStamp(t *testing.T) {
 	}
 }
 
-func TestNoteFireForwardFailureFailedRunKeepsStamp(t *testing.T) {
+func TestNoteFireRefusedFailedRunKeepsStamp(t *testing.T) {
 	s, _ := newTestStore(t)
 	job := watchedJob(t, s, "Daily invoice triage")
-	noteForwardFailure(t, s, job.ID, "gateway unreachable")
+	refuseFire(t, s, job.ID, "gateway unreachable")
 	markRun(t, s, job.ID, false, MarkOptions{Error: strPtr("boom")})
 	if stamp := mustGet(t, s, job.ID).LastFireError; stamp == nil || stamp.Detail != "gateway unreachable" {
 		t.Fatalf("stamp %+v", stamp)
@@ -157,7 +147,7 @@ func TestNoteFireForwardFailureFailedRunKeepsStamp(t *testing.T) {
 func TestFormatJobSurfacesFireErrorCronjobListCarriesLastFireError(t *testing.T) {
 	s, _ := newTestStore(t)
 	job := watchedJob(t, s, "Daily invoice triage")
-	noteForwardFailure(t, s, job.ID, "gateway unreachable")
+	refuseFire(t, s, job.ID, "gateway unreachable")
 	formatted := s.formatJob(mustGet(t, s, job.ID))
 	stamp, _ := formatted.Get("last_fire_error")
 	detail := ""

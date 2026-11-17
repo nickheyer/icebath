@@ -43,10 +43,10 @@ type brokenEntry struct {
 
 // Options configure a service the way the lsp config section does
 type Options struct {
-	Enabled            bool
-	WaitMode           string
-	WaitTimeout        float64
-	InstallStrategy    string
+	Enabled         bool
+	WaitMode        string
+	WaitTimeout     float64
+	InstallStrategy string
 	// Non string install_strategy of the config kept as given for the status report
 	InstallStrategyRaw any
 	InstallStrategySet bool
@@ -65,26 +65,26 @@ type Options struct {
 
 // Service owns the language server clients of one profile and the post write checks that use them
 type Service struct {
-	rt                *Runtime
-	enabled           bool
-	waitMode          string
-	waitTimeout       float64
-	installStrategy   string
+	rt                 *Runtime
+	enabled            bool
+	waitMode           string
+	waitTimeout        float64
+	installStrategy    string
 	installStrategyRaw any
 	installStrategySet bool
-	binaryOverrides   map[string][]string
-	envOverrides      map[string]map[string]string
-	initOverrides     map[string]map[string]any
-	disabledServers   map[string]bool
-	idleTimeout       float64
-	extraServers      []*ServerDef
-	brokenRetry       float64
-	warmupTimeout     float64
-	excludeRoots      []string
-	excludeInvalid    bool
-	trustedWorkspaces []string
-	untrustedSkipped  map[pairKey]bool
-	operatorRoots     atomic.Pointer[map[string]bool]
+	binaryOverrides    map[string][]string
+	envOverrides       map[string]map[string]string
+	initOverrides      map[string]map[string]any
+	disabledServers    map[string]bool
+	idleTimeout        float64
+	extraServers       []*ServerDef
+	brokenRetry        float64
+	warmupTimeout      float64
+	excludeRoots       []string
+	excludeInvalid     bool
+	trustedWorkspaces  []string
+	untrustedSkipped   map[pairKey]bool
+	operatorRoots      atomic.Pointer[map[string]bool]
 
 	l             *loop
 	stateMu       sync.Mutex

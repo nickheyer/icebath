@@ -98,7 +98,7 @@ func TestBundledPluginsRegisterThroughManager(t *testing.T) {
 	if data, _ := os.ReadFile(ip); !strings.Contains(string(data), filepath.Join(filepath.Dir(ip), "scripts")+"/impeccable") {
 		t.Error("rendered impeccable skill does not point at the materialized scripts")
 	}
-	if def := commands.Default.Lookup("impeccable"); def == nil || len(def.Subcommands) != 24 || def.Handler == nil {
+	if def := commands.Default.Lookup("impeccable"); def == nil || len(def.Subcommands) != 24 {
 		t.Fatalf("impeccable command %+v", def)
 	}
 	out := m.InvokeHook(context.Background(), "transform_tool_result", map[string]any{"tool_name": "read_file", "args": map[string]any{}, "result": "{}"})

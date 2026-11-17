@@ -198,17 +198,17 @@ func TestFingerprintChangesOnEachCapabilityAxis(t *testing.T) {
 	if afterSkill == base {
 		t.Fatal("skill axis")
 	}
-	writeProbeFile(t, filepath.Join(h, "config.yaml"), "platform_toolsets:\n  desktop: [icebath-desktop, computer_use]\n")
+	writeProbeFile(t, filepath.Join(h, "config.yaml"), "platform_toolsets:\n  cli: [icebath-cli, computer_use]\n")
 	afterTools := CapabilityFingerprint(h)
 	if afterTools == afterSkill {
 		t.Fatal("toolsets axis")
 	}
-	writeProbeFile(t, filepath.Join(h, "config.yaml"), "platform_toolsets:\n  desktop: [icebath-desktop, computer_use]\nagent:\n  disabled_toolsets: [computer_use]\n")
+	writeProbeFile(t, filepath.Join(h, "config.yaml"), "platform_toolsets:\n  cli: [icebath-cli, computer_use]\nagent:\n  disabled_toolsets: [computer_use]\n")
 	afterDisabled := CapabilityFingerprint(h)
 	if afterDisabled == afterTools {
 		t.Fatal("disabled toolsets axis")
 	}
-	writeProbeFile(t, filepath.Join(h, "config.yaml"), "platform_toolsets:\n  desktop: [icebath-desktop, computer_use]\nagent:\n  disabled_toolsets: [computer_use]\nmcp_servers:\n  github:\n    preset: github\n")
+	writeProbeFile(t, filepath.Join(h, "config.yaml"), "platform_toolsets:\n  cli: [icebath-cli, computer_use]\nagent:\n  disabled_toolsets: [computer_use]\nmcp_servers:\n  github:\n    preset: github\n")
 	afterMCP := CapabilityFingerprint(h)
 	if afterMCP == afterDisabled {
 		t.Fatal("mcp axis")
@@ -422,89 +422,6 @@ func TestArchivingASkillDoesNotMoveTheEpoch(t *testing.T) {
 	installSkill(t, h, ".archive/another-old-skill", "another")
 	if CapabilityFingerprint(h) != afterArchive {
 		t.Fatal("archived skill moved the epoch")
-	}
-}
-
-// Relay roster file holding the given agent rows
-func writeRelayRoster(t *testing.T, h string, rows []map[string]any) {
-	t.Helper()
-	data, err := json.Marshal(map[string]any{"updated_at": 1, "agents": rows})
-	if err != nil {
-		t.Fatal(err)
-	}
-	writeProbeFile(t, filepath.Join(h, RelayDirName, RosterFile), string(data))
-}
-
-// Install with one managed researcher teammate
-func managedProbeHome(t *testing.T) string {
-	h := probeHome(t)
-	writeProbeFile(t, filepath.Join(h, "profiles", "researcher", "profile.yaml"), "description: teammate for tests\nui_meta:\n  icebath-bots:\n    shape: cloud\n")
-	return h
-}
-
-func TestProtocolSectionListsRemoteTeammates(t *testing.T) {
-	h := managedProbeHome(t)
-	writeRelayRoster(t, h, []map[string]any{{"profile": "default", "handle": "icebath", "connection_id": "cloud-1", "connection_label": "Icebath Cloud", "title": "Moxie"}})
-	section := ProtocolSection(h, true)
-	if !strings.Contains(section, "`@moxie`") || !strings.Contains(section, "Icebath Cloud") {
-		t.Fatal(section)
-	}
-}
-
-func TestCapabilityFingerprintChangesWithRelayRoster(t *testing.T) {
-	h := managedProbeHome(t)
-	before := CapabilityFingerprint(h)
-	writeRelayRoster(t, h, []map[string]any{{"profile": "default", "handle": "icebath", "connection_id": "cloud-1"}})
-	if CapabilityFingerprint(h) == before {
-		t.Fatal("relay roster axis")
-	}
-}
-
-func TestRemoteDefaultIsAddressableByItsTitleSlug(t *testing.T) {
-	h := managedProbeHome(t)
-	writeRelayRoster(t, h, []map[string]any{
-		{"profile": "cos-bot", "handle": "cos-bot", "connection_id": "cloud-1", "title": "Other"},
-		{"profile": "default", "handle": "icebath", "connection_id": "cloud-1", "title": "Ops Bot"},
-		{"profile": "default", "handle": "icebath", "connection_id": "vps-1", "title": "CoS Bot"},
-	})
-	roster := ReadRemoteRoster(h)
-	taken, err := LocalTakenForms(h)
-	if err != nil {
-		t.Fatal(err)
-	}
-	forms := map[string]string{}
-	for i, form := range RemoteTargetForms(roster, taken) {
-		forms[roster[i].ConnectionID+"/"+roster[i].Profile] = form
-	}
-	if want := map[string]string{"cloud-1/cos-bot": "cos-bot", "vps-1/default": "icebath@vps-1", "cloud-1/default": "ops-bot"}; !reflect.DeepEqual(forms, want) {
-		t.Fatal(forms)
-	}
-	section := ProtocolSection(h, false)
-	if !strings.Contains(section, "`@ops-bot`") || !strings.Contains(section, "`@icebath@vps-1`") || strings.Contains(section, "- `@icebath` —") {
-		t.Fatal(section)
-	}
-}
-
-func TestRemoteRosterRejectsBadRowsAndCorruptFiles(t *testing.T) {
-	h := probeHome(t)
-	if got := ReadRemoteRoster(h); len(got) != 0 {
-		t.Fatal(got)
-	}
-	writeProbeFile(t, filepath.Join(h, RelayDirName, RosterFile), "{not json")
-	if got := ReadRemoteRoster(h); len(got) != 0 {
-		t.Fatal(got)
-	}
-	writeRelayRoster(t, h, []map[string]any{
-		{"profile": "ok", "connection_id": "c1", "description": "  a\n\tb  ", "online": true},
-		{"profile": "bad name", "connection_id": "c1"},
-		{"profile": "p", "connection_id": "c/1"},
-		{"profile": "", "connection_id": "c1"},
-		{"profile": "default", "connection_id": "c2", "online": "yes"},
-	})
-	rows := ReadRemoteRoster(h)
-	if len(rows) != 2 || rows[0].Handle != "ok" || rows[0].Description != "a b" || rows[0].Online == nil || !*rows[0].Online ||
-		rows[1].Handle != "icebath" || rows[1].Online != nil {
-		t.Fatalf("%+v", rows)
 	}
 }
 

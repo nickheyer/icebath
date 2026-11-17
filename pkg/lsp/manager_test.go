@@ -368,4 +368,3 @@ func TestOnlyOperatorWorkspacesAndListedDirectoriesAreTrusted(t *testing.T) {
 		}
 	}
 }
-

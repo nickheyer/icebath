@@ -136,30 +136,13 @@ func TestPackageSchemaMatchesTheContracts(t *testing.T) {
 func TestClientResourceClassificationIsBounded(t *testing.T) {
 	if ClientOSFamily("Darwin") != "macos" || ClientOSFamily("Windows") != "windows" || ClientArchitecture("AMD64") != "x86_64" ||
 		ClientArchitecture("aarch64") != "arm64" || ClientArchitecture("armv7l") != "arm" || ClientInstallMethod("Homebrew") != "homebrew" ||
-		ClientInstallMethod("nix") != "nixos" || ClientInstallMethod("apt") != "apt" || ClientInstallMethod("microsoft-store") != "microsoft-store" {
+		ClientInstallMethod("nix") != "nixos" || ClientInstallMethod("apt") != "apt" {
 		t.Fatal("classification")
 	}
 	got := ClientResource("", "privacy-os-canary", "privacy-arch-canary", "privacy-install-canary")
 	want := map[string]string{"architecture": "unknown", "icebath_version": "unknown", "install_method": "unknown", "os_family": "unknown"}
 	if !maps.Equal(got, want) {
 		t.Fatalf("resource %v", got)
-	}
-}
-
-func TestMicrosoftStoreStampReportsItsOwnInstallMethod(t *testing.T) {
-	root := t.TempDir()
-	t.Setenv("ICEBATH_HOME", t.TempDir())
-	prev := installProjectRoot
-	installProjectRoot = func() string { return root }
-	t.Cleanup(func() { installProjectRoot = prev })
-	stamp := filepath.Join(root, "install-stamp.json")
-	for mechanism, want := range map[string]string{"microsoft-store": "microsoft-store", "app-installer": "unknown"} {
-		if err := os.WriteFile(stamp, []byte(`{"updateMechanism": "`+mechanism+`"}`), 0o600); err != nil {
-			t.Fatal(err)
-		}
-		if got, err := DetectClientInstallMethod(t.Context()); err != nil || got != want {
-			t.Fatalf("%s: %q %v", mechanism, got, err)
-		}
 	}
 }
 

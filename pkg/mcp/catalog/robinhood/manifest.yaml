@@ -29,14 +29,6 @@ tools:
     - follow_watchlist
     - unfollow_watchlist
 
-# Composer-suggestion triggers (desktop brand pills).
-suggest:
-  keywords:
-    - robinhood
-    - stock trade
-  hosts:
-    - robinhood.com
-
 post_install: |
   On first connection icebath opens a browser to authorize with
   Robinhood (or run `icebath mcp login robinhood`). Approve access,

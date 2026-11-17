@@ -707,7 +707,7 @@ func (c *CLI) startWakeWordListener(announce bool) bool {
 	}
 	startNew, ok := cfg["start_new_session"]
 	c.voiceExtra.wakeStartNewSession = !ok || pyrepr.Truthy(startNew)
-	if _, err := media.StartListening(c.ctx, c.onWakeWord, c, cfg, false); err != nil {
+	if _, err := media.StartListening(c.ctx, c.onWakeWord, c, cfg); err != nil {
 		say("\n" + voiceDim(c.t("cli.voice.wake_start_failed", map[string]any{"error": pyrepr.ExceptionMessage(err)})))
 		return false
 	}

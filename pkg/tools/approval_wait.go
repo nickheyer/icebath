@@ -157,23 +157,16 @@ func awaitGatewayDecision(ctx context.Context, env *Env, sessionKey string, noti
 	entry := newApprovalEntry(approvalData)
 	timeout := time.Duration(getApprovalTimeout(env)) * time.Second
 	entry.Data["timeout_s"] = int(timeout / time.Second)
-	slot := preparedApprovalSlot(ctx)
-
 	for {
 		approvalState.Lock()
 		var leader *ApprovalEntry
-		if slot == nil || !slot.Preparing() {
-			for _, e := range approvalState.gatewayQueues[sessionKey] {
-				if e.Data["command"] == approvalData["command"] && sameStrings(stringList(e.Data["pattern_keys"]), keys) {
-					leader = e
-					break
-				}
+		for _, e := range approvalState.gatewayQueues[sessionKey] {
+			if e.Data["command"] == approvalData["command"] && sameStrings(stringList(e.Data["pattern_keys"]), keys) {
+				leader = e
+				break
 			}
 		}
 		if leader == nil {
-			if slot != nil {
-				slot.RegisterPreparedApproval(sessionKey, entry)
-			}
 			approvalState.gatewayQueues[sessionKey] = append(approvalState.gatewayQueues[sessionKey], entry)
 			approvalState.Unlock()
 			break
@@ -249,9 +242,6 @@ func awaitGatewayDecision(ctx context.Context, env *Env, sessionKey string, noti
 		fireApprovalHook(ctx, env, "post_approval_response", post)
 		human.finish(ctx, env, "notify_failed")
 		return gatewayDecision{NotifyFailed: true}
-	}
-	if slot != nil {
-		slot.ApprovalPublished()
 	}
 	state := pollEvent(ctx, env, entry, sessionKey, "Approval wait interrupted — returning deny for session", timeout)
 	cancelled := cancelCause(ctx, state, entry)

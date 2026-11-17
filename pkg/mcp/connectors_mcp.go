@@ -200,7 +200,7 @@ type ConnectorAttempt interface {
 	AuthURL() string
 	Detail() string
 	Poll() AttemptPoll
-	Flow() *DashboardOAuthFlow
+	Flow() *ClientOAuthFlow
 }
 
 // AttemptPoll is an attempt's status with its tools and discovery error once approved
@@ -351,7 +351,7 @@ func (b catalogBackend) install(ctx context.Context, name string, env *pyjson.Ob
 	return names, nil
 }
 
-// Flips enabled under the dashboard's config write scope so the two read modify write paths serialise
+// Flips enabled under the shared config write scope so the two read modify write paths serialise
 func (b catalogBackend) Enable(ctx context.Context, name string) error {
 	wctx, release := ConfigWriteScope(ctx, "")
 	defer release()
@@ -374,7 +374,7 @@ func (b catalogBackend) Enable(ctx context.Context, name string) error {
 
 var configMutationMu sync.Mutex
 
-// ConfigWriteScope enters the profile scope then the process config mutation lock, the dashboard write nesting
+// ConfigWriteScope enters the profile scope then the process config mutation lock
 var ConfigWriteScope = func(ctx context.Context, profile string) (context.Context, func()) {
 	if profile != "" {
 		ctx = home.WithOverride(ctx, profile)
@@ -1035,7 +1035,7 @@ func connDoEnable(ctx context.Context, r *connRunner, op *tools.ConnectionOperat
 	connConnect(op, t, names, discoveryError)
 }
 
-// Installs at once off the desktop where nobody can fill a credential in
+// Installs at once when no card can collect a credential
 func connInstallNow(ctx context.Context, r *connRunner, op *tools.ConnectionOperation, t *tools.ConnTarget, env *pyjson.Object) {
 	required, err := r.backend.RequiredEnv(ctx, t.Name)
 	if err != nil {

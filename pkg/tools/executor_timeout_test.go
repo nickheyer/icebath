@@ -112,7 +112,7 @@ func TestSequentialTimeoutStopsAbandonedWorkersHeartbeat(t *testing.T) {
 		taskID: "t", toolCallID: "tc1", execute: func(context.Context, map[string]any) (string, error) {
 			<-release
 			return "late", nil
-		}}, nil)
+		}})
 	abandonedAt := time.Now()
 	if err != nil || managed == nil || !managed.TimedOut {
 		t.Fatalf("managed %+v err %v", managed, err)
@@ -320,7 +320,7 @@ func TestSequentialToolPollSurfacesWorkerErrorInsteadOfLooping(t *testing.T) {
 	stalled := errors.New("tool stream stalled")
 	started = time.Now()
 	_, err := e.runSequentialToolExecutionMiddleware(context.Background(), managedInput{name: "some_tool", args: map[string]any{}, taskID: "t", toolCallID: "tc1",
-		execute: func(context.Context, map[string]any) (string, error) { return "", stalled }}, nil)
+		execute: func(context.Context, map[string]any) (string, error) { return "", stalled }})
 	if !errors.Is(err, stalled) {
 		t.Fatalf("worker error not surfaced: %v", err)
 	}

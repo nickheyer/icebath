@@ -26,15 +26,6 @@ tools:
     - fireflies_search
     - fireflies_fetch
 
-# Composer-suggestion triggers (desktop brand pills).
-suggest:
-  keywords:
-    - fireflies
-    - meeting notes
-    - transcript
-  hosts:
-    - fireflies.ai
-
 post_install: |
   On first connection icebath opens a browser to authorize with
   Fireflies (or run `icebath mcp login fireflies`). Approve access,

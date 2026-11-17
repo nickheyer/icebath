@@ -1,7 +1,6 @@
 package media
 
 import (
-	"encoding/binary"
 	"fmt"
 	"math"
 	"sync"
@@ -43,47 +42,9 @@ type wakeCapture interface {
 	Rate() int
 }
 
-// Bounded client frame queue dropping nothing itself, the feeder decides what to discard
-type wakeFrameQueue struct{ ch chan []int16 }
-
-func newWakeFrameQueue(size int) *wakeFrameQueue {
-	return &wakeFrameQueue{ch: make(chan []int16, size)}
-}
-
-func (q *wakeFrameQueue) putNowait(f []int16) bool {
-	select {
-	case q.ch <- f:
-		return true
-	default:
-		return false
-	}
-}
-
-func (q *wakeFrameQueue) getNowait() ([]int16, bool) {
-	select {
-	case f := <-q.ch:
-		return f, true
-	default:
-		return nil, false
-	}
-}
-
-// Blocks up to timeout for one frame
-func (q *wakeFrameQueue) get(timeout time.Duration) ([]int16, bool) {
-	t := time.NewTimer(timeout)
-	defer t.Stop()
-	select {
-	case f := <-q.ch:
-		return f, true
-	case <-t.C:
-		return nil, false
-	}
-}
-
-// A PortAudio input stream in local mode or the feed queue in client mode
+// A PortAudio input stream on the backend microphone
 type wakeAudioCapture struct {
 	stream            pysounddevice.InputStream
-	queue             *wakeFrameQueue
 	rate              int
 	frameLength       int
 	skipAvailablePoll bool
@@ -93,10 +54,6 @@ func (c *wakeAudioCapture) Rate() int { return c.rate }
 
 // One raw block, polling read_available against the halt so a wedged device never blocks the reader
 func (c *wakeAudioCapture) Read(stop wakeWaiter) ([]int16, bool, error) {
-	if c.stream == nil {
-		f, ok := c.queue.get(250 * time.Millisecond)
-		return f, ok, nil
-	}
 	if _, err := c.stream.ReadAvailable(); err != nil {
 		return nil, false, err
 	}
@@ -165,19 +122,17 @@ func (t *wakeThread) isCurrent() bool { return t.gid.Load() == pythread.Goroutin
 
 // WakeDetectorOptions are the optional keywords of the detector constructor
 type WakeDetectorOptions struct {
-	Cooldown      *float64
-	OnFailure     func(*WakeWordDetector)
-	InputDevice   any
-	ExternalAudio bool
+	Cooldown    *float64
+	OnFailure   func(*WakeWordDetector)
+	InputDevice any
 }
 
 // WakeWordDetector is the background hotword listener, the engine kept across pause and resume
 type WakeWordDetector struct {
-	Engine        WakeEngine
-	cooldown      float64
-	onFailure     func(*WakeWordDetector)
-	inputDevice   any
-	externalAudio bool
+	Engine      WakeEngine
+	cooldown    float64
+	onFailure   func(*WakeWordDetector)
+	inputDevice any
 
 	mu                 sync.Mutex
 	onWake             func() error
@@ -189,7 +144,6 @@ type WakeWordDetector struct {
 	stop             *wakeStop
 	callbackInflight pythread.Event
 	lastFire         float64
-	audioQ           *wakeFrameQueue
 	audioSilent      atomic.Bool
 	silentFrames     int
 	openCapture      func(frameLength int) (wakeCapture, error)
@@ -198,22 +152,13 @@ type WakeWordDetector struct {
 // NewWakeWordDetector builds an idle detector over an engine and the wake callback
 func NewWakeWordDetector(engine WakeEngine, onWake func() error, opts WakeDetectorOptions) *WakeWordDetector {
 	d := &WakeWordDetector{Engine: engine, onWake: onWake, cooldown: wakeFireCooldownSeconds, onFailure: opts.OnFailure,
-		inputDevice: opts.InputDevice, externalAudio: opts.ExternalAudio, stop: &wakeStop{}, audioQ: newWakeFrameQueue(64)}
+		inputDevice: opts.InputDevice, stop: &wakeStop{}, inputDeviceDetails: WakeInputDeviceDetails{Selector: opts.InputDevice}}
 	if opts.Cooldown != nil {
 		d.cooldown = *opts.Cooldown
-	}
-	if d.externalAudio {
-		name, hostapi := "client capture", "remote"
-		d.inputDeviceDetails = WakeInputDeviceDetails{Selector: "client", Name: &name, HostAPI: &hostapi}
-	} else {
-		d.inputDeviceDetails = WakeInputDeviceDetails{Selector: opts.InputDevice}
 	}
 	d.openCapture = d.openAudioCapture
 	return d
 }
-
-// ExternalAudio reports whether the detector reads client fed frames instead of a local mic
-func (d *WakeWordDetector) ExternalAudio() bool { return d.externalAudio }
 
 // AudioSilent reports an open stream delivering only near silent frames
 func (d *WakeWordDetector) AudioSilent() bool { return d.audioSilent.Load() }
@@ -252,50 +197,7 @@ func (d *WakeWordDetector) Running() bool {
 	return d.runningLocked()
 }
 
-// Feed queues one client captured int16 mono block, padding short frames and dropping the oldest on overflow
-func (d *WakeWordDetector) Feed(pcm any) error {
-	if !d.externalAudio {
-		return nil
-	}
-	var arr []int16
-	switch p := pcm.(type) {
-	case []byte:
-		if len(p)%2 != 0 {
-			return &WakeWordError{Class: "ValueError", Msg: "buffer size must be a multiple of element size"}
-		}
-		arr = make([]int16, len(p)/2)
-		for i := range arr {
-			arr[i] = int16(binary.NativeEndian.Uint16(p[2*i:]))
-		}
-	case []int16:
-		arr = p
-	case []int:
-		arr = make([]int16, len(p))
-		for i, v := range p {
-			if v < math.MinInt16 || v > math.MaxInt16 {
-				return &WakeWordError{Class: "OverflowError", Msg: fmt.Sprintf("Python integer %d out of bounds for int16", v)}
-			}
-			arr[i] = int16(v)
-		}
-	default:
-		return &WakeWordError{Class: "TypeError", Msg: "int() argument must be a string, a bytes-like object or a real number, not '" + pyrepr.TypeName(pcm) + "'"}
-	}
-	fl := d.Engine.FrameLength()
-	if fl <= 0 {
-		return nil
-	}
-	for offset := 0; offset < len(arr); offset += fl {
-		chunk := make([]int16, fl)
-		copy(chunk, arr[offset:min(offset+fl, len(arr))])
-		if !d.audioQ.putNowait(chunk) {
-			d.audioQ.getNowait()
-			d.audioQ.putNowait(chunk)
-		}
-	}
-	return nil
-}
-
-// Start opens the mic or the client feeder and begins listening, a no op while running
+// Opens the microphone and begins listening, a no op while running
 func (d *WakeWordDetector) Start() error {
 	d.lock.Lock()
 	if d.runningLocked() {
@@ -368,17 +270,8 @@ func (d *WakeWordDetector) dispatchWake() {
 	}
 }
 
-// Opens the client feeder or the configured PortAudio input at its native rate
+// Opens the configured PortAudio input at its native rate
 func (d *WakeWordDetector) openAudioCapture(frameLength int) (wakeCapture, error) {
-	if d.externalAudio {
-		for {
-			if _, ok := d.audioQ.getNowait(); !ok {
-				break
-			}
-		}
-		wakeLog().Info(fmt.Sprintf("wake word: client-capture mode (frame=%d, rate=%d) — waiting for wake.feed", frameLength, WakeSampleRate))
-		return &wakeAudioCapture{queue: d.audioQ, rate: WakeSampleRate, frameLength: frameLength}, nil
-	}
 	sd, err := importAudio()
 	if err != nil {
 		if isAudioImportError(err) || isAudioOSError(err) {
@@ -483,11 +376,8 @@ func (r *wakeRetries) next() (float64, bool) {
 	return delay, true
 }
 
-// Reopens an already started local capture within the arm's retry budget, keeping owner and engine
+// Reopens an already started capture within the arm's retry budget, keeping owner and engine
 func (d *WakeWordDetector) recoverCapture(frameLength int, retries *wakeRetries) wakeCapture {
-	if d.externalAudio {
-		return nil
-	}
 	for {
 		delay, ok := retries.next()
 		if !ok {
@@ -522,7 +412,7 @@ func (d *WakeWordDetector) run(ready *pythread.Event, startupErrors *[]error) {
 	}
 	d.setCap(c)
 	_ = d.Engine.Reset()
-	wakeLog().Info(fmt.Sprintf("wake word: listening (frame=%d, rate=%d, external=%s)", frameLength, WakeSampleRate, pyrepr.Str(d.externalAudio)))
+	wakeLog().Info(fmt.Sprintf("wake word: listening (frame=%d, rate=%d)", frameLength, WakeSampleRate))
 	ready.Set()
 	failed := false
 	retries := &wakeRetries{delays: []float64{0.5, 1.0, 2.0}}

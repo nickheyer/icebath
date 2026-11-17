@@ -328,7 +328,7 @@ func TestLoadedProviderRequirementsPreserveChoicesAndRequireKeys(t *testing.T) {
 				t.Setenv("PORCUPINE_ACCESS_KEY", "")
 				os.Unsetenv("PORCUPINE_ACCESS_KEY")
 				wakeInProcessGates(t, wakeHermesGates)
-				saved := "wake_word:\n  provider: " + provider + "\n  capture: client\n"
+				saved := "wake_word:\n  provider: " + provider + "\n"
 				path := filepath.Join(dir, "config.yaml")
 				if err := os.WriteFile(path, []byte(saved), 0o644); err != nil {
 					t.Fatal(err)
@@ -420,34 +420,32 @@ func TestRequirementsFreshInstallLazyAllowed(t *testing.T) {
 }
 
 func TestRequirementsRejectUnsupportedEngineWithoutAttemptingInstall(t *testing.T) {
-	for _, capture := range []string{"local", "client"} {
-		for _, provider := range []string{"openwakeword", "oww", "local"} {
-			t.Run(capture+"-"+provider, func(t *testing.T) {
-				wakeVoiceLoopReady(t, true, true)
-				wakeHostInterpreter(t)
-				wakeInProcessGates(t, map[string]string{"wake-openwakeword": "python_version < '0'"})
-				savedImportable := pm.SwapAnchorImportable(func(context.Context, string) bool { return false })
-				t.Cleanup(func() { pm.SwapAnchorImportable(savedImportable) })
-				swap(t, &wakeLazyInstallsAllowed, wakeLazy(true))
-				t.Setenv("PORCUPINE_ACCESS_KEY", "test-key")
-				swap(t, &wakeEnsureImport, func(context.Context, string) error {
-					t.Error("a requirements probe must not install dependencies")
-					return nil
-				})
-				r := mustRequirements(t, map[string]any{"provider": provider, "capture": capture}, nil)
-				if r.Available || !strings.Contains(r.Hint, "not supported") || !strings.Contains(r.Hint, "wake_word.provider") {
-					t.Fatalf("got %+v", r)
-				}
-				if !strings.Contains(r.Hint, "sherpa") || !strings.Contains(r.Hint, "porcupine") || strings.Contains(r.Hint, "uv sync") {
-					t.Fatalf("hint %q", r.Hint)
-				}
-				for _, alternative := range []string{"sherpa", "porcupine"} {
-					if !mustRequirements(t, map[string]any{"provider": alternative, "capture": capture}, nil).Available {
-						t.Fatalf("%s must be available", alternative)
-					}
-				}
+	for _, provider := range []string{"openwakeword", "oww", "local"} {
+		t.Run(provider, func(t *testing.T) {
+			wakeVoiceLoopReady(t, true, true)
+			wakeHostInterpreter(t)
+			wakeInProcessGates(t, map[string]string{"wake-openwakeword": "python_version < '0'"})
+			savedImportable := pm.SwapAnchorImportable(func(context.Context, string) bool { return false })
+			t.Cleanup(func() { pm.SwapAnchorImportable(savedImportable) })
+			swap(t, &wakeLazyInstallsAllowed, wakeLazy(true))
+			t.Setenv("PORCUPINE_ACCESS_KEY", "test-key")
+			swap(t, &wakeEnsureImport, func(context.Context, string) error {
+				t.Error("a requirements probe must not install dependencies")
+				return nil
 			})
-		}
+			r := mustRequirements(t, map[string]any{"provider": provider}, nil)
+			if r.Available || !strings.Contains(r.Hint, "not supported") || !strings.Contains(r.Hint, "wake_word.provider") {
+				t.Fatalf("got %+v", r)
+			}
+			if !strings.Contains(r.Hint, "sherpa") || !strings.Contains(r.Hint, "porcupine") || strings.Contains(r.Hint, "uv sync") {
+				t.Fatalf("hint %q", r.Hint)
+			}
+			for _, alternative := range []string{"sherpa", "porcupine"} {
+				if !mustRequirements(t, map[string]any{"provider": alternative}, nil).Available {
+					t.Fatalf("%s must be available", alternative)
+				}
+			}
+		})
 	}
 }
 
@@ -468,7 +466,7 @@ func TestRequirementsDepsPresentButNoAudioHint(t *testing.T) {
 	swap(t, &wakeLocalInputReady, func() bool { return false })
 	swap(t, &wakePMAvailable, wakeAvailable(true))
 	swap(t, &wakeLazyInstallsAllowed, wakeLazy(true))
-	r := mustRequirements(t, map[string]any{"provider": "openwakeword", "capture": "local"}, nil)
+	r := mustRequirements(t, map[string]any{"provider": "openwakeword"}, nil)
 	if r.Available || !(strings.Contains(r.Hint, "audio device") || strings.Contains(strings.ToLower(r.Hint), "microphone")) {
 		t.Fatalf("got %+v", r)
 	}
@@ -500,35 +498,5 @@ func TestBundledHeyHermesModelShipsOnDisk(t *testing.T) {
 	st, err := os.Stat(path)
 	if err != nil || st.Size() <= 1024 {
 		t.Fatalf("%s: %v", path, err)
-	}
-}
-
-func TestResolveCaptureModeAutoAndPreferClient(t *testing.T) {
-	ctx := context.Background()
-	ready := false
-	swap(t, &wakeLocalInputReady, func() bool { return ready })
-	mode := func(capture string, preferClient, forceLocal bool) string {
-		return ResolveCaptureMode(ctx, map[string]any{"capture": capture}, preferClient, forceLocal)
-	}
-	if mode("auto", false, false) != "local" || mode("auto", true, false) != "client" || mode("local", true, false) != "local" ||
-		mode("client", false, false) != "client" || mode("auto", false, true) != "local" {
-		t.Fatal("capture mode without a backend mic")
-	}
-	ready = true
-	if mode("auto", false, false) != "local" || mode("auto", true, false) != "local" || mode("client", true, false) != "client" {
-		t.Fatal("capture mode with a backend mic")
-	}
-}
-
-func TestRequirementsClientCaptureWithoutLocalMic(t *testing.T) {
-	swap(t, &wakeAudioAvailable, func() (bool, error) { return false, nil })
-	swap(t, &wakeLocalInputReady, func() bool { return false })
-	swap(t, &wakeSTTReady, func(context.Context) bool { return true })
-	swap(t, &wakeTTSReady, func(context.Context) bool { return true })
-	swap(t, &wakePMAvailable, wakeAvailable(true))
-	swap(t, &wakeLazyInstallsAllowed, wakeLazy(false))
-	r := mustRequirements(t, map[string]any{"capture": "client", "provider": "openwakeword"}, nil)
-	if !r.Available || r.Capture != "client" {
-		t.Fatalf("got %+v", r)
 	}
 }

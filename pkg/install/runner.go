@@ -31,11 +31,7 @@ type Options struct {
 	Binary          string
 	Version         string
 	FromSelf        bool
-	Stage           string
-	Manifest        bool
-	JSON            bool
 	NonInteractive  bool
-	IncludeDesktop  bool
 	Verbose         bool
 	SkipBrowser     bool
 	SkipComputerUse bool
@@ -120,9 +116,6 @@ func NewRunner(opts Options, sink func(Event)) (*Runner, error) {
 	return &Runner{opts: opts, sink: sink, home: h, installDir: dir, stdout: os.Stdout, stderr: os.Stderr}, nil
 }
 
-// Install dir the runner installs into
-func (r *Runner) InstallDir() string { return r.installDir }
-
 func (r *Runner) emit(e Event) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -143,7 +136,7 @@ func (r *Runner) logSuccess(text string) { r.line(Stdout, r.paint("\x1b[0;32m", 
 func (r *Runner) logWarn(text string)    { r.line(Stdout, r.paint("\x1b[0;33m", "⚠")+" "+text) }
 func (r *Runner) logError(text string)   { r.line(Stderr, r.paint("\x1b[0;31m", "✗")+" "+text) }
 
-// Runs one stage and returns its result frame and exit status
+// Runs one stage and returns its result and exit status
 func (r *Runner) RunStage(ctx context.Context, name string) (StageResult, int) {
 	r.stage, r.skipped, r.lastErr = name, false, nil
 	reason := ""
@@ -167,9 +160,6 @@ func (r *Runner) RunStage(ctx context.Context, name string) (StageResult, int) {
 		err = r.stageSetup(ctx)
 	case "gateway":
 		err = r.stageGateway(ctx)
-	case "desktop":
-		r.opts.IncludeDesktop = true
-		err = r.stageProducts(ctx)
 	case "complete":
 		err = r.stageComplete(ctx)
 	default:
@@ -234,9 +224,6 @@ func quietOutput(verbose bool, stdout *os.File) bool {
 // Writes log events to the process streams, the CLI form of the event sink
 func cliSink(stdout, stderr io.Writer) func(Event) {
 	return func(e Event) {
-		if e.Type != EventLog {
-			return
-		}
 		if e.Stream == Stderr {
 			fmt.Fprintln(stderr, e.Line)
 			return
@@ -259,12 +246,8 @@ func (r *Runner) printBanner() {
 		close)
 }
 
-// Runs the install verb and returns its exit status, the manifest, one stage or the whole ladder
+// Runs the install ladder and returns its exit status
 func Main(opts Options, stdout, stderr *os.File) int {
-	if opts.Manifest {
-		fmt.Fprintln(stdout, ManifestJSON(opts.IncludeDesktop))
-		return 0
-	}
 	r, err := NewRunner(opts, cliSink(stdout, stderr))
 	if err != nil {
 		fmt.Fprintln(stderr, err)
@@ -273,26 +256,7 @@ func Main(opts Options, stdout, stderr *os.File) int {
 	r.stdout, r.stderr = stdout, stderr
 	r.color = isatty.IsTerminal(stdout.Fd()) && os.Getenv("NO_COLOR") == ""
 	r.quiet = quietOutput(opts.Verbose, stdout)
-	ctx := context.Background()
-	if opts.Stage != "" {
-		if err := checkPlatform(); err != nil {
-			r.logError(err.Error())
-			if opts.JSON {
-				fmt.Fprintln(stdout, FrameJSON(false, opts.Stage, false, err.Error()))
-			}
-			return 1
-		}
-		res, code := r.RunStage(ctx, opts.Stage)
-		if opts.JSON {
-			reason := ""
-			if res.Reason != nil {
-				reason = *res.Reason
-			}
-			fmt.Fprintln(stdout, FrameJSON(res.OK, res.Stage, res.Skipped, reason))
-		}
-		return code
-	}
-	return r.runLadder(ctx)
+	return r.runLadder(context.Background())
 }
 
 // Exit status and signal of one noted installer signal

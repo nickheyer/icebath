@@ -19,7 +19,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 const (
@@ -32,7 +31,6 @@ var (
 	updateIDPattern      = regexp.MustCompile(`^[0-9a-f]{8,64}$`)
 	runOutcomes          = map[string]string{"success": "success", "refused": "refused", "noop": "noop"}
 	fleetBadStates       = Set("stale", "down")
-	desktopApplyModes    = map[string]string{"electron-updater": "package", "app-installer": "package", "microsoft-store": "package", "windows-handoff": "git", "posix-handoff": "git"}
 	exceptionStopReason  = regexp.MustCompile(`^([A-Z][A-Za-z0-9_]*):(?: |\n?\z)`)
 	pmErrorTypes         = Set("BuildFailure", "DownloadError", "DownloadPaused", "DownloadTransportError", "FeatureProbeError", "HashError", "InstallError", "PinMismatch", "ResolutionConflict", "StaleLockRow")
 	osErrorTypes         = builtinOSErrorNames()
@@ -632,54 +630,4 @@ var reportPendingUpdates = func(ctx context.Context) {
 		saved := !isDict || RecordUpdateReceipt(ctx, receipt, true)
 		SettleClaim(claimed, path, saved)
 	}
-}
-
-// DesktopUpdateFields is the update run row of a Desktop packaged self update
-func DesktopUpdateFields(outcome, failedStage, durationMS, mechanism, fromCommitDate any) map[string]string {
-	outcomeValue := pystr.Lower(pystr.Strip(runOutcomeText(outcome)))
-	if !UpdateOutcomes.Has(outcomeValue) {
-		outcomeValue = "failed"
-	}
-	stage := pystr.Lower(pystr.Strip(runOutcomeText(failedStage)))
-	var ageMS any
-	if commit, ok := epoch(fromCommitDate); ok {
-		ageMS = (float64(time.Now().UnixNano())/1e9 - commit) * 1000
-	}
-	mode, ok := desktopApplyModes[pystr.Lower(pystr.Strip(runOutcomeText(mechanism)))]
-	if !ok {
-		mode = "unknown"
-	}
-	failed := "none"
-	if outcomeValue == "failed" {
-		failed = "other"
-		if DesktopUpdateStages.Has(stage) {
-			failed = stage
-		}
-	}
-	failureClass := "none"
-	if outcomeValue == "failed" || outcomeValue == "refused" {
-		failureClass = "unknown"
-	}
-	return map[string]string{
-		"apply_mode": mode, "duration_bucket": UpdateDurationBucket(durationMS), "failed_stage": failed,
-		"from_version_age_bucket": VersionAgeBucket(ageMS), "kind": "desktop", "outcome": outcomeValue,
-		"failure_class": failureClass,
-	}
-}
-
-// RecordDesktopUpdate emits one Desktop self update run from its keyword arguments, nothing when they do not fit
-func RecordDesktopUpdate(ctx context.Context, raw map[string]any) {
-	emit(ctx, UpdateRunMark, func() map[string]string {
-		for key := range raw {
-			if !Set("outcome", "failed_stage", "duration_ms", "mechanism", "from_commit_date").Has(key) {
-				panic(pyTypeError(fmt.Sprintf("desktop_update_fields() got an unexpected keyword argument '%s'", key)))
-			}
-		}
-		for _, key := range []string{"outcome", "failed_stage", "duration_ms", "mechanism"} {
-			if _, ok := raw[key]; !ok {
-				panic(pyTypeError(fmt.Sprintf("desktop_update_fields() missing 1 required keyword-only argument: '%s'", key)))
-			}
-		}
-		return DesktopUpdateFields(raw["outcome"], raw["failed_stage"], raw["duration_ms"], raw["mechanism"], raw["from_commit_date"])
-	})
 }

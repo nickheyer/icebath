@@ -27,7 +27,6 @@ var extraCredentialStores = []string{
 	"browser-profiles/live/Default/Cookies", "browser_profiles/default/Default/Login Data",
 	"mcp-tokens/srv.json", "vault/vault.key", "platforms/pairing/approved.json", "slack_tokens.json",
 	"webhook_subscriptions.json", ".ssh/id_rsa", ".aws/credentials", ".gnupg/x", ".kube/config", ".envrc",
-	"webapp/session-token", "webapp/native-sign-in-tokens.json", "webapp/sign-in-registration.json",
 }
 
 // HOME_CREDENTIAL_DIRS of agent/file_safety.py, the stores seeded as directories
@@ -51,7 +50,7 @@ func seedCredentialStores(t *testing.T, root string) map[string]bool {
 	writeFile(t, filepath.Join(root, "platforms", "keep.json"), "{}")
 	for rel := range stores {
 		last := rel[strings.LastIndex(rel, "/")+1:]
-		isDir := homeCredentialDirSet[rel] || (!strings.Contains(last, ".") && rel != "npmrc" && rel != "webapp/session-token")
+		isDir := homeCredentialDirSet[rel] || (!strings.Contains(last, ".") && rel != "npmrc")
 		target := filepath.Join(root, filepath.FromSlash(rel))
 		if isDir {
 			target = filepath.Join(target, "store")
@@ -298,27 +297,5 @@ func TestExportRedactsThroughSymlinkWithoutTouchingSource(t *testing.T) {
 	}
 	if st, err := os.Lstat(link); err != nil || st.Mode()&fs.ModeSymlink == 0 {
 		t.Fatal("link replaced")
-	}
-}
-
-func TestCloneAllLeavesTheSourceGatewaysWebappSignInStateBehind(t *testing.T) {
-	tmp := manageEnv(t)
-	captureOut(t)
-	def := filepath.Join(tmp, ".icebath")
-	writeFile(t, filepath.Join(def, "config.yaml"), "model: test")
-	record := filepath.Join(def, "webapp", "native-sign-in-tokens.json")
-	writeFile(t, record, `{"`+strings.Repeat("d", 64)+`": 4102444800}`+"\n")
-	writeFile(t, filepath.Join(def, "webapp", "sign-in-registration.json"),
-		`{"portal": "https://portal.example.test", "client_id": "c1", "callback": "http://192.168.1.50:9120/auth/callback"}`+"\n")
-	dir, err := CreateProfile(context.Background(), "coder", CreateOptions{CloneAll: true})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if exists(filepath.Join(dir, "webapp")) {
-		entries, _ := os.ReadDir(filepath.Join(dir, "webapp"))
-		t.Fatalf("webapp cloned %v", entries)
-	}
-	if !exists(record) {
-		t.Fatal("source record removed")
 	}
 }

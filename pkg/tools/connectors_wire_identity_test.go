@@ -67,7 +67,7 @@ func wireEnv(t *testing.T) (*Env, *outcomeLog) {
 }
 
 func TestWireUserAgentNamesTheSessionSurface(t *testing.T) {
-	for _, c := range []struct{ bound, surface string }{{"", "cli"}, {"tui", "tui"}, {"desktop", "desktop"}, {"telegram", "gateway"}, {"api_server", "api"}} {
+	for _, c := range []struct{ bound, surface string }{{"", "cli"}, {"tui", "tui"}, {"telegram", "gateway"}, {"api_server", "api"}} {
 		env, _ := wireEnv(t)
 		if c.bound != "" {
 			env.Values.Store("session.platform", c.bound)

@@ -31,14 +31,6 @@ tools:
     - get_sprint_summary
     - create_notification
 
-# Composer-suggestion triggers (desktop brand pills).
-suggest:
-  keywords:
-    - monday.com
-    - monday board
-  hosts:
-    - monday.com
-
 post_install: |
   On first connection icebath opens a browser to authorize with
   monday.com (or run `icebath mcp login monday`). Approve access,

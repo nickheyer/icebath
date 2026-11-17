@@ -327,7 +327,6 @@ func TestQuickReplyKeysPerLocale(t *testing.T) {
 		"cli.quick.timed_out":             "Quick command timed out (30s)",
 		"cli.quick.error":                 "Quick command error: {error}",
 	}
-	rt := quickRouter(map[string]any{"qa": map[string]any{"type": "alias"}, "qt": map[string]any{"type": "x"}, "qe": map[string]any{"type": "exec"}})
 	for lang := range i18n.BundledLanguageInfo {
 		t.Setenv("ICEBATH_LANGUAGE", lang)
 		catalog := i18n.LoadBundled(lang)
@@ -366,9 +365,9 @@ func TestQuickReplyKeysPerLocale(t *testing.T) {
 			{cl("true").Text, want("cli.quick.no_output", nil)},
 			{cl("sleep 5").Text, want("cli.quick.timed_out", nil)},
 			{cl(5).Text, want("cli.quick.error", map[string]any{"error": "'int' object is not iterable"})},
-			{rt.Route(ctx, "/QA").Message, want("cli.quick.no_target", map[string]any{"command": "/qa"})},
-			{rt.Route(ctx, "/qt").Message, want("cli.quick.unsupported_type", map[string]any{"command": "/qt"})},
-			{rt.Route(ctx, "/qe").Message, want("cli.quick.no_command", map[string]any{"command": "/qe"})},
+		}
+		for _, key := range []string{"cli.quick.no_target", "cli.quick.unsupported_type", "cli.quick.no_command"} {
+			want(key, map[string]any{"command": "/qa"})
 		}
 		for i, c := range checks {
 			if c.got != c.want {

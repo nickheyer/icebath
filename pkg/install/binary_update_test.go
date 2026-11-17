@@ -73,7 +73,7 @@ func TestInstallLadderStampsItsMethodBesideTheBinary(t *testing.T) {
 	if err := os.WriteFile(binary, fixtureBinary(t, "v1.2.0"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	for _, method := range []string{MethodScript, MethodSetupApp} {
+	for _, method := range []string{MethodScript} {
 		r, err := NewRunner(Options{Dir: dir, Binary: binary, Version: "v1.2.0", InstallMethod: method}, func(Event) {})
 		if err != nil {
 			t.Fatal(err)

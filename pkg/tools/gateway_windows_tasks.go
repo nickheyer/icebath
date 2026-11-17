@@ -7,48 +7,11 @@ import (
 	"io"
 	"regexp"
 	"strings"
-	"time"
-)
-
-// Hard timeout of one schtasks call, and the shorter one the install probe allows each query
-const (
-	schtasksTimeout  = 15 * time.Second
-	taskProbeTimeout = 5 * time.Second
 )
 
 var (
-	gatewayTaskListingRe = regexp.MustCompile(`(?m)^"\\((?:` + gatewayTaskNameDefault + `|` + legacyGatewayTaskNameDefault + `)[^"\\]*)"`)
-	xmlEntityDeclRe      = regexp.MustCompile(`<!ENTITY\s+([^\s%"']+)\s+(?:"([^"]*)"|'([^']*)')\s*>`)
+	xmlEntityDeclRe = regexp.MustCompile(`<!ENTITY\s+([^\s%"']+)\s+(?:"([^"]*)"|'([^']*)')\s*>`)
 )
-
-// Runs schtasks with arguments under a timeout and returns its exit code, stdout and stderr
-type schtasksRunner func(args []string, timeout time.Duration) (int, string, string)
-
-// Scripts each gateway Scheduled Task starts, read from the task listing and every task action
-func taskLaunchersFrom(run schtasksRunner) []string {
-	code, listing, _ := run([]string{"/Query", "/FO", "CSV", "/NH"}, taskProbeTimeout)
-	var names []string
-	seen := map[string]bool{}
-	if code == 0 {
-		for _, m := range gatewayTaskListingRe.FindAllStringSubmatch(listing, -1) {
-			if !seen[m[1]] {
-				seen[m[1]] = true
-				names = append(names, m[1])
-			}
-		}
-	}
-	launchers := []string{}
-	for _, name := range names {
-		code, text, _ := run([]string{"/Query", "/TN", name, "/XML"}, taskProbeTimeout)
-		var leaves map[string]string
-		if code == 0 {
-			leaves = taskXMLLeafValues(text)
-		}
-		command := strings.Trim(leaves["Task/Actions/Exec/Command"], `"`)
-		launchers = append(launchers, serviceDefinitionLaunchers(`"`+command+`" `+leaves["Task/Actions/Exec/Arguments"])...)
-	}
-	return launchers
-}
 
 // Namespace agnostic leaf path to whitespace collapsed text map of a task XML, nil when the XML does not parse
 func taskXMLLeafValues(text string) map[string]string {

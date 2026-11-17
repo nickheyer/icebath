@@ -13,11 +13,10 @@ import (
 // Stamp file beside the binary naming how the tree was installed
 const InstallMethodFile = ".install_method"
 
-// Install methods the install core stamps for the script ladder and the setup app
+// Install methods the install core stamps for the script ladder and a source checkout
 const (
-	MethodScript   = "script"
-	MethodSetupApp = "setup-app"
-	MethodGit      = "git"
+	MethodScript = "script"
+	MethodGit    = "git"
 )
 
 // Writes the install method stamp beside the binary of a tree

@@ -494,7 +494,7 @@ func TestProjectNonInteractiveInheritance(t *testing.T) {
 	})
 	t.Run("session cwd beats backend launch cwd", func(t *testing.T) {
 		f := newProjectFixture(t)
-		launcher := filepath.Join(t.TempDir(), "desktop-launcher")
+		launcher := filepath.Join(t.TempDir(), "backend-launcher")
 		os.MkdirAll(launcher, 0o755)
 		t.Chdir(launcher)
 		t.Setenv("TERMINAL_CWD", launcher)

@@ -224,7 +224,7 @@ func OfferConsent(ctx context.Context, cfg map[string]any, reask bool) (bool, er
 	return true, nil
 }
 
-// Reports whether no human can answer a prompt, as dashboard spawned actions declare
+// Reports whether ICEBATH_NONINTERACTIVE declares that no human can answer a prompt
 func setupIsNoninteractive() bool {
 	switch strings.ToLower(strings.TrimSpace(os.Getenv("ICEBATH_NONINTERACTIVE"))) {
 	case "1", "true", "yes", "on":
@@ -277,7 +277,7 @@ func OfferConsentBeforeChat(ctx context.Context, args ConsentChatArgs) {
 	if args.SafeMode || args.IgnoreUserConfig {
 		return
 	}
-	if os.Getenv("ICEBATH_DESKTOP") != "" || setupIsNoninteractive() {
+	if setupIsNoninteractive() {
 		return
 	}
 	c := consentConsole()

@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"math"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
@@ -258,8 +259,23 @@ func closeConfigSection(cfg map[string]any, key string) map[string]any {
 	return map[string]any{}
 }
 
-// Orphan end grace in seconds of the profile owning the store, zero meaning never
-func orphanCloseGrace(ctx context.Context, a *SessionAuthority) (float64, error) {
+// Truthy reading of a config value with the shared truthy string set, default for None
+func closeTruthy(value any, def bool) bool {
+	if value == nil {
+		return def
+	}
+	if s, ok := value.(string); ok {
+		switch strings.ToLower(strings.TrimSpace(s)) {
+		case "1", "true", "yes", "on":
+			return true
+		}
+		return false
+	}
+	return pyrepr.Truthy(value)
+}
+
+// Orphan end grace of the store's profile, zero when unset and a session reap or startup sweep opt out holds
+func orphanCloseGrace(ctx context.Context, a *SessionAuthority, startup bool) (float64, error) {
 	def, _ := pyint.Float(closeConfigSection(config.Defaults(), "sessions")["orphan_end_grace_s"])
 	resolved, err := pypath.Resolve(a.DB.Path())
 	if err != nil {
@@ -271,8 +287,16 @@ func orphanCloseGrace(ctx context.Context, a *SessionAuthority) (float64, error)
 	if err != nil {
 		return 0, err
 	}
-	if raw, ok := closeConfigSection(cfg, "sessions")["orphan_end_grace_s"]; ok {
+	sessions := closeConfigSection(cfg, "sessions")
+	if raw, ok := sessions["orphan_end_grace_s"]; ok {
 		return closeSeconds(raw, def)
+	}
+	reap, err := closeSeconds(sessions["ws_orphan_reap_grace_s"], def)
+	if err != nil {
+		return 0, err
+	}
+	if reap == 0 || (startup && !closeTruthy(sessions["startup_orphan_sweep"], true)) {
+		return 0, nil
 	}
 	return def, nil
 }
@@ -362,7 +386,7 @@ func armDetachedOrphanClose(ctx context.Context, a *SessionAuthority, sessionID 
 	}
 	grace := 0.0
 	if candidate {
-		if grace, err = orphanCloseGrace(ctx, a); err != nil {
+		if grace, err = orphanCloseGrace(ctx, a, false); err != nil {
 			return err
 		}
 	}
@@ -393,7 +417,7 @@ func closeIdleSeconds(ctx context.Context, a *SessionAuthority, sessionID string
 
 // Arms the startup orphan close of sessions the previous owner stopped under, after the legacy sweep TTL
 func armStartupOrphanCloses(ctx context.Context, a *SessionAuthority, orphans []string) error {
-	grace, err := orphanCloseGrace(ctx, a)
+	grace, err := orphanCloseGrace(ctx, a, true)
 	if err != nil {
 		return err
 	}

@@ -1298,16 +1298,76 @@ func migrationSteps() []migrationStep {
 			extraGuard: func(raw map[string]any) bool { _, has := raw["bot_chat_delivery_timeout_seconds"]; return has }})},
 		{52, migrateTo52},
 		{53, rewriteKey(rewriteSpec{section: "display", key: "interface", remove: true, match: always,
-			added: "removed display.interface",
-			message: "  \u2713 Removed display.interface \u2014 the terminal has one interface and bare icebath opens it.",
+			added:      "removed display.interface",
+			message:    "  \u2713 Removed display.interface \u2014 the terminal has one interface and bare icebath opens it.",
 			extraGuard: func(raw map[string]any) bool { _, has := raw["interface"]; return has }})},
 		{54, migrateTo54},
+		{55, rewriteKey(rewriteSpec{section: "wake_word", key: "capture", remove: true, match: always,
+			added:      "removed wake_word.capture",
+			message:    "  \u2713 Removed wake_word.capture \u2014 the wake word always listens on this machine's microphone (wake_word.input_device).",
+			extraGuard: func(raw map[string]any) bool { _, has := raw["capture"]; return has }})},
 	}
 }
 
-// Drops the dashboard, webapp and desktop sections, the terminal UI being the one interface
+// Session socket keys the dashboard section held that the sessions section now carries
+var dashboardSessionKeys = []string{"ws_orphan_reap_grace_s", "ws_orphan_activity_stale_s", "startup_orphan_sweep", "auto_continue"}
+
+// Sub keys of auto_continue in their default order
+var autoContinueSubKeys = []string{"enabled", "freshness_minutes", "max_attempts"}
+
+// Copies the session socket keys from dashboard into sessions leaf by leaf, an existing sessions value winning
+func carryDashboardSessionKeys(cfg map[string]any) (moved, kept, blocked []string) {
+	dashboard, ok := cfg["dashboard"].(map[string]any)
+	if !ok {
+		return nil, nil, nil
+	}
+	sessions, isMap := cfg["sessions"].(map[string]any)
+	if current := cfg["sessions"]; current != nil && !isMap {
+		for _, key := range dashboardSessionKeys {
+			if _, has := dashboard[key]; has {
+				blocked = append(blocked, key)
+			}
+		}
+		return nil, nil, blocked
+	}
+	if sessions == nil {
+		sessions = map[string]any{}
+	}
+	for _, key := range dashboardSessionKeys {
+		value, has := dashboard[key]
+		if !has {
+			continue
+		}
+		current, set := sessions[key]
+		fromMap, valueIsMap := value.(map[string]any)
+		intoMap, currentIsMap := current.(map[string]any)
+		switch {
+		case !set || current == nil:
+			sessions[key] = value
+			moved = append(moved, key)
+		case valueIsMap && currentIsMap:
+			for _, sub := range orderedKeys(fromMap, autoContinueSubKeys) {
+				if _, taken := intoMap[sub]; taken {
+					kept = append(kept, key+"."+sub)
+					continue
+				}
+				intoMap[sub] = fromMap[sub]
+				moved = append(moved, key+"."+sub)
+			}
+		default:
+			kept = append(kept, key)
+		}
+	}
+	if len(moved) > 0 {
+		cfg["sessions"] = sessions
+	}
+	return moved, kept, blocked
+}
+
+// Moves the dashboard session socket keys to sessions, then drops the dashboard, webapp and desktop sections
 func migrateTo54(r *migrationRun) error {
 	cfg := r.read()
+	moved, kept, blocked := carryDashboardSessionKeys(cfg)
 	var removed []string
 	for _, section := range []string{"dashboard", "webapp", "desktop"} {
 		if _, has := cfg[section]; has {
@@ -1318,8 +1378,27 @@ func migrateTo54(r *migrationRun) error {
 	if len(removed) == 0 {
 		return nil
 	}
-	return r.commit(cfg, "removed "+strings.Join(removed, ", "),
-		"  \u2713 Removed "+strings.Join(removed, ", ")+" \u2014 the terminal UI is the one interface.")
+	prefixed := func(section string, paths []string) string {
+		out := make([]string, len(paths))
+		for i, path := range paths {
+			out[i] = section + "." + path
+		}
+		return strings.Join(out, ", ")
+	}
+	added := "removed " + strings.Join(removed, ", ")
+	var lines []string
+	if len(moved) > 0 {
+		added = "moved " + prefixed("dashboard", moved) + " to sessions, " + added
+		lines = append(lines, "  \u2713 Moved "+prefixed("dashboard", moved)+" to sessions \u2014 the terminal UI's session socket reads them there.")
+	}
+	if len(kept) > 0 {
+		lines = append(lines, "  \u2713 Kept "+prefixed("sessions", kept)+" \u2014 already set there, so the dashboard values were dropped.")
+	}
+	if len(blocked) > 0 {
+		lines = append(lines, "  \u26a0 Dropped "+prefixed("dashboard", blocked)+" \u2014 sessions is not a mapping, so they could not move there.")
+	}
+	lines = append(lines, "  \u2713 Removed "+strings.Join(removed, ", ")+" \u2014 the terminal UI is the one interface.")
+	return r.commit(cfg, added, strings.Join(lines, "\n"))
 }
 
 // Ladder a pass runs, replaced in tests to inject a failing step

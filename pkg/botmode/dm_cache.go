@@ -69,12 +69,3 @@ func CleanupBotDMCache(maxAgeHours float64, now *float64) int {
 	}
 	return total
 }
-
-// Hourly sweep of stale relay artifacts under the install root of the process home
-func CleanupBotRelayArtifacts() int {
-	base := RelayRoot(InstallRoot(defaultHome()))
-	if info, err := os.Stat(base); err != nil || !info.IsDir() {
-		return 0
-	}
-	return sweepStaleRelay(base)
-}

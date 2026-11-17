@@ -133,7 +133,7 @@ func TestCounterRowsMapToFeatures(t *testing.T) {
 		{ToolUsageMetric, map[string]string{"tool_name": "mcp", "outcome": "success"}, []string{"mcp"}},
 		{ToolUsageMetric, map[string]string{"tool_name": "browser_click", "outcome": "failed"}, nil},
 		{ToolUsageMetric, map[string]string{"tool_name": "kanban_create", "outcome": "success"}, []string{"kanban"}},
-		{TaskStartedMetric, map[string]string{"platform": "telegram", "execution_surface": "desktop"}, []string{"desktop", "gateway_platform"}},
+		{TaskStartedMetric, map[string]string{"platform": "telegram", "execution_surface": "tui"}, []string{"gateway_platform", "tui"}},
 		{FeatureUsedMark, map[string]string{"feature": "bot_mode"}, []string{"bot_mode"}},
 	}
 	for _, c := range cases {
@@ -272,7 +272,7 @@ func TestStartedThenCompletedOnceAndMarkerCleared(t *testing.T) {
 func TestCustomEndpointReadsCustomAndNoRawValues(t *testing.T) {
 	m := captureMarks(t)
 	ctx := context.Background()
-	FinishProviderSetup(ctx, BeginProviderSetup(ctx, "desktop", "custom:my-box", ""), "completed", "none")
+	FinishProviderSetup(ctx, BeginProviderSetup(ctx, "tui", "custom:my-box", ""), "completed", "none")
 	for _, r := range setupEnds(t, m.snapshot()) {
 		if r[1] != "custom" {
 			t.Fatalf("provider %v", r)
@@ -310,7 +310,7 @@ func TestDeadOrStaleMarkerIsAbandonedAtTheNextStartAndLiveWaits(t *testing.T) {
 	parent := os.Getppid()
 	write("cli_setup-1-1.json", map[string]any{"pid": deadPID(t), "start_time": nil, "started_at": now, "surface": "cli_setup", "provider": "anthropic"})
 	live := write(fmt.Sprintf("tui-%d-2.json", parent), map[string]any{"pid": parent, "start_time": nil, "started_at": now, "surface": "tui", "provider": "nous"})
-	write(fmt.Sprintf("dashboard-%d-3.json", parent), map[string]any{"pid": parent, "start_time": nil, "started_at": now - 2*SetupStaleAfter, "surface": "dashboard", "provider": "xai"})
+	write(fmt.Sprintf("cli_model-%d-3.json", parent), map[string]any{"pid": parent, "start_time": nil, "started_at": now - 2*SetupStaleAfter, "surface": "cli_model", "provider": "xai"})
 	flow := BeginProviderSetup(ctx, "cli_setup", "openrouter", "")
 	ReportAbandonedSetups(ctx, m.home)
 	var abandoned [][4]string
@@ -320,7 +320,7 @@ func TestDeadOrStaleMarkerIsAbandonedAtTheNextStartAndLiveWaits(t *testing.T) {
 		}
 	}
 	slices.SortFunc(abandoned, func(a, b [4]string) int { return slices.Compare(a[:], b[:]) })
-	want := [][4]string{{"cli_setup", "anthropic", "abandoned", "none"}, {"dashboard", "xai", "abandoned", "none"}}
+	want := [][4]string{{"cli_model", "xai", "abandoned", "none"}, {"cli_setup", "anthropic", "abandoned", "none"}}
 	if !slices.Equal(abandoned, want) {
 		t.Fatalf("abandoned %v", abandoned)
 	}
@@ -481,7 +481,7 @@ func TestStoreCountsFeatureDisabledOncePerDay(t *testing.T) {
 	for i, c := range []struct {
 		dims map[string]string
 		want bool
-	}{{dims, true}, {with("surface", "desktop"), false}, {with("event", "re_enabled"), true}} {
+	}{{dims, true}, {with("surface", "cli_slash"), false}, {with("event", "re_enabled"), true}} {
 		if got, err := store.RecordCounterOncePerDay(ctx, FeatureDisabledMetric, c.dims, signalsResource); err != nil || got != c.want {
 			t.Fatalf("case %d got %v %v", i, got, err)
 		}

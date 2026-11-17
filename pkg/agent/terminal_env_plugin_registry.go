@@ -94,7 +94,7 @@ func (h hostedTerminalEnvProvider) CheckRequirements(_ *tools.Env, cfg map[strin
 	return nil
 }
 
-// Dashboard picker health pair of the plugin
+// Health status and detail pair the plugin reports
 func (h hostedTerminalEnvProvider) Probe() (string, string) {
 	pair, _ := h.mustCall("probe").([]any)
 	var status, detail string

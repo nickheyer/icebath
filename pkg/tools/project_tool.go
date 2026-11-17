@@ -205,7 +205,7 @@ func projectSwitch(ctx context.Context, env *Env, project, taskID string) string
 	return projectActivated(proj, taskID)
 }
 
-// Dispatches the desktop_project action
+// Dispatches the project tool action
 func handleProject(ctx context.Context, call *Call) string {
 	switch strings.TrimSpace(argS(call.Args, "action")) {
 	case "list":
@@ -220,7 +220,7 @@ func handleProject(ctx context.Context, call *Call) string {
 
 var projectSchema = map[string]any{
 	"name": "desktop_project",
-	"description": "Create or switch desktop Projects (named workspaces). create: one and switch " +
+	"description": "Create or switch Projects (named workspaces). create: one and switch " +
 		"this chat into it — pass path to anchor it to a repo/folder (the " +
 		"chat's workspace moves there, the sidebar follows). switch: move " +
 		"this chat into an existing project by name/slug/id — the " +
@@ -236,7 +236,7 @@ var projectSchema = map[string]any{
 	},
 }
 
-// Registers the desktop_project tool of the GUI only project toolset
+// Registers the project tool of the TUI project toolset
 func registerProjectTools() {
 	Register(Def{Name: "desktop_project", Toolset: "project", Schema: projectSchema, Handler: handleProject})
 }

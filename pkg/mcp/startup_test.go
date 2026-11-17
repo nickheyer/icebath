@@ -23,7 +23,6 @@ func resetDiscoveryState(t *testing.T) {
 		}
 		discoveryStarted = map[string]bool{}
 		discoveryRuns = map[string]*discoveryRun{}
-		discoveryDeferred = nil
 		serverFilter = nil
 		discoveryMu.Unlock()
 		for _, r := range runs {
@@ -255,50 +254,6 @@ func TestStartupSkipsDiscoveryWithoutConfiguredServers(t *testing.T) {
 	if !discoveryStarted[discoveryHomeKey(ctx)] {
 		t.Fatal("slot not claimed")
 	}
-}
-
-func TestStartupDeferredDiscovery(t *testing.T) {
-	dir := isolateHome(t)
-	resetDiscoveryState(t)
-	writeStartupConfig(t, dir, "mcp_servers:\n  demo:\n    command: demo\n")
-	ran := make(chan struct{}, 4)
-	replaceDiscovery(t, func(ctx context.Context, env *tools.Env, allowed []string) ([]string, error) {
-		ran <- struct{}{}
-		return nil, nil
-	})
-	ctx := context.Background()
-	DeferBackgroundDiscovery(ctx, nil, nil, "t", nil)
-	DeferBackgroundDiscovery(ctx, nil, nil, "t", durp(time.Millisecond))
-	select {
-	case <-ran:
-		t.Fatal("unclocked deferral fired by itself")
-	case <-time.After(50 * time.Millisecond):
-	}
-	StartDeferredDiscoveryNow()
-	StartDeferredDiscoveryNow()
-	<-ran
-	if !JoinDiscovery(ctx, durp(2*time.Second)) {
-		t.Fatal("discovery still running")
-	}
-	if len(ran) != 0 {
-		t.Fatal("deferred start fired twice")
-	}
-	DeferBackgroundDiscovery(ctx, nil, nil, "t", durp(time.Millisecond))
-	discoveryMu.Lock()
-	armed := discoveryDeferred != nil
-	discoveryMu.Unlock()
-	if armed {
-		t.Fatal("deferral armed after the home slot was claimed")
-	}
-
-	resetDiscoveryState(t)
-	DeferBackgroundDiscovery(ctx, nil, nil, "t", durp(5*time.Millisecond))
-	select {
-	case <-ran:
-	case <-time.After(2 * time.Second):
-		t.Fatal("clocked deferral never fired")
-	}
-	JoinDiscovery(ctx, durp(2*time.Second))
 }
 
 func TestStartupDiscoveryRegisteredServers(t *testing.T) {

@@ -32,7 +32,7 @@ func PauseCommand(ctx context.Context, ns map[string]any, w io.Writer) (int, err
 	fmt.Fprintf(w, "⏸️  %s%s\n", verb, detail)
 	fmt.Fprintf(w, "    sentinel: %s\n", path)
 	fmt.Fprintln(w, "    Cron dispatch, kanban dispatch, and new gateway turns (messaging and interactive\n"+
-		"    CLI, TUI and Desktop turns alike) are on hold. In-flight work keeps running.\n"+
+		"    CLI and TUI turns alike) are on hold. In-flight work keeps running.\n"+
 		"    Run `icebath resume` to lift the pause.")
 	return 0, nil
 }

@@ -146,3 +146,25 @@ func UnwireShellPath(userHome string) ([]string, error) {
 	}
 	return changed, nil
 }
+
+// Removes the shell PATH lines and the install marker the installer placed
+func UninstallHooks(report func(string)) error {
+	userHome, err := os.UserHomeDir()
+	if err != nil {
+		return err
+	}
+	changed, err := UnwireShellPath(userHome)
+	for _, rc := range changed {
+		report("removed the Icebath Agent PATH line from " + rc)
+	}
+	if err != nil {
+		return err
+	}
+	marker := BootstrapMarkerPath(InstallRootOf(Home()))
+	if rmErr := os.Remove(marker); rmErr == nil {
+		report("removed " + marker)
+	} else if !os.IsNotExist(rmErr) {
+		return rmErr
+	}
+	return nil
+}

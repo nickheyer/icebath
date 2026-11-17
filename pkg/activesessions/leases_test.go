@@ -279,8 +279,8 @@ func TestReleaseOrphanedLeasesReclaimsOnlyUnownedOwnPidEntries(t *testing.T) {
 	h := filepath.Join(t.TempDir(), ".icebath")
 	t.Setenv(home.EnvHome, h)
 	cfg := map[string]any{"max_concurrent_sessions": 5}
-	kept := mustAcquire(t, "kept", "desktop", cfg, "", false)
-	orphan := mustAcquire(t, "orphaned", "desktop", cfg, "", false)
+	kept := mustAcquire(t, "kept", "tui", cfg, "", false)
+	orphan := mustAcquire(t, "orphaned", "tui", cfg, "", false)
 	entries, err := readEntries(statePathOf(""), false)
 	if err != nil {
 		t.Fatal(err)
@@ -321,8 +321,8 @@ func profileTree(t *testing.T) (string, string) {
 
 func TestReleaseOrphanedLeasesSweepsProfileRuntimeRegistries(t *testing.T) {
 	root, profile := profileTree(t)
-	mustAcquire(t, "root-orphan", "desktop", map[string]any{}, root, false)
-	mustAcquire(t, "profile-orphan", "desktop", map[string]any{}, profile, false)
+	mustAcquire(t, "root-orphan", "tui", map[string]any{}, root, false)
+	mustAcquire(t, "profile-orphan", "tui", map[string]any{}, profile, false)
 	if n, err := ReleaseOrphanedLeases(map[string]bool{}); err != nil || n != 0 {
 		t.Fatalf("fresh leases reaped: %d %v", n, err)
 	}
@@ -412,7 +412,7 @@ func TestLivenessRegistryCorruptionFailsClosedWithoutOverwrite(t *testing.T) {
 	if readText(t, statePath) != corrupt {
 		t.Fatal("registry overwritten")
 	}
-	_, _, err = TryAcquire(context.Background(), "desktop-1", "desktop", map[string]any{}, nil, "", true)
+	_, _, err = TryAcquire(context.Background(), "tui-1", "tui", map[string]any{}, nil, "", true)
 	requireRegistryError(t, err, "")
 	if readText(t, statePath) != corrupt {
 		t.Fatal("registry overwritten")
@@ -434,7 +434,7 @@ func TestStrictRegistryRejectsStructurallyInvalidEntries(t *testing.T) {
 	t.Setenv(home.EnvHome, h)
 	statePath := filepath.Join(h, "runtime", "active_sessions.json")
 	base := func() *pyjson.Object {
-		return pyjson.ObjectOf("lease_id", "lease-1", "session_id", "session-1", "surface", "desktop", "pid", int64(os.Getpid()), "track_liveness", true)
+		return pyjson.ObjectOf("lease_id", "lease-1", "session_id", "session-1", "surface", "tui", "pid", int64(os.Getpid()), "track_liveness", true)
 	}
 	without := func(key string) *pyjson.Object { o := base(); o.Delete(key); return o }
 	with := func(key string, v any) *pyjson.Object { o := base(); o.Set(key, v); return o }
@@ -471,8 +471,8 @@ func TestStrictRegistryRejectsDuplicateLeaseIds(t *testing.T) {
 			statePath := filepath.Join(h, "runtime", "active_sessions.json")
 			pid := int64(os.Getpid())
 			if err := writeEntries(statePath, []*pyjson.Object{
-				pyjson.ObjectOf("lease_id", "duplicate-lease", "session_id", "session-a", "surface", "desktop", "pid", pid, "track_liveness", true),
-				pyjson.ObjectOf("lease_id", "duplicate-lease", "session_id", tc.second, "surface", "desktop", "pid", pid, "track_liveness", true),
+				pyjson.ObjectOf("lease_id", "duplicate-lease", "session_id", "session-a", "surface", "tui", "pid", pid, "track_liveness", true),
+				pyjson.ObjectOf("lease_id", "duplicate-lease", "session_id", tc.second, "surface", "tui", "pid", pid, "track_liveness", true),
 			}); err != nil {
 				t.Fatal(err)
 			}
@@ -522,7 +522,7 @@ func TestLivenessGuardRejectsUnknownPidState(t *testing.T) {
 	t.Setenv(home.EnvHome, h)
 	statePath := filepath.Join(h, "runtime", "active_sessions.json")
 	if err := writeEntries(statePath, []*pyjson.Object{
-		pyjson.ObjectOf("lease_id", "unknown-owner", "session_id", "session-1", "surface", "desktop", "pid", int64(12345), "track_liveness", true),
+		pyjson.ObjectOf("lease_id", "unknown-owner", "session_id", "session-1", "surface", "tui", "pid", int64(12345), "track_liveness", true),
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -551,7 +551,7 @@ func unknownSiblingRegistry(t *testing.T) (string, string) {
 	t.Setenv(home.EnvHome, h)
 	statePath := filepath.Join(h, "runtime", "active_sessions.json")
 	if err := writeEntries(statePath, []*pyjson.Object{
-		pyjson.ObjectOf("lease_id", "stale-sibling", "session_id", "old-chat", "surface", "desktop", "pid", int64(1), "process_start_time", 1234.5, "track_liveness", true),
+		pyjson.ObjectOf("lease_id", "stale-sibling", "session_id", "old-chat", "surface", "tui", "pid", int64(1), "process_start_time", 1234.5, "track_liveness", true),
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -570,9 +570,9 @@ func TestUnknownSiblingLivenessOnlyFencesItsOwnSession(t *testing.T) {
 	if got := pidLiveness(int64(1), 1234.5, false); got != livenessUnknown {
 		t.Fatalf("liveness %d", got)
 	}
-	_, _, err := TryAcquire(context.Background(), "old-chat", "desktop", map[string]any{}, nil, "", true)
+	_, _, err := TryAcquire(context.Background(), "old-chat", "tui", map[string]any{}, nil, "", true)
 	requireRegistryError(t, err, "liveness is unknown")
-	lease := mustAcquire(t, "new-chat", "desktop", map[string]any{}, "", true)
+	lease := mustAcquire(t, "new-chat", "tui", map[string]any{}, "", true)
 	if ok, err := TransferActiveSession(lease, "new-chat-rotated", nil); !ok || err != nil {
 		t.Fatalf("transfer %v %v", ok, err)
 	}
@@ -587,7 +587,7 @@ func TestUnknownSiblingLivenessOnlyFencesItsOwnSession(t *testing.T) {
 
 func TestUnknownSiblingDoesNotBlockGuardedReleaseOrOrphanSweep(t *testing.T) {
 	h, statePath := unknownSiblingRegistry(t)
-	lease := mustAcquire(t, "new-chat", "desktop", map[string]any{}, "", true)
+	lease := mustAcquire(t, "new-chat", "tui", map[string]any{}, "", true)
 	var active bool
 	if err := ReleaseLivenessGuard(context.Background(), lease, "new-chat", map[string]bool{}, func(a bool) error { active = a; return nil }); err != nil {
 		t.Fatal(err)
@@ -602,7 +602,7 @@ func TestUnknownSiblingDoesNotBlockGuardedReleaseOrOrphanSweep(t *testing.T) {
 	if !slices.Equal(leaseIDs(remaining), []string{"stale-sibling"}) {
 		t.Fatalf("remaining %v", leaseIDs(remaining))
 	}
-	mustAcquire(t, "orphaned", "desktop", map[string]any{}, "", true)
+	mustAcquire(t, "orphaned", "tui", map[string]any{}, "", true)
 	backdateLeases(t, h)
 	if n, err := releaseOrphanedLeasesInHome(h, map[string]bool{}); n != 1 || err != nil {
 		t.Fatalf("dropped %d err %v", n, err)
@@ -618,7 +618,7 @@ func failingWrite(string, []*pyjson.Object) error { return errors.New("replace f
 
 func TestLivenessReleaseFailureIsRetryable(t *testing.T) {
 	t.Setenv(home.EnvHome, filepath.Join(t.TempDir(), ".icebath"))
-	lease := mustAcquire(t, "session-1", "desktop", map[string]any{}, "", true)
+	lease := mustAcquire(t, "session-1", "tui", map[string]any{}, "", true)
 	original := writeEntries
 	writeEntries = failingWrite
 	err := lease.Release()
@@ -641,7 +641,7 @@ func TestLivenessTransferUpsertsMissingEntryWithoutConsumingANewSlot(t *testing.
 	h := filepath.Join(t.TempDir(), ".icebath")
 	t.Setenv(home.EnvHome, h)
 	cfg := map[string]any{"max_concurrent_sessions": 1}
-	lease := mustAcquire(t, "session-old", "desktop", cfg, "", true)
+	lease := mustAcquire(t, "session-old", "tui", cfg, "", true)
 	if err := os.Remove(filepath.Join(h, "runtime", "active_sessions.json")); err != nil {
 		t.Fatal(err)
 	}
@@ -652,7 +652,7 @@ func TestLivenessTransferUpsertsMissingEntryWithoutConsumingANewSlot(t *testing.
 	if len(snapshot) != 1 || leaseIDOf(snapshot[0]) != lease.LeaseID || snapshot[0].GetOr("session_id", nil) != "session-new" {
 		t.Fatalf("snapshot %v", sessionIDs(snapshot))
 	}
-	blocked, limit, err := TryAcquire(context.Background(), "session-other", "desktop", cfg, nil, "", true)
+	blocked, limit, err := TryAcquire(context.Background(), "session-other", "tui", cfg, nil, "", true)
 	if err != nil || blocked != nil || limit == nil {
 		t.Fatalf("blocked %v limit %v err %v", blocked, limit, err)
 	}
@@ -663,7 +663,7 @@ func TestLivenessTransferUpsertsMissingEntryWithoutConsumingANewSlot(t *testing.
 
 func TestLivenessTransferWriteFailureKeepsOldIdForRetry(t *testing.T) {
 	t.Setenv(home.EnvHome, filepath.Join(t.TempDir(), ".icebath"))
-	lease := mustAcquire(t, "session-old", "desktop", map[string]any{}, "", true)
+	lease := mustAcquire(t, "session-old", "tui", map[string]any{}, "", true)
 	original := writeEntries
 	writeEntries = failingWrite
 	_, err := TransferActiveSession(lease, "session-new", nil)
@@ -687,7 +687,7 @@ func TestLivenessTransferWriteFailureKeepsOldIdForRetry(t *testing.T) {
 
 func TestReleaseWinsAgainstTransferWaitingOnSameLeaseLock(t *testing.T) {
 	t.Setenv(home.EnvHome, filepath.Join(t.TempDir(), ".icebath"))
-	lease := mustAcquire(t, "session-old", "desktop", map[string]any{}, "", true)
+	lease := mustAcquire(t, "session-old", "tui", map[string]any{}, "", true)
 	releaseWrote, allowRelease, transferAtLock := make(chan struct{}), make(chan struct{}), make(chan struct{})
 	var releaseBlocked, transferring atomic.Bool
 	var transferSignal sync.Once
@@ -757,7 +757,7 @@ func waitFor(t *testing.T, ch <-chan struct{}) {
 func TestLivenessGuardKeepsAJustAcquiredOwnLeaseItCannotVouchFor(t *testing.T) {
 	h := filepath.Join(t.TempDir(), ".icebath")
 	t.Setenv(home.EnvHome, h)
-	fresh := mustAcquire(t, "fresh", "desktop", map[string]any{}, h, false)
+	fresh := mustAcquire(t, "fresh", "tui", map[string]any{}, h, false)
 	if !mustGuard(t, "fresh", h, map[string]bool{}) {
 		t.Fatal("fresh lease not seen as active")
 	}

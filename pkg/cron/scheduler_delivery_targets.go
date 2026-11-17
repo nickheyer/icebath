@@ -7,7 +7,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/plugins"
@@ -353,46 +352,6 @@ func (s *Store) relayFrontedConnectedPlatforms(ctx context.Context, connected ma
 		return map[string]bool{}
 	}
 	return fronted
-}
-
-// Platforms a cron job can auto deliver to plus one Bot Chat entry per profile
-func (s *Store) cronDeliveryTargets(ctx context.Context) []*pyjson.Object {
-	var targets []*pyjson.Object
-	connected := map[string]bool{}
-	if cfg, err := loadGatewayConfig(ctx); err == nil {
-		for _, p := range cfg.GetConnectedPlatforms(ctx) {
-			connected[string(p)] = true
-		}
-		for p := range s.relayFrontedConnectedPlatforms(ctx, connected) {
-			connected[p] = true
-		}
-	} else {
-		s.log.Debug("cron_delivery_targets: gateway config unavailable")
-	}
-	for _, name := range iterHomeTargetPlatforms(ctx) {
-		if !connected[name] || !isKnownDeliveryPlatform(ctx, name) {
-			continue
-		}
-		o := pyjson.NewObject()
-		o.Set("id", name)
-		o.Set("name", pystr.Title(strings.ReplaceAll(name, "_", " ")))
-		o.Set("home_target_set", s.getHomeTargetChatID(ctx, name) != "")
-		var envVar any
-		if v := resolveHomeEnvVar(ctx, name); v != "" {
-			envVar = v
-		}
-		o.Set("home_env_var", envVar)
-		targets = append(targets, o)
-	}
-	for _, profileName := range cronDeliveryProfileNames() {
-		o := pyjson.NewObject()
-		o.Set("id", BotChatPlatform+":"+profileName)
-		o.Set("name", fmt.Sprintf("Bot Chat (%s)", profileName))
-		o.Set("home_target_set", true)
-		o.Set("home_env_var", nil)
-		targets = append(targets, o)
-	}
-	return targets
 }
 
 // Slack origin thread stamped in the home chat is a session key, not a location

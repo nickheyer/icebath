@@ -46,7 +46,6 @@ func TestMain(m *testing.M) {
 	state.ReferencedSpilloverNames = tools.ReferencedSpilloverNames
 	tools.ProfileSecrets = provider.ProfileSecretSource()
 	tools.NousAccount = provider.NousAccountSource()
-	tools.AsyncDelegationRetirement = provider.BackendRetirement()
 	NormalizePersonalityName = commands.NormalizePersonalityName
 	RenderPersonalityPrompt = commands.RenderPersonalityPrompt
 	PersistPersonality = commands.PersistPersonality

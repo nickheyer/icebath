@@ -11,20 +11,12 @@ source: https://docs.netlify.com/build/build-with-ai/agent-setup-guides/agent-se
 # process for this entry). Native OAuth 2.1 + Dynamic Client Registration;
 # icebath's MCP client + mcp_oauth_manager handle discovery, PKCE, token
 # exchange, and refresh.
-# No `netlify.app` suggest host for the same deploy-preview reason as vercel.app.
 transport:
   type: http
   url: https://netlify-mcp.netlify.app/mcp
 
 auth:
   type: oauth
-
-# Composer-suggestion triggers (desktop brand pills).
-suggest:
-  keywords:
-    - netlify
-  hosts:
-    - netlify.com
 
 post_install: |
   On first connection icebath opens a browser to authorize with

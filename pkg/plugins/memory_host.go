@@ -210,15 +210,6 @@ func RunMemoryProviderCLI(ctx context.Context, name, providerDir, moduleName, de
 	return 0, false, err
 }
 
-// Runs a user memory provider config_schema.py in the profile plugin host and returns its CONFIG_SCHEMA
-func MemoryProviderConfigSchema(ctx context.Context, path string) (any, error) {
-	host, err := GetPluginManager(ctx).hostForDir(filepath.Dir(path))
-	if err != nil {
-		return nil, err
-	}
-	return host.ConfigSchema(ctx, path)
-}
-
 // Whether the hosted method takes keyword, true for an unknown signature or one taking var keywords
 func (o *HostedObject) AcceptsKeyword(method, keyword string) bool {
 	sig := o.methods[method].Sig

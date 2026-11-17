@@ -21,19 +21,10 @@ type asyncTestAsker struct{}
 
 func (asyncTestAsker) Ask(context.Context, []Question) (FormResult, error) { return FormResult{}, nil }
 
-type asyncTestRetirement struct{}
-
-func (asyncTestRetirement) Work() (bool, func()) { return true, func() {} }
-func (asyncTestRetirement) Acquire() bool        { return true }
-func (asyncTestRetirement) Release()             {}
-
 func init() {
 	if AsyncDelegationOwnerProbes.PidExists == nil {
 		AsyncDelegationOwnerProbes.PidExists = proc.Exists
 		AsyncDelegationOwnerProbes.ProcessStartTime = processStartTime
-	}
-	if AsyncDelegationRetirement == nil {
-		AsyncDelegationRetirement = asyncTestRetirement{}
 	}
 }
 

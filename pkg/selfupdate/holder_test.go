@@ -30,11 +30,11 @@ func TestHolderSubcommandParsesSubcommand(t *testing.T) {
 
 func TestHolderRuntimeHostMatchesOnlyGateways(t *testing.T) {
 	for cmdline, want := range map[string]bool{
-		"/usr/local/bin/icebath gateway run":          true,
-		"/usr/local/bin/icebath chat":                 false,
-		"/usr/local/bin/icebath kanban --serve":       false,
-		"/usr/local/bin/icebath update":               false,
-		"/usr/bin/vim notes-about-icebath.md":         false,
+		"/usr/local/bin/icebath gateway run":    true,
+		"/usr/local/bin/icebath chat":           false,
+		"/usr/local/bin/icebath kanban --serve": false,
+		"/usr/local/bin/icebath update":         false,
+		"/usr/bin/vim notes-about-icebath.md":   false,
 	} {
 		if got := isRuntimeHost([]string{cmdline}); got != want {
 			t.Errorf("%q = %v", cmdline, got)

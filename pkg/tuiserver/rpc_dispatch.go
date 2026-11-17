@@ -168,16 +168,6 @@ func pyjsonValue(v any) any {
 	return v
 }
 
-// Answers one request inside the retirement fence, 5035 once the backend is retiring
-func handleRequest(ctx context.Context, req any) map[string]any {
-	admitted, done := provider.Retirement.Work()
-	defer done()
-	if !admitted {
-		return rpcErr(requestID(req), 5035, "backend is retiring; reconnect to continue", nil)
-	}
-	return handleAdmittedRequest(ctx, req)
-}
-
 // Id member of a request object, nil for anything else
 func requestID(req any) any {
 	switch t := plainRequest(req).(type) {
@@ -188,7 +178,7 @@ func requestID(req any) any {
 }
 
 // Runs the handler of a normalized request under its contract, mapping profile and config outages to 4064
-func handleAdmittedRequest(ctx context.Context, req any) map[string]any {
+func handleRequest(ctx context.Context, req any) map[string]any {
 	rid, method, params, errResp := normalizeRequest(plainRequest(req))
 	if errResp != nil {
 		return errResp
@@ -266,15 +256,6 @@ func Dispatch(ctx context.Context, req any, transport tuigateway.Transport) map[
 	if !isLongHandler(method) {
 		return handleRequest(ctx, req)
 	}
-	if !provider.Retirement.Acquire() {
-		return rpcErr(requestID(req), 5035, "backend is retiring; reconnect to continue", nil)
-	}
-	submitted := false
-	defer func() {
-		if !submitted {
-			provider.Retirement.Release()
-		}
-	}()
 	workCtx := ctx
 	if owner, isDict := params["owner"].(map[string]any); connectorRPCMethods[method] && isDict && owner["type"] == "session" {
 		workCtx = captureConnectorRPCOwner(workCtx, params)
@@ -287,15 +268,14 @@ func Dispatch(ctx context.Context, req any, transport tuigateway.Transport) map[
 					resp = rpcErr(requestID(req), -32000, "handler error: "+failureText(failure), nil)
 				}
 			}()
-			resp = handleAdmittedRequest(workCtx, req)
+			resp = handleRequest(workCtx, req)
 		}()
 		if resp != nil {
 			t.Write(frameObject(resp))
 		}
 	}
-	if err := rpcPool.Submit(run, provider.Retirement.Release); err != nil {
+	if err := rpcPool.Submit(run, nil); err != nil {
 		panic(err)
 	}
-	submitted = true
 	return nil
 }

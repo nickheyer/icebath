@@ -85,8 +85,8 @@ func TestXvncNeverSendsTheHoldersClipboardToWatchers(t *testing.T) {
 	if i < 0 || i+1 >= len(argv) {
 		t.Fatalf("argv %v lacks -MaxCutText", argv)
 	}
-	if n, err := strconv.Atoi(argv[i+1]); err != nil || n != rfbMaxCutText {
-		t.Fatalf("Xvnc cut text cap %q, filter cap %d", argv[i+1], rfbMaxCutText)
+	if n, err := strconv.Atoi(argv[i+1]); err != nil || n != 256*1024 {
+		t.Fatalf("Xvnc cut text cap %q, want 256 KiB", argv[i+1])
 	}
 	if _, err := os.Stat(filepath.Join(tmp, "rfb.sock")); err == nil {
 		t.Fatal("stub never bound the socket yet it exists")

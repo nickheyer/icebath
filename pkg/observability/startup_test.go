@@ -81,7 +81,7 @@ func TestProcessReadyRecordsProcessStartToNowOncePerSurface(t *testing.T) {
 func TestProcessReadyRecordsNothingWhenSharedMetricsAreOff(t *testing.T) {
 	m := startupMarks(t, 1)
 	m.setPolicy(false)
-	RecordProcessReady(context.Background(), "serve_boot", false)
+	RecordProcessReady(context.Background(), "gateway_boot", false)
 	if got := m.snapshot(); len(got) != 0 {
 		t.Fatalf("%v", got)
 	}
@@ -89,9 +89,9 @@ func TestProcessReadyRecordsNothingWhenSharedMetricsAreOff(t *testing.T) {
 
 func TestBackgroundReadyRecordDoesNotBlockAndStillLands(t *testing.T) {
 	m := startupMarks(t, 0.1)
-	RecordProcessReady(context.Background(), "serve_boot", true)
+	RecordProcessReady(context.Background(), "gateway_boot", true)
 	waitForMarks(m)
-	if got := m.snapshot(); !reflect.DeepEqual(got, []Mark{startupRow("lt_500ms", "serve_boot")}) {
+	if got := m.snapshot(); !reflect.DeepEqual(got, []Mark{startupRow("lt_500ms", "gateway_boot")}) {
 		t.Fatalf("%v", got)
 	}
 }
@@ -105,15 +105,14 @@ func TestKanbanWorkerOneShotIsNotACliStartup(t *testing.T) {
 	}
 }
 
-func TestRpcTakesTheDeclaredSurfaceElseEnvDetection(t *testing.T) {
+func TestRpcRecordsOnlyTheTUISurface(t *testing.T) {
 	m := startupMarks(t, 0)
 	ctx := context.Background()
-	RecordRpcStartupLatency(ctx, "desktop_attach", 2500, "a")
+	RecordRpcStartupLatency(ctx, "gui", 2500, "a")
 	RecordRpcStartupLatency(ctx, "tui", 700, "b")
-	RecordRpcStartupLatency(ctx, "desktop", 12_000, "c")
 	RecordRpcStartupLatency(ctx, "tui", -5, "d")
 	RecordRpcStartupLatency(ctx, "web", 700, "e")
-	want := []Mark{startupRow("2s_to_5s", "desktop_attach"), startupRow("500ms_to_1s", "tui"), startupRow("gte_10s", "desktop_attach")}
+	want := []Mark{startupRow("500ms_to_1s", "tui")}
 	if got := m.snapshot(); !reflect.DeepEqual(got, want) {
 		t.Fatalf("%v", got)
 	}
@@ -123,13 +122,13 @@ func TestRpcCountsEachClientLaunchOncePerBackendProcess(t *testing.T) {
 	m := startupMarks(t, 0)
 	ctx := context.Background()
 	for range 3 {
-		RecordRpcStartupLatency(ctx, "desktop_attach", 1200, "launch-1")
+		RecordRpcStartupLatency(ctx, "tui", 1200, "launch-1")
 	}
-	RecordRpcStartupLatency(ctx, "desktop_attach", 300, "launch-2")
+	RecordRpcStartupLatency(ctx, "tui", 300, "launch-2")
 	for range 2 {
 		RecordRpcStartupLatency(ctx, "tui", 1200, nil)
 	}
-	want := []Mark{startupRow("1s_to_2s", "desktop_attach"), startupRow("lt_500ms", "desktop_attach"), startupRow("1s_to_2s", "tui")}
+	want := []Mark{startupRow("1s_to_2s", "tui"), startupRow("lt_500ms", "tui"), startupRow("1s_to_2s", "tui")}
 	if got := m.snapshot(); !reflect.DeepEqual(got, want) {
 		t.Fatalf("%v", got)
 	}
@@ -160,7 +159,7 @@ func TestProcessReadyWhenOffStartsNoThreadAndReadsNoProcessTime(t *testing.T) {
 	var touched []string
 	processStartedAt = func() (float64, bool) { touched = append(touched, "psutil"); return 0, false }
 	startupGo = func(func()) { touched = append(touched, "thread") }
-	RecordProcessReady(context.Background(), "serve_boot", true)
+	RecordProcessReady(context.Background(), "gateway_boot", true)
 	RecordProcessReady(context.Background(), "cli", false)
 	if len(touched) != 0 {
 		t.Fatalf("%v", touched)

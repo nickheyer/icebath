@@ -11,20 +11,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
-// Always open retirement fence standing in for the provider wiring
-type reviewRetirementDouble struct{}
-
-func (reviewRetirementDouble) Work() (bool, func()) { return true, func() {} }
-func (reviewRetirementDouble) Acquire() bool        { return true }
-func (reviewRetirementDouble) Release()             {}
-
 // Review dispatch fixture, the fake parent of the hermes tests over a temp home with the child seams swapped
 func reviewDispatchParent(t *testing.T, built *childBuildSpec, summary string) (*tools.Env, *AIAgent) {
 	t.Helper()
-	if tools.AsyncDelegationRetirement == nil {
-		tools.AsyncDelegationRetirement = reviewRetirementDouble{}
-		t.Cleanup(func() { tools.AsyncDelegationRetirement = nil })
-	}
 	tools.ResetAsyncDelegationForTests()
 	for {
 		if _, ok := tools.DefaultProcessRegistry().CompletionQueue.GetNowait(); !ok {

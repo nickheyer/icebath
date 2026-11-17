@@ -41,13 +41,6 @@ tools:
     - get_voice_agent_overview_report
     - get_voice_agent_performance_report
 
-# Composer-suggestion triggers (desktop brand pills).
-suggest:
-  keywords:
-    - close crm
-  hosts:
-    - close.com
-
 post_install: |
   On first connection icebath opens a browser to authorize with
   Close (or run `icebath mcp login close`). Approve access,

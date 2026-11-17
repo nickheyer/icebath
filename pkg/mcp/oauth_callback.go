@@ -417,10 +417,10 @@ func announceAuthorizationURL(authorizationURL string, port int, redirectURI, re
 	fmt.Fprintf(oauthStderr, "  (%s)\n\n", note)
 }
 
-// Redirect handler bound to one flow's port, publishing to a dashboard flow or announcing the URL
+// Redirect handler bound to one flow's port, publishing to a client flow or announcing the URL
 func makeRedirectHandler(port int, redirectURI, redirectHost string) func(ctx context.Context, authorizationURL string) error {
 	return func(ctx context.Context, authorizationURL string) error {
-		if flow := dashboardOAuthFlowFrom(ctx); flow != nil {
+		if flow := clientOAuthFlowFrom(ctx); flow != nil {
 			return flow.PublishAuthorizationURL(ctx, authorizationURL)
 		}
 		if err := raiseIfNonInteractive(ctx, "MCP OAuth requires browser authorization but no interactive session is available (non-interactive/background context)."); err != nil {
@@ -490,10 +490,10 @@ func callbackOutcome(result *callbackResult, cimdURL string) (*AuthorizationCode
 	return &AuthorizationCodeResult{Code: code, State: state, Iss: iss}, nil
 }
 
-// Callback waiter bound to one flow's port, the dashboard answering when no loopback port is pinned
+// Callback waiter bound to one flow's port, the client answering when no loopback port is pinned
 func makeCallbackWaiter(port int, cimdURL string, timeout time.Duration) func(ctx context.Context) (*AuthorizationCodeResult, error) {
 	return func(ctx context.Context) (*AuthorizationCodeResult, error) {
-		flow := dashboardOAuthFlowFrom(ctx)
+		flow := clientOAuthFlowFrom(ctx)
 		if flow != nil && port == 0 {
 			code, state, iss, err := flow.WaitForCallback(ctx, 300*time.Second)
 			if err != nil {

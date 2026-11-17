@@ -23,8 +23,7 @@ post_install: |
   Use that URL, not your editor URL. The icebath backend must be able to reach it.
   On older n8n versions, the same endpoint is shown in the MCP settings page.
 
-  Run `icebath mcp login n8n-official`, or use Authorize in the desktop app
-  or dashboard, and approve access in n8n. No n8n API key is required.
+  Run `icebath mcp login n8n-official` and approve access in n8n. No n8n API key is required.
   If your instance restricts OAuth callback URLs, allow the callback used by icebath.
 
   n8n controls access through your account permissions and MCP settings.

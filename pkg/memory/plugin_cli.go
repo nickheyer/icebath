@@ -9,16 +9,14 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
-// Plugin host seams for a provider cli.py and config_schema.py, swapped by tests
+// Plugin host seams for a provider cli.py, swapped by tests
 var (
-	describeProviderCLI  = plugins.DescribeMemoryProviderCLI
-	runProviderCLI       = plugins.RunMemoryProviderCLI
-	providerConfigSchema = plugins.MemoryProviderConfigSchema
+	describeProviderCLI = plugins.DescribeMemoryProviderCLI
+	runProviderCLI      = plugins.RunMemoryProviderCLI
 )
 
 // Nonzero status a provider CLI handler or its argparse parser exited with
@@ -28,12 +26,6 @@ func (e *PluginCLIExit) Error() string { return "exit " + strconv.Itoa(e.Code) }
 
 // Process exit status the CLI maps this error to
 func (e *PluginCLIExit) ExitCode() int { return e.Code }
-
-// Whether path names a regular file or a link to one
-func isRegularFile(path string) bool {
-	st, err := os.Stat(path)
-	return err == nil && st.Mode().IsRegular()
-}
 
 // CLI a non bundled provider cli.py contributes through register_cli, nil without one or under host isolation
 func hostedProviderCLI(ctx context.Context, env *tools.Env, r *ProviderRegistration) *ProviderCLI {
@@ -80,48 +72,4 @@ func hostedProviderCLI(ctx context.Context, env *tools.Env, r *ProviderRegistrat
 		cli.Handler = run(true)
 	}
 	return cli
-}
-
-// Wire value with every dataclass record as the dict Python reads it as, nested ones included
-func recordsAsDicts(v any) any {
-	switch t := v.(type) {
-	case plugins.Record:
-		out := make(map[string]any, len(t))
-		for k, item := range t {
-			out[k] = recordsAsDicts(item)
-		}
-		return out
-	case map[string]any:
-		out := make(map[string]any, len(t))
-		for k, item := range t {
-			out[k] = recordsAsDicts(item)
-		}
-		return out
-	case []any:
-		out := make([]any, len(t))
-		for i, item := range t {
-			out[i] = recordsAsDicts(item)
-		}
-		return out
-	}
-	return v
-}
-
-// Loader of a provider config_schema.py run in the plugin host, nil when the file is absent or its schema empty
-func hostedConfigSchema(path string) func(ctx context.Context) (*ProviderConfigSchema, error) {
-	return func(ctx context.Context) (*ProviderConfigSchema, error) {
-		if !isRegularFile(path) {
-			return nil, nil
-		}
-		record, err := providerConfigSchema(ctx, path)
-		record = recordsAsDicts(record)
-		if err != nil || !pyrepr.Truthy(record) {
-			return nil, err
-		}
-		m, ok := record.(map[string]any)
-		if !ok {
-			return nil, fmt.Errorf("'%s' object has no attribute 'get'", pyTypeName(record))
-		}
-		return ProviderConfigSchemaFromRecord(m)
-	}
 }

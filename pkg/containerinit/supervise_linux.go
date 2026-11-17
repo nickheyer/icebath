@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net"
 	"os"
 	"path/filepath"
 	"sort"
@@ -92,20 +91,11 @@ func readStatus(dir string) (svcStatus, error) {
 	return st, json.Unmarshal(raw, &st)
 }
 
-// Go side definition of a service the image declares without a run script
-type nativeSpec struct {
-	command func() ([]string, *syscall.ProcAttr, error)
-	enabled func() bool
-	finish  func(code, sig int) int
-	ready   func() bool
-}
-
 // One supervised service directory with its optional logger
 type service struct {
 	sv       *supervisor
 	name     string
 	dir      string
-	native   *nativeSpec
 	log      *service
 	isLog    bool
 	pipeR    *os.File
@@ -162,13 +152,6 @@ func (s *service) files() []uintptr {
 
 // Argv and attributes of the run script, executed in its own session from the service directory
 func (s *service) command() ([]string, *syscall.ProcAttr, error) {
-	if s.native != nil {
-		argv, attr, err := s.native.command()
-		if err == nil {
-			attr.Files = s.files()
-		}
-		return argv, attr, err
-	}
 	return []string{filepath.Join(s.dir, "run")}, &syscall.ProcAttr{
 		Dir: s.dir, Env: os.Environ(), Files: s.files(), Sys: &syscall.SysProcAttr{Setsid: true},
 	}, nil
@@ -177,11 +160,6 @@ func (s *service) command() ([]string, *syscall.ProcAttr, error) {
 // Starts the run program unless it is already running, finishing or retired
 func (s *service) startLocked() {
 	if s.st.Pid != 0 || s.st.Finishing || s.retired || s.ended || s.sv.stopping() {
-		return
-	}
-	if s.native != nil && !s.native.enabled() {
-		s.st.WantUp, s.st.ExitCode, s.st.Signal, s.st.Since = false, 0, 0, time.Now().UnixNano()
-		s.writeStatusLocked()
 		return
 	}
 	argv, attr, err := s.command()
@@ -198,37 +176,8 @@ func (s *service) startLocked() {
 	s.started = now
 	s.st.Up, s.st.Pid, s.st.Pgid, s.st.Paused = true, pid, pid, false
 	s.st.Since = now.UnixNano()
-	s.st.Ready = s.native == nil || s.native.ready == nil
-	if s.st.Ready {
-		s.st.ReadySince = s.st.Since
-	}
+	s.st.Ready, s.st.ReadySince = true, s.st.Since
 	s.writeStatusLocked()
-	if !s.st.Ready {
-		go s.probe(pid)
-	}
-}
-
-// Polls the readiness check until it passes or the process it was started for goes away
-func (s *service) probe(pid int) {
-	for {
-		time.Sleep(250 * time.Millisecond)
-		s.mu.Lock()
-		if s.st.Pid != pid {
-			s.mu.Unlock()
-			return
-		}
-		s.mu.Unlock()
-		if !s.native.ready() {
-			continue
-		}
-		s.mu.Lock()
-		if s.st.Pid == pid {
-			s.st.Ready, s.st.ReadySince = true, time.Now().UnixNano()
-			s.writeStatusLocked()
-		}
-		s.mu.Unlock()
-		return
-	}
 }
 
 // Starts the service again after delay unless something else starts or retires it first
@@ -258,10 +207,6 @@ func (s *service) onExit(ws syscall.WaitStatus) {
 	}
 	s.st.Finishing = true
 	s.writeStatusLocked()
-	if s.native != nil {
-		s.afterFinishLocked(s.native.finish(code, sig), ran)
-		return
-	}
 	finish := filepath.Join(s.dir, "finish")
 	if info, err := os.Stat(finish); err != nil || info.Mode()&0o111 == 0 {
 		s.afterFinishLocked(0, ran)
@@ -504,9 +449,9 @@ func (sv *supervisor) forget(s *service) {
 }
 
 // Registers a service directory and its logger, starting it unless a down file asks otherwise
-func (sv *supervisor) adopt(name, dir string, native *nativeSpec) *service {
-	s := &service{sv: sv, name: name, dir: dir, native: native}
-	if info, err := os.Stat(filepath.Join(dir, "log", "run")); err == nil && info.Mode()&0o111 != 0 && native == nil {
+func (sv *supervisor) adopt(name, dir string) *service {
+	s := &service{sv: sv, name: name, dir: dir}
+	if info, err := os.Stat(filepath.Join(dir, "log", "run")); err == nil && info.Mode()&0o111 != 0 {
 		r, w, err := os.Pipe()
 		if err == nil {
 			s.pipeW = w
@@ -548,7 +493,7 @@ func (sv *supervisor) scan(prune bool) {
 		if info, err := os.Stat(filepath.Join(dir, "run")); err != nil || info.Mode()&0o111 == 0 {
 			continue
 		}
-		sv.adopt(name, dir, nil)
+		sv.adopt(name, dir)
 	}
 	if !prune {
 		return
@@ -655,15 +600,4 @@ func (sv *supervisor) stopGroup(group []*service, grace time.Duration) {
 			return
 		}
 	}
-}
-
-// TCP probe target for a listen host, the wildcard addresses mapped to loopback
-func probeAddr(host, port string) string {
-	switch host {
-	case "", "0.0.0.0":
-		host = "127.0.0.1"
-	case "::", "[::]":
-		host = "::1"
-	}
-	return net.JoinHostPort(strings.Trim(host, "[]"), port)
 }

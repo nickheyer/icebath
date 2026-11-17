@@ -55,7 +55,7 @@ func switchResult(t *testing.T, fn func(opts provider.SwitchModelOptions) provid
 	})
 }
 
-func TestAcpAndDashboardRejectWhatSwitchModelRejects(t *testing.T) {
+func TestAcpAndModelAssignmentRejectWhatSwitchModelRejects(t *testing.T) {
 	a, sessions := switchAgent(t)
 	switchResult(t, func(provider.SwitchModelOptions) provider.ModelSwitchResult {
 		return provider.ModelSwitchResult{Success: false, ErrorMessage: "Unknown provider 'notaprovider'."}
@@ -73,7 +73,7 @@ func TestAcpAndDashboardRejectWhatSwitchModelRejects(t *testing.T) {
 	_, err = provider.ApplyModelAssignmentSync(ctx, "notaprovider", "whatever", "", "", nil)
 	var refused *provider.HTTPException
 	if !errors.As(err, &refused) || refused.StatusCode != 400 || !strings.Contains(refused.Detail, "Unknown provider") {
-		t.Fatalf("dashboard err = %v", err)
+		t.Fatalf("assignment err = %v", err)
 	}
 }
 

@@ -41,7 +41,7 @@ func TestSurfaceRuntimeHostValue(t *testing.T) {
 }
 
 func TestSurfaceIdentityLineValueReadsOnlyTheTrailer(t *testing.T) {
-	if got := IdentityLineValue(surfacePrompt("desktop"), "Platform"); got != "desktop" {
+	if got := IdentityLineValue(surfacePrompt("tui"), "Platform"); got != "tui" {
 		t.Fatalf("platform %q", got)
 	}
 	noTrailerLabel := "memory\nPlatform: memory-says-cron\n\nConversation started: x\nModel: m"
@@ -81,7 +81,7 @@ func TestSurfaceStageSwitchNote(t *testing.T) {
 	if StageSurfaceSwitchNote(ctx, a, surfacePrompt("cli"), nil) || a.surfaceSwitchNote != "" {
 		t.Fatal("an unchanged surface stages nothing")
 	}
-	if !StageSurfaceSwitchNote(ctx, a, surfacePrompt("desktop"), nil) {
+	if !StageSurfaceSwitchNote(ctx, a, surfacePrompt("tui"), nil) {
 		t.Fatal("a switched surface stages a note")
 	}
 	if !strings.HasPrefix(a.surfaceSwitchNote, surfaceSwitchNotePrefix+"cli"+surfaceNameEnd) || !strings.Contains(a.surfaceSwitchNote, "the guidance below") ||

@@ -35,13 +35,6 @@ tools:
     - Bulk-Edit-Events
     - Bulk-Edit-Properties
 
-# Composer-suggestion triggers (desktop brand pills).
-suggest:
-  keywords:
-    - mixpanel
-  hosts:
-    - mixpanel.com
-
 post_install: |
   On first connection icebath opens a browser to authorize with
   Mixpanel (or run `icebath mcp login mixpanel`). Approve access,

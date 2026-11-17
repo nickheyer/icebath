@@ -63,7 +63,7 @@ func (d TerminalEnvironmentProviderDefaults) CheckRequirements(*Env, map[string]
 	return ErrBackendRequirementsNotMet
 }
 
-// Dashboard picker health, ready when available and needs_setup otherwise
+// Picker health, ready when available and needs_setup otherwise
 func (d TerminalEnvironmentProviderDefaults) Probe() (string, string) {
 	if d.self().IsAvailable() {
 		return "ready", ""

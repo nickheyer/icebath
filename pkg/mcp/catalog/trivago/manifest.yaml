@@ -17,14 +17,6 @@ transport:
 auth:
   type: none
 
-# Composer-suggestion triggers (desktop brand pills).
-suggest:
-  keywords:
-    - hotel search
-    - trivago
-  hosts:
-    - trivago.com
-
 post_install: |
   No account or credentials needed — tools are available as soon as the
   session restarts.

@@ -84,7 +84,7 @@ var defaultsKeyOrder = map[string][]string{
 	"voice":                                   {"voice_chat_mode", "gpt_live", "record_key", "submit_mode", "max_recording_seconds", "auto_tts", "client_direct", "beep_enabled", "beep_volume", "thinking_sound", "silence_threshold", "silence_duration", "barge_in", "barge_in_grace_seconds", "barge_in_threshold_multiplier", "stop_phrases"},
 	"voice\x00gpt_live":                       {"model", "voice", "instructions"},
 	"vision":                                  {"embed_target_bytes", "max_calls_per_image", "replay_recent_images"},
-	"wake_word":                               {"enabled", "surface", "input_device", "capture", "provider", "phrase", "sensitivity", "confirmation_frames", "start_new_session", "profile_routing", "openwakeword", "sherpa", "porcupine"},
+	"wake_word":                               {"enabled", "surface", "input_device", "provider", "phrase", "sensitivity", "confirmation_frames", "start_new_session", "profile_routing", "openwakeword", "sherpa", "porcupine"},
 	"wake_word\x00openwakeword":               {"model"},
 	"wake_word\x00sherpa":                     {"model_dir"},
 	"wake_word\x00porcupine":                  {"keyword"},

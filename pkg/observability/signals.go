@@ -83,8 +83,6 @@ func dimensionIn(d map[string]string, key string, values ...string) bool {
 	return false
 }
 
-var taskSurface = map[string]string{"desktop": "desktop", "tui": "tui"}
-
 var featureRules = func() map[string][]featureRule {
 	rules := map[string][]featureRule{
 		MemoryOpMetric:       {{"memory", func(d map[string]string) bool { return success(d) && dimensionIn(d, "origin", "foreground") }}},
@@ -94,8 +92,7 @@ var featureRules = func() map[string][]featureRule {
 		CuratorRunMetric:     {{"curator", func(d map[string]string) bool { return success(d) && dimensionIn(d, "trigger", "manual") }}},
 		TaskStartedMetric: {
 			{"gateway_platform", func(d map[string]string) bool { p, ok := d["platform"]; return ok && p != "none" }},
-			{"desktop", func(d map[string]string) bool { return dimensionIn(d, "execution_surface", taskSurface["desktop"]) }},
-			{"tui", func(d map[string]string) bool { return dimensionIn(d, "execution_surface", taskSurface["tui"]) }},
+			{"tui", func(d map[string]string) bool { return dimensionIn(d, "execution_surface", "tui") }},
 		},
 		ToolUsageMetric: {
 			{"mcp", toolUsed("", "mcp")}, {"plugins", toolUsed("", "plugin")}, {"browser", toolUsed("browser_")},

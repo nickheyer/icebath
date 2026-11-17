@@ -14,7 +14,6 @@ import (
 
 	"github.com/gorilla/websocket"
 
-	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/cliui"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/gatewaycli"
@@ -247,13 +246,12 @@ func gatewayCreateSession(ctx context.Context, client gatewayChatPeer, args map[
 		}
 		return false
 	}
-	requested := "cli"
+	source := "cli"
 	if pyrepr.Truthy(args["source"]) {
-		requested = pyrepr.Str(args["source"])
+		source = pyrepr.Str(args["source"])
 	} else if has(sources, "oneshot") {
-		requested = "oneshot"
+		source = "oneshot"
 	}
-	source := agent.CreateSurface(requested)
 	if !has(sources, source) {
 		return nil, &gateway.GatewayClientError{Msg: "Gateway does not support source " + pyrepr.Repr(source)}
 	}

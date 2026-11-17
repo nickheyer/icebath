@@ -17,15 +17,6 @@ transport:
 auth:
   type: none
 
-# Composer-suggestion triggers (desktop brand pills).
-suggest:
-  keywords:
-    - microsoft docs
-    - azure docs
-    - msdn
-  hosts:
-    - learn.microsoft.com
-
 post_install: |
   No account or credentials needed — tools are available as soon as the
   session restarts.

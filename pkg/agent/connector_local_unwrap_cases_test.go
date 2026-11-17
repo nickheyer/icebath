@@ -63,7 +63,7 @@ func singleLocalUnwrapKeepsLiveState(t *testing.T, flattenProbe bool) {
 	a := newFixtureAgent(t, AIAgentOptions{Model: "test-model", BaseURL: "http://127.0.0.1:1/v1", Provider: "custom",
 		EnabledToolsets: []string{"todo", "session_search", "connections"}, DisabledToolsets: []string{},
 		SessionID: "current-session", SessionDB: db, ConnectionCallback: connection})
-	tools.SetSessionVars(a.Env(), tools.SessionVars{Source: "desktop", SessionKey: "current-session", SessionID: "current-session"})
+	tools.SetSessionVars(a.Env(), tools.SessionVars{Source: "tui", SessionKey: "current-session", SessionID: "current-session"})
 	defer tools.ResetSessionVars(a.Env())
 	calls := []map[string]any{
 		{"name": "session_search", "arguments": map[string]any{"session_id": "past-session"}},

@@ -194,7 +194,7 @@ func TestCatalogManifestMinimalValid(t *testing.T) {
 	e := entries[0]
 	if e.Name != "demo" || e.Transport.Type != "stdio" || e.Transport.Command != "npx" ||
 		!reflect.DeepEqual(e.Transport.Args, []string{"-y", "demo-mcp"}) || e.Auth.Type != "none" ||
-		e.Install != nil || e.Suggest != nil || e.ConnectorSlug != "" {
+		e.Install != nil || e.ConnectorSlug != "" {
 		t.Fatalf("entry %+v", e)
 	}
 }
@@ -205,126 +205,6 @@ func TestCatalogConnectorSlugParsed(t *testing.T) {
 	e, err := parseManifestFile(path)
 	if err != nil || e.ConnectorSlug != "demo-connector" {
 		t.Fatalf("%v %+v", err, e)
-	}
-}
-
-func TestCatalogSuggestBlockParsedAndNormalized(t *testing.T) {
-	dir, _ := catalogFixture(t)
-	writeManifest(t, dir, "demo", basicManifest("demo", map[string]any{"suggest": map[string]any{
-		"keywords": []any{"Jira ", "confluence"}, "hosts": []any{".Atlassian.net", "atlassian.com"}}}))
-	entries := mustList(t)
-	sg := entries[0].Suggest
-	if sg == nil || !reflect.DeepEqual(sg.Keywords, []string{"jira", "confluence"}) ||
-		!reflect.DeepEqual(sg.Hosts, []string{"atlassian.net", "atlassian.com"}) {
-		t.Fatalf("suggest %+v", sg)
-	}
-}
-
-func TestCatalogSuggestOnboardingMetadataIsAdditive(t *testing.T) {
-	dir, _ := catalogFixture(t)
-	triggers := map[string]any{"keywords": []any{"Demo "}, "hosts": []any{".Example.com"}}
-	path := writeManifest(t, dir, "demo", basicManifest("demo", map[string]any{"suggest": triggers}))
-	legacy, err := parseManifestFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	enriched := map[string]any{"keywords": triggers["keywords"], "hosts": triggers["hosts"],
-		"applications": []any{"Blender", "Visual Studio Code"}, "examples": []any{"Create a scene from this sketch."},
-		"future_hint": "ignored"}
-	writeManifest(t, dir, "demo", basicManifest("demo", map[string]any{"suggest": enriched}))
-	entry, err := parseManifestFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !reflect.DeepEqual(entry.Suggest.Applications, []string{"Blender", "Visual Studio Code"}) ||
-		!reflect.DeepEqual(entry.Suggest.Examples, []string{"Create a scene from this sketch."}) ||
-		!reflect.DeepEqual(entry.Suggest.Keywords, []string{"demo"}) || !reflect.DeepEqual(legacy.Suggest.Keywords, []string{"demo"}) ||
-		!reflect.DeepEqual(entry.Suggest.Hosts, []string{"example.com"}) || !reflect.DeepEqual(legacy.Suggest.Hosts, []string{"example.com"}) ||
-		len(legacy.Suggest.Applications) != 0 || len(legacy.Suggest.Examples) != 0 || entry.Suggest.RequiresApp {
-		t.Fatalf("entry %+v legacy %+v", entry.Suggest, legacy.Suggest)
-	}
-	a, _ := buildServerConfig(entry, "")
-	b, _ := buildServerConfig(legacy, "")
-	if !reflect.DeepEqual(a, b) {
-		t.Fatalf("configs differ %v %v", a, b)
-	}
-	writeManifest(t, dir, "demo", basicManifest("demo", map[string]any{"suggest": map[string]any{"applications": []any{"Blender"}}}))
-	if e, err := parseManifestFile(path); err != nil || !reflect.DeepEqual(e.Suggest.Applications, []string{"Blender"}) {
-		t.Fatalf("%v %+v", err, e)
-	}
-}
-
-func TestCatalogSuggestDiscoveryMetadataIsBoundedData(t *testing.T) {
-	dir, _ := catalogFixture(t)
-	parse := func(metadata map[string]any) (*CatalogEntry, error) {
-		suggest := map[string]any{"keywords": []any{"demo"}}
-		for k, v := range metadata {
-			suggest[k] = v
-		}
-		return parseManifestFile(writeManifest(t, dir, "demo", basicManifest("demo", map[string]any{"suggest": suggest})))
-	}
-	e, err := parse(map[string]any{"applications": []any{"Blender"}, "requires_app": true})
-	if err != nil || !e.Suggest.RequiresApp {
-		t.Fatalf("%v %+v", err, e)
-	}
-	if e, err := parse(nil); err != nil || e.Suggest.RequiresApp {
-		t.Fatalf("%v %+v", err, e)
-	}
-	seventeen := make([]any, 17)
-	sevenEx := make([]any, 7)
-	for i := range seventeen {
-		seventeen[i] = "Blender"
-	}
-	for i := range sevenEx {
-		sevenEx[i] = "x"
-	}
-	bad := []map[string]any{
-		{"applications": "Blender"}, {"applications": []any{nil}}, {"applications": []any{"/Applications/Blender.app"}},
-		{"applications": []any{"../blender"}}, {"applications": []any{`C:\Blender`}}, {"applications": []any{".*"}},
-		{"applications": []any{"blender; id"}}, {"applications": []any{"--help"}}, {"applications": []any{strings.Repeat("x", 81)}},
-		{"applications": seventeen}, {"applications": []any{" Blender"}}, {"applications": []any{"\n"}},
-		{"examples": "example"}, {"examples": []any{""}}, {"examples": []any{strings.Repeat("x", 241)}},
-		{"examples": sevenEx}, {"examples": []any{"one\ntwo"}}, {"requires_app": "true"},
-		{"requires_app": 1}, {"requires_app": true},
-	}
-	for _, m := range bad {
-		_, err := parse(m)
-		var ce *CatalogError
-		if !errors.As(err, &ce) || !strings.Contains(ce.Msg, "suggest") {
-			t.Fatalf("%v accepted or wrong error: %v", m, err)
-		}
-	}
-}
-
-func TestCatalogSuggestKeywordsOnlyIsValid(t *testing.T) {
-	dir, _ := catalogFixture(t)
-	writeManifest(t, dir, "demo", basicManifest("demo", map[string]any{"suggest": map[string]any{"keywords": []any{"demo"}}}))
-	entries := mustList(t)
-	if len(entries) != 1 || entries[0].Suggest == nil || len(entries[0].Suggest.Hosts) != 0 {
-		t.Fatalf("%+v", entries)
-	}
-}
-
-func TestCatalogSuggestEmptyBlockRejected(t *testing.T) {
-	dir, _ := catalogFixture(t)
-	writeManifest(t, dir, "demo", basicManifest("demo", map[string]any{"suggest": map[string]any{}}))
-	if len(mustList(t)) != 0 {
-		t.Fatal("empty suggest accepted")
-	}
-	found := false
-	for _, d := range CatalogDiagnostics() {
-		found = found || d.Kind == "invalid"
-	}
-	if !found {
-		t.Fatal("no invalid diagnostic")
-	}
-}
-
-func TestCatalogSuggestNonListKeywordsRejected(t *testing.T) {
-	dir, _ := catalogFixture(t)
-	writeManifest(t, dir, "demo", basicManifest("demo", map[string]any{"suggest": map[string]any{"keywords": "jira"}}))
-	if len(mustList(t)) != 0 {
-		t.Fatal("string keywords accepted")
 	}
 }
 

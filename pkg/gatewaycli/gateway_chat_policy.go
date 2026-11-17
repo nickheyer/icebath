@@ -6,7 +6,6 @@ import (
 	"os"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
@@ -174,7 +173,7 @@ func RequestedPolicy(args map[string]any) *pyjson.Object {
 		}
 	}
 	if pyrepr.Truthy(args["source"]) {
-		policy.Set("source", agent.CreateSurface(pyrepr.Str(args["source"])))
+		policy.Set("source", pyrepr.Str(args["source"]))
 	}
 	return policy
 }

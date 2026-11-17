@@ -28,14 +28,6 @@ tools:
     - supported_languages
     - semgrep_rule_schema
 
-# Composer-suggestion triggers (desktop brand pills).
-suggest:
-  keywords:
-    - semgrep
-    - static analysis
-  hosts:
-    - semgrep.dev
-
 post_install: |
   On first connection icebath opens a browser to authorize with
   Semgrep (or run `icebath mcp login semgrep`). Approve access,

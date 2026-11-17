@@ -17,13 +17,6 @@ transport:
 auth:
   type: none
 
-# Composer-suggestion triggers (desktop brand pills).
-suggest:
-  keywords:
-    - twilio docs
-  hosts:
-    - twilio.com
-
 post_install: |
   No account or credentials needed — tools are available as soon as the
   session restarts.

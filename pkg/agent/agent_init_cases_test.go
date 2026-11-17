@@ -10,7 +10,6 @@ import (
 	"path/filepath"
 	"reflect"
 	"runtime"
-	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -1011,38 +1010,5 @@ func TestColdRefineBuildsNoMemoryProvider(t *testing.T) {
 	}
 	if a.memoryManager != nil {
 		t.Fatal("the review side agent built a memory manager")
-	}
-}
-
-func TestASessionOffTheDesktopNeverHearsOfTheToolEvenThroughToolSearch(t *testing.T) {
-	for _, platform := range []string{"desktop", "cli", "subagent"} {
-		t.Run(platform, func(t *testing.T) {
-			env := promptTestEnv(t)
-			ctx := home.WithOverride(context.Background(), env.Home)
-			prev := discoverPluginsAtLoad
-			t.Cleanup(func() { discoverPluginsAtLoad = prev })
-			discoverPluginsAtLoad = func(context.Context) {}
-			enabled, disabled := []string{"catalog", "web"}, []string(nil)
-			if platform == "subagent" {
-				parent := &AIAgent{enabledToolsets: []string{"catalog", "web"}, env: env}
-				enabled, disabled = resolveChildToolsets(ctx, parent, nil, "leaf")
-			}
-			if !slices.Contains(enabled, "catalog") {
-				t.Fatalf("catalog not enabled: %v", enabled)
-			}
-			a := &AIAgent{quietMode: true, platform: platform, enabledToolsets: enabled, disabledToolsets: disabled, env: env}
-			loadTools(ctx, a, enabled, disabled)
-			found := tools.DispatcherOf(ctx).DispatchWith(ctx, &tools.Call{Name: "tool_search", Env: env,
-				Args: map[string]any{"queries": []any{"catalog plugin install"}}},
-				tools.DispatchOptions{EnabledToolsets: a.enabledToolsets, DisabledToolsets: a.disabledToolsets})
-			surface, err := json.Marshal(a.tools)
-			if err != nil {
-				t.Fatal(err)
-			}
-			carried := strings.Contains(string(surface), "manage_catalog") || strings.Contains(found, "manage_catalog")
-			if carried != (platform == "desktop") {
-				t.Fatalf("platform %s carried=%v search=%s", platform, carried, found)
-			}
-		})
 	}
 }

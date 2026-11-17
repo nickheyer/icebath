@@ -19,13 +19,6 @@ transport:
 auth:
   type: oauth
 
-# Composer-suggestion triggers (desktop brand pills).
-suggest:
-  keywords:
-    - airtable
-  hosts:
-    - airtable.com
-
 post_install: |
   On first connection icebath opens a browser to authorize with
   Airtable (or run `icebath mcp login airtable`). Approve access,

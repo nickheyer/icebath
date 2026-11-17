@@ -167,7 +167,6 @@ type ConnectionOperation struct {
 	CreatedAt  float64
 	DeadlineAt float64
 	Wake       *ConnEvent
-	Display    *DisplayState
 
 	mu              sync.Mutex
 	settledAt       *float64
@@ -486,9 +485,6 @@ func (o *ConnectionOperation) RequestPayload() *pyjson.Object {
 	payload.Set("targets", targets)
 	if o.ToolCallID != "" {
 		payload.Set("tool_call_id", o.ToolCallID)
-	}
-	if o.Display != nil {
-		payload.Set("display", pyjson.ObjectOf("suggested", connAnyList(o.Display.Suggested)))
 	}
 	return payload
 }

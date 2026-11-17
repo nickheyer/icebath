@@ -563,25 +563,6 @@ func (l *HubLockFile) ByIdentifier() (map[string]*pyjson.Object, error) {
 	return installed, nil
 }
 
-// Lock entry a hub result names, a ClawHub result also matching through its catalog card id
-func installedEntry(installed map[string]*pyjson.Object, identifier, source string) *pyjson.Object {
-	if e, ok := installed[identifier]; ok {
-		return e
-	}
-	if source != "clawhub" {
-		return nil
-	}
-	if alias, ok := clawhubCatalogIdentifier(identifier); ok {
-		return installed[alias]
-	}
-	return nil
-}
-
-// Lock entry a hub result names for callers outside the package such as the mcp catalog
-func InstalledEntry(installed map[string]*pyjson.Object, identifier, source string) *pyjson.Object {
-	return installedEntry(installed, identifier, source)
-}
-
 // Tap list of custom GitHub repo sources
 type TapsManager struct{ jsonStateFile }
 

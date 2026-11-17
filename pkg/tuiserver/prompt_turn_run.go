@@ -880,7 +880,7 @@ func runPromptSubmitTurn(ctx context.Context, rid any, sid string, session *tuig
 			if registered == session {
 				reopenRoutedSessionRow(ctx, db, sid, session)
 			}
-			canStart = startSessionWork(ctx, run, "prompt-turn-"+sid, session) != nil
+			startSessionWork(ctx, run, "prompt-turn-"+sid, session)
 		}
 	}()
 	if !canStart {

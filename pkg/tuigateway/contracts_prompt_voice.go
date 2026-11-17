@@ -231,10 +231,9 @@ var _ = Method("voice.tts", VoiceTtsParams, VoiceTtsResult, "Speak text through 
 var WakeStartParams = pydantic.NewModel("WakeStartParams", ParamsConfig,
 	pydantic.Def("surface", pydantic.Nullable(pydantic.Str), nil),
 	pydantic.Def("persist", pydantic.Nullable(pydantic.Bool), nil),
-	pydantic.Def("client_capture", pydantic.Nullable(pydantic.Bool), nil),
 	pydantic.Def("session_id", pydantic.Nullable(pydantic.Str), nil),
 	pydantic.Def("profile", pydantic.Nullable(pydantic.Str), nil),
-).Described("``surface`` names the caller (\"tui\"); ``persist`` is the explicit gesture that also\nflips ``wake_word.enabled`` on; ``client_capture`` asks for PCM streamed via wake.feed.")
+).Described("``surface`` names the caller (\"tui\"); ``persist`` is the explicit gesture that also\nflips ``wake_word.enabled`` on.")
 
 var WakeStartResult = pydantic.NewModel("WakeStartResult", ClosedConfig,
 	pydantic.Req("started", pydantic.Bool),
@@ -244,10 +243,7 @@ var WakeStartResult = pydantic.NewModel("WakeStartResult", ClosedConfig,
 	pydantic.Def("provider", pydantic.Nullable(pydantic.Str), nil),
 	pydantic.Def("owner_surface", pydantic.Nullable(pydantic.Str), nil),
 	pydantic.Def("enabled_persisted", pydantic.Nullable(pydantic.Bool), nil),
-	pydantic.Def("capture", pydantic.Nullable(pydantic.Str), nil),
-	pydantic.Def("sample_rate", pydantic.Nullable(pydantic.Int), nil),
-	pydantic.Def("frame_length", pydantic.Nullable(pydantic.Int), nil),
-).Described("``started: false`` carries ``reason`` (unavailable / disabled / disabled_for_surface / owned);\n``sample_rate`` / ``frame_length`` describe the PCM frames the armed detector expects.")
+).Described("``started: false`` carries ``reason`` (unavailable / disabled / disabled_for_surface / owned).")
 
 var _ = Method("wake.start", WakeStartParams, WakeStartResult, "Arm the wake-word listener for the calling surface; refusals explain why.")
 
@@ -279,7 +275,6 @@ var _ = Method("wake.resume", WakeControlParams, WakeResumeResult, "Reclaim the 
 
 var WakeStatusParams = pydantic.NewModel("WakeStatusParams", ParamsConfig,
 	pydantic.Def("surface", pydantic.Nullable(pydantic.Str), nil),
-	pydantic.Def("client_capture", pydantic.Nullable(pydantic.Bool), nil),
 	pydantic.Def("profile", pydantic.Nullable(pydantic.Str), nil),
 )
 
@@ -305,23 +300,7 @@ var WakeStatusResult = pydantic.NewModel("WakeStatusResult", ClosedConfig,
 	pydantic.Req("hint", pydantic.Str),
 	pydantic.Req("enabled", pydantic.Bool),
 	pydantic.Req("audio_silent", pydantic.Bool),
-	pydantic.Req("capture", pydantic.Str),
 	pydantic.Req("local_input_available", pydantic.Bool),
-	pydantic.Req("sample_rate", pydantic.Int),
-	pydantic.Req("frame_length", pydantic.Int),
 ).Described("``enabled`` is config truth; ``listening`` is this caller's armed detector; ``audio_silent``\nmeans armed but deaf (see ``hint``).")
 
 var _ = Method("wake.status", WakeStatusParams, WakeStatusResult, "Everything a client needs to draw the wake-word state and decide whether to (re)arm.")
-
-var WakeFeedParams = pydantic.NewModel("WakeFeedParams", ParamsConfig,
-	pydantic.Def("pcm", pydantic.Nullable(pydantic.Str), nil),
-	pydantic.Def("pcm_b64", pydantic.Nullable(pydantic.Str), nil),
-	pydantic.Def("sample_rate", pydantic.Nullable(pydantic.Int), nil),
-	pydantic.Def("profile", pydantic.Nullable(pydantic.Str), nil),
-).Described("``pcm`` (or the ``pcm_b64`` alias): base64 int16 mono little-endian, 16 kHz only.")
-
-var WakeFeedResult = pydantic.Extend(WakeOwnerResult, "WakeFeedResult", ClosedConfig,
-	pydantic.Req("fed", pydantic.Bool),
-)
-
-var _ = Method("wake.feed", WakeFeedParams, WakeFeedResult, "Push client-captured PCM into the armed detector (mic-less remote backends).")

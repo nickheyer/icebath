@@ -134,15 +134,15 @@ func patchToolPin(t *testing.T, restore func(ctx context.Context, agent mcp.Agen
 
 func TestSurfaceSwitch(t *testing.T) {
 	tuiNote := surfaceSwitchNotePrefix + "tui" + surfaceNameEnd
-	desktopNote := surfaceSwitchNotePrefix + "desktop" + surfaceNameEnd
+	cliNote := surfaceSwitchNotePrefix + "cli" + surfaceNameEnd
 	t.Run("test_switch_reuses_the_stored_prompt", func(t *testing.T) {
-		a, builds := surfaceRestore{stored: "desktop", current: "tui"}.run(t)
-		if a.cachedSystemPrompt != storedSurfacePrompt("desktop") || len(builds.calls) != 0 {
+		a, builds := surfaceRestore{stored: "cli", current: "tui"}.run(t)
+		if a.cachedSystemPrompt != storedSurfacePrompt("cli") || len(builds.calls) != 0 {
 			t.Fatalf("prompt %q builds %d", a.cachedSystemPrompt, len(builds.calls))
 		}
 	})
 	t.Run("test_switch_stages_the_new_surface_guidance", func(t *testing.T) {
-		a, _ := surfaceRestore{stored: "desktop", current: "tui"}.run(t)
+		a, _ := surfaceRestore{stored: "cli", current: "tui"}.run(t)
 		if !strings.HasPrefix(a.surfaceSwitchNote, tuiNote) || !strings.Contains(a.surfaceSwitchNote, "terminal UI (TUI)") {
 			t.Fatalf("note %q", a.surfaceSwitchNote)
 		}
@@ -153,9 +153,9 @@ func TestSurfaceSwitch(t *testing.T) {
 		}
 	})
 	t.Run("test_stored_prompt_platform_ignores_runtime_hint_decoys", func(t *testing.T) {
-		stored := "SYSTEM PROMPT BODY\n\nConversation started: Monday, January 05, 2026\nModel: test-model\nProvider: openrouter\nPlatform: desktop\n\n" +
+		stored := "SYSTEM PROMPT BODY\n\nConversation started: Monday, January 05, 2026\nModel: test-model\nProvider: openrouter\nPlatform: cli\n\n" +
 			RuntimeEnvironmentHeading + "\n\nHost: Example\nPlatform: tui\n\n\n" + RuntimeEnvironmentEnd
-		if got := IdentityLineValue(stored, "Platform"); got != "desktop" {
+		if got := IdentityLineValue(stored, "Platform"); got != "cli" {
 			t.Fatalf("identity platform %q", got)
 		}
 		a, _ := restoreAgent(t, restoreRowStore(t, pyjson.ObjectOf("system_prompt", stored)), "BUILT_PROMPT")
@@ -166,21 +166,21 @@ func TestSurfaceSwitch(t *testing.T) {
 		}
 	})
 	t.Run("test_not_restaged_once_the_transcript_carries_it", func(t *testing.T) {
-		if a, _ := (surfaceRestore{stored: "desktop", current: "tui", history: announcedSurface("tui")}).run(t); a.surfaceSwitchNote != "" {
+		if a, _ := (surfaceRestore{stored: "cli", current: "tui", history: announcedSurface("tui")}).run(t); a.surfaceSwitchNote != "" {
 			t.Fatalf("note %q", a.surfaceSwitchNote)
 		}
 	})
 	t.Run("test_returning_to_the_prompts_own_surface_is_announced", func(t *testing.T) {
-		a, _ := surfaceRestore{stored: "desktop", current: "desktop", history: announcedSurface("tui")}.run(t)
-		if !strings.HasPrefix(a.surfaceSwitchNote, desktopNote) || !strings.Contains(a.surfaceSwitchNote, "the interface section in the system prompt above") {
+		a, _ := surfaceRestore{stored: "cli", current: "cli", history: announcedSurface("tui")}.run(t)
+		if !strings.HasPrefix(a.surfaceSwitchNote, cliNote) || !strings.Contains(a.surfaceSwitchNote, "the interface section in the system prompt above") {
 			t.Fatalf("note %q", a.surfaceSwitchNote)
 		}
 	})
 	t.Run("test_rebuild_also_retires_a_stale_note", func(t *testing.T) {
-		a, builds := restoreAgent(t, restoreRowStore(t, pyjson.ObjectOf("system_prompt", storedSurfacePrompt("desktop"))), storedSurfacePrompt("desktop"))
-		a.model, a.platform = "other-model", "desktop"
+		a, builds := restoreAgent(t, restoreRowStore(t, pyjson.ObjectOf("system_prompt", storedSurfacePrompt("cli"))), storedSurfacePrompt("cli"))
+		a.model, a.platform = "other-model", "cli"
 		restoreNow(t, a, announcedSurface("tui"))
-		if len(builds.calls) != 1 || !strings.HasPrefix(a.surfaceSwitchNote, desktopNote) {
+		if len(builds.calls) != 1 || !strings.HasPrefix(a.surfaceSwitchNote, cliNote) {
 			t.Fatalf("builds %d note %q", len(builds.calls), a.surfaceSwitchNote)
 		}
 	})
@@ -188,24 +188,24 @@ func TestSurfaceSwitch(t *testing.T) {
 		pins, persists := 0, 0
 		patchToolPin(t, func(context.Context, mcp.AgentToolSnapshot, any) bool { pins++; return false },
 			func(context.Context, mcp.AgentToolSnapshot) { persists++ })
-		surfaceRestore{stored: "desktop", current: "tui", toolNames: `["desktop_ui_tool"]`}.run(t)
+		surfaceRestore{stored: "cli", current: "tui", toolNames: `["voice_tool"]`}.run(t)
 		if pins != 1 || persists != 0 {
 			t.Fatalf("pin restores %d persists %d", pins, persists)
 		}
 	})
 	t.Run("test_the_note_names_the_tools_the_pin_carried_forward", func(t *testing.T) {
 		patchToolPin(t, func(_ context.Context, agent mcp.AgentToolSnapshot, _ any) bool {
-			agent.(*AIAgent).tools = []any{restoreToolDef("read_file"), restoreToolDef("focus_pane")}
+			agent.(*AIAgent).tools = []any{restoreToolDef("read_file"), restoreToolDef("voice_tool")}
 			return true
 		}, nil)
-		a, _ := surfaceRestore{stored: "desktop", current: "tui", toolNames: `["focus_pane"]`, tools: []any{restoreToolDef("read_file")}}.run(t)
+		a, _ := surfaceRestore{stored: "cli", current: "tui", toolNames: `["voice_tool"]`, tools: []any{restoreToolDef("read_file")}}.run(t)
 		_, after, found := strings.Cut(a.surfaceSwitchNote, "were not loaded for this interface")
-		if !found || !strings.Contains(a.surfaceSwitchNote, "focus_pane") || strings.Contains(after, "read_file") {
+		if !found || !strings.Contains(a.surfaceSwitchNote, "voice_tool") || strings.Contains(after, "read_file") {
 			t.Fatalf("note %q", a.surfaceSwitchNote)
 		}
 	})
 	t.Run("test_note_rides_the_user_message_channel_once", func(t *testing.T) {
-		a, _ := surfaceRestore{stored: "desktop", current: "tui"}.run(t)
+		a, _ := surfaceRestore{stored: "cli", current: "tui"}.run(t)
 		staged := a.surfaceSwitchNote
 		if got := mergeGatewayNotes(a, rowsToMessages(hiHistory()), 0, ""); staged == "" || got != staged {
 			t.Fatalf("merged %q staged %q", got, staged)

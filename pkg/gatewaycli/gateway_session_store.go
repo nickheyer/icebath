@@ -240,7 +240,7 @@ func (s *GatewaySessionStore) Create(ctx context.Context, launch map[string]any,
 		return "", err
 	}
 	params["cwd"] = cwd
-	source := agent.CreateSurface(provider.SessionSourceFor(nil, "cli"))
+	source := provider.SessionSourceFor(nil, "cli")
 	params["source"] = source
 	params["row_cwd"] = ""
 	if recordCwd && terminalIsLocal() && agent.CLIFamilySources[source] {

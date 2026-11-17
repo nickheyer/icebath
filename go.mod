@@ -8,8 +8,6 @@ require (
 	charm.land/glamour/v2 v2.0.1
 	charm.land/lipgloss/v2 v2.0.6
 	github.com/HugoSmits86/nativewebp v1.3.0
-	github.com/Masterminds/semver/v3 v3.4.0
-	github.com/UserExistsError/conpty v0.1.4
 	github.com/alecthomas/chroma/v2 v2.27.0
 	github.com/andybalholm/brotli v1.2.0
 	github.com/bwmarrin/discordgo v0.29.0
@@ -19,17 +17,13 @@ require (
 	github.com/charmbracelet/x/ansi v0.11.9
 	github.com/charmbracelet/x/term v0.2.2
 	github.com/charmbracelet/x/vt v0.1.0
-	github.com/creack/pty v1.1.24
 	github.com/daytona/clients/api-client-go v0.227.3
 	github.com/daytona/clients/sdk-go v0.227.3
 	github.com/dlclark/regexp2/v2 v2.2.1
 	github.com/ebitengine/purego v0.10.1
-	github.com/fsnotify/fsnotify v1.10.1
 	github.com/gen2brain/avif v0.6.0
 	github.com/gen2brain/heic v0.7.2
-	github.com/go-ole/go-ole v1.3.0
 	github.com/go-telegram/bot v1.28.0
-	github.com/godbus/dbus/v5 v5.2.2
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/gomlx/go-huggingface v0.4.32
 	github.com/google/pprof v0.0.0-20260802141513-ef3492d7dac3
@@ -42,11 +36,9 @@ require (
 	github.com/mattn/go-runewidth v0.0.30
 	github.com/mdp/qrterminal/v3 v3.2.1
 	github.com/modal-labs/modal-client/go v0.11.1
-	github.com/nlnwa/whatwg-url v0.6.2
 	github.com/pelletier/go-toml/v2 v2.2.4
 	github.com/rivo/uniseg v0.4.7
 	github.com/rs/zerolog v1.35.1
-	github.com/saltosystems/winrt-go v0.0.0-20261016124014-b298124d7472
 	github.com/santhosh-tekuri/jsonschema/v5 v5.3.1
 	github.com/slack-go/slack v0.35.0
 	github.com/spf13/cobra v1.10.2
@@ -96,7 +88,6 @@ require (
 	github.com/aws/smithy-go v1.28.6 // indirect
 	github.com/aymerick/douceur v0.2.0 // indirect
 	github.com/beeper/argo-go v1.1.2 // indirect
-	github.com/bits-and-blooms/bitset v1.24.6 // indirect
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
 	github.com/charmbracelet/colorprofile v0.4.3 // indirect
 	github.com/charmbracelet/x/exp/ordered v0.1.0 // indirect
@@ -150,5 +141,3 @@ require (
 	modernc.org/memory v1.12.1 // indirect
 	rsc.io/qr v0.2.0 // indirect
 )
-
-replace github.com/charmbracelet/ultraviolet => ./third_party/ultraviolet

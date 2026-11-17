@@ -70,7 +70,7 @@ func watchdogAgent(t *testing.T, db *watchdogDB) *AIAgent {
 	t.Helper()
 	stores := useLeaseStores(t)
 	interval := 60.0
-	a := &AIAgent{sessionID: "stalled-session", platform: "desktop", model: "test-model", quietMode: true,
+	a := &AIAgent{sessionID: "stalled-session", platform: "tui", model: "test-model", quietMode: true,
 		suppressStatusOutput: true, hardInterruptRequested: &pythread.Event{}, pendingRedirectLock: &sync.Mutex{}}
 	a.sessionDBCreated = true
 	a.sessionTurnLeaseRefreshInterval = &interval

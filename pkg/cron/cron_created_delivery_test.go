@@ -2,12 +2,10 @@ package cron
 
 import (
 	"context"
-	"strings"
 	"sync"
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -122,57 +120,5 @@ func TestExplicitEmptyToolsetsPersist(t *testing.T) {
 	res := runCronjob(t, s, &cronjobArgs{Action: "create", Prompt: "daily digest", Schedule: "every 1h", EnabledToolsets: []any{}})
 	if got := mustJob(t, s, res["job_id"].(string)); res["success"] != true || got.EnabledToolsets == nil || len(got.EnabledToolsets) != 0 {
 		t.Fatalf("tool create %v %v", res, got.EnabledToolsets)
-	}
-}
-
-func TestNoteFireForwardFailure(t *testing.T) {
-	s, _ := newTestStore(t)
-	ctx := context.Background()
-	mk := func() *Job {
-		return mustCreate(t, s, CreateJobOptions{Prompt: strPtr("Daily invoice triage"), Schedule: "every 1h"})
-	}
-	job := mk()
-	if ok, err := s.noteFireForwardFailure(ctx, job.ID, "gateway unreachable"); !ok || err != nil {
-		t.Fatalf("stamp %v %v", ok, err)
-	}
-	stamp := mustJob(t, s, job.ID).LastFireError
-	if stamp == nil || stamp.Detail != "gateway unreachable" {
-		t.Fatalf("stamp %+v", stamp)
-	}
-	if _, err := ParseISO(stamp.At); err != nil {
-		t.Fatalf("at %q: %v", stamp.At, err)
-	}
-	if ok, _ := s.noteFireForwardFailure(ctx, "nope", "gateway unreachable"); ok {
-		t.Fatal("unknown job stamped")
-	}
-	s.noteFireForwardFailure(ctx, job.ID, "first miss")
-	s.noteFireForwardFailure(ctx, job.ID, "second miss")
-	if d := mustJob(t, s, job.ID).LastFireError.Detail; d != "second miss" {
-		t.Fatalf("latest %q", d)
-	}
-	cleared := mk()
-	s.noteFireForwardFailure(ctx, cleared.ID, "gateway unreachable")
-	if ok, _ := s.markJobRun(ctx, cleared.ID, true, MarkOptions{}); !ok || mustJob(t, s, cleared.ID).LastFireError != nil {
-		t.Fatal("success kept the stamp")
-	}
-	kept := mk()
-	s.noteFireForwardFailure(ctx, kept.ID, "gateway unreachable")
-	if ok, _ := s.markJobRun(ctx, kept.ID, false, MarkOptions{Error: strPtr("boom")}); !ok {
-		t.Fatal("mark failed run")
-	}
-	if st := mustJob(t, s, kept.ID).LastFireError; st == nil || st.Detail != "gateway unreachable" {
-		t.Fatalf("failure dropped the stamp %+v", st)
-	}
-	formatted := s.formatJob(mustJob(t, s, kept.ID))
-	fe, _ := formatted.Get("last_fire_error")
-	obj, ok := fe.(*pyjson.Object)
-	if !ok {
-		t.Fatalf("formatted %v", fe)
-	}
-	if d, _ := obj.Get("detail"); d != "gateway unreachable" {
-		t.Fatalf("formatted detail %v", d)
-	}
-	if !strings.Contains(stamp.At, "T") {
-		t.Fatalf("at %q", stamp.At)
 	}
 }

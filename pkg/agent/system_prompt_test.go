@@ -108,49 +108,6 @@ func TestResolvePlatformHint(t *testing.T) {
 	}
 }
 
-func TestDesktopPlatformYieldsDesktopHintNoTUIFraming(t *testing.T) {
-	t.Setenv("ICEBATH_DESKTOP", "1")
-	t.Setenv("ICEBATH_DESKTOP_TERMINAL", "")
-	stable := stablePrompt(t, promptTestAgent(t, "desktop"))
-	if !strings.Contains(stable, PlatformHints["desktop"]) {
-		t.Fatal("desktop hint missing")
-	}
-	for _, banned := range []string{"terminal UI", "Runtime surface:", "embedded terminal pane"} {
-		if strings.Contains(stable, banned) {
-			t.Fatalf("stable prompt carries %q", banned)
-		}
-	}
-}
-
-func TestEmbeddedTUIYieldsTUIHintWithClarifier(t *testing.T) {
-	t.Setenv("ICEBATH_DESKTOP", "1")
-	t.Setenv("ICEBATH_DESKTOP_TERMINAL", "1")
-	stable := stablePrompt(t, promptTestAgent(t, "tui"))
-	if !strings.Contains(stable, PlatformHints["tui"]) || !strings.Contains(stable, "embedded terminal pane") {
-		t.Fatal("tui hint or clarifier missing")
-	}
-	if !strings.Contains(stable, "Shift-drag") && !strings.Contains(stable, "Option-drag") {
-		t.Fatal("selection gesture missing")
-	}
-}
-
-func TestTUIEmbeddedPaneClarifier(t *testing.T) {
-	t.Setenv("ICEBATH_DESKTOP_TERMINAL", "1")
-	once := tuiEmbeddedPaneClarifier(PlatformHints["tui"])
-	if !strings.HasSuffix(once, tuiEmbeddedPaneClarifierText) || tuiEmbeddedPaneClarifier(once) != once {
-		t.Fatal("clarifier not appended exactly once")
-	}
-	if tuiEmbeddedPaneClarifier("") != "" {
-		t.Fatal("empty hint gained a clarifier")
-	}
-	for _, val := range []string{"0", "false", ""} {
-		t.Setenv("ICEBATH_DESKTOP_TERMINAL", val)
-		if got := tuiEmbeddedPaneClarifier(PlatformHints["tui"]); got != PlatformHints["tui"] {
-			t.Fatalf("ICEBATH_DESKTOP_TERMINAL=%q triggered the clarifier", val)
-		}
-	}
-}
-
 // Registers gateway platform entries carrying the given hints, restoring the previous registrations after the case
 func fakePlatformRegistry(t *testing.T, hints map[string]string) {
 	t.Helper()
@@ -166,7 +123,6 @@ func fakePlatformRegistry(t *testing.T, hints map[string]string) {
 }
 
 func TestCronAgentGetsDeliveryChannelHintWithItsOverride(t *testing.T) {
-	t.Setenv("ICEBATH_DESKTOP_TERMINAL", "")
 	slackHint := "You are on Slack. MEDIA: tags become attachments."
 	fakePlatformRegistry(t, map[string]string{"slack": slackHint})
 	extra := "Always attach the report as a .pdf."
@@ -447,7 +403,7 @@ func TestFormatToolsForSystemMessage(t *testing.T) {
 }
 
 func TestInvalidateAndReconstructStaticPrefix(t *testing.T) {
-	a := promptTestAgent(t, "desktop")
+	a := promptTestAgent(t, "tui")
 	stable := stablePrompt(t, a)
 	a.usePromptCaching = true
 	a.cachedSystemPrompt = stable + "\n\nvolatile"

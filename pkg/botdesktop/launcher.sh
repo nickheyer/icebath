@@ -252,11 +252,10 @@ fi
 
 # ---- X server + RFB (TigerVNC Xvnc), Unix socket only ----
 # SecurityTypes None is safe ONLY because -rfbport -1 disables TCP and the 0600 socket is reachable
-# only by processes running as this user (the gateway's WebSocket bridge does the real authentication;
-# same-UID processes, the bot's own terminal tool included, are inside that boundary by design).
+# only by processes running as this user (same-UID processes, the bot's own terminal tool included,
+# are inside that boundary by design).
 # -SendCutText=0: watchers must never receive the holder's clipboard; -AcceptCutText stays on so
-# paste INTO the screen keeps working. -MaxCutText caps a client cut-text at 256 KiB — the same bound
-# the bridge enforces (tools/bot_desktop/rfb_filter.py _MAX_CUT_TEXT); keep the two in sync.
+# paste INTO the screen keeps working. -MaxCutText caps a client cut-text at 256 KiB.
 Xvnc "$DISPLAY" -geometry "$GEOM" -depth "$DEPTH" -dpi 96 \
   -rfbport -1 -rfbunixpath "$ICEBATH_BD_SOCKET" -rfbunixmode 0600 \
   -SecurityTypes None -AlwaysShared -AcceptSetDesktopSize -FrameRate 30 -SendCutText=0 -MaxCutText 262144 \

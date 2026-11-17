@@ -45,10 +45,10 @@ func TestBackendScanOnlyMatchesThisProfile(t *testing.T) {
 	dir := coderProfileDir(t)
 	self := os.Getpid()
 	fakeProcTable(t, []int{101, 102, 103, self}, map[int][]string{
-		101:  {"python", "-m", "icebath_cli.main", "--profile", "coder", "serve"},
+		101:  {"python", "-m", "icebath_cli.main", "--profile", "coder", "gateway"},
 		102:  {"python", "-m", "icebath_cli.main", "--profile", "coder", "chat"},
-		103:  {"python", "-m", "icebath_cli.main", "--profile", "other", "serve"},
-		self: {"python", "-m", "icebath_cli.main", "--profile", "coder", "serve"},
+		103:  {"python", "-m", "icebath_cli.main", "--profile", "other", "gateway"},
+		self: {"python", "-m", "icebath_cli.main", "--profile", "coder", "gateway"},
 	})
 	if got := profileBoundBackendPids("coder", dir); !reflect.DeepEqual(got, []int{101}) {
 		t.Fatalf("got %v", got)
@@ -58,9 +58,9 @@ func TestBackendScanOnlyMatchesThisProfile(t *testing.T) {
 func TestDeleteProfileBackendScanMatchesShebangExecOfHermesShim(t *testing.T) {
 	dir := coderProfileDir(t)
 	fakeProcTable(t, []int{201, 202, 203}, map[int][]string{
-		201: {"/usr/bin/python3", "/Users/x/.local/bin/icebath", "--profile", "coder", "serve", "--host", "127.0.0.1", "--port", "0"},
-		202: {"/usr/bin/python3", "/Users/x/.local/bin/icebath", "--profile", "other", "serve"},
-		203: {"/usr/bin/python3", "/Users/x/some_script.py", "--profile", "coder", "serve"},
+		201: {"/usr/bin/python3", "/Users/x/.local/bin/icebath", "--profile", "coder", "gateway", "--host", "127.0.0.1", "--port", "0"},
+		202: {"/usr/bin/python3", "/Users/x/.local/bin/icebath", "--profile", "other", "gateway"},
+		203: {"/usr/bin/python3", "/Users/x/some_script.py", "--profile", "coder", "gateway"},
 	})
 	if got := profileBoundBackendPids("coder", dir); !reflect.DeepEqual(got, []int{201}) {
 		t.Fatalf("got %v", got)
@@ -70,8 +70,8 @@ func TestDeleteProfileBackendScanMatchesShebangExecOfHermesShim(t *testing.T) {
 func TestDeleteProfileBackendScanRejectsUnrelatedHermesPrefixedScript(t *testing.T) {
 	dir := coderProfileDir(t)
 	fakeProcTable(t, []int{301, 302}, map[int][]string{
-		301: {"/usr/bin/python3", "/Users/x/scripts/icebath-notes.py", "--profile", "coder", "serve"},
-		302: {"/usr/bin/python3", "/Users/x/scripts/icebath-unrelated-tool", "--profile", "coder", "serve"},
+		301: {"/usr/bin/python3", "/Users/x/scripts/icebath-notes.py", "--profile", "coder", "gateway"},
+		302: {"/usr/bin/python3", "/Users/x/scripts/icebath-unrelated-tool", "--profile", "coder", "gateway"},
 	})
 	if got := profileBoundBackendPids("coder", dir); len(got) != 0 {
 		t.Fatalf("got %v", got)
@@ -81,8 +81,8 @@ func TestDeleteProfileBackendScanRejectsUnrelatedHermesPrefixedScript(t *testing
 func TestBackendScanMatchesAllKnownConsoleScriptShims(t *testing.T) {
 	dir := coderProfileDir(t)
 	fakeProcTable(t, []int{401, 402}, map[int][]string{
-		401: {"/usr/bin/python3", "/Users/x/.local/bin/icebath-agent", "--profile", "coder", "serve"},
-		402: {"/usr/bin/python3", "/Users/x/.local/bin/icebath-acp", "--profile", "coder", "serve"},
+		401: {"/usr/bin/python3", "/Users/x/.local/bin/icebath-agent", "--profile", "coder", "gateway"},
+		402: {"/usr/bin/python3", "/Users/x/.local/bin/icebath-acp", "--profile", "coder", "gateway"},
 	})
 	got := profileBoundBackendPids("coder", dir)
 	slices.Sort(got)

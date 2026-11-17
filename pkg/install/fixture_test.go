@@ -1,8 +1,6 @@
 package install
 
 import (
-	"archive/tar"
-	"compress/gzip"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -68,22 +66,6 @@ func main() {
 	}
 	fixtureBinaries.Store(tag, data)
 	return data
-}
-
-// Gzipped tar holding one executable desktop file at name
-func desktopArchive(t *testing.T, name string) []byte {
-	t.Helper()
-	var buf strings.Builder
-	gz := gzip.NewWriter(&buf)
-	tw := tar.NewWriter(gz)
-	body := []byte("#!/bin/sh\nexit 0\n")
-	if err := tw.WriteHeader(&tar.Header{Name: name, Mode: 0o755, Size: int64(len(body)), Typeflag: tar.TypeReg}); err != nil {
-		t.Fatal(err)
-	}
-	tw.Write(body)
-	tw.Close()
-	gz.Close()
-	return []byte(buf.String())
 }
 
 type fixtureRelease struct {
@@ -204,22 +186,3 @@ func (f *releaseFixture) serve(w http.ResponseWriter, r *http.Request) {
 }
 
 func pktLine(s string) string { return fmt.Sprintf("%04x%s", len(s)+4, s) }
-
-// Hermetic home, user home and repo pointing at the fixture
-func isolatedInstall(t *testing.T, repo string) (homeDir, userHome string) {
-	t.Helper()
-	base := t.TempDir()
-	homeDir, userHome = filepath.Join(base, "icebath-home"), filepath.Join(base, "user")
-	if err := os.MkdirAll(userHome, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("ICEBATH_HOME", homeDir)
-	t.Setenv("HOME", userHome)
-	t.Setenv("USERPROFILE", userHome)
-	t.Setenv("SHELL", "/bin/bash")
-	t.Setenv("ICEBATH_REPO_URL", repo)
-	t.Setenv("ICEBATH_INSTALL_CHANNEL", "")
-	t.Setenv("ICEBATH_INSTALL_DIR", "")
-	t.Setenv("CI", "true")
-	return homeDir, userHome
-}

@@ -678,23 +678,6 @@ func (m *managedRun) statusResult(connectors []string) (string, error) {
 	return connDumps(out), nil
 }
 
-func (m *managedRun) displayResult(suggested []string, sessionID, toolCallID string, cb ConnCallback, call *CallRef) (string, error) {
-	if cb == nil {
-		raw, err := m.statusResult(nil)
-		if err != nil {
-			return "", err
-		}
-		parsed, err := pyjson.Loads(raw)
-		if err != nil {
-			return "", err
-		}
-		obj := parsed.(*pyjson.Object)
-		obj.Set("note", OffDesktopNote)
-		return connDumps(obj), nil
-	}
-	return RunDisplay(m.ctx, m.env, m.client, suggested, OperationSessionKey(m.env, sessionID), toolCallID, cb, call), nil
-}
-
 // Python equality of a decoded value with an optional string, None equal to a missing or null value
 func connOptEqual(v any, s *string) bool {
 	if s == nil {
@@ -796,7 +779,6 @@ type ManagedOptions struct {
 	TurnID              string
 	Callback            ConnCallback
 	ConnectorsAvailable func() bool
-	CardSurface         bool
 }
 
 // Runs a hosted connector action, drawing a card when a callback exists and links in the result otherwise
@@ -858,12 +840,6 @@ func runManagedAction(ctx context.Context, env *Env, action string, targets []Ho
 		names[i] = t.Name
 	}
 	switch action {
-	case "display":
-		var cb ConnCallback
-		if opts.CardSurface {
-			cb = opts.Callback
-		}
-		return m.displayResult(names, opts.SessionID, opts.ToolCallID, cb, call)
 	case "status":
 		return m.statusResult(names)
 	}
@@ -879,4 +855,21 @@ func runManagedAction(ctx context.Context, env *Env, action string, targets []Ho
 	tick := ManagedWatchTickSeconds
 	return RunOperation(ctx, env, managedTargets(targets, action), ManagedKind(ctx, env, client, action, force),
 		RunOptions{SessionKey: sessionKey, ToolCallID: opts.ToolCallID, Callback: opts.Callback, TickSeconds: &tick, Call: call}), nil
+}
+
+// ConnectorLister reads the gateway's connector list, the one call the account listing makes
+type ConnectorLister interface {
+	ListConnectors(ctx context.Context, timeout time.Duration) ([]map[string]any, error)
+}
+
+// Lowercased str of an item's connector field, empty when the key is absent
+func connectorSlug(item map[string]any) string {
+	v, ok := item["connector"]
+	if !ok {
+		return ""
+	}
+	if v == nil {
+		return "none"
+	}
+	return pystr.Lower(pyrepr.Str(v))
 }

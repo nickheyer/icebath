@@ -16,14 +16,10 @@ func stdioRPC(s *S, p *Proc, id int, method string, params map[string]any) map[s
 	return answer
 }
 
-// The Plugins hub backend over the TUI gateway lists, toggles, configures and removes desktop halves on this host
-func TestScenarioPluginsManageHubAndDesktopHalves(t *testing.T) {
+// The Plugins hub backend over the TUI gateway lists, toggles and configures plugins on this host
+func TestScenarioPluginsManageHub(t *testing.T) {
 	s := Start(t, Setup{Home: map[string]string{
-		"desktop-plugins/chip/plugin.js":                 "export default {}\n",
-		"desktop-plugins/paired/plugin.js":               "export default {}\n",
-		"desktop-plugins/paired/.hermes-package.json":    `{"package": "paired", "source": "/src/paired", "sourceMtimeMs": 1}`,
-		"cache/plugin-catalog.json":                      `{"entries": []}`,
-		"desktop-plugins/.keep-root-for-listing/note.md": "staging folders start with a dot\n",
+		"cache/plugin-catalog.json": `{"entries": []}`,
 	}})
 	p := s.SpawnStep(Step{Args: []string{"__icebath_tui_gateway_entry__"}, Pipe: true})
 	p.Await(`"type": "gateway.ready"`)
@@ -55,43 +51,17 @@ func TestScenarioPluginsManageHubAndDesktopHalves(t *testing.T) {
 	s.HasJSON(call(map[string]any{"action": "settings", "key": "disk-cleanup"}),
 		`{"error": {"code": 4019, "message": "plugins.settings requires a 'key' and a 'values' mapping"}}`)
 	s.HasJSON(call(map[string]any{"action": "presence", "names": []any{"no-such-catalog-plugin"}}), `{"result": {"presence": []}}`)
-	if _, isList := Dig(call(map[string]any{"action": "onboarding"}), "result", "onboarding").([]any); !isList {
-		s.Failf("onboarding answered no list")
-	}
 	for action, message := range map[string]string{
-		"install":         "plugins.install requires 'identifier', 'repo', or 'catalog_name'",
-		"inspect":         "plugins.inspect requires 'identifier', 'repo', or 'catalog_name'",
-		"install_desktop": "plugins.manage install_desktop requires 'identifier', 'repo', or 'catalog_name'",
-		"remove_desktop":  "plugins.manage remove_desktop requires a 'name'",
-		"update":          "plugins.update requires a 'name'",
-		"remove":          "plugins.remove requires a 'name'",
+		"install": "plugins.install requires 'identifier', 'repo', or 'catalog_name'",
+		"inspect": "plugins.inspect requires 'identifier', 'repo', or 'catalog_name'",
+		"update":  "plugins.update requires a 'name'",
+		"remove":  "plugins.remove requires a 'name'",
 	} {
 		s.HasJSON(call(map[string]any{"action": action}), `{"error": {"code": 4019, "message": "`+message+`"}}`)
 	}
 	s.HasJSON(call(map[string]any{"action": "remove", "name": "ghost"}), `{"error": {"code": 5026}}`)
 	s.HasJSON(call(map[string]any{"action": "bogus"}), `{"error": {"code": 4017, "message": "unknown plugins action: bogus"}}`)
 
-	s.HasJSON(call(map[string]any{"action": "remove_desktop", "name": " chip "}),
-		`{"result": {"ok": true, "plugin_name": "chip", "path": "${ICEBATH_HOME}/desktop-plugins/chip", "unpaired_from": null}}`)
-	if s.Exists("desktop-plugins/chip") {
-		s.Failf("the removed desktop plugin is still on disk")
-	}
-	s.HasJSON(call(map[string]any{"action": "remove_desktop", "name": "paired"}),
-		`{"error": {"code": 5026, "message": "'paired' is the desktop half of an agent plugin — uninstall that plugin instead."}}`)
-	if !s.Exists("desktop-plugins/paired/plugin.js") {
-		s.Failf("a refused removal deleted the package half")
-	}
-	s.HasJSON(call(map[string]any{"action": "remove_desktop", "key": "paired", "force": true}),
-		`{"result": {"ok": true, "plugin_name": "paired", "unpaired_from": "paired"}}`)
-	s.HasJSON(call(map[string]any{"action": "remove_desktop", "name": "../escape"}),
-		`{"error": {"code": 5026, "message": "'../escape' is not a desktop plugin folder name: it must be a plain folder name, not a path."}}`)
-	s.HasJSON(call(map[string]any{"action": "remove_desktop", "name": ".keep-root-for-listing"}),
-		`{"error": {"code": 5026, "message": "'.keep-root-for-listing' is not a desktop plugin folder name: it must be a plain folder name, not a path."}}`)
-	s.HasJSON(call(map[string]any{"action": "remove_desktop", "name": "ghost"}), `{"error": {"code": 5026, "message": "No desktop plugin named 'ghost' is installed."}}`)
-	s.HasJSON(call(map[string]any{"action": "install_desktop", "identifier": "https://example.invalid/fx/chip.git", "ref": "main"}),
-		`{"error": {"code": 5026, "message": "Installing a desktop plugin needs the commit the install dialog reviewed."}}`)
-	s.HasJSON(call(map[string]any{"action": "install_desktop", "catalog_name": "no-such-catalog-plugin", "ref": "ABCDEF0123456789abcdef0123456789abcdef01"}),
-		`{"error": {"code": 5026, "message": "'no-such-catalog-plugin' is not in the Icebath plugin catalog."}}`)
 	p.CloseInput()
 	p.Wait().Exit(0)
 }

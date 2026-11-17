@@ -117,7 +117,7 @@ func closeSessionByID(ctx context.Context, sid, endReason string, predicate func
 		sessionsLock.Unlock()
 		return false
 	}
-	session := popSessionByID(ctx, sid)
+	session := popSessionByID(sid)
 	sessionsLock.Unlock()
 	return teardownPoppedSession(ctx, session, endReason)
 }
@@ -207,7 +207,7 @@ func scheduleWSOrphanReap(ctx context.Context, sid string, delayS *float64, expe
 				(sessionOwnsLiveWakeupSchedule(ctx, record) || sessionOwnsPendingProcessNotification(ctx, record))):
 				rescheduleDelay = &grace
 			case !running:
-				session = popSessionByID(ctx, sid)
+				session = popSessionByID(sid)
 			case !interruptRequested && wsOrphanTurnActivityIsFresh(record):
 				logger().Debug(fmt.Sprintf("client_gone sid=%s action=defer (turn activity fresh; stale threshold %.0fs)", sid, wsOrphanActivityStaleS()))
 				rescheduleDelay = &grace
@@ -218,7 +218,7 @@ func scheduleWSOrphanReap(ctx context.Context, sid string, delayS *float64, expe
 				if polls > wsOrphanInterruptReapMaxPolls {
 					logger().Error(fmt.Sprintf("client_gone sid=%s: turn did not settle after %d interrupt polls (%.0fs) — force-reaping detached session",
 						sid, polls-1, float64(polls-1)*wsOrphanInterruptReapPollS))
-					session = popSessionByID(ctx, sid)
+					session = popSessionByID(sid)
 				} else {
 					if !interruptRequested {
 						record.Set("_client_gone_interrupt_requested", true)
@@ -324,7 +324,7 @@ func closeSessionsForTransport(ctx context.Context, transport tuigateway.Transpo
 				return true
 			}
 			if truthy(current.Get("close_on_disconnect")) {
-				claimedForTeardown = popSessionByID(ctx, sid)
+				claimedForTeardown = popSessionByID(sid)
 				return false
 			}
 			tuigateway.DropSessionViewer(current, transport)

@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -442,7 +443,7 @@ func TestFallbackCommandWritesTheRecordedHermesConfigBytes(t *testing.T) {
 		writePickerConfig(t, h, "model:\n  default: claude-sonnet-4-6\n  provider: anthropic\n")
 		fallbackPickerDouble(t, fallbackPickerWriting(t, h, picked, nil))
 		runFallback(t, ctx, h, "add")
-		want := "model:\n  default: claude-sonnet-4-6\n  provider: anthropic\n_config_version: 52\nfallback_providers:\n  - provider: openrouter\n    model: anthropic/claude-sonnet-4.6\n    base_url: https://openrouter.ai/api/v1\n    api_mode: chat_completions\n"
+		want := "model:\n  default: claude-sonnet-4-6\n  provider: anthropic\n_config_version: " + strconv.Itoa(config.Version) + "\nfallback_providers:\n  - provider: openrouter\n    model: anthropic/claude-sonnet-4.6\n    base_url: https://openrouter.ai/api/v1\n    api_mode: chat_completions\n"
 		if got := configBytes(t, h); got != want {
 			t.Fatalf("config %q", got)
 		}
@@ -452,7 +453,7 @@ func TestFallbackCommandWritesTheRecordedHermesConfigBytes(t *testing.T) {
 		writePickerConfig(t, h, "fallback_providers:\n- model: gpt-5.4\n  provider: openrouter\n- model: Hermes-4\n  provider: nous\n- model: claude-sonnet-4-6\n  provider: anthropic\n")
 		swapFlowSeam(t, &fallbackChooseFn, func(string, []string, int, string) (int, error) { return 1, nil })
 		runFallback(t, ctx, h, "rm")
-		want := "fallback_providers:\n  - model: gpt-5.4\n    provider: openrouter\n  - model: claude-sonnet-4-6\n    provider: anthropic\n_config_version: 52\n"
+		want := "fallback_providers:\n  - model: gpt-5.4\n    provider: openrouter\n  - model: claude-sonnet-4-6\n    provider: anthropic\n_config_version: " + strconv.Itoa(config.Version) + "\n"
 		if got := configBytes(t, h); got != want {
 			t.Fatalf("config %q", got)
 		}
@@ -462,7 +463,7 @@ func TestFallbackCommandWritesTheRecordedHermesConfigBytes(t *testing.T) {
 		writePickerConfig(t, h, "fallback_providers:\n- model: gpt-5.4\n  provider: openrouter\n- model: Hermes-4\n  provider: nous\n")
 		swapFlowSeam(t, &fallbackConfirmFn, func(io.Writer, string) (string, error) { return "y", nil })
 		runFallback(t, ctx, h, "clear")
-		if got := configBytes(t, h); got != "fallback_providers: []\n_config_version: 52\n" {
+		if got := configBytes(t, h); got != "fallback_providers: []\n_config_version: "+strconv.Itoa(config.Version)+"\n" {
 			t.Fatalf("config %q", got)
 		}
 	})

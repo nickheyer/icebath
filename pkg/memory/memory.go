@@ -18,7 +18,6 @@ func init() {
 	registerMemoryProviderMigration()
 	registerProfileMemoryConfigClone()
 	registerMemoryTrim()
-	registerMemoryOAuthRoutes()
 	registerLearningGraph()
 	registerLearningGraphRender()
 	registerLearningMutations()

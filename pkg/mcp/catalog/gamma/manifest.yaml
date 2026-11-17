@@ -27,14 +27,6 @@ tools:
     - get_gamma_viewer_detail_analytics
     - get_gamma_card_analytics
 
-# Composer-suggestion triggers (desktop brand pills).
-suggest:
-  keywords:
-    - gamma
-    - presentation
-  hosts:
-    - gamma.app
-
 post_install: |
   On first connection icebath opens a browser to authorize with
   Gamma (or run `icebath mcp login gamma`). Approve access,

@@ -195,18 +195,6 @@ func TestAliasCollisionTraversalAliasRejectedBeforePathLookup(t *testing.T) {
 	}
 }
 
-func TestAnAliasNamedLikeAServerSubcommandIsAllowedAsOnMain(t *testing.T) {
-	for _, n := range []string{"dashboard", "serve", "webapp"} {
-		t.Run(n, func(t *testing.T) {
-			profileEnv(t)
-			fakeWhich(t, "", 1, nil)
-			if msg, err := CheckAliasCollision(n); msg != "" || err != nil {
-				t.Fatalf("%s: %q %v", n, msg, err)
-			}
-		})
-	}
-}
-
 func TestAliasCollisionSubcommandExistingCommandAndLaunchFailures(t *testing.T) {
 	profileEnv(t)
 	fakeWhich(t, "", 1, nil)

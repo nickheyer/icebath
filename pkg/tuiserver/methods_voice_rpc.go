@@ -11,8 +11,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/activesessions"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pybase64"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/media"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -28,7 +26,6 @@ func init() {
 	voiceRPCRegistry.method("wake.stop", wakeStop)
 	voiceRPCRegistry.method("wake.resume", wakeResume)
 	voiceRPCRegistry.method("wake.status", wakeStatus)
-	voiceRPCRegistry.method("wake.feed", wakeFeed)
 	voiceRPCRegistry.method("voice.toggle", voiceToggle)
 	voiceRPCRegistry.method("voice.record", voiceRecord)
 	voiceRPCRegistry.method("voice.tts", voiceTTS)
@@ -71,32 +68,13 @@ func ownerResult(rid any, field string, done bool, extra map[string]any) map[str
 	return ok(rid, out)
 }
 
-// Sample rate and frame length of a detector frame contract
-func frameFields(frame media.WakeFrameInfo) map[string]any {
-	sampleRate, frameLength := frame.SampleRate, frame.FrameLength
-	if sampleRate == 0 {
-		sampleRate = 16000
-	}
-	if frameLength == 0 {
-		frameLength = 1280
-	}
-	return map[string]any{"sample_rate": sampleRate, "frame_length": frameLength}
-}
-
-// Capture mode the listener would arm with and the requirements probed for it
-func wakeProbe(ctx context.Context, cfg map[string]any, params map[string]any) (string, media.WakeRequirements) {
-	preferClient := truthy(params["client_capture"])
-	capture := media.ResolveCaptureMode(ctx, cfg, preferClient, false)
-	probed := make(map[string]any, len(cfg)+1)
-	for key, value := range cfg {
-		probed[key] = value
-	}
-	probed["capture"] = capture
-	reqs, err := media.CheckWakeWordRequirements(ctx, probed, nil)
+// Requirements the listener would arm with, panicking when the probe fails
+func wakeProbe(ctx context.Context, cfg map[string]any) media.WakeRequirements {
+	reqs, err := media.CheckWakeWordRequirements(ctx, cfg, nil)
 	if err != nil {
 		panic(err)
 	}
-	return capture, reqs
+	return reqs
 }
 
 // Writes wake_word.enabled for an explicit gesture, false when it could not be saved
@@ -153,10 +131,10 @@ func wakeStart(ctx context.Context, rid any, params map[string]any) map[string]a
 		return ok(rid, out)
 	}
 	cfg := media.LoadWakeWordConfig(ctx)
-	capture, reqs := wakeProbe(ctx, cfg, params)
+	reqs := wakeProbe(ctx, cfg)
 	if !reqs.Available {
 		voiceLogger().Warn(fmt.Sprintf("wake.start(%s): not available — %s", surface, reqs.Hint))
-		return refused("unavailable", map[string]any{"hint": reqs.Hint, "capture": capture})
+		return refused("unavailable", map[string]any{"hint": reqs.Hint})
 	}
 	enabledPersisted := truthy(params["persist"]) && !truthy(cfg["enabled"]) && persistWakeEnabled(ctx, true)
 	if enabledPersisted {
@@ -188,7 +166,7 @@ func wakeStart(ctx context.Context, rid any, params map[string]any) map[string]a
 		newSession = truthy(raw)
 	}
 	onDetect := wakeDetectHandler(context.WithoutCancel(ctx), transport, relayString(params["session_id"]), media.WakePhrase(ctx, cfg), newSession)
-	if _, err := media.StartListening(context.WithoutCancel(ctx), onDetect, transport, cfg, capture == "client"); err != nil {
+	if _, err := media.StartListening(context.WithoutCancel(ctx), onDetect, transport, cfg); err != nil {
 		var inUse *media.WakeWordInUse
 		if errors.As(err, &inUse) {
 			var owner any
@@ -203,14 +181,9 @@ func wakeStart(ctx context.Context, rid any, params map[string]any) map[string]a
 	wakeMu.Lock()
 	wakeOwnerTransport, wakeOwnerSurface = transport, surface
 	wakeMu.Unlock()
-	frame := media.DetectorFrameInfo()
-	voiceLogger().Info(fmt.Sprintf("wake.start(%s): listening for %s (%s) capture=%s frame=%d", surface, pyrepr.Repr(reqs.Phrase), reqs.Provider, capture, frame.FrameLength))
-	out := map[string]any{"started": true, "phrase": reqs.Phrase, "provider": reqs.Provider, "owner_surface": surface,
-		"enabled_persisted": enabledPersisted, "capture": capture}
-	for key, value := range frameFields(frame) {
-		out[key] = value
-	}
-	return ok(rid, out)
+	voiceLogger().Info(fmt.Sprintf("wake.start(%s): listening for %s (%s)", surface, pyrepr.Repr(reqs.Phrase), reqs.Provider))
+	return ok(rid, map[string]any{"started": true, "phrase": reqs.Phrase, "provider": reqs.Provider, "owner_surface": surface,
+		"enabled_persisted": enabledPersisted})
 }
 
 // Stops this surface's listener, persist also writing wake_word.enabled false
@@ -245,8 +218,8 @@ func jsonMapping(value any) map[string]any {
 	return out
 }
 
-// Listener, ownership, requirement, input device and capture state for the calling surface
-func wakeStatus(ctx context.Context, rid any, params map[string]any) (response map[string]any) {
+// Listener, ownership, requirement and input device state for the calling surface
+func wakeStatus(ctx context.Context, rid any, _ map[string]any) (response map[string]any) {
 	defer func() {
 		if failure := recover(); failure != nil {
 			if configOutage(failure) {
@@ -256,7 +229,7 @@ func wakeStatus(ctx context.Context, rid any, params map[string]any) (response m
 		}
 	}()
 	cfg := media.LoadWakeWordConfig(ctx)
-	probeCapture, reqs := wakeProbe(ctx, cfg, params)
+	reqs := wakeProbe(ctx, cfg)
 	owner, ownerSurface := wakeOwnerSnapshot()
 	ownedByCaller := media.OwnsListener(callerTransport(ctx))
 	listening := ownedByCaller && media.IsListening()
@@ -269,25 +242,6 @@ func wakeStatus(ctx context.Context, rid any, params map[string]any) (response m
 	if silent && hint == "" {
 		hint = media.SilentAudioHint(inputDevice)
 	}
-	frame := media.DetectorFrameInfo()
-	external := frame.ExternalAudio != nil && *frame.ExternalAudio
-	var capture string
-	switch {
-	case ownedByCaller && (external || listening):
-		capture = "local"
-		if external {
-			capture = "client"
-		}
-	case probeCapture != "":
-		capture = probeCapture
-	case reqs.Capture != "":
-		capture = reqs.Capture
-	default:
-		capture = "auto"
-		if truthy(cfg["capture"]) {
-			capture = relayString(cfg["capture"])
-		}
-	}
 	var surfaceOut any
 	if owner != nil {
 		surfaceOut = ownerSurface
@@ -296,54 +250,10 @@ func wakeStatus(ctx context.Context, rid any, params map[string]any) (response m
 	if truthy(cfg["surface"]) {
 		configuredSurface = relayString(cfg["surface"])
 	}
-	out := map[string]any{"listening": listening, "owned_by_caller": ownedByCaller, "owner_surface": surfaceOut,
+	return ok(rid, map[string]any{"listening": listening, "owned_by_caller": ownedByCaller, "owner_surface": surfaceOut,
 		"phrase": reqs.Phrase, "provider": reqs.Provider, "configured_surface": configuredSurface,
 		"input_device": jsonMapping(inputDevice), "available": reqs.Available, "hint": hint, "enabled": truthy(cfg["enabled"]),
-		"audio_silent": silent, "capture": capture, "local_input_available": reqs.LocalInputAvailable}
-	for key, value := range frameFields(frame) {
-		out[key] = value
-	}
-	return ok(rid, out)
-}
-
-// Pushes client captured 16 kHz int16 mono PCM into the armed detector
-func wakeFeed(ctx context.Context, rid any, params map[string]any) map[string]any {
-	raw := params["pcm"]
-	if !truthy(raw) {
-		raw = params["pcm_b64"]
-	}
-	if !truthy(raw) {
-		raw = ""
-	}
-	text, isText := raw.(string)
-	if !isText || strings.TrimSpace(text) == "" {
-		return rpcErr(rid, 4001, "wake.feed requires base64 pcm", nil)
-	}
-	pcm, err := pybase64.B64Decode(text)
-	if err != nil {
-		return rpcErr(rid, 4001, fmt.Sprintf("invalid base64 pcm: %s", err), nil)
-	}
-	if len(pcm) == 0 {
-		return ok(rid, map[string]any{"fed": false, "reason": "empty"})
-	}
-	if len(pcm) > 64000 {
-		return rpcErr(rid, 4001, "pcm frame too large", nil)
-	}
-	if rate, present := params["sample_rate"]; present && rate != nil {
-		value, err := pyint.Of(rate)
-		if err != nil {
-			panic(err)
-		}
-		if !value.IsInt64() || value.Int64() != 0 && value.Int64() != 16000 {
-			return rpcErr(rid, 4001, "wake.feed only accepts 16 kHz PCM", nil)
-		}
-	}
-	fed, err := media.FeedAudio(callerTransport(ctx), pcm)
-	if err != nil {
-		voiceLogger().Debug(fmt.Sprintf("wake.feed failed: %s", err))
-		return rpcErr(rid, 5026, err.Error(), nil)
-	}
-	return ownerResult(rid, "fed", fed, nil)
+		"audio_silent": silent, "local_input_available": reqs.LocalInputAvailable})
 }
 
 // Voice cfg value when numeric and not a bool, else the default

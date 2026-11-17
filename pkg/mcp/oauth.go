@@ -63,9 +63,9 @@ func pyFloatStrict(v any) (float64, error) {
 	return 0, fmt.Errorf("float() argument must be a string or a real number, not '%s'", pyTypeName(v))
 }
 
-// Resolves the callback port into cfg _resolved_port, preferring dashboard or cached proxy URIs, then CIMD, config, cache, ephemeral
+// Resolves the callback port into cfg _resolved_port, preferring client flow or cached proxy URIs, then CIMD, config, cache, ephemeral
 func configureCallbackPort(ctx context.Context, cfg map[string]any, storage *TokenStorage) (int, error) {
-	flow := dashboardOAuthFlowFrom(ctx)
+	flow := clientOAuthFlowFrom(ctx)
 	pinnedLoopback := pyTruthy(cfg["client_id"]) && pyTruthy(cfg["redirect_port"])
 	if flow != nil && !pinnedLoopback {
 		cfg["_resolved_port"] = 0

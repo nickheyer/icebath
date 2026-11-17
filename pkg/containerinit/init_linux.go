@@ -3,7 +3,6 @@ package containerinit
 import (
 	"errors"
 	"fmt"
-	"net"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -104,56 +103,6 @@ func graceFrom(name string, def time.Duration) time.Duration {
 	return def
 }
 
-func envOr(name, def string) string {
-	if v := os.Getenv(name); v != "" {
-		return v
-	}
-	return def
-}
-
-// Dashboard service the image declares, started only when ICEBATH_DASHBOARD asks for it
-func dashboardSpec(exe string) *nativeSpec {
-	enabled := func() bool { return truthy(os.Getenv("ICEBATH_DASHBOARD")) }
-	host := func() string { return envOr("ICEBATH_DASHBOARD_HOST", "0.0.0.0") }
-	port := func() string { return envOr("ICEBATH_DASHBOARD_PORT", "9119") }
-	return &nativeSpec{
-		enabled: enabled,
-		command: func() ([]string, *syscall.ProcAttr, error) {
-			if truthy(os.Getenv("ICEBATH_DASHBOARD_INSECURE")) {
-				fmt.Fprintln(os.Stderr, "[dashboard] ICEBATH_DASHBOARD_INSECURE no longer disables the auth gate.")
-				fmt.Fprintln(os.Stderr, "[dashboard] A non-loopback dashboard requires an auth provider:")
-				fmt.Fprintln(os.Stderr, "[dashboard]   set ICEBATH_DASHBOARD_BASIC_AUTH_USERNAME + _PASSWORD (password)")
-				fmt.Fprintln(os.Stderr, "[dashboard]   or ICEBATH_DASHBOARD_OAUTH_CLIENT_ID (OAuth).")
-			}
-			sys := &syscall.SysProcAttr{Setsid: true}
-			if os.Getuid() == 0 {
-				a, err := lookupAccount(accountName)
-				if err != nil {
-					return nil, nil, err
-				}
-				sys = a.credential()
-				sys.Setsid = true
-			}
-			argv := []string{exe, "dashboard", "--host", host(), "--port", port(), "--no-open"}
-			return argv, &syscall.ProcAttr{Dir: defaultHome, Env: withEnv(os.Environ(), "HOME", defaultHome), Sys: sys}, nil
-		},
-		finish: func(code, sig int) int {
-			if enabled() {
-				return 0
-			}
-			return 125
-		},
-		ready: func() bool {
-			conn, err := net.DialTimeout("tcp", probeAddr(host(), port()), time.Second)
-			if err != nil {
-				return false
-			}
-			conn.Close()
-			return true
-		},
-	}
-}
-
 // Main program of the container, bare icebath, a command found on PATH, or icebath with the arguments
 func mainArgv(exe string, args []string) []string {
 	if len(args) == 0 {
@@ -251,13 +200,6 @@ func runSvscan(args []string) int {
 	sigs := make(chan os.Signal, 32)
 	signal.Notify(sigs, syscall.SIGCHLD, syscall.SIGTERM, syscall.SIGINT, syscall.SIGHUP, syscall.SIGQUIT,
 		syscall.SIGUSR1, syscall.SIGUSR2, syscall.SIGWINCH)
-	dashDir := filepath.Join(scanDir, "dashboard")
-	if err := os.MkdirAll(dashDir, 0o755); err == nil {
-		os.WriteFile(filepath.Join(dashDir, "type"), []byte("longrun\n"), 0o644)
-	}
-	sv.mu.Lock()
-	sv.adopt("dashboard", dashDir, dashboardSpec(exe))
-	sv.mu.Unlock()
 	sv.scan(false)
 
 	mainDone := make(chan syscall.WaitStatus, 1)

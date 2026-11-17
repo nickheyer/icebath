@@ -35,12 +35,12 @@ type cardKey struct{ home, server string }
 // One lock orders a cancel against the commit and guards the newest card attempt per home and server
 var (
 	cardCommitGuard sync.Mutex
-	cardActive      = map[cardKey]*DashboardOAuthFlow{}
+	cardActive      = map[cardKey]*ClientOAuthFlow{}
 )
 
 // Rolls back failures through initialize and commits the authorization before tool discovery
 func probeWithRollback(ctx context.Context, env *tools.Env, serverName string, cfg map[string]any, homeDir string,
-	flow *DashboardOAuthFlow, reconnectLive bool, onCommit func(context.Context) error) error {
+	flow *ClientOAuthFlow, reconnectLive bool, onCommit func(context.Context) error) error {
 	manager := getManager()
 	storage := NewTokenStorage(ctx, serverName, "")
 	var backup map[string][]byte
@@ -130,7 +130,7 @@ func summaryDicts(summaries []ToolSummary) []map[string]any {
 }
 
 // Cancels a card attempt, true when it had already committed so the authorization stays
-func CancelAttempt(flow *DashboardOAuthFlow) bool {
+func CancelAttempt(flow *ClientOAuthFlow) bool {
 	cardCommitGuard.Lock()
 	if flow.committed {
 		cardCommitGuard.Unlock()
@@ -145,7 +145,7 @@ func CancelAttempt(flow *DashboardOAuthFlow) bool {
 }
 
 // Saves the configuration and runs the commit hook unless the attempt was canceled first
-func commitCardAttempt(ctx context.Context, serverName string, cfg map[string]any, onCommit func(context.Context) error, flow *DashboardOAuthFlow) error {
+func commitCardAttempt(ctx context.Context, serverName string, cfg map[string]any, onCommit func(context.Context) error, flow *ClientOAuthFlow) error {
 	cardCommitGuard.Lock()
 	defer cardCommitGuard.Unlock()
 	if flow != nil && flow.Cancelled() {
@@ -171,7 +171,7 @@ func commitCardAttempt(ctx context.Context, serverName string, cfg map[string]an
 
 // Connects with the tokens already on disk with no browser step, false when they do not work
 func reuseSavedAuthorization(ctx context.Context, env *tools.Env, serverName string, cfg map[string]any,
-	flow *DashboardOAuthFlow, onCommit func(context.Context) error) bool {
+	flow *ClientOAuthFlow, onCommit func(context.Context) error) bool {
 	if !oauthTokensPresent(ctx, serverName) {
 		return false
 	}
@@ -202,7 +202,7 @@ var (
 
 // OAuthWorkerOptions carries the flow, completion hook, setup values and saved token rule of one worker
 type OAuthWorkerOptions struct {
-	Flow       *DashboardOAuthFlow
+	Flow       *ClientOAuthFlow
 	OnDone     func()
 	Env        *pyjson.Object
 	OnCommit   func(context.Context) error
@@ -237,7 +237,7 @@ func RunOAuthWorker(ctx context.Context, env *tools.Env, homeDir, serverName str
 		if o.ReuseSaved && flow != nil && reuseSavedAuthorization(wctx, env, serverName, cfg, flow, o.OnCommit) {
 			return nil
 		}
-		ictx := withDashboardOAuthFlow(ForceInteractiveOAuth(wctx), flow)
+		ictx := withClientOAuthFlow(ForceInteractiveOAuth(wctx), flow)
 		return probeWithRollback(ictx, env, serverName, cfg, homeDir, flow, reconnectLive, o.OnCommit)
 	}()
 	if err == nil {
@@ -290,7 +290,7 @@ func ValidateClientRedirectURI(uri string) (string, error) {
 }
 
 // Binds the backend hosted one shot receiver on a free loopback port and feeds its callback into flow
-func startLoopbackReceiver(flow *DashboardOAuthFlow) (*http.Server, int, error) {
+func startLoopbackReceiver(flow *ClientOAuthFlow) (*http.Server, int, error) {
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		return nil, 0, err
@@ -339,7 +339,7 @@ func pinnedRedirectURI(cfg map[string]any) string {
 }
 
 // Sets the redirect the SDK consumes and returns the backend receiver when one is bound
-func ChooseCallbackReceiver(flow *DashboardOAuthFlow, cfg map[string]any, clientRedirectURI *string) (*http.Server, error) {
+func ChooseCallbackReceiver(flow *ClientOAuthFlow, cfg map[string]any, clientRedirectURI *string) (*http.Server, error) {
 	if pinnedLoopback(cfg) {
 		flow.RedirectURI = pinnedRedirectURI(cfg)
 		return nil, nil
@@ -379,13 +379,13 @@ func sshDetail(redirectURI string) string {
 // OAuthAttempt is one card flow in flight, its URL, callback bridge and outcome
 type OAuthAttempt struct {
 	authURL string
-	flow    *DashboardOAuthFlow
+	flow    *ClientOAuthFlow
 	detail  string
 }
 
-func (a *OAuthAttempt) AuthURL() string           { return a.authURL }
-func (a *OAuthAttempt) Detail() string            { return a.detail }
-func (a *OAuthAttempt) Flow() *DashboardOAuthFlow { return a.flow }
+func (a *OAuthAttempt) AuthURL() string        { return a.authURL }
+func (a *OAuthAttempt) Detail() string         { return a.detail }
+func (a *OAuthAttempt) Flow() *ClientOAuthFlow { return a.flow }
 
 // The flow's status with its tools and discovery error once approved
 func (a *OAuthAttempt) Poll() AttemptPoll {
@@ -440,7 +440,7 @@ func StartCardOAuth(ctx context.Context, env *tools.Env, serverName string, o Ca
 	if err != nil {
 		return nil, err
 	}
-	flow := NewDashboardOAuthFlow(tokenURLSafe(24), serverName, "", homeDir, "", false)
+	flow := NewClientOAuthFlow(tokenURLSafe(24), serverName, "", homeDir, "", false)
 	key := cardKey{homeDir, serverName}
 	cardCommitGuard.Lock()
 	older := cardActive[key]

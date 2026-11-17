@@ -11,16 +11,10 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
-
-	"github.com/nickheyer/icebath/pkg/commands"
 )
 
-func TestImpeccableCommandDefShapeAndDispatch(t *testing.T) {
-	var gotKey, gotArgs string
-	def, err := impeccableCommandDef("impeccable", func(ctx context.Context, key, instruction string) (string, bool, error) {
-		gotKey, gotArgs = key, instruction
-		return "SKILL TURN " + instruction, true, nil
-	})
+func TestImpeccableCommandDefShape(t *testing.T) {
+	def, err := impeccableCommandDef("impeccable")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -28,23 +22,6 @@ func TestImpeccableCommandDefShapeAndDispatch(t *testing.T) {
 	if def.Name != "impeccable" || len(def.Subcommands) != 24 || def.Subcommands[0] != "craft" || def.ArgsHint != wantHint || def.Plugin != "impeccable" {
 		t.Fatalf("def %+v", def)
 	}
-	host := &turnHost{}
-	if err := def.Handler(context.Background(), &commands.Invocation{Name: "impeccable", Args: "audit header", Host: host}); err != nil {
-		t.Fatal(err)
-	}
-	if gotKey != "/impeccable:impeccable" || gotArgs != "audit header" || host.msg != "SKILL TURN audit header" {
-		t.Fatalf("dispatch %q %q %q", gotKey, gotArgs, host.msg)
-	}
-	if err := def.Handler(context.Background(), &commands.Invocation{Name: "impeccable", Host: struct{}{}}); err == nil {
-		t.Fatal("surface without a turn submitter accepted the command")
-	}
-}
-
-type turnHost struct{ msg string }
-
-func (h *turnHost) SubmitUserTurn(ctx context.Context, message string) error {
-	h.msg = message
-	return nil
 }
 
 // Fake engine scripts directory pinning a version whose linux x64 digest is the given sum
@@ -154,29 +131,5 @@ func TestEngineLocalSourcesAndPlatform(t *testing.T) {
 	}
 	if got := strings.Join(l.exports(), " "); got != "IMPECCABLE_SKILL_DIR="+filepath.Dir(l.ScriptsDir)+" IMPECCABLE_SELF="+filepath.Join(l.ScriptsDir, "impeccable") {
 		t.Fatalf("exports %s", got)
-	}
-}
-
-func TestImpeccableDispatchHonoursRoutingAliases(t *testing.T) {
-	var got string
-	def, err := impeccableCommandDef("impeccable", func(ctx context.Context, key, instruction string) (string, bool, error) {
-		got = instruction
-		return instruction, true, nil
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	src, _ := payloadFile(impeccableSkillRoot + "/SKILL.src.md")
-	if !strings.Contains(string(src), "- `teach` aliases `init`.") {
-		t.Fatal("SKILL.src.md no longer names the teach alias")
-	}
-	for args, want := range map[string]string{"teach": "init", "teach the checkout flow": "init the checkout flow", "  teach\tpricing": "init\tpricing",
-		"teacher page": "teacher page", "audit teach": "audit teach", "craft hero": "craft hero", "": ""} {
-		if err := def.Handler(context.Background(), &commands.Invocation{Name: "impeccable", Args: args, Host: &turnHost{}}); err != nil {
-			t.Fatal(err)
-		}
-		if got != want {
-			t.Errorf("%q dispatched as %q, want %q", args, got, want)
-		}
 	}
 }

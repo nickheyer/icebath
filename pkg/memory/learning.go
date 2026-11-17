@@ -1101,5 +1101,5 @@ func BuildLearningGraph(ctx context.Context, env *tools.Env) (map[string]any, er
 	return map[string]any{"nodes": graphNodes, "edges": edges, "clusters": clusterRows, "memory": cards, "stats": stats}, nil
 }
 
-// Learning graph builds nothing at import, desktop and journey callers request it
+// Learning graph builds nothing at import, journey callers request it
 func registerLearningGraph() {}

@@ -64,7 +64,7 @@ func TestOffThreadSetupRecordsInTheOwningProfile(t *testing.T) {
 	base := t.TempDir()
 	homeA, homeB := filepath.Join(base, "a"), filepath.Join(base, "b")
 	for _, h := range []string{homeA, homeB, homeA} {
-		flow := BeginProviderSetup(context.Background(), "dashboard", "xai", h)
+		flow := BeginProviderSetup(context.Background(), "tui", "xai", h)
 		if flow == nil || filepath.Dir(flow.Marker) != setupMarkersDir(h) {
 			t.Fatalf("flow %+v", flow)
 		}

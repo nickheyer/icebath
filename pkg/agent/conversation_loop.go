@@ -687,13 +687,13 @@ func restorePinnedTools(ctx context.Context, a *AIAgent, sessionRow *pyjson.Obje
 	return built
 }
 
-// TUIGatewayToolsets returns the enabled and disabled toolsets the desktop and TUI gateway loads, set by the binary
+// TUIGatewayToolsets returns the enabled and disabled toolsets the TUI gateway loads, set by the binary
 var TUIGatewayToolsets func(ctx context.Context, platform string) (enabled, disabled []string)
 
 // Rebuilds the tools for a Bot Chat capability refresh through the builder that created the session
 func refreshBotChatTools(ctx context.Context, a *AIAgent) {
 	policy := gateway.ActivePolicy(ctx)
-	if policy == nil && a.platform != "desktop" && a.platform != "tui" {
+	if policy == nil && a.platform != "tui" {
 		return
 	}
 	defer func() {

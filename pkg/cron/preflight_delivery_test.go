@@ -39,7 +39,7 @@ func TestPreflightStillBlocksUnknownPlatforms(t *testing.T) {
 	}
 }
 
-func TestPreflightAndDashboardLanesPreflightBlocksUnknownFailurePlatform(t *testing.T) {
+func TestPreflightLanesPreflightBlocksUnknownFailurePlatform(t *testing.T) {
 	t.Setenv("ICEBATH_HOME", t.TempDir())
 	s, _ := newTestStore(t)
 	patchKnownDeliveryPlatform(t, func(context.Context, string) bool { return false })
@@ -49,7 +49,7 @@ func TestPreflightAndDashboardLanesPreflightBlocksUnknownFailurePlatform(t *test
 	}
 }
 
-func TestPreflightAndDashboardLanesPreflightFailureDeliverLocalAddsNoPlatforms(t *testing.T) {
+func TestPreflightLanesPreflightFailureDeliverLocalAddsNoPlatforms(t *testing.T) {
 	t.Setenv("ICEBATH_HOME", t.TempDir())
 	s, _ := newTestStore(t)
 	if err := s.preflightCheckDelivery(context.Background(), &Job{ID: "p2", Deliver: strPtr("local"), FailureDeliver: strPtr("local")}); err != nil {
@@ -57,7 +57,7 @@ func TestPreflightAndDashboardLanesPreflightFailureDeliverLocalAddsNoPlatforms(t
 	}
 }
 
-func TestPreflightAndDashboardLanesPreflightDuplicateLaneNotCheckedTwice(t *testing.T) {
+func TestPreflightLanesPreflightDuplicateLaneNotCheckedTwice(t *testing.T) {
 	t.Setenv("ICEBATH_HOME", t.TempDir())
 	s, _ := newTestStore(t)
 	var seen []string

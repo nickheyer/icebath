@@ -320,11 +320,6 @@ func LeaseRelease(opts LeaseReleaseOptions) (BotDesktopLease, error) {
 
 func LeaseHumanHolds(profileKey string) bool { return LeaseGet(profileKey).Holder == LeaseHuman }
 
-func LeaseViewerMaySendInput(viewerID, profileKey string) bool {
-	l := LeaseGet(profileKey)
-	return l.Holder == LeaseHuman && l.ViewerID == viewerID
-}
-
 // Lease as of now for an admitted action, HumanHasControl while a human holds the screen
 func LeaseAssertAgentMayAct(profileKey string) (BotDesktopLease, error) {
 	l := LeaseGet(profileKey)

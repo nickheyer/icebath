@@ -226,7 +226,7 @@ func TestRunPromptSubmitRejectsWorkerWhenCloseWinsPublication(t *testing.T) {
 		close(held.release)
 		t.Fatal("message.start never published")
 	}
-	popped := popSessionByID(context.Background(), hz.sid)
+	popped := popSessionByID(hz.sid)
 	close(held.release)
 	if popped != hz.session {
 		t.Fatalf("popped %v", popped)

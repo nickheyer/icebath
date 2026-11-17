@@ -239,7 +239,7 @@ func installProcessWiring() {
 	agent.KanbanBudgetExhaustedHook = kanban.RecordBudgetExhausted
 	agent.TUIGatewayToolsets = tuiserver.GatewayToolsets
 	agent.SessionSteerAuthority = tuiserver.SessionSteerAuthority
-	mcp.TUILaunchHome, mcp.TUIProfileHome, mcp.TUIProfileRuntimeScope = tuiserver.LaunchHome, tuiserver.ProfileHome, tuiserver.ProfileRuntimeScope
+	mcp.TUIProfileRuntimeScope = tuiserver.ProfileRuntimeScope
 	pm.InteractiveAppRunning = app.PromptAppIsRunning
 	provider.SetFreeTierGatewayHooks(provider.FreeTierGatewayHooks{OwnsRuntimeLock: gateway.OwnsGatewayRuntimeLock})
 	pm.CuaDriverChildEnv = cuaDriverChildEnv
@@ -340,7 +340,6 @@ func installProcessWiring() {
 	tools.GitlockRunGit = selfupdate.GitlockRunGit
 	tools.AsyncDelegationOwnerProbes.PidExists = kanban.GatewayStatusProbes.PidExists
 	tools.AsyncDelegationOwnerProbes.ProcessStartTime = gatewayProcessStartTime
-	tools.AsyncDelegationRetirement = provider.BackendRetirement()
 	tools.ProfileSecrets = provider.ProfileSecretSource()
 	tools.NousAccount = provider.NousAccountSource()
 	tools.CredentialPools = provider.XAICredentialPoolSource()

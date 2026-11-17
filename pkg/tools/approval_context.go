@@ -118,7 +118,7 @@ func gatewayApprovalSurface(env *Env) string {
 	return "gateway"
 }
 
-// Reports a classic CLI, TUI, Desktop or ACP session's turn from the launch policy the gateway froze
+// Reports a classic CLI, TUI or ACP session's turn from the launch policy the gateway froze
 func isLocalInteractiveSession(env *Env) bool {
 	return localInteractiveSources[sessionValue(env, "source", "ICEBATH_SESSION_SOURCE")]
 }

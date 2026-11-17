@@ -54,7 +54,7 @@ func TestInterruptAbandonsNoncooperativeTool(t *testing.T) {
 	}()
 	t0 := time.Now()
 	managed, err := e.runSequentialToolExecutionMiddleware(context.Background(), managedInput{name: "image_generate",
-		args: map[string]any{"prompt": "x"}, taskID: "t", toolCallID: "call_1", execute: unusedExecute}, nil)
+		args: map[string]any{"prompt": "x"}, taskID: "t", toolCallID: "call_1", execute: unusedExecute})
 	elapsed := time.Since(t0)
 	if err != nil {
 		t.Fatal(err)
@@ -81,7 +81,7 @@ func TestInterruptPrefersRealResultFromCooperativeTool(t *testing.T) {
 	})
 	host.interrupted.Store(true)
 	managed, err := e.runSequentialToolExecutionMiddleware(context.Background(), managedInput{name: "web_search",
-		args: map[string]any{}, taskID: "t", toolCallID: "call_2", execute: unusedExecute}, nil)
+		args: map[string]any{}, taskID: "t", toolCallID: "call_2", execute: unusedExecute})
 	if err != nil {
 		t.Fatal(err)
 	}

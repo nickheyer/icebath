@@ -26,11 +26,6 @@ const (
 	mbErrInvalidChars = 0x00000008
 )
 
-// Scripts this OS user's gateway Scheduled Tasks start, the install probe's view of task installs
-func registeredTaskLaunchers() []string {
-	return taskLaunchersFrom(execSchtasks)
-}
-
 // Runs schtasks.exe under the fifteen second gateway timeout
 func ExecSchtasks(args []string) (int, string, string) {
 	return execSchtasks(args, 15*time.Second)

@@ -3,7 +3,6 @@ package agent
 import (
 	"context"
 	"fmt"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"log/slog"
 	"reflect"
 	"strings"
@@ -11,6 +10,8 @@ import (
 	"sync/atomic"
 	"time"
 	"weak"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 
 	"github.com/google/uuid"
 	"github.com/nickheyer/icebath/pkg/internal/pyctx"

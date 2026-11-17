@@ -3,7 +3,6 @@ package feishu
 import (
 	"strings"
 	"testing"
-
 )
 
 func TestEmptyAllowlistDropWarningOnlyForUntouchedDefault(t *testing.T) {

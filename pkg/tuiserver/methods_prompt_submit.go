@@ -335,11 +335,7 @@ func unstageRefusedImages(session *tuigateway.Session) int {
 // Under the history lock refuses watch child races and malformed truncation, applies the cut and marks the turn running
 func lockInSubmitTurn(ctx context.Context, rid any, sid string, session *tuigateway.Session, text any, params map[string]any, hasTruncation bool, requestedRebindIDs map[int64]bool, hostedTask any, displayKind string) (errResp map[string]any, fields map[string]any) {
 	fields = map[string]any{}
-	sessionTurnAdmission(session, func(admitted bool) {
-		if !admitted {
-			errResp = rpcErr(rid, 5035, "backend is retiring; reconnect to continue", nil)
-			return
-		}
+	underHistoryLock(session, func() {
 		if truthy(session.Get("lazy")) {
 			var profileHome any
 			if truthy(session.Get("profile_home")) {

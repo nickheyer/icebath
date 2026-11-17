@@ -39,18 +39,6 @@ tools:
     - ask_assistant
     - "agento11y_*"
 
-# Composer-suggestion triggers (desktop brand pills).
-suggest:
-  keywords:
-    - grafana
-    - promql
-    - logql
-    - observability
-    - dashboard
-  hosts:
-    - grafana.net
-    - grafana.com
-
 post_install: |
   On first connection icebath opens a browser to authorize with Grafana Cloud
   (or run `icebath mcp login grafana`). During authorization you'll enter your

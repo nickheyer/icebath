@@ -36,7 +36,6 @@ func housekeepingMediaCaches(ctx context.Context) {
 		{"Spillover", func() (int, error) { return tools.CleanupSpilloverCache(env, -1), nil }},
 		{"Terminal temp", func() (int, error) { return tools.CleanupTerminalTempCache(env, maxAge), nil }},
 		{"Bot DM", func() (int, error) { return botmode.CleanupBotDMCache(maxAge, nil), nil }},
-		{"Bot relay", func() (int, error) { return botmode.CleanupBotRelayArtifacts(), nil }},
 	}
 	for _, c := range caches {
 		housekeepingChore(c.name+" cache cleanup", func() error {

@@ -359,6 +359,21 @@ func TestV51DropsBotChatDeliveryTimeoutWithANote(t *testing.T) {
 	}
 }
 
+func TestV55DropsWakeWordCaptureAndKeepsTheRestOfTheSection(t *testing.T) {
+	h := writeMigrationHome(t, t.TempDir(), map[string]any{"_config_version": 54,
+		"wake_word": map[string]any{"capture": "client", "enabled": true, "input_device": 2}}, "")
+	res := runFrom(t, h, 54)
+	if wake := rawMigrated(t, h)["wake_word"]; !reflect.DeepEqual(wake, map[string]any{"enabled": true, "input_device": 2}) {
+		t.Fatalf("wake_word %v", wake)
+	}
+	if !strings.Contains(strings.Join(res.ConfigAdded, "\n"), "removed wake_word.capture") {
+		t.Fatalf("config added %v", res.ConfigAdded)
+	}
+	if _, ok := AsMap(Defaults()["wake_word"])["capture"]; ok {
+		t.Fatal("default wake_word carries capture")
+	}
+}
+
 func TestUnversionedConfigDropsTheRetiredBotChatTimeout(t *testing.T) {
 	h := writeMigrationHome(t, t.TempDir(), map[string]any{"cron": map[string]any{"bot_chat_delivery_timeout_seconds": 900, "max_parallel_jobs": 2}}, "")
 	migrateFromStamp(t, h, true)

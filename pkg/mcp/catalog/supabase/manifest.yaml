@@ -19,14 +19,6 @@ transport:
 auth:
   type: oauth
 
-# Composer-suggestion triggers (desktop brand pills).
-suggest:
-  keywords:
-    - supabase
-  hosts:
-    - supabase.com
-    - supabase.co
-
 post_install: |
   On first connection icebath opens a browser to authorize with
   Supabase (or run `icebath mcp login supabase`). Approve access,

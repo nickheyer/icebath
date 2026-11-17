@@ -25,13 +25,6 @@ tools:
     - hello
     - download_usage_data
 
-# Composer-suggestion triggers (desktop brand pills).
-suggest:
-  keywords:
-    - circleci
-  hosts:
-    - circleci.com
-
 post_install: |
   On first connection icebath opens a browser to authorize with
   CircleCI (or run `icebath mcp login circleci`). Approve access,

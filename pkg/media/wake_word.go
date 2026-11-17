@@ -86,7 +86,7 @@ func (e *WakeWordError) Error() string { return e.Msg }
 func (e *WakeWordError) Unwrap() error { return e.Cause }
 
 var wakeDefaults = map[string]any{
-	"enabled": false, "surface": "auto", "input_device": nil, "capture": "auto",
+	"enabled": false, "surface": "auto", "input_device": nil,
 	"provider": "auto", "phrase": "hey hermes", "sensitivity": 0.6,
 	"confirmation_frames": wakeDefaultConfirmationFrames, "start_new_session": true,
 }
@@ -257,28 +257,6 @@ func WakePhrase(ctx context.Context, cfg map[string]any) string {
 		return s
 	}
 	return "hey hermes"
-}
-
-// ResolveCaptureMode picks local or client capture, a working backend mic winning under auto
-func ResolveCaptureMode(ctx context.Context, cfg map[string]any, preferClient, forceLocal bool) string {
-	if cfg == nil {
-		cfg = LoadWakeWordConfig(ctx)
-	}
-	if forceLocal {
-		return "local"
-	}
-	v := wakeGet(cfg, "capture")
-	if !pyTruthy(v) {
-		v = "auto"
-	}
-	raw := pystr.Lower(pystr.Strip(pyrepr.Str(v)))
-	if raw == "client" || raw == "remote" || raw == "external" {
-		return "client"
-	}
-	if raw != "local" && preferClient && !wakeLocalInputReady() {
-		return "client"
-	}
-	return "local"
 }
 
 // Input channel count of a PortAudio device record
@@ -598,7 +576,6 @@ type WakeRequirements struct {
 	DepsAvailable       bool   `json:"deps_available"`
 	AudioAvailable      bool   `json:"audio_available"`
 	LocalInputAvailable bool   `json:"local_input_available"`
-	Capture             string `json:"capture"`
 	AccessKeySet        bool   `json:"access_key_set"`
 	STTAvailable        bool   `json:"stt_available"`
 	TTSAvailable        bool   `json:"tts_available"`
@@ -683,7 +660,7 @@ func CheckWakeWordRequirements(ctx context.Context, cfg map[string]any, supporte
 		hint = "Set PORCUPINE_ACCESS_KEY (free key at https://console.picovoice.ai)."
 	case !depsOK && !lazyOK:
 		hint = pm.InstallHint(feature)
-	case depsOK && !audioOK && ResolveCaptureMode(ctx, cfg, false, false) == "local":
+	case depsOK && !audioOK:
 		hint = "Microphone capture needs the PortAudio library and a working audio device."
 	case !sttOK || !ttsOK:
 		var missing []string
@@ -696,22 +673,11 @@ func CheckWakeWordRequirements(ctx context.Context, cfg map[string]any, supporte
 		hint = fmt.Sprintf("Wake word needs %s configured — run `icebath tools` "+
 			"(Voice section) or see the voice-mode docs.", strings.Join(missing, " and "))
 	}
-	captureMode := ResolveCaptureMode(ctx, cfg, false, false)
-	var micOK bool
-	if captureMode == "client" {
-		micOK = depsOK || lazyOK
-	} else {
-		micOK = (depsOK && audioOK) || (!depsOK && lazyOK)
-		if depsOK && !audioOK && hint == "" {
-			hint = "No local microphone on this backend. Remote desktop can stream " +
-				"the client mic — set wake_word.capture: client or use a desktop " +
-				"build with client-capture wake support."
-		}
-	}
+	micOK := (depsOK && audioOK) || (!depsOK && lazyOK)
 	return WakeRequirements{
 		Available: platformOK && keyOK && sttOK && ttsOK && micOK, Provider: provider,
 		DepsAvailable: depsOK, AudioAvailable: audioOK, LocalInputAvailable: depsOK && wakeLocalInputReady(),
-		Capture: captureMode, AccessKeySet: keyOK, STTAvailable: sttOK, TTSAvailable: ttsOK,
+		AccessKeySet: keyOK, STTAvailable: sttOK, TTSAvailable: ttsOK,
 		Phrase: WakePhrase(ctx, cfg), Hint: hint,
 	}, nil
 }

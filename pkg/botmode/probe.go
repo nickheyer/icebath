@@ -316,33 +316,6 @@ func LocalAliasMap(root string) map[string]map[string]bool {
 	return aliases
 }
 
-// Folder ids, handles and friendly name slugs this install answers to, propagating a roster failure
-func localTakenForms(h string) (map[string]bool, error) {
-	root := InstallRoot(h)
-	roster, err := rosterFn(root)
-	if err != nil {
-		return nil, err
-	}
-	names := make([]string, 0, len(roster))
-	for _, p := range roster {
-		names = append(names, p.Name)
-	}
-	out := map[string]bool{}
-	for _, name := range names {
-		out[name] = true
-		out[Handle(name, names)] = true
-	}
-	for form := range LocalAliasMap(root) {
-		out[form] = true
-	}
-	return out, nil
-}
-
-// LocalTakenForms gives the bare forms local profiles answer to, which a remote row must never take
-func LocalTakenForms(h string) (map[string]bool, error) {
-	return localTakenForms(h)
-}
-
 // Registered peer gateway names of an install root, sorted and empty on any failure
 func Peers(root string) []string { return peers(root) }
 
@@ -368,31 +341,6 @@ func peers(root string) []string {
 	}
 	sort.Strings(out)
 	return out
-}
-
-// Addendum for agents on other connected machines, empty when the relay roster is empty
-func remoteParagraph(h string) (string, error) {
-	roster := ReadRemoteRoster(h)
-	if len(roster) == 0 {
-		return "", nil
-	}
-	taken, err := localTakenForms(h)
-	if err != nil {
-		return "", err
-	}
-	forms := RemoteTargetForms(roster, taken)
-	lines := make([]string, 0, len(roster))
-	for i, row := range roster {
-		label := row.ConnectionLabel
-		if label == "" {
-			label = row.ConnectionID
-		}
-		lines = append(lines, bullet("@"+forms[i], "on "+label, row.Title, row.Description))
-	}
-	return "\n\nTeammates on OTHER connected machines (reachable through the " +
-		"Desktop relay — message them with message_agent exactly like local " +
-		"teammates; replies arrive as completion notifications the same " +
-		"way, or via reply_delivery=\"poll\" as below):\n" + strings.Join(lines, "\n"), nil
 }
 
 // Addendum for cross machine messages, empty when no peer gateway is registered
@@ -438,10 +386,6 @@ func buildSection(h string) (string, error) {
 	if block == "" {
 		block = "- (no teammates yet)"
 	}
-	remote, err := remoteParagraph(h)
-	if err != nil {
-		return "", err
-	}
 	return tools.BotModeProtocolHeading + "\n" +
 		"This install runs Bot Mode: each Icebath profile is an agent teammate with " +
 		"one canonical \"Bot Chat\" conversation, and you have the `message_agent` " +
@@ -466,7 +410,7 @@ func buildSection(h string) (string, error) {
 		"acknowledgements.\n" +
 		"You are `@" + Handle(me, names) + "`. Your teammates (live roster; roles from their " +
 		"profiles):\n" +
-		block + remote + peerParagraph(root), nil
+		block + peerParagraph(root), nil
 }
 
 // ProtocolSection is the cached teammate section of the agent's own home, rebuilt when forced, empty on failure
@@ -672,12 +616,6 @@ func CapabilityFingerprint(h string) string {
 		peerNames = []string{}
 	}
 	surface["peers"] = peerNames
-	remote := []string{}
-	for _, r := range ReadRemoteRoster(resolved) {
-		remote = append(remote, r.ConnectionID+":"+r.Profile+":"+r.Title)
-	}
-	sort.Strings(remote)
-	surface["remote_roster"] = remote
 	text, err := pyjson.Dumps(surface, pyjson.SortKeys(true))
 	if err != nil {
 		return "unavailable"
@@ -707,4 +645,21 @@ func StoredBotChatPromptNeedsUpgrade(storedPrompt, h string) bool {
 		return false
 	}
 	return ProtocolSection(h, false) != ""
+}
+
+// Text of a truthy value, empty for a falsy one
+func strOr(v any) string {
+	if !pyrepr.Truthy(v) {
+		return ""
+	}
+	return pyrepr.Str(v)
+}
+
+// First n code points of text
+func headRunes(text string, n int) string {
+	runes := pystr.Runes(text)
+	if len(runes) <= n {
+		return text
+	}
+	return pystr.FromRunes(runes[:n])
 }

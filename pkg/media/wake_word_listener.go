@@ -126,7 +126,7 @@ func detectorFailed(det *WakeWordDetector) {
 }
 
 // StartListening claims, builds and starts the detector, idempotent for its owner and WakeWordInUse for others
-func StartListening(ctx context.Context, onWake func() error, owner any, cfg map[string]any, externalAudio bool) (*WakeWordDetector, error) {
+func StartListening(ctx context.Context, onWake func() error, owner any, cfg map[string]any) (*WakeWordDetector, error) {
 	if owner == nil {
 		return nil, &WakeWordError{Class: "ValueError", Msg: "wake-word owner must not be None"}
 	}
@@ -151,19 +151,11 @@ func StartListening(ctx context.Context, onWake func() error, owner any, cfg map
 		if cfg == nil {
 			cfg = LoadWakeWordConfig(ctx)
 		}
-		engineCfg := make(map[string]any, len(cfg)+1)
-		for k, v := range cfg {
-			engineCfg[k] = v
-		}
-		engineCfg["capture"] = "local"
-		if externalAudio {
-			engineCfg["capture"] = "client"
-		}
-		engine, err := wakeBuildEngine(ctx, engineCfg)
+		engine, err := wakeBuildEngine(ctx, cfg)
 		if err != nil {
 			return nil, err
 		}
-		wakeDetector = NewWakeWordDetector(engine, onWake, WakeDetectorOptions{OnFailure: detectorFailed, InputDevice: wakeInputDevice(cfg), ExternalAudio: externalAudio})
+		wakeDetector = NewWakeWordDetector(engine, onWake, WakeDetectorOptions{OnFailure: detectorFailed, InputDevice: wakeInputDevice(cfg)})
 		wakeDetectorOwner = owner
 		return wakeDetector, wakeDetector.Start()
 	}()
@@ -261,39 +253,4 @@ func GetLastMatch() (phrase, profile string, ok bool) {
 		return m.LastMatch()
 	}
 	return "", "", false
-}
-
-// FeedAudio pushes client captured PCM into the owner's armed client detector, true when accepted
-func FeedAudio(owner any, pcm any) (bool, error) {
-	wakeDetectorLock.Lock()
-	det := ownedDetector(owner)
-	wakeDetectorLock.Unlock()
-	if det == nil || !det.externalAudio {
-		return false, nil
-	}
-	if err := det.Feed(pcm); err != nil {
-		return false, err
-	}
-	return true, nil
-}
-
-// WakeFrameInfo is the sample rate and frame length client capture streamers use
-type WakeFrameInfo struct {
-	SampleRate    int   `json:"sample_rate"`
-	ExternalAudio *bool `json:"external_audio,omitempty"`
-	FrameLength   int   `json:"frame_length"`
-}
-
-// DetectorFrameInfo returns the frame contract of the armed detector or the default one
-func DetectorFrameInfo() WakeFrameInfo {
-	det := currentDetector()
-	if det == nil {
-		return WakeFrameInfo{SampleRate: WakeSampleRate, FrameLength: 1280}
-	}
-	external := det.externalAudio
-	fl := det.Engine.FrameLength()
-	if fl == 0 {
-		fl = 1280
-	}
-	return WakeFrameInfo{SampleRate: WakeSampleRate, ExternalAudio: &external, FrameLength: fl}
 }

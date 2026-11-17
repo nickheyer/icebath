@@ -98,7 +98,7 @@ func TestMessageAgentRefusesWhatItCannotDeliver(t *testing.T) {
 		{"scribe", strings.Repeat("é", messageMaxChars+1), "message too long (16001 chars > 16000)", false},
 		{" @ ", "hi", "target is required.", true},
 		{"bad target!", "hi", "Invalid target: 'bad target!'.", true},
-		{"ghost", "hi", "No teammate named 'ghost' on this install, on a connected machine, or on a registered peer.", true},
+		{"ghost", "hi", "No teammate named 'ghost' on this install or on a registered peer.", true},
 		{"nowhere/scribe", "hi", "No registered peer named 'nowhere'.", true},
 		{"@icebath", "hi", "You can't message yourself. Pick a teammate from the roster.", false},
 	} {
@@ -198,45 +198,6 @@ func TestMessageAgentReportsALocalTeammateWithNoLiveOwnerAsNotSent(t *testing.T)
 	}
 	if len(*spawned) != 0 || len(botDMFiles(t)) != 0 {
 		t.Fatalf("no send started %v and left %v", *spawned, botDMFiles(t))
-	}
-}
-
-func TestMessageAgentQueuesARelayedMessageAndStartsItsReplyWaiter(t *testing.T) {
-	a, h := botChatSender(t, "scribe")
-	roster, err := json.Marshal(map[string]any{"updated_at": time.Now().Unix(), "agents": []map[string]any{
-		{"profile": "default", "handle": "icebath", "connection_id": "mini", "connection_label": "Mac Mini", "title": "Moxie"},
-		{"profile": "default", "handle": "icebath", "connection_id": "cloud", "connection_label": "Cloud", "title": "Moxie"}}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.MkdirAll(filepath.Join(h, botmode.RelayDirName), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(h, botmode.RelayDirName, botmode.RosterFile), roster, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	answer := `{"session_id": "proc_9", "notify_on_complete": true}`
-	spawned := recordBotDMTerminal(t, func(tools.TerminalRequest) string { return answer })
-	if got := sendBotDM(t, a, "moxie", "hi"); !strings.Contains(got["error"].(string), "'moxie' exists on several connected machines — disambiguate with one of: icebath@mini, icebath@cloud.") {
-		t.Fatalf("ambiguous %v", got)
-	}
-	got := sendBotDM(t, a, "icebath@mini", "ship it")
-	if got["status"] != "queued" || got["to"] != "@icebath on Mac Mini" || got["process_id"] != "proc_9" || len(*spawned) != 1 {
-		t.Fatalf("relay ack %v requests %v", got, *spawned)
-	}
-	argv, err := pyshlex.SplitPOSIX((*spawned)[0].Command.(string), false)
-	if err != nil {
-		t.Fatal(err)
-	}
-	id, _ := got["delivery_id"].(string)
-	if id == "" || len(argv) != 6 || argv[2] != "--wait-reply" || filepath.Base(argv[3]) != id+".json" || argv[4] != "@icebath on mini" {
-		t.Fatalf("waiter argv %q for %v", argv, got)
-	}
-	answer = `{"error": "no shell"}`
-	got = sendBotDM(t, a, "icebath@cloud", "ship it")
-	if got["status"] != "queued" || got["to"] != "@icebath on Cloud" || !strings.Contains(got["notification_error"].(string), "failed to start: no shell") ||
-		!strings.Contains(got["detail"].(string), "Do NOT resend.") || len(botDMFiles(t)) != 0 {
-		t.Fatalf("waiter failure %v", got)
 	}
 }
 

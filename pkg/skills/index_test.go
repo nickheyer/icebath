@@ -160,14 +160,14 @@ func TestSessionPlatformGate(t *testing.T) {
 		platform string
 		want     bool
 	}{
-		{conds("teams", "cron"), term, map[string]bool{}, "desktop", false},
+		{conds("teams", "cron"), term, map[string]bool{}, "tui", false},
 		{conds("teams", "cron"), term, map[string]bool{}, "telegram", false},
 		{conds("teams", "cron"), term, map[string]bool{}, "teams", true},
 		{conds("teams", "cron"), term, map[string]bool{}, "cron", true},
 		{conds("Teams"), term, map[string]bool{}, "TEAMS", true},
 		{conds("teams"), term, map[string]bool{}, "", true},
-		{conds(), term, map[string]bool{}, "desktop", true},
-		{conds("teams"), nil, nil, "desktop", false},
+		{conds(), term, map[string]bool{}, "tui", true},
+		{conds("teams"), nil, nil, "tui", false},
 	}
 	for i, c := range cases {
 		if got := skillShouldShow(c.conds, c.tools, c.toolsets, c.platform); got != c.want {

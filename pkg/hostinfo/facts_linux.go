@@ -11,12 +11,6 @@ const wslNvidiaCUDA = "/usr/lib/wsl/lib/libcuda.so.1"
 
 func nativeArchImpl() string { return ProcessArch() }
 
-func cpuModelImpl() string {
-	return ParseCPUInfo(readText("/proc/cpuinfo", 65536), readText("/proc/device-tree/model", 512))
-}
-
-func cpuVendorImpl() string { return ParseCPUInfoVendor(readText("/proc/cpuinfo", 65536)) }
-
 func ramTotalImpl() int64 { return ParseMeminfoTotal(readText("/proc/meminfo", 4096)) }
 
 // PCI vendor ids of DRM cards, nil when sysfs exposes no DRM tree
@@ -65,31 +59,6 @@ func gpuClassImpl() string {
 func fileExists(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil
-}
-
-func nvidiaGPUsImpl() []NvidiaGPU {
-	entries, err := os.ReadDir(nvidiaProcGPUs)
-	if err != nil {
-		return nil
-	}
-	buses := make([]string, 0, len(entries))
-	for _, e := range entries {
-		buses = append(buses, e.Name())
-	}
-	sort.Strings(buses)
-	if len(buses) > gpuScanLimit {
-		buses = buses[:gpuScanLimit]
-	}
-	var gpus []NvidiaGPU
-	for _, bus := range buses {
-		name := ParseNvidiaGPUModel(readText(nvidiaProcGPUs+"/"+bus+"/information", 4096))
-		if name == "" {
-			continue
-		}
-		device := strings.TrimPrefix(strings.TrimSpace(readText(sysPCIDevices+"/"+bus+"/device", 16)), "0x")
-		gpus = append(gpus, NvidiaGPU{name, pciID(device)})
-	}
-	return gpus
 }
 
 func interactiveSessionImpl() bool {

@@ -59,7 +59,7 @@ func TestMetaAndValidationBotTitleReadFromHermesBotsUiMeta(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got, _ := ProfileToDict(infos[0]).Get("bot_title"); got != "JordyV" {
+	if got := infos[0].BotTitle; got != "JordyV" {
 		t.Fatalf("roster %v", got)
 	}
 }

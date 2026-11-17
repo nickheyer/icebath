@@ -15,7 +15,7 @@ import (
 )
 
 // Waits up to five seconds for the flow's worker to return
-func waitWorkerDone(flow *DashboardOAuthFlow) {
+func waitWorkerDone(flow *ClientOAuthFlow) {
 	for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline) && !flow.WorkerDone(); {
 		time.Sleep(10 * time.Millisecond)
 	}
@@ -139,7 +139,7 @@ func TestOAuthSessionOperationsRequireResolvedOwner(t *testing.T) {
 			resetOAuthSessions(t)
 			root := t.TempDir()
 			owner := filepath.Join(root, "owner")
-			flow := NewDashboardOAuthFlow("owned", "reports", "", owner, "http://127.0.0.1:49152/callback", false)
+			flow := NewClientOAuthFlow("owned", "reports", "", owner, "http://127.0.0.1:49152/callback", false)
 			if err := flow.PublishAuthorizationURL(context.Background(), "https://idp.example/authorize?state=test"); err != nil {
 				t.Fatal(err)
 			}
@@ -178,7 +178,7 @@ func TestOAuthSessionOperationsRequireResolvedOwner(t *testing.T) {
 func TestOAuthCancelDoesNotRevokeAnApprovedFlow(t *testing.T) {
 	resetOAuthSessions(t)
 	h := t.TempDir()
-	flow := NewDashboardOAuthFlow("approved", "reports", "", h, "http://127.0.0.1:49152/callback", false)
+	flow := NewClientOAuthFlow("approved", "reports", "", h, "http://127.0.0.1:49152/callback", false)
 	flow.DiscoveryError = "tools/list unavailable"
 	if err := flow.MarkApproved(); err != nil {
 		t.Fatal(err)
@@ -224,9 +224,9 @@ func TestOAuthStartFlowClientRedirectSkipsGatewayListener(t *testing.T) {
 	resetOAuthSessions(t)
 	h := isolateHome(t)
 	swapSessionWorker(t, publishingWorker("teststate123", nil))
-	var bound []*DashboardOAuthFlow
+	var bound []*ClientOAuthFlow
 	savedRecv, savedCard := loopbackReceiver, cardOAuthWorker
-	loopbackReceiver = func(flow *DashboardOAuthFlow) (*http.Server, int, error) {
+	loopbackReceiver = func(flow *ClientOAuthFlow) (*http.Server, int, error) {
 		bound = append(bound, flow)
 		return startLoopbackReceiver(flow)
 	}
@@ -268,9 +268,9 @@ func TestOAuthStartFlowClientRedirectSkipsGatewayListener(t *testing.T) {
 	}
 	DeliverOAuthCallbackFlow(ctx, attempt.flow.FlowID, "cardy", "authcode", "teststate123", "", "")
 	waitWorkerDone(attempt.flow)
-	pinned := NewDashboardOAuthFlow("pinned", "asana", "", home.Dir(ctx), "", false)
-	var pinnedBound []*DashboardOAuthFlow
-	loopbackReceiver = func(flow *DashboardOAuthFlow) (*http.Server, int, error) {
+	pinned := NewClientOAuthFlow("pinned", "asana", "", home.Dir(ctx), "", false)
+	var pinnedBound []*ClientOAuthFlow
+	loopbackReceiver = func(flow *ClientOAuthFlow) (*http.Server, int, error) {
 		pinnedBound = append(pinnedBound, flow)
 		return nil, 0, nil
 	}
@@ -297,8 +297,8 @@ func TestOAuthStartFlowRejectsBadClientRedirect(t *testing.T) {
 }
 
 // A relay session whose flow published an authorize URL carrying state
-func makeRelaySession(t *testing.T, sessionID, server, state string) *DashboardOAuthFlow {
-	flow := NewDashboardOAuthFlow(sessionID, server, "", home.Dir(context.Background()), "http://127.0.0.1:9000/callback", false)
+func makeRelaySession(t *testing.T, sessionID, server, state string) *ClientOAuthFlow {
+	flow := NewClientOAuthFlow(sessionID, server, "", home.Dir(context.Background()), "http://127.0.0.1:9000/callback", false)
 	if err := flow.PublishAuthorizationURL(context.Background(), "https://as.example.com/authorize?state="+state); err != nil {
 		t.Fatal(err)
 	}
@@ -308,7 +308,7 @@ func makeRelaySession(t *testing.T, sessionID, server, state string) *DashboardO
 	return flow
 }
 
-func flowCallback(flow *DashboardOAuthFlow) [3]string {
+func flowCallback(flow *ClientOAuthFlow) [3]string {
 	flow.mu.Lock()
 	defer flow.mu.Unlock()
 	if flow.callback == nil {

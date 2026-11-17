@@ -11,7 +11,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 )
 
 // BlueprintFillError reports slot values that fail validation, a ValueError in hermes
@@ -61,24 +60,6 @@ func listBlueprints(ctx context.Context) []AutomationBlueprint {
 	return append(append([]AutomationBlueprint(nil), blueprintCatalog...), pluginBlueprints(ctx)...)
 }
 
-// Built-in blueprint or a namespaced plugin blueprint of the active profile, nil when unknown
-func getBlueprint(ctx context.Context, key string) *AutomationBlueprint {
-	for i := range blueprintCatalog {
-		if blueprintCatalog[i].Key == key {
-			b := blueprintCatalog[i]
-			return &b
-		}
-	}
-	if strings.Contains(key, ":") {
-		for _, b := range pluginBlueprints(ctx) {
-			if b.Key == key {
-				return &b
-			}
-		}
-	}
-	return nil
-}
-
 // First slot named one of names or of the given type
 func blueprintSlot(b *AutomationBlueprint, typ string, names ...string) *BlueprintSlot {
 	for i := range b.Slots {
@@ -102,31 +83,6 @@ func blueprintSlotDefault(b *AutomationBlueprint, names ...string) any {
 	return nil
 }
 
-// JSON a form renderer needs for the blueprint
-func blueprintFormSchema(b *AutomationBlueprint) *pyjson.Object {
-	o := pyjson.NewObject()
-	o.Set("key", b.Key)
-	o.Set("title", b.Title)
-	o.Set("description", b.Description)
-	o.Set("category", b.Category)
-	o.Set("tags", stringsToAny(b.Tags))
-	fields := make([]any, 0, len(b.Slots))
-	for _, s := range b.Slots {
-		f := pyjson.NewObject()
-		f.Set("name", s.Name)
-		f.Set("type", s.Type)
-		f.Set("label", s.Label)
-		f.Set("default", s.Default)
-		f.Set("options", append([]any{}, s.Options...))
-		f.Set("optional", s.Optional)
-		f.Set("strict", s.Strict)
-		f.Set("help", s.Help)
-		fields = append(fields, f)
-	}
-	o.Set("fields", fields)
-	return o
-}
-
 func blueprintValueBlank(v any) bool { return v == nil || v == "" }
 
 func blueprintValue(values map[string]any, s *BlueprintSlot) any {
@@ -134,51 +90,6 @@ func blueprintValue(values map[string]any, s *BlueprintSlot) any {
 		return v
 	}
 	return s.Default
-}
-
-// Ready to paste slash command with each slot value or default, text slots quoted
-func blueprintSlashCommand(b *AutomationBlueprint, values map[string]any) string {
-	parts := []string{"/blueprint " + b.Key}
-	for i := range b.Slots {
-		s := &b.Slots[i]
-		val := blueprintValue(values, s)
-		if blueprintValueBlank(val) {
-			if s.Optional {
-				continue
-			}
-			val = ""
-		}
-		sval := pyrepr.Str(val)
-		if s.Type == "text" || strings.Contains(sval, " ") {
-			sval = `"` + strings.ReplaceAll(sval, `"`, `\"`) + `"`
-		}
-		parts = append(parts, s.Name+"="+sval)
-	}
-	return strings.Join(parts, " ")
-}
-
-// App deep link URL for the blueprint with its non blank slot values as the query
-func blueprintDeeplink(b *AutomationBlueprint, values map[string]any) string {
-	var query [][2]string
-	seen := map[string]int{}
-	for i := range b.Slots {
-		s := &b.Slots[i]
-		val := blueprintValue(values, s)
-		if blueprintValueBlank(val) {
-			continue
-		}
-		if at, ok := seen[s.Name]; ok {
-			query[at][1] = pyrepr.Str(val)
-			continue
-		}
-		seen[s.Name] = len(query)
-		query = append(query, [2]string{s.Name, pyrepr.Str(val)})
-	}
-	qs := ""
-	if len(query) > 0 {
-		qs = "?" + pyurl.URLEncode(query)
-	}
-	return "icebath://blueprint/" + pyurl.Quote(b.Key, "/") + qs
 }
 
 // Short readable description of when the blueprint runs with its defaults
@@ -233,23 +144,6 @@ func humanizeBlueprintSchedule(b *AutomationBlueprint) string {
 		return "daily at " + pyrepr.Str(when)
 	}
 	return "on a schedule"
-}
-
-// Unified serializable shape of a blueprint for docs
-func blueprintCatalogEntry(b *AutomationBlueprint) *pyjson.Object {
-	o := blueprintFormSchema(b)
-	if b.Plugin != "" {
-		o.Set("source", "plugin")
-		o.Set("plugin", b.Plugin)
-	} else {
-		o.Set("source", "builtin")
-		o.Set("plugin", nil)
-	}
-	o.Set("schedule", b.ScheduleTemplate)
-	o.Set("scheduleHuman", humanizeBlueprintSchedule(b))
-	o.Set("command", blueprintSlashCommand(b, nil))
-	o.Set("appUrl", blueprintDeeplink(b, nil))
-	return o
 }
 
 var (

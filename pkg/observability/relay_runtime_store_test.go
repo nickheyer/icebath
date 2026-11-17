@@ -124,8 +124,8 @@ func packageMetricsByName(t *testing.T, path string) map[string]map[string]any {
 	return out
 }
 
-func finishDesktopTask(ctx context.Context, sessionID, taskID string) {
-	hook := map[string]any{"session_id": sessionID, "task_id": taskID, "platform": "desktop"}
+func finishTUITask(ctx context.Context, sessionID, taskID string) {
+	hook := map[string]any{"session_id": sessionID, "task_id": taskID, "platform": "tui"}
 	invokeHook(ctx, "pre_llm_call", hook)
 	invokeHook(ctx, "on_session_end", hook, successEnd)
 }
@@ -451,7 +451,7 @@ func TestFailedFlushKeepsDailyExportOpenForLaterTask(t *testing.T) {
 		return original()
 	}
 	finish := func(taskID string) {
-		finishDesktopTask(ctx, "s1", taskID)
+		finishTUITask(ctx, "s1", taskID)
 		joinExportWorkers(t, ctx)
 	}
 	finish("t1")
@@ -500,14 +500,14 @@ func TestTaskEndsDoNotWaitOnTheProcessWideFlushBarrier(t *testing.T) {
 		releaseOnce.Do(func() { close(release) })
 		joinExportWorkers(t, ctx)
 	})
-	finishDesktopTask(ctx, "s1", "t1")
+	finishTUITask(ctx, "s1", "t1")
 	<-entered
 	root := metricsRoot(ctx)
 	if paths := outboxPackages(t, root); len(paths) != 0 {
 		t.Fatalf("exported %v", paths)
 	}
 	for _, taskID := range []string{"t2", "t3", "t4"} {
-		finishDesktopTask(ctx, "s1", taskID)
+		finishTUITask(ctx, "s1", taskID)
 	}
 	releaseOnce.Do(func() { close(release) })
 	joinExportWorkers(t, ctx)
@@ -523,7 +523,7 @@ func TestBackgroundFlushRunsUnderTheFinishingTurnsProfile(t *testing.T) {
 	other := filepath.Join(t.TempDir(), "other-profile")
 	writeProfileConfig(t, other, enabledConfig)
 	octx := home.WithOverride(ctx, other)
-	finishDesktopTask(octx, "s1", "t1")
+	finishTUITask(octx, "s1", "t1")
 	joinExportWorkers(t, octx)
 	if paths := outboxPackages(t, metricsRoot(octx)); len(paths) != 1 {
 		t.Fatalf("profile packages %v", paths)
@@ -789,10 +789,10 @@ func TestFiniteCliRunsReportTheirOwnEntrypoint(t *testing.T) {
 	t.Setenv("ICEBATH_SINGLE_QUERY_SESSION", "1")
 	cliTurn(ctx, "oneshot", "")
 	cliTurn(ctx, "child", "oneshot")
-	finishDesktopTask(ctx, "desktop", "desktop-t")
+	finishTUITask(ctx, "tui", "tui-t")
 	t.Setenv("ICEBATH_SESSION_SOURCE", "kanban")
 	cliTurn(ctx, "kanban", "")
-	for _, id := range []string{"repl", "oneshot", "child", "desktop", "kanban"} {
+	for _, id := range []string{"repl", "oneshot", "child", "tui", "kanban"} {
 		finalizeSession(ctx, id)
 	}
 	joinExportWorkers(t, ctx)
@@ -801,7 +801,7 @@ func TestFiniteCliRunsReportTheirOwnEntrypoint(t *testing.T) {
 		started = append(started, fmt.Sprintf("%v/%v/%d", v.dims["entrypoint"], v.dims["execution_surface"], v.value))
 	}
 	slices.Sort(started)
-	if want := []string{"background/cli/1", "delegated/cli/1", "interactive/cli/1", "interactive/desktop/1", "one_shot/cli/1"}; !slices.Equal(started, want) {
+	if want := []string{"background/cli/1", "delegated/cli/1", "interactive/cli/1", "interactive/tui/1", "one_shot/cli/1"}; !slices.Equal(started, want) {
 		t.Fatalf("started %v", started)
 	}
 	finished := map[any]bool{}
@@ -816,7 +816,7 @@ func TestFiniteCliRunsReportTheirOwnEntrypoint(t *testing.T) {
 		sessions = append(sessions, fmt.Sprintf("%v/%v/%v", v.dims["entrypoint"], v.dims["execution_surface"], v.dims["turn_count_bucket"]))
 	}
 	slices.Sort(sessions)
-	if want := []string{"background/cli/1", "interactive/cli/1", "interactive/desktop/1", "one_shot/cli/1"}; !slices.Equal(sessions, want) {
+	if want := []string{"background/cli/1", "interactive/cli/1", "interactive/tui/1", "one_shot/cli/1"}; !slices.Equal(sessions, want) {
 		t.Fatalf("sessions %v", sessions)
 	}
 }

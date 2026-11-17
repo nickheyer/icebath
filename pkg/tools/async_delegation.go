@@ -28,16 +28,6 @@ var AsyncDelegationOwnerProbes struct {
 	ProcessStartTime func(pid int) (int64, bool)
 }
 
-// RetirementWork is the backend retirement fence async dispatch reserves its work under
-type RetirementWork interface {
-	Work() (bool, func())
-	Acquire() bool
-	Release()
-}
-
-// Backend retirement fence of hermes_cli backend_retirement, installed by pkg/provider at init
-var AsyncDelegationRetirement RetirementWork
-
 const (
 	asyncDefaultMaxChildren        = 3
 	asyncMaxRetainedCompleted      = 50
@@ -122,13 +112,6 @@ func asyncProbes() (func(int) bool, func(int) (int64, bool)) {
 		panic("tools.AsyncDelegationOwnerProbes is not installed: pkg/gateway assigns it at init")
 	}
 	return p.PidExists, p.ProcessStartTime
-}
-
-func asyncRetirement() RetirementWork {
-	if AsyncDelegationRetirement == nil {
-		panic("tools.AsyncDelegationRetirement is not installed: pkg/provider assigns it at init")
-	}
-	return AsyncDelegationRetirement
 }
 
 // Durable ledger path, state.db of the bound profile home
@@ -1634,21 +1617,11 @@ func asyncExceptionName(err error) string {
 	return "RuntimeError"
 }
 
-// Dispatch under a backend retirement work reservation, rejected while the backend retires
-func asyncDispatch(ctx context.Context, env *Env, d AsyncDispatch) (map[string]any, error) {
-	admitted, release := asyncRetirement().Work()
-	defer release()
-	if !admitted {
-		return map[string]any{"status": "rejected", "error": "backend is retiring; reconnect to continue"}, nil
-	}
-	return asyncDispatchAdmitted(ctx, env, d)
-}
-
 // Executor the dispatch submits to, replaced by tests pinning a pool so a unit stays queued
 var asyncGetExecutorFn = asyncGetExecutor
 
 // Shared dispatch core, the capacity check and record insert under one lock hold so the cap is never exceeded
-func asyncDispatchAdmitted(ctx context.Context, env *Env, d AsyncDispatch) (map[string]any, error) {
+func asyncDispatch(ctx context.Context, env *Env, d AsyncDispatch) (map[string]any, error) {
 	if _, err := WorkerLedger(); err != nil {
 		return nil, err
 	}
@@ -1784,12 +1757,9 @@ func asyncDispatchAdmitted(ctx context.Context, env *Env, d AsyncDispatch) (map[
 		status = classify(out)
 		return nil, nil
 	}
-	retire := asyncRetirement()
-	retire.Acquire()
 	run := PropagateContextToThread(ctx, env, worker)
-	future, err := executor.Submit(context.WithoutCancel(ctx), func(context.Context) (any, error) { return run() })
+	_, err := executor.Submit(context.WithoutCancel(ctx), func(context.Context) (any, error) { return run() })
 	if err != nil {
-		retire.Release()
 		asyncRecordsMu.Lock()
 		asyncDeleteRecordLocked(delegationID)
 		asyncRecordsMu.Unlock()
@@ -1809,10 +1779,6 @@ func asyncDispatchAdmitted(ctx context.Context, env *Env, d AsyncDispatch) (map[
 		}
 		return map[string]any{"status": "rejected", "error": fmt.Sprintf("Failed to schedule async delegation%s: %s", label, err)}, nil
 	}
-	go func() {
-		<-future.Done()
-		retire.Release()
-	}()
 	if d.ProgressFn != nil {
 		asyncEnsureStaleMonitor()
 	}

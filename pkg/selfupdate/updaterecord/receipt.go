@@ -43,10 +43,10 @@ const (
 var (
 	receiptKeep = 20
 	// Follow-up steps whose failure leaves the source update tail owed
-	TailFollowups = map[string]bool{"dependencies": true, "launchers": true, "maintenance": true,
-		"profile_sync": true, "config_migration": true, "completion": true}
+	TailFollowups = map[string]bool{"dependencies": true, "launchers": true, "feature_dependencies": true,
+		"maintenance": true, "profile_sync": true, "config_migration": true, "completion": true}
 	// Follow-ups meaning the build stage did not succeed
-	BuildFollowups = map[string]bool{"launchers": true, "completion": true}
+	BuildFollowups = map[string]bool{"launchers": true, "feature_dependencies": true, "completion": true}
 
 	gitFilePermission = mustPyre(`Permission denied(?! *\()|\bEACCES\b`)
 	parkedReasonLabel = regexp.MustCompile(`^(?:[A-Z][A-Za-z0-9_]{0,63}:(?: \[(?:Errno|WinError) \d+\])?` +

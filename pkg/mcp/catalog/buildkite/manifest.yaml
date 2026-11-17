@@ -26,14 +26,6 @@ tools:
     - access_token
     - get_job_env
 
-# Composer-suggestion triggers (desktop brand pills).
-suggest:
-  keywords:
-    - buildkite
-    - ci
-  hosts:
-    - buildkite.com
-
 post_install: |
   On first connection icebath opens a browser to authorize with
   Buildkite (or run `icebath mcp login buildkite`). Approve access,

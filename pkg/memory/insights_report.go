@@ -343,5 +343,5 @@ func (e *InsightsEngine) FormatGateway(r *InsightsReport) string {
 	return strings.Join(lines, "\n")
 }
 
-// The insights engine is constructed per report by the CLI, gateway and dashboard callers
+// The insights engine is constructed per report by the CLI and gateway callers
 func registerInsightsEngine() {}

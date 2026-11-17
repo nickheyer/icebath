@@ -2,10 +2,11 @@ package agent
 
 import (
 	"fmt"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"reflect"
 	"strings"
 	"sync"
+
+	"github.com/nickheyer/icebath/pkg/tuigateway"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"

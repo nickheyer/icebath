@@ -127,10 +127,10 @@ func (m *OAuthManager) getOrBuildProvider(ctx context.Context, serverName, serve
 	return e.provider, nil
 }
 
-// Provider with the manager hooks, refusing a non interactive first login without a dashboard flow
+// Provider with the manager hooks, refusing a non interactive first login without a client flow
 func (m *OAuthManager) buildProvider(ctx context.Context, serverName string, e *providerEntry, homeKey string) (*OAuthProvider, error) {
 	cfg, storage := prepareOAuthConfig(ctx, serverName, e.serverURL, e.oauthConfig)
-	if dashboardOAuthFlowFrom(ctx) == nil && !isInteractive(ctx) && !storage.HasCachedTokens() {
+	if clientOAuthFlowFrom(ctx) == nil && !isInteractive(ctx) && !storage.HasCachedTokens() {
 		return nil, &OAuthNonInteractiveError{fmt.Sprintf("MCP OAuth for '%s': non-interactive environment and no cached tokens found. "+
 			"Run `icebath mcp login %s` interactively first to complete initial authorization.", serverName, serverName)}
 	}

@@ -2,7 +2,6 @@ package memory
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"path/filepath"
 	"sort"
@@ -31,260 +30,11 @@ var sourceRank = map[string]int{SourceBundled: 0, SourceUser: 1, SourceProject: 
 // Config key recording the plugins an update turned off and why
 const disabledByUpdateRecord = "disabled_by_update"
 
-// Field kinds the generic provider config renderer understands
-const (
-	KindText   = "text"
-	KindSelect = "select"
-	KindSecret = "secret"
-	KindBool   = "bool"
-	KindNumber = "number"
-	KindJSON   = "json"
-)
-
-// Storage backends the provider config endpoints dispatch on
-const (
-	StorageFlatJSON        = "flat_json"
-	StorageHonchoHostBlock = "honcho_host_block"
-)
-
-// One choice of a select field
-type ProviderFieldOption struct {
-	Value       string `json:"value"`
-	Label       string `json:"label"`
-	Description string `json:"description"`
-}
-
-// One configurable field, secrets live in the env store under EnvKey and are never read back
-type ProviderField struct {
-	Key          string                `json:"key"`
-	Label        string                `json:"label"`
-	Kind         string                `json:"kind"`
-	Default      string                `json:"default"`
-	Description  string                `json:"description"`
-	Placeholder  string                `json:"placeholder"`
-	Options      []ProviderFieldOption `json:"options"`
-	EnvKey       string                `json:"env_key"`
-	Aliases      []string              `json:"aliases"`
-	EnvFallbacks []string              `json:"env_fallbacks"`
-	Inline       bool                  `json:"inline"`
-	Group        string                `json:"group"`
-	Info         string                `json:"info"`
-	Scope        string                `json:"scope"`
-}
-
-// Field with the declared defaults, text kind placed in the per profile host block
-func NewProviderField(key, label string) ProviderField {
-	return ProviderField{Key: key, Label: label, Kind: KindText, Scope: "host"}
-}
-
-// Whether the field is stored as a secret
-func (f ProviderField) IsSecret() bool { return f.Kind == KindSecret }
-
-// Values a select field accepts
-func (f ProviderField) AllowedValues() map[string]bool {
-	out := make(map[string]bool, len(f.Options))
-	for _, o := range f.Options {
-		out[o.Value] = true
-	}
-	return out
-}
-
-// Declared config surface of a provider plugin
-type ProviderConfigSchema struct {
-	Name    string          `json:"name"`
-	Label   string          `json:"label"`
-	Storage string          `json:"storage"`
-	DocsURL string          `json:"docs_url"`
-	Fields  []ProviderField `json:"fields"`
-}
-
-// Schema with the flat json storage default
-func NewProviderConfigSchema(name, label string, fields ...ProviderField) *ProviderConfigSchema {
-	return &ProviderConfigSchema{Name: name, Label: label, Storage: StorageFlatJSON, Fields: fields}
-}
-
-// Fields of the compact panel subset
-func (s *ProviderConfigSchema) InlineFields() []ProviderField {
-	var out []ProviderField
-	for _, f := range s.Fields {
-		if f.Inline {
-			out = append(out, f)
-		}
-	}
-	return out
-}
-
-// Rebuilds a schema that crossed the plugin host boundary as plain data, nil for an empty record
-func ProviderConfigSchemaFromRecord(record map[string]any) (*ProviderConfigSchema, error) {
-	if len(record) == 0 {
-		return nil, nil
-	}
-	schema := &ProviderConfigSchema{Storage: StorageFlatJSON}
-	for k, v := range record {
-		var err error
-		switch k {
-		case "name":
-			schema.Name, err = recordString(k, v)
-		case "label":
-			schema.Label, err = recordString(k, v)
-		case "storage":
-			schema.Storage, err = recordString(k, v)
-		case "docs_url":
-			schema.DocsURL, err = recordString(k, v)
-		case "fields":
-		default:
-			err = fmt.Errorf("ProviderConfigSchema.__init__() got an unexpected keyword argument '%s'", k)
-		}
-		if err != nil {
-			return nil, err
-		}
-	}
-	_, hasName := record["name"]
-	_, hasLabel := record["label"]
-	if !hasName || !hasLabel {
-		return nil, errors.New("ProviderConfigSchema.__init__() missing required positional arguments 'name' and 'label'")
-	}
-	fields, _ := record["fields"].([]any)
-	for _, raw := range fields {
-		fm, ok := raw.(map[string]any)
-		if !ok {
-			return nil, fmt.Errorf("argument after ** must be a mapping, not %s", pyTypeName(raw))
-		}
-		field, err := fieldFromRecord(fm)
-		if err != nil {
-			return nil, err
-		}
-		schema.Fields = append(schema.Fields, field)
-	}
-	return schema, nil
-}
-
-// One field rebuilt from plain data with tuple valued keys converted
-func fieldFromRecord(fm map[string]any) (ProviderField, error) {
-	f := ProviderField{Kind: KindText, Scope: "host"}
-	_, hasKey := fm["key"]
-	_, hasLabel := fm["label"]
-	if !hasKey || !hasLabel {
-		return f, errors.New("ProviderField.__init__() missing required positional arguments 'key' and 'label'")
-	}
-	for k, v := range fm {
-		var err error
-		switch k {
-		case "key":
-			f.Key, err = recordString(k, v)
-		case "label":
-			f.Label, err = recordString(k, v)
-		case "kind":
-			f.Kind, err = recordString(k, v)
-		case "default":
-			f.Default, err = recordString(k, v)
-		case "description":
-			f.Description, err = recordString(k, v)
-		case "placeholder":
-			f.Placeholder, err = recordString(k, v)
-		case "env_key":
-			if v != nil {
-				f.EnvKey, err = recordString(k, v)
-			}
-		case "group":
-			f.Group, err = recordString(k, v)
-		case "info":
-			f.Info, err = recordString(k, v)
-		case "scope":
-			f.Scope, err = recordString(k, v)
-		case "inline":
-			f.Inline = pyTruthy(v)
-		case "aliases":
-			f.Aliases, err = recordStrings(k, v)
-		case "env_fallbacks":
-			f.EnvFallbacks, err = recordStrings(k, v)
-		case "options":
-			opts, _ := v.([]any)
-			for _, raw := range opts {
-				om, ok := raw.(map[string]any)
-				if !ok {
-					return f, fmt.Errorf("argument after ** must be a mapping, not %s", pyTypeName(raw))
-				}
-				opt, oerr := optionFromRecord(om)
-				if oerr != nil {
-					return f, oerr
-				}
-				f.Options = append(f.Options, opt)
-			}
-		default:
-			err = fmt.Errorf("ProviderField.__init__() got an unexpected keyword argument '%s'", k)
-		}
-		if err != nil {
-			return f, err
-		}
-	}
-	return f, nil
-}
-
-func optionFromRecord(om map[string]any) (ProviderFieldOption, error) {
-	var o ProviderFieldOption
-	_, hasValue := om["value"]
-	_, hasLabel := om["label"]
-	if !hasValue || !hasLabel {
-		return o, errors.New("ProviderFieldOption.__init__() missing required positional arguments 'value' and 'label'")
-	}
-	for k, v := range om {
-		var err error
-		switch k {
-		case "value":
-			o.Value, err = recordString(k, v)
-		case "label":
-			o.Label, err = recordString(k, v)
-		case "description":
-			o.Description, err = recordString(k, v)
-		default:
-			err = fmt.Errorf("ProviderFieldOption.__init__() got an unexpected keyword argument '%s'", k)
-		}
-		if err != nil {
-			return o, err
-		}
-	}
-	return o, nil
-}
-
-func recordString(key string, v any) (string, error) {
-	s, ok := v.(string)
-	if !ok {
-		return "", fmt.Errorf("field %s must be a string, got %s", key, pyTypeName(v))
-	}
-	return s, nil
-}
-
-func recordStrings(key string, v any) ([]string, error) {
-	if v == nil {
-		return nil, nil
-	}
-	list, ok := v.([]any)
-	if !ok {
-		return nil, fmt.Errorf("field %s must be a list, got %s", key, pyTypeName(v))
-	}
-	out := make([]string, 0, len(list))
-	for _, item := range list {
-		s, err := recordString(key, item)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, s)
-	}
-	return out, nil
-}
-
 // How a provider load runs, skills register only for the configured active provider
 type LoadOptions struct {
 	RegisterSkills bool
 	// Records a plugin skill the provider registered so switching providers can retract it
 	TrackSkill func(qualifiedName string)
-}
-
-// Zero CLI OAuth connect flow a provider ships, mounted under the dashboard memory routes
-type OAuthFlow interface {
-	StartLoopbackFlowBackground(ctx context.Context) (any, error)
-	FlowStatus(ctx context.Context) (any, error)
 }
 
 // CLI subcommand the active memory provider contributes, Setup adds flags and Handler runs it
@@ -304,13 +54,9 @@ type ProviderRegistration struct {
 	// Extra names a plugins disabled list may use, such as the manifest name
 	Spellings []string
 	// Raw plugin.yaml text, the description read from it
-	Manifest     string
-	New          func(ctx context.Context, env *tools.Env, opts LoadOptions) (Provider, error)
-	ConfigSchema func(ctx context.Context) (*ProviderConfigSchema, error)
-	// config_schema.py the plugin host runs for ConfigSchema, no schema while it is not a file
-	SchemaFile string
-	OAuth      OAuthFlow
-	CLI        *ProviderCLI
+	Manifest string
+	New      func(ctx context.Context, env *tools.Env, opts LoadOptions) (Provider, error)
+	CLI      *ProviderCLI
 }
 
 // Description from the plugin manifest, empty when absent or unreadable
@@ -337,7 +83,6 @@ var (
 	skillRegistry PluginSkillRegistry
 	// Provider skills registered per home key, pruning one profile never retracts a sibling profile's skills
 	registeredSkills = map[string]map[string]string{}
-	schemaCache      = map[string]*ProviderConfigSchema{}
 )
 
 // Adds a provider to the registry, a bundled name registered twice keeps the first
@@ -431,20 +176,6 @@ func FindProvider(ctx context.Context, env *tools.Env, name string) *ProviderReg
 		}
 	}
 	return nil
-}
-
-// Sorted names of every discoverable provider, no load or availability check
-func ListMemoryProviderNames(ctx context.Context, env *tools.Env) []string {
-	seen := map[string]bool{}
-	var names []string
-	for _, r := range visibleRegistrations(ctx, env) {
-		if !seen[r.Name] {
-			seen[r.Name] = true
-			names = append(names, r.Name)
-		}
-	}
-	sort.Strings(names)
-	return names
 }
 
 // Discovered provider with its manifest description and availability
@@ -640,89 +371,6 @@ func ParkedProviderNotice(ctx context.Context, env *tools.Env, name string) (str
 	}
 	return fmt.Sprintf("⚠ Memory provider '%s' is turned off: plugins.disabled lists it, so external memory is off "+
 		"(built-in memory still works).%s Turn it back on with `icebath plugins enable %s`.", name, why, name), true
-}
-
-// Declared config schema of a provider, nil when it declares none or the schema fails to load
-func GetProviderConfigSchema(ctx context.Context, env *tools.Env, name string) *ProviderConfigSchema {
-	r := FindProvider(ctx, env, name)
-	if r == nil || r.ConfigSchema == nil {
-		return nil
-	}
-	if r.SchemaFile != "" && !isRegularFile(r.SchemaFile) {
-		return nil
-	}
-	key := r.Source + "\x00" + homeKey(r.Home) + "\x00" + r.Dir + "\x00" + r.Name
-	registryMu.RLock()
-	cached, ok := schemaCache[key]
-	registryMu.RUnlock()
-	if ok {
-		return cached
-	}
-	schema, err := loadSchema(ctx, r)
-	if err != nil {
-		envLog(env).Error(fmt.Sprintf("failed to load config schema for memory provider %s", pyRepr(name)), "error", err)
-		return nil
-	}
-	if schema != nil {
-		registryMu.Lock()
-		schemaCache[key] = schema
-		registryMu.Unlock()
-	}
-	return schema
-}
-
-func loadSchema(ctx context.Context, r *ProviderRegistration) (s *ProviderConfigSchema, err error) {
-	defer func() {
-		if rec := recover(); rec != nil {
-			err = fmt.Errorf("%v", rec)
-		}
-	}()
-	return r.ConfigSchema(ctx)
-}
-
-// Errors the OAuth routes map to a not found response
-var (
-	errProviderNotInstalled = errors.New("memory provider is not installed")
-	errNoOAuthFlow          = errors.New("memory provider ships no oauth flow")
-)
-
-// OAuth connect flow of whichever copy of a provider is installed
-func ProviderOAuthFlow(ctx context.Context, env *tools.Env, name string) (OAuthFlow, error) {
-	r := FindProvider(ctx, env, name)
-	if r == nil {
-		return nil, fmt.Errorf("memory provider %s is not installed: %w", pyRepr(name), errProviderNotInstalled)
-	}
-	if r.OAuth != nil {
-		return r.OAuth, nil
-	}
-	if r.Dir == "" {
-		return nil, fmt.Errorf("memory provider %s has no oauth_flow: %w", pyRepr(name), errNoOAuthFlow)
-	}
-	mod, err := ImportProviderModule(ctx, name, "oauth_flow")
-	var importErr *ProviderImportError
-	if errors.As(err, &importErr) || plugins.RemoteIsInstance(err, "ImportError") {
-		return nil, fmt.Errorf("memory provider %s has no oauth_flow: %w", pyRepr(name), errNoOAuthFlow)
-	}
-	if err != nil {
-		return nil, err
-	}
-	return hostedOAuthFlow{mod: mod}, nil
-}
-
-// OAuth flow module of a user provider package living in the plugin host
-type hostedOAuthFlow struct{ mod *plugins.HostedObject }
-
-func (f hostedOAuthFlow) StartLoopbackFlowBackground(ctx context.Context) (any, error) {
-	return f.mod.Call(ctx, "start_loopback_flow_background", nil, nil)
-}
-
-func (f hostedOAuthFlow) FlowStatus(ctx context.Context) (any, error) {
-	return f.mod.Call(ctx, "get_flow_status", nil, nil)
-}
-
-// Whether an OAuth flow lookup failed because the provider is absent or ships no flow, the ImportError of hermes
-func OAuthFlowUnsupported(err error) bool {
-	return errors.Is(err, errProviderNotInstalled) || errors.Is(err, errNoOAuthFlow)
 }
 
 // Whether the configured or named provider resolves to compiled in code ready to construct without import work

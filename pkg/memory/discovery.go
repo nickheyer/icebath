@@ -216,7 +216,6 @@ func providerManifest(dir string) (string, []string) {
 func dirRegistration(name, dir, source, home string) *ProviderRegistration {
 	manifest, spellings := providerManifest(dir)
 	return &ProviderRegistration{Name: name, Source: source, Dir: dir, Home: home, Manifest: manifest, Spellings: spellings,
-		SchemaFile: filepath.Join(dir, "config_schema.py"), ConfigSchema: hostedConfigSchema(filepath.Join(dir, "config_schema.py")),
 		New: func(ctx context.Context, env *tools.Env, opts LoadOptions) (Provider, error) {
 			return loadProviderFromDir(ctx, dir, opts)
 		}}
@@ -229,8 +228,6 @@ func entryPointRegistration(ep pyimport.EntryPoint) *ProviderRegistration {
 	r := &ProviderRegistration{Name: name, Source: SourceEntryPoint, Dir: dir}
 	if dir != "" {
 		r.Manifest, r.Spellings = providerManifest(dir)
-		r.SchemaFile = filepath.Join(dir, "config_schema.py")
-		r.ConfigSchema = hostedConfigSchema(r.SchemaFile)
 	}
 	r.New = func(ctx context.Context, env *tools.Env, opts LoadOptions) (Provider, error) {
 		if dir != "" {

@@ -272,6 +272,14 @@ func updateFinish(ctx context.Context, contextPath, resultPath string, stdout, s
 			fmt.Fprintf(stdout, "  ⚠ Could not record the owed source-update tail: %s\n", launchErrorText(err))
 		}
 		owed := [][2]string{}
+		if err := refreshConfiguredFeatures(ctx, root, stdout); err != nil {
+			if isInterrupt(err) {
+				return err
+			}
+			reason := pyReason(err)
+			updaterecord.RecordFollowup(ctx, featureDependenciesFollowup, reason, updaterecord.FollowupRetryDefault)
+			owed = append(owed, [2]string{featureDependenciesFollowup, reason})
+		}
 		assumeYes, err := pyDictItem(request, "assume_yes")
 		if err != nil {
 			return err

@@ -85,10 +85,6 @@ var (
 	truthyStrings        = map[string]bool{"1": true, "true": true, "yes": true, "on": true}
 )
 
-const tuiEmbeddedPaneClarifierText = " You're in its embedded terminal pane, beside the GUI chat — the user can " +
-	"select your output (Option-drag on macOS, Shift-drag elsewhere) and press " +
-	"Cmd/Ctrl+L to send it to the chat composer."
-
 func systemPromptLog() *slog.Logger { return slog.Default().With("logger", "agent.system_prompt") }
 
 // Reports whether an environment variable holds one of the shared truthy strings
@@ -171,14 +167,6 @@ func pyDict(v any) (map[string]any, bool) {
 		return map[string]any(m), true
 	}
 	return nil, false
-}
-
-// Appends the desktop embedded terminal clarifier once when the desktop terminal flag is set
-func tuiEmbeddedPaneClarifier(hint string) string {
-	if hint == "" || strings.Contains(hint, tuiEmbeddedPaneClarifierText) || !envTruthy("ICEBATH_DESKTOP_TERMINAL") {
-		return hint
-	}
-	return hint + tuiEmbeddedPaneClarifierText
 }
 
 // Session metadata exposed to plugin prompt sections at render time
@@ -603,13 +591,10 @@ func cronDeliveryHint(ctx context.Context, a *AIAgent) string {
 	return fmt.Sprintf("Delivery destination (%s): %s", key, hint)
 }
 
-// PlatformHint is the platform hint with its override, the desktop TUI clarifier and a cron agent's delivery hint
+// PlatformHint is the platform hint with its override and a cron agent's delivery hint
 func PlatformHint(ctx context.Context, a *AIAgent) string {
 	key := pystr.Strip(pystr.Lower(a.platform))
 	hint := resolvePlatformHint(a, key, defaultPlatformHint(ctx, key))
-	if key == "tui" && hint != "" {
-		hint = tuiEmbeddedPaneClarifier(hint)
-	}
 	if key == "cron" {
 		if delivery := cronDeliveryHint(ctx, a); delivery != "" {
 			hint = pystr.Strip(hint + "\n\n" + delivery)

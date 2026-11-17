@@ -103,8 +103,7 @@ func warnWindowsLockTimeoutOnce() {
 	lockTimeoutWarned = true
 	lockTimeoutWarnLock.Unlock()
 	GetLogger("hermes_logging").Warning("concurrent-log-handler timed out acquiring the cross-process log " +
-		"lock; this and later records were dropped (the Desktop slash-worker " +
-		"surface stays clean, but file logging is degraded).")
+		"lock; this and later records were dropped (file logging is degraded).")
 }
 
 // Reports whether a file handler lost its backing stream to EIO or a closed file

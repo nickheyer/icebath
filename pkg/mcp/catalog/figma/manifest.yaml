@@ -23,15 +23,6 @@ transport:
 auth:
   type: oauth
 
-# Composer-suggestion triggers (desktop brand pills).
-suggest:
-  keywords:
-    - figma
-    - mockup
-    - wireframe
-  hosts:
-    - figma.com
-
 post_install: |
   On first connection icebath opens a browser to authorize with Figma
   (or run `icebath mcp login figma`). Approve access, then restart the

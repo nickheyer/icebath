@@ -27,14 +27,10 @@ func asyncTestParent(env *tools.Env, sessionID string) *AIAgent {
 	return &AIAgent{sessionID: sessionID, env: env}
 }
 
-// Installs the retirement double a detached dispatch needs and empties the completion queue around the test
+// Empties the completion queue around a detached dispatch test
 func asyncDispatchFixture(t *testing.T) *tools.Env {
 	t.Helper()
 	env := delegationTestEnv(t, 0, false)
-	if tools.AsyncDelegationRetirement == nil {
-		tools.AsyncDelegationRetirement = reviewRetirementDouble{}
-		t.Cleanup(func() { tools.AsyncDelegationRetirement = nil })
-	}
 	drain := func() {
 		for {
 			if _, ok := tools.DefaultProcessRegistry().CompletionQueue.GetNowait(); !ok {
@@ -293,9 +289,6 @@ func dispatchAsyncOwnerDeathChild() {
 	}
 	h := os.Getenv("ICEBATH_HOME")
 	env := &tools.Env{Home: h, Config: config.Defaults(), Secrets: config.NewSecrets(h), Values: &sync.Map{}}
-	if tools.AsyncDelegationRetirement == nil {
-		tools.AsyncDelegationRetirement = reviewRetirementDouble{}
-	}
 	parent := &AIAgent{sessionID: "sess", env: env}
 	buildChildPreservingParentToolsFn = func(_ context.Context, spec childBuildSpec) (*AIAgent, error) {
 		return &AIAgent{delegateRole: "leaf", subagentID: fmt.Sprintf("s%d", spec.TaskIndex)}, nil

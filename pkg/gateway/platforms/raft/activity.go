@@ -46,10 +46,10 @@ var (
 	activeAdaptersMu sync.Mutex
 	activeAdapters   = map[weak.Pointer[RaftAdapter]]struct{}{}
 
-	raftContextMu      sync.Mutex
-	raftSessionIDs     = map[string]bool{}
-	raftTurnIDs        = map[string]bool{}
-	raftPromptTurnIDs  = map[string]bool{}
+	raftContextMu     sync.Mutex
+	raftSessionIDs    = map[string]bool{}
+	raftTurnIDs       = map[string]bool{}
+	raftPromptTurnIDs = map[string]bool{}
 )
 
 // Whether a decoded JSON value holds a content named key at any depth

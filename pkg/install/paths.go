@@ -2,16 +2,14 @@ package install
 
 import (
 	"io"
-	"log/slog"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
 )
 
 // Directory name of the install tree under the home
@@ -28,67 +26,12 @@ func Home() string {
 	return home.PlatformDefault()
 }
 
-// Profile tree root that holds the host wide update marker
-func Root() string { return home.Root() }
-
 // Install tree of a home
 func InstallRootOf(homeDir string) string { return filepath.Join(homeDir, InstallDirName) }
-
-func LogDir() string { return filepath.Join(Home(), "logs") }
-
-func LogPath() string { return filepath.Join(LogDir(), "bootstrap-installer.log") }
-
-// Stable copy of the installer the desktop relaunches with --update
-func InstallerDest() string {
-	name := "hermes-setup"
-	if runtime.GOOS == "windows" {
-		name += ".exe"
-	}
-	return filepath.Join(Home(), name)
-}
-
-// Host wide update marker under the profile tree root
-func UpdateMarkerPath() string { return filepath.Join(Root(), updaterecord.MarkerName) }
 
 // Bootstrap complete marker of an install tree
 func BootstrapMarkerPath(installRoot string) string {
 	return filepath.Join(installRoot, BootstrapMarkerName)
-}
-
-// Copies the running installer, the AppImage file itself when run from one, to the stable home location unless already there
-func CopySelfToHome() error {
-	src, err := os.Executable()
-	if err != nil {
-		return err
-	}
-	if image := os.Getenv("APPIMAGE"); image != "" && isFile(image) {
-		src = image
-	}
-	dest := InstallerDest()
-	if samePath(src, dest) {
-		slog.Info("installer already at destination; skipping self-copy", "dest", dest)
-		return nil
-	}
-	if err := os.MkdirAll(filepath.Dir(dest), 0o777); err != nil {
-		return err
-	}
-	if err := copyFile(src, dest, 0o755); err != nil {
-		return err
-	}
-	repairMacOSInstallerHelper(dest)
-	slog.Info("copied installer to ICEBATH_HOME", "src", src, "dest", dest)
-	return nil
-}
-
-// Clears quarantine and ad hoc signs the staged macOS helper when its signature does not verify
-func repairMacOSInstallerHelper(path string) {
-	if runtime.GOOS != "darwin" {
-		return
-	}
-	_ = exec.Command("/usr/bin/xattr", "-cr", path).Run()
-	if exec.Command("/usr/bin/codesign", "--verify", path).Run() != nil {
-		_ = exec.Command("/usr/bin/codesign", "--force", "--sign", "-", path).Run()
-	}
 }
 
 // Reports two paths naming one file, resolved when both resolve, compared verbatim otherwise
@@ -159,3 +102,11 @@ func replaceFile(src, dest string) error {
 	_ = os.Remove(aside)
 	return nil
 }
+
+// Whether p names an existing regular file
+func isFile(p string) bool {
+	st, err := os.Stat(p)
+	return err == nil && st.Mode().IsRegular()
+}
+
+func itoa(n int) string { return strconv.Itoa(n) }

@@ -90,7 +90,7 @@ func TestBroadcastFailureDoesNotBreakTeardown(t *testing.T) {
 func TestReapPathsStampTheRuntimeIdTheClientHolds(t *testing.T) {
 	t.Setenv("ICEBATH_HOME", t.TempDir())
 	tuigateway.SetSessionRecord("live-xyz", tuigateway.NewSession(map[string]any{"session_key": "k"}))
-	popped := popSessionByID(context.Background(), "live-xyz")
+	popped := popSessionByID("live-xyz")
 	tuigateway.SetSessionRecord("live-xyz", nil)
 	if popped == nil || popped.Get("_sid") != "live-xyz" {
 		t.Fatalf("popped %v", popped)

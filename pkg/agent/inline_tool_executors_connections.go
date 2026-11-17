@@ -75,8 +75,7 @@ func manageConnectionsInline(a *AIAgent, ctx context.Context, args map[string]an
 	}
 	env := a.env
 	result := tools.ManageConnections(ctx, env, args, tools.ManageOptions{SessionID: a.sessionID, ToolCallID: ictx.ToolCallID,
-		TurnID: a.currentTurnID, Callback: callback, ConnectorsAvailable: func() bool { return tools.ConnectorsAvailable(env) },
-		CardSurface: a.platform == "desktop"})
+		TurnID: a.currentTurnID, Callback: callback, ConnectorsAvailable: func() bool { return tools.ConnectorsAvailable(env) }})
 	if err := scopeInConnectedMCPServers(a, result); err != nil {
 		return "", err
 	}

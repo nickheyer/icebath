@@ -12,7 +12,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/hostinfo"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -53,13 +52,9 @@ var (
 	installRAMTotalBytes = hostinfo.RAMTotalBytes
 )
 
-// Install method the client resource names, the Microsoft Store build included
+// Install method the client resource names
 func DetectClientInstallMethod(ctx context.Context) (string, error) {
-	root := installProjectRoot()
-	if mechanism, ok := pm.ReadInstallStamp(root).Get("updateMechanism"); ok && mechanism == "microsoft-store" {
-		return "microsoft-store", nil
-	}
-	return config.DetectInstallMethod(ctx, home.Dir(ctx), root)
+	return config.DetectInstallMethod(ctx, home.Dir(ctx), installProjectRoot())
 }
 
 // Channel this install follows from its channel record or checkout branch

@@ -27,7 +27,7 @@ type oauthSession struct {
 	sessionID  string
 	serverName string
 	homeDir    string
-	flow       *DashboardOAuthFlow
+	flow       *ClientOAuthFlow
 	createdAt  time.Time
 
 	mu    sync.Mutex
@@ -51,7 +51,7 @@ func (rec *oauthSession) shutdownListener() {
 }
 
 // Registers a callback relay flow so RPC and card starts share ownership checks
-func RegisterOAuthFlow(flow *DashboardOAuthFlow, httpd *http.Server) *oauthSession {
+func RegisterOAuthFlow(flow *ClientOAuthFlow, httpd *http.Server) *oauthSession {
 	rec := &oauthSession{sessionID: flow.FlowID, serverName: flow.ServerName, homeDir: flow.HomeDir, flow: flow,
 		httpd: httpd, createdAt: time.Now()}
 	oauthSessionsMu.Lock()
@@ -111,7 +111,7 @@ func StartOAuthFlow(ctx context.Context, env *tools.Env, homeDir, serverName str
 		return nil, fmt.Errorf("MCP OAuth for '%s' is already in progress", serverName)
 	}
 	sessionID := tokenURLSafe(24)
-	flow := NewDashboardOAuthFlow(sessionID, serverName, "", homeDir, "", reconnectLive)
+	flow := NewClientOAuthFlow(sessionID, serverName, "", homeDir, "", reconnectLive)
 	httpd, err := ChooseCallbackReceiver(flow, cfg, clientRedirectURI)
 	if err != nil {
 		return nil, err

@@ -65,12 +65,6 @@ func argS(args map[string]any, key string) string {
 	return ""
 }
 
-// Reports whether the argument is present and not null
-func argHas(args map[string]any, key string) bool {
-	v, ok := args[key]
-	return ok && v != nil
-}
-
 // Integer argument, the fallback when absent or not numeric
 func argI(args map[string]any, key string, fallback int) int {
 	if n, ok := config.AsInt(args[key]); ok {

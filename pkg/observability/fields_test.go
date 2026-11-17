@@ -132,7 +132,7 @@ func TestSmallFieldBuilders(t *testing.T) {
 	if f := FallbackFields(nil, nil, failoverReason("rate_limit")); f["error_class"] != ModelErrorClass(map[string]any{"reason": "rate_limit"}) {
 		t.Fatalf("fallback %v", f)
 	}
-	if f := SetupCompletedFields("Desktop", nil); !reflect.DeepEqual(f, map[string]string{"provider": "none", "surface": "desktop"}) {
+	if f := SetupCompletedFields("CLI", nil); !reflect.DeepEqual(f, map[string]string{"provider": "none", "surface": "cli"}) {
 		t.Fatalf("setup %v", f)
 	}
 	if SetupCompletedFields("web", "x")["surface"] != "other" {

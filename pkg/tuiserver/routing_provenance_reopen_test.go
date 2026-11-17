@@ -75,7 +75,7 @@ func TestOnlyAnExplicitCloseOnAStillRegisteredSessionIsCleared(t *testing.T) {
 			if !db.TryAcquireCompressionLock(hz.key, "elsewhere", 300) {
 				t.Fatal("compression lease refused")
 			}
-			if tc.claimed && popSessionByID(context.Background(), hz.sid) != hz.session {
+			if tc.claimed && popSessionByID(hz.sid) != hz.session {
 				t.Fatal("close did not claim the session")
 			}
 			if started := submitAndSettle(t, hz, "go"); started == tc.claimed {

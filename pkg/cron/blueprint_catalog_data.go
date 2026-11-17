@@ -137,7 +137,7 @@ func blueprintTime(def string) BlueprintSlot {
 	return BlueprintSlot{Name: "time", Type: "time", Label: "What time?", Default: def, Help: "24h local time, e.g. 08:00", Strict: true}
 }
 
-var blueprintDeliver = BlueprintSlot{Name: "deliver", Type: "enum", Label: "Where to deliver?", Default: "origin", Options: []any{"origin", "local", "telegram", "discord", "email"}, Help: "origin = the chat you set this up from (or your configured home channel when created from the dashboard); local = save only, no message; or any connected platform name", Strict: false}
+var blueprintDeliver = BlueprintSlot{Name: "deliver", Type: "enum", Label: "Where to deliver?", Default: "origin", Options: []any{"origin", "local", "telegram", "discord", "email"}, Help: "origin = the chat you set this up from; local = save only, no message; or any connected platform name", Strict: false}
 
 var weekdayPresetOrder = []string{"everyday", "weekdays", "weekends"}
 

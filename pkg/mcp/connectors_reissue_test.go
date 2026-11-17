@@ -52,7 +52,7 @@ func TestTryAgainOnANamedAccountRepairsTheAccountItMintedNotTheName(t *testing.T
 	if _, err := op.Transition("gmail", tools.TargetFailed, tools.ActorBackendWatcher, tools.TransitionFields{Detail: &detail}); err != nil {
 		t.Fatal(err)
 	}
-	refusal, err := Reissue(context.Background(), &tools.Env{Platform: "desktop"}, op, []string{"gmail"}, "")
+	refusal, err := Reissue(context.Background(), &tools.Env{Platform: "tui"}, op, []string{"gmail"}, "")
 	if err != nil || refusal != "" {
 		t.Fatalf("refusal %q err %v", refusal, err)
 	}

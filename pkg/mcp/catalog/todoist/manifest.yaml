@@ -29,14 +29,6 @@ tools:
     - export-project-template
     - import-project-template
 
-# Composer-suggestion triggers (desktop brand pills).
-suggest:
-  keywords:
-    - todoist
-    - todo
-  hosts:
-    - todoist.com
-
 post_install: |
   On first connection icebath opens a browser to authorize with
   Todoist (or run `icebath mcp login todoist`). Approve access,

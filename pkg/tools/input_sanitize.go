@@ -17,8 +17,8 @@ var inputBoundarySubs = []struct {
 	{mustPyre(`01~(?=$|[\s\n<\[\(\):;.,!?])`), ""},
 }
 
-// Corruption signature from desktop bracketed paste leaks
-const desktopPasteArtifact = "~[[e"
+// Corruption signature from bracketed paste leaks
+const pasteArtifact = "~[[e"
 
 // Removes canonical paste wrappers everywhere and degraded visible forms only at word boundaries
 func StripLeakedBracketedPasteWrappers(text string) string {
@@ -36,12 +36,12 @@ func StripLeakedBracketedPasteWrappers(text string) string {
 	return text
 }
 
-// Drops a trailing run of at least minRepeats desktop paste corruption markers and their lead in
+// Drops a trailing run of at least minRepeats paste corruption markers and their lead in
 func CollapseRepeatedInputArtifacts(text string, minRepeats int) string {
 	if text == "" {
 		return text
 	}
-	marker := desktopPasteArtifact
+	marker := pasteArtifact
 	index := len(text)
 	repeatCount := 0
 	for index >= len(marker) && text[index-len(marker):index] == marker {

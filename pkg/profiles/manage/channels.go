@@ -1024,8 +1024,8 @@ func SharedChannelCredentials(ctx context.Context, profileDir, sourceDir string)
 // Warning that a profile shares a bot credential with its source
 func SharedCredentialWarning(profile string, platforms []string, source string) string {
 	return fmt.Sprintf("⚠ Profile '%s' shares its %s credential with %s: the bot can "+
-		"only belong to one profile. Give '%s' its own bot (icebath -p %s setup, or the "+
-		"dashboard Messaging page) or remove the token from '%s'; a multiplexed gateway parks "+
+		"only belong to one profile. Give '%s' its own bot (icebath -p %s setup) "+
+		"or remove the token from '%s'; a multiplexed gateway parks "+
 		"the duplicate and `icebath gateway migrate --multiplex` refuses until it is gone.",
 		profile, strings.Join(platforms, ", "), source, profile, profile, profile)
 }
@@ -1038,7 +1038,7 @@ func FormatStrippedNotice(profile string, platforms []string, cloneFlag string) 
 	return []string{
 		fmt.Sprintf("Messaging channels were NOT cloned (%s): a copied bot token or allowlist "+
 			"would make two gateways fight over one bot.", strings.Join(platforms, ", ")),
-		fmt.Sprintf("  Configure this profile's own bots:  icebath -p %s setup   (or the dashboard Messaging page)", profile),
+		fmt.Sprintf("  Configure this profile's own bots:  icebath -p %s setup", profile),
 		fmt.Sprintf("  To copy the source's channels anyway:  icebath profile create %s %s --clone-channels", profile, cloneFlag),
 	}
 }

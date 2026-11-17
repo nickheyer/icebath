@@ -53,12 +53,13 @@ func scRepo(t *testing.T) string {
 	return root
 }
 
-// Replaces the launcher publish and the maintenance with stand ins
+// Replaces the launcher publish, the feature refresh and the maintenance with stand ins
 func scDependencies(t *testing.T, maintenance func(context.Context, PostUpdateMaintenance) (bool, error)) {
 	t.Helper()
 	prevPublish, prevMaint := publishLaunchers, sourceCompletionMaintenance
 	publishLaunchers = func(context.Context, string) error { return nil }
 	sourceCompletionMaintenance = maintenance
+	frQuiet(t)
 	t.Cleanup(func() {
 		publishLaunchers, sourceCompletionMaintenance = prevPublish, prevMaint
 	})
@@ -267,6 +268,7 @@ func scChild(mode string, args []string) int {
 		return 0
 	case "tail":
 		publishLaunchers = func(context.Context, string) error { return nil }
+		frNoSteps()
 		sourceCompletionMaintenance = func(context.Context, PostUpdateMaintenance) (bool, error) { return true, nil }
 		ok, err := CompleteSourceCheckout(context.Background(), args[0], SourceCompletion{AssumeYes: true, Stdout: os.Stdout, Stderr: os.Stderr})
 		if err != nil {

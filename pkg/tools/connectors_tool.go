@@ -16,7 +16,6 @@ type ManageOptions struct {
 	TurnID              string
 	Callback            ConnCallback
 	ConnectorsAvailable func() bool
-	CardSurface         bool
 }
 
 // Routes one manage_connections call to the hosted connector path or the local MCP path
@@ -38,7 +37,7 @@ func ManageConnections(ctx context.Context, env *Env, args map[string]any, opts 
 	}
 	return RunManagedAction(ctx, env, action, managed, args, ManagedOptions{ClientFactory: opts.ClientFactory,
 		SessionID: opts.SessionID, ToolCallID: opts.ToolCallID, TurnID: opts.TurnID, Callback: opts.Callback,
-		ConnectorsAvailable: opts.ConnectorsAvailable, CardSurface: opts.CardSurface})
+		ConnectorsAvailable: opts.ConnectorsAvailable})
 }
 
 func connActionEnum() []any {
@@ -61,15 +60,13 @@ var ManageConnectionsSchema = map[string]any{
 		"catalog entry; otherwise the target is hosted. 'connect' and 'reconnect' are hosted " +
 		"actions; 'install', 'enable' and 'authorize' are MCP actions. A target the other side " +
 		"owns is refused with the call that does work. " +
-		"Hosted actions: 'display' (desktop only; elsewhere returns status) shows every connector and " +
-		"waits for Continue (300 s); put slugs to suggest in 'connectors'. Returns connected/newly_connected " +
-		"(+timed_out); the user saw the list, so do not repeat it. 'connect' is for an app the user names. " +
+		"Hosted actions: 'connect' is for an app the user names. " +
 		"'status' lists connectors and whether each is connected; 'connect' " +
 		"starts an authorization for the given connectors; 'reconnect' checks each one and " +
 		"repairs only what is not connected ('force': true restarts even a working one, for an " +
 		"account switch). A second account of one app is 'connect' with a new 'alias': pick a short " +
 		"lowercase name from the user's words (e.g. 'work'), and ask the user if unsure. 'status' lists " +
-		"each connector's accounts; 'rename' names or renames one. Pass SEVERAL slugs in one call. In the desktop app, the terminal UI and " +
+		"each connector's accounts; 'rename' names or renames one. Pass SEVERAL slugs in one call. In the terminal UI and " +
 		"the interactive CLI the call shows the user a card and blocks until every app is " +
 		"connected, skipped, or the deadline passes; the result lists each target as connected / " +
 		"skipped / not_connected and never carries a link. Where no card exists (a one-shot run, " +
@@ -86,7 +83,7 @@ var ManageConnectionsSchema = map[string]any{
 		"callable at once through tool_describe/tool_call. Where no card exists an MCP target runs at once and the result says what " +
 		"happened, with a link for the user to open when one is needed. This tool can NOT " +
 		"disconnect, delete, or revoke an account — that is deliberately user-only. When asked, say so and direct the user to the " +
-		"Nous Portal (their org's Connectors page) or the desktop app.",
+		"Nous Portal (their org's Connectors page).",
 	"parameters": map[string]any{
 		"type": "object",
 		"properties": map[string]any{

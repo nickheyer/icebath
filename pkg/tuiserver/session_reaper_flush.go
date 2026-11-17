@@ -4,14 +4,10 @@ import (
 	"context"
 	"fmt"
 	"math"
-	"os"
-	"sync"
 	"sync/atomic"
-	"syscall"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/agent"
-	"github.com/nickheyer/icebath/pkg/internal/pysignal"
 	"github.com/nickheyer/icebath/pkg/memory"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -22,17 +18,6 @@ import (
 var (
 	exitFlushBudgetS = math.Max(0, envFloat("ICEBATH_TUI_EXIT_FLUSH_BUDGET_S", 5.0))
 	exitTurnSettleS  = 0.5
-)
-
-// Seconds a signal sent to this process with the default action gets to end it
-const exitSignalDeathWait = 2 * time.Second
-
-// Handlers the exit flush replaced, and whether the flush handlers are installed
-var (
-	exitFlushMu                sync.Mutex
-	exitFlushPrevHandlers      = map[os.Signal]*pysignal.Handler{}
-	exitFlushHandlersInstalled bool
-	exitFlushHandler           = pysignal.Func(handleExitFlushSignal)
 )
 
 // Agent surface a transcript flush drives, the in memory messages and the persist step
@@ -166,41 +151,4 @@ func stopTurnsBeforeExit(ctx context.Context, budgetS *float64) {
 	join(deadline.Add(-window / 2))
 	tools.KillLiveForegroundProcesses(true)
 	join(deadline)
-}
-
-// Flushes in memory sessions and stops turns, then hands the signal to the handler that was installed before
-func handleExitFlushSignal(sig os.Signal) error {
-	exitFlushMu.Lock()
-	prev := exitFlushPrevHandlers[sig]
-	exitFlushMu.Unlock()
-	if prev == pysignal.Ignore {
-		return nil
-	}
-	suppress(func() { flushSessionsBeforeExit(nil) })
-	suppress(func() { stopTurnsBeforeExit(context.Background(), nil) })
-	if prev.Callable() {
-		return prev.Call(sig)
-	}
-	pysignal.Signal(sig, pysignal.Default)
-	if err := pysignal.KillSelf(sig); err != nil {
-		number, _ := sig.(syscall.Signal)
-		return &pysignal.SystemExit{Code: 128 + int(number)}
-	}
-	time.Sleep(exitSignalDeathWait)
-	return nil
-}
-
-// Installs the chaining SIGTERM and SIGINT flush handlers once, true when they are in place
-func InstallExitFlushSignalHandlers() bool {
-	loadServerModule()
-	exitFlushMu.Lock()
-	defer exitFlushMu.Unlock()
-	if exitFlushHandlersInstalled {
-		return true
-	}
-	for _, sig := range []os.Signal{syscall.SIGTERM, os.Interrupt} {
-		exitFlushPrevHandlers[sig] = pysignal.Signal(sig, exitFlushHandler)
-	}
-	exitFlushHandlersInstalled = true
-	return true
 }

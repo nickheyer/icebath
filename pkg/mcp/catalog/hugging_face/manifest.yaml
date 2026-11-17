@@ -19,15 +19,6 @@ transport:
 auth:
   type: oauth
 
-# Composer-suggestion triggers (desktop brand pills).
-suggest:
-  keywords:
-    - hugging face
-    - huggingface
-  hosts:
-    - huggingface.co
-    - hf.co
-
 post_install: |
   On first connection icebath opens a browser to authorize with
   Hugging Face (or run `icebath mcp login hugging_face`). Approve access,

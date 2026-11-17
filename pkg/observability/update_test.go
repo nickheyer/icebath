@@ -190,30 +190,9 @@ func TestDisabledCollectionRecordsNoUpdateRows(t *testing.T) {
 	if !RecordUpdateReceipt(context.Background(), receipt, true) {
 		t.Fatal("off is nothing to record")
 	}
-	RecordDesktopUpdate(context.Background(), map[string]any{"outcome": "success", "failed_stage": nil, "duration_ms": 1, "mechanism": "app-installer"})
 	if len(m.rows) != 0 {
 		t.Fatalf("rows %v", m.rows)
 	}
-}
-
-func TestDesktopUpdateRowsAndKeywordMismatch(t *testing.T) {
-	m := captureUpdates(t)
-	ctx := context.Background()
-	RecordDesktopUpdate(ctx, map[string]any{"outcome": " FAILED ", "failed_stage": "Download", "duration_ms": 1, "mechanism": "posix-handoff",
-		"from_commit_date": float64(time.Now().Add(-48 * time.Hour).Unix())})
-	RecordDesktopUpdate(ctx, map[string]any{"outcome": "success", "failed_stage": nil, "duration_ms": 1})
-	RecordDesktopUpdate(ctx, map[string]any{"outcome": "success", "failed_stage": nil, "duration_ms": 1, "mechanism": nil, "extra": 1})
-	RecordDesktopUpdate(ctx, map[string]any{"outcome": "weird", "failed_stage": "nowhere", "duration_ms": "x", "mechanism": "Microsoft-Store"})
-	want := []map[string]string{
-		{"apply_mode": "git", "duration_bucket": "lt_30s", "failed_stage": "download", "from_version_age_bucket": "lt_7d",
-			"kind": "desktop", "outcome": "failed", "failure_class": "unknown"},
-		{"apply_mode": "package", "duration_bucket": "lt_30s", "failed_stage": "other", "from_version_age_bucket": "unknown",
-			"kind": "desktop", "outcome": "failed", "failure_class": "unknown"},
-	}
-	if got := m.named(UpdateRunMark); !reflect.DeepEqual(got, want) {
-		t.Fatalf("rows %v", got)
-	}
-	m.assertValid(t)
 }
 
 func TestUnrepresentableTimestampsReadAsUnknown(t *testing.T) {

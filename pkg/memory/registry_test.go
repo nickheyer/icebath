@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -28,15 +29,11 @@ func isolateRegistry(t *testing.T) {
 		}
 		savedSkills[k] = inner
 	}
-	savedCache := map[string]*ProviderConfigSchema{}
-	for k, v := range schemaCache {
-		savedCache[k] = v
-	}
 	savedSkillRegistry := skillRegistry
 	registryMu.Unlock()
 	t.Cleanup(func() {
 		registryMu.Lock()
-		registrations, registeredSkills, schemaCache, skillRegistry = savedRegs, savedSkills, savedCache, savedSkillRegistry
+		registrations, registeredSkills, skillRegistry = savedRegs, savedSkills, savedSkillRegistry
 		registryMu.Unlock()
 	})
 }
@@ -66,71 +63,6 @@ func writeConfig(t *testing.T, h, body string) {
 	}
 	if err := os.WriteFile(filepath.Join(h, "config.yaml"), []byte(body), 0o600); err != nil {
 		t.Fatal(err)
-	}
-}
-
-func TestRegistryUnknownProviderSchemaIsNone(t *testing.T) {
-	isolateRegistry(t)
-	ctx := context.Background()
-	if s := GetProviderConfigSchema(ctx, nil, "builtin"); s != nil {
-		t.Fatalf("builtin schema %+v", s)
-	}
-	if s := GetProviderConfigSchema(ctx, nil, "byterover"); s != nil {
-		t.Fatalf("byterover declares no schema, got %+v", s)
-	}
-}
-
-func TestRegistrySchemaCacheKeysOnSourceNotName(t *testing.T) {
-	isolateRegistry(t)
-	root := t.TempDir()
-	homes := map[string]string{}
-	for _, label := range []string{"A", "B"} {
-		h := filepath.Join(root, label)
-		homes[label] = h
-		label := label
-		RegisterProvider(ProviderRegistration{
-			Name: "custom", Source: SourceUser, Home: h, Dir: filepath.Join(h, "plugins", "custom"), New: regFactory("custom"),
-			ConfigSchema: func(context.Context) (*ProviderConfigSchema, error) {
-				return NewProviderConfigSchema("custom", label), nil
-			},
-		})
-	}
-	for _, label := range []string{"A", "B", "A"} {
-		ctx := home.WithOverride(context.Background(), homes[label])
-		s := GetProviderConfigSchema(ctx, nil, "custom")
-		if s == nil || s.Label != label {
-			t.Fatalf("profile %s got schema %+v", label, s)
-		}
-	}
-}
-
-func TestRegistryBrokenSchemaIsNotCached(t *testing.T) {
-	isolateRegistry(t)
-	broken := true
-	RegisterProvider(ProviderRegistration{
-		Name: "broken", Source: SourceEntryPoint, Dir: filepath.Join(t.TempDir(), "broken"), New: regFactory("broken"),
-		ConfigSchema: func(context.Context) (*ProviderConfigSchema, error) {
-			if broken {
-				return nil, errors.New("invalid syntax")
-			}
-			return NewProviderConfigSchema("broken", "Broken"), nil
-		},
-	})
-	ctx := context.Background()
-	if s := GetProviderConfigSchema(ctx, nil, "broken"); s != nil {
-		t.Fatalf("broken schema loaded %+v", s)
-	}
-	registryMu.RLock()
-	for k := range schemaCache {
-		if strings.HasSuffix(k, "\x00broken") {
-			registryMu.RUnlock()
-			t.Fatal("a failed load was cached")
-		}
-	}
-	registryMu.RUnlock()
-	broken = false
-	if s := GetProviderConfigSchema(ctx, nil, "broken"); s == nil || s.Label != "Broken" {
-		t.Fatalf("recovered schema %+v", s)
 	}
 }
 
@@ -199,12 +131,12 @@ func TestRegistryBundledProviderIsNeverParked(t *testing.T) {
 func TestRegistryProjectProviderIsDiscoveredWhenRegistered(t *testing.T) {
 	isolateRegistry(t)
 	ctx := context.Background()
-	if containsString(ListMemoryProviderNames(ctx, nil), "projectmem") || FindProvider(ctx, nil, "projectmem") != nil {
+	if containsString(listedProviderNames(ctx), "projectmem") || FindProvider(ctx, nil, "projectmem") != nil {
 		t.Fatal("unregistered project provider visible")
 	}
 	dir := filepath.Join(t.TempDir(), ".icebath", "plugins", "projectmem")
 	RegisterProvider(ProviderRegistration{Name: "projectmem", Source: SourceProject, Dir: dir, New: regFactory("projectmem")})
-	if !containsString(ListMemoryProviderNames(ctx, nil), "projectmem") {
+	if !containsString(listedProviderNames(ctx), "projectmem") {
 		t.Fatal("project provider not listed")
 	}
 	if r := FindProvider(ctx, nil, "projectmem"); r == nil || r.Dir != dir {
@@ -227,7 +159,7 @@ func TestRegistryBundledStillWinsOverProjectAndUser(t *testing.T) {
 	if r := FindProvider(context.Background(), nil, "shared"); r == nil || r.Source != SourceUser {
 		t.Fatalf("user source should win over project and entry point, got %+v", r)
 	}
-	names := ListMemoryProviderNames(context.Background(), nil)
+	names := listedProviderNames(context.Background())
 	count := 0
 	for _, n := range names {
 		if n == "shared" {
@@ -265,7 +197,7 @@ func TestRegistryEntryPointProviderIsListedWithoutLoading(t *testing.T) {
 		}})
 	RegisterProvider(ProviderRegistration{Name: "flatmem", Source: SourceEntryPoint, New: regFactory("flatmem")})
 	ctx := context.Background()
-	if !containsString(ListMemoryProviderNames(ctx, nil), "pipmem") {
+	if !containsString(listedProviderNames(ctx), "pipmem") {
 		t.Fatal("entry point provider not listed")
 	}
 	if r := FindProvider(ctx, nil, "pipmem"); r == nil || r.Dir != pkgDir {
@@ -324,7 +256,7 @@ func TestRegistryFailingProviderDoesNotAbortDiscovery(t *testing.T) {
 	for _, d := range DiscoverMemoryProviders(ctx, nil) {
 		found[d.Name] = d
 	}
-	if !found["goodmem"].Available || !containsString(ListMemoryProviderNames(ctx, nil), "byterover") {
+	if !found["goodmem"].Available || !containsString(listedProviderNames(ctx), "byterover") {
 		t.Fatalf("discovery lost siblings %+v", found)
 	}
 	if found["denied"].Available || found["nothing"].Available {
@@ -410,83 +342,6 @@ func TestRegistrySkillsRegisterOnlyForTheActiveProviderAndArePruned(t *testing.T
 	}
 }
 
-// OAuth flow fake reporting fixed states
-type regFlow struct{}
-
-func (regFlow) StartLoopbackFlowBackground(ctx context.Context) (any, error) {
-	return map[string]any{"state": "pending", "config": filepath.Join(home.Dir(ctx), "honcho.json")}, nil
-}
-func (regFlow) FlowStatus(ctx context.Context) (any, error) {
-	return map[string]any{"state": "idle"}, nil
-}
-
-func TestRegistryUserDirProviderServesItsDeclaredSchemaAndFlow(t *testing.T) {
-	isolateRegistry(t)
-	h := t.TempDir()
-	t.Setenv("ICEBATH_HOME", h)
-	field := NewProviderField("workspace", "Workspace")
-	field.Inline = true
-	schema := NewProviderConfigSchema("honcho", "Honcho (user dir)", field)
-	schema.Storage = StorageHonchoHostBlock
-	RegisterProvider(ProviderRegistration{Name: "honcho", Source: SourceUser, Home: h, Dir: filepath.Join(h, "plugins", "honcho"),
-		New: regFactory("honcho"), OAuth: regFlow{},
-		ConfigSchema: func(context.Context) (*ProviderConfigSchema, error) { return schema, nil }})
-	ctx := context.Background()
-	got := GetProviderConfigSchema(ctx, nil, "honcho")
-	if got == nil || got.Storage != StorageHonchoHostBlock || len(got.InlineFields()) != 1 || got.InlineFields()[0].Key != "workspace" {
-		t.Fatalf("schema %+v", got)
-	}
-	flow, err := ProviderOAuthFlow(ctx, nil, "honcho")
-	if err != nil {
-		t.Fatal(err)
-	}
-	started, _ := flow.StartLoopbackFlowBackground(ctx)
-	if started.(map[string]any)["state"] != "pending" {
-		t.Fatalf("start %v", started)
-	}
-	if _, err := ProviderOAuthFlow(ctx, nil, "byterover"); !errors.Is(err, errNoOAuthFlow) {
-		t.Fatalf("byterover flow error %v", err)
-	}
-	if _, err := ProviderOAuthFlow(ctx, nil, "absent"); !errors.Is(err, errProviderNotInstalled) {
-		t.Fatalf("absent flow error %v", err)
-	}
-}
-
-func TestRegistrySchemaFromRecord(t *testing.T) {
-	s, err := ProviderConfigSchemaFromRecord(map[string]any{
-		"name": "honcho", "label": "Honcho", "storage": StorageHonchoHostBlock,
-		"fields": []any{map[string]any{
-			"key": "mode", "label": "Mode", "kind": KindSelect, "inline": true, "env_key": nil,
-			"options":       []any{map[string]any{"value": "a", "label": "A"}, map[string]any{"value": "b", "label": "B", "description": "bee"}},
-			"aliases":       []any{"legacy_mode"},
-			"env_fallbacks": []any{"HONCHO_MODE"},
-		}},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	f := s.Fields[0]
-	if s.Storage != StorageHonchoHostBlock || f.Kind != KindSelect || f.Scope != "host" || !f.Inline || f.EnvKey != "" ||
-		len(f.Options) != 2 || f.Options[1].Description != "bee" || f.Aliases[0] != "legacy_mode" || !f.AllowedValues()["b"] {
-		t.Fatalf("rebuilt %+v", s)
-	}
-	if f.IsSecret() {
-		t.Fatal("select field reported secret")
-	}
-	if s, err := ProviderConfigSchemaFromRecord(nil); s != nil || err != nil {
-		t.Fatalf("empty record %v %v", s, err)
-	}
-	if _, err := ProviderConfigSchemaFromRecord(map[string]any{"name": "x", "label": "X", "bogus": 1}); err == nil {
-		t.Fatal("unknown schema key accepted")
-	}
-	if _, err := ProviderConfigSchemaFromRecord(map[string]any{"name": "x", "label": "X", "fields": []any{map[string]any{"key": "k"}}}); err == nil {
-		t.Fatal("field without label accepted")
-	}
-	if d := NewProviderConfigSchema("x", "X"); d.Storage != StorageFlatJSON {
-		t.Fatalf("default storage %q", d.Storage)
-	}
-}
-
 func TestRegistryPluginCLICommandsForTheActiveProviderOnly(t *testing.T) {
 	isolateRegistry(t)
 	h := t.TempDir()
@@ -559,4 +414,18 @@ func TestRegistryUnregisterProvidersBySourceAndHome(t *testing.T) {
 	if count() != 1 || FindProvider(home.WithOverride(context.Background(), b), nil, "m") == nil {
 		t.Fatal("unregister removed the wrong home")
 	}
+}
+
+// Sorted distinct names of every provider discovery surfaces for ctx
+func listedProviderNames(ctx context.Context) []string {
+	seen := map[string]bool{}
+	var names []string
+	for _, r := range visibleRegistrations(ctx, nil) {
+		if !seen[r.Name] {
+			seen[r.Name] = true
+			names = append(names, r.Name)
+		}
+	}
+	sort.Strings(names)
+	return names
 }

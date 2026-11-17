@@ -27,14 +27,6 @@ tools:
     - list_calendly_skills
     - load_calendly_skill
 
-# Composer-suggestion triggers (desktop brand pills).
-suggest:
-  keywords:
-    - calendly
-    - scheduling
-  hosts:
-    - calendly.com
-
 post_install: |
   On first connection icebath opens a browser to authorize with
   Calendly (or run `icebath mcp login calendly`). Approve access,

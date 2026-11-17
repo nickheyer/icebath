@@ -163,9 +163,15 @@ func TestFailedPluginDiscoveryStillAnswersWithBundledLanguages(t *testing.T) {
 	if rows := languageRows(t); !slices.ContainsFunc(rows, func(row map[string]any) bool { return reflect.DeepEqual(row, want) }) {
 		t.Fatalf("missing %v in %v", want, rows)
 	}
-	got := resultOf(t, callMethod(t, "i18n.catalog", map[string]any{"lang": "ko", "surface": "tui"}))["messages"]
-	if !reflect.DeepEqual(got, map[string]any{}) {
-		t.Fatalf("tui %v", got)
+	got, _ := resultOf(t, callMethod(t, "i18n.catalog", map[string]any{"lang": "ko", "surface": "tui"}))["messages"].(map[string]any)
+	bundled := i18n.LoadBundled("ko.tui")
+	if len(bundled) == 0 || len(got) != len(bundled) {
+		t.Fatalf("tui %d keys, bundled %d", len(got), len(bundled))
+	}
+	for key, text := range bundled {
+		if got[key] != text {
+			t.Fatalf("tui %s = %v, bundled %q", key, got[key], text)
+		}
 	}
 }
 
@@ -197,8 +203,8 @@ func TestColdGatewayServesAnInstalledPackBeforeAnyAgentExists(t *testing.T) {
 	if ko == nil || ko["source"] != "plugin:hermes-lang-ko" || !slices.Contains(ko["surfaces"].([]any), any("tui")) {
 		t.Fatalf("ko row %v", ko)
 	}
-	tui := resultOf(t, callMethod(t, "i18n.catalog", map[string]any{"lang": "ko", "surface": "tui"}))
-	if !reflect.DeepEqual(tui["messages"], map[string]any{"status.ready": "준비됨"}) {
-		t.Fatalf("tui %v", tui)
+	tui, _ := resultOf(t, callMethod(t, "i18n.catalog", map[string]any{"lang": "ko", "surface": "tui"}))["messages"].(map[string]any)
+	if tui["status.ready"] != "준비됨" {
+		t.Fatalf("tui status.ready %v", tui["status.ready"])
 	}
 }

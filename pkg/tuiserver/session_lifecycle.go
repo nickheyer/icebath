@@ -8,20 +8,16 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/activesessions"
 	"github.com/nickheyer/icebath/pkg/agent"
-	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/memory"
-	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
 )
 
-// Holds process admission and the history lock until the running claim is visible, returning whether work was admitted
-func sessionTurnAdmission(session *tuigateway.Session, body func(admitted bool)) {
-	admitted, done := provider.Retirement.Work()
-	defer done()
+// Runs body under the session history lock so its running claim is visible before the lock drops
+func underHistoryLock(session *tuigateway.Session, body func()) {
 	unlock := lockHistory(session)
 	defer unlock()
-	body(admitted)
+	body()
 }
 
 // Context key naming the session work thread a call runs on
@@ -33,20 +29,10 @@ func currentRunThread(ctx context.Context) *memory.ContextThread {
 	return thread
 }
 
-// Starts target on a context thread reserved in the retirement fence until it unwinds, nil when the fence refuses
-func startSessionWork(ctx context.Context, target func(ctx context.Context), name string, session *tuigateway.Session) *memory.ContextThread {
-	if !provider.Retirement.Acquire() {
-		return nil
-	}
-	started := false
-	defer func() {
-		if !started {
-			provider.Retirement.Release()
-		}
-	}()
+// Starts target on a context thread, recorded as the session's run thread when a session is given
+func startSessionWork(ctx context.Context, target func(ctx context.Context), name string, session *tuigateway.Session) {
 	var thread *memory.ContextThread
 	thread = memory.SpawnContextThread(ctx, name, func(ctx context.Context) {
-		defer provider.Retirement.Release()
 		defer threadExceptHook(name)
 		target(context.WithValue(ctx, runThreadKey{}, thread))
 	})
@@ -54,8 +40,6 @@ func startSessionWork(ctx context.Context, target func(ctx context.Context), nam
 		session.Set("_run_thread", thread)
 	}
 	thread.Start()
-	started = true
-	return thread
 }
 
 // Fires a session lifecycle hook with CLI parity, returning the on_session_finalize user messages
@@ -180,32 +164,14 @@ func lifecycleOwnSID(session *tuigateway.Session, sidHint string) string {
 	return ownSID
 }
 
-// Latest activity of each closed session's resolved profile home, kept after close and reap
-var closedSessionActivity = struct {
-	sync.Mutex
-	byHome map[string]float64
-}{byHome: map[string]float64{}}
-
 // Detaches one live session from the registry as the teardown claim, stamping its closing state and sid
-func popSessionByID(ctx context.Context, sid string) *tuigateway.Session {
+func popSessionByID(sid string) *tuigateway.Session {
 	sessionsLock.Lock()
 	defer sessionsLock.Unlock()
 	session := tuigateway.PopSessionRecord(sid)
 	if session == nil {
 		return nil
 	}
-	owner := strOr(session.Get("profile_home"))
-	if owner == "" {
-		owner = home.Dir(ctx)
-	}
-	resolved := resolveLax(owner)
-	lastActive := floatOr(session.Get("last_active"), 0)
-	if truthy(session.Get("running")) {
-		lastActive = nowSeconds()
-	}
-	closedSessionActivity.Lock()
-	closedSessionActivity.byHome[resolved] = max(closedSessionActivity.byHome[resolved], lastActive)
-	closedSessionActivity.Unlock()
 	session.Set("_closing", true)
 	session.Set("_sid", sid)
 	return session

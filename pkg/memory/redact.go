@@ -572,7 +572,6 @@ var privateKeyRe = regexp.MustCompile(`-----BEGIN[A-Z ]*PRIVATE KEY-----[\s\S]*?
 var dbConnstrRe = regexp.MustCompile(`(?i)((?:postgres(?:ql)?|mysql|mongodb(?:\+srv)?|redis|amqp)://[^:\s]+:)([^@\s]+)(@)`)
 var urlBareTokenRe = regexp.MustCompile(`(?i)((?:https?|wss?|git|ssh|ftp|ftps|sftp)://)([^\s:@/]{8,})(@[^\s]+)`)
 var jwtRe = regexp.MustCompile(`eyJ[A-Za-z0-9_-]{10,}(?:\.[A-Za-z0-9_=-]{4,}){0,2}`)
-var webappLinkCredentialRe = regexp.MustCompile(`(^|[^A-Za-z0-9_-])(icebath-session=|/webapp/launch#(?:[^\s#]*?&)?ticket=)[A-Za-z0-9_-]{20,}`)
 var signalPhoneRe = regexp.MustCompile(`(\+[1-9]\d{6,14})([^A-Za-z0-9]|$)`)
 var strictURLParamRe = regexp.MustCompile(`([?#&;])([A-Za-z0-9_.~+%\-]+)=([^#&;\s"'<>]*)`)
 var strictURLUserinfoRe = regexp.MustCompile(`//[^/\s?#@]+@`)

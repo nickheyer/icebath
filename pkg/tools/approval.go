@@ -1555,16 +1555,6 @@ func RequestToolApproval(ctx context.Context, env *Env, toolName, reason, ruleKe
 		noHumanBlockMessage:   fmt.Sprintf("BLOCKED: %s but no interactive user or gateway is present to approve it. A plugin flagged this action for human confirmation.", subject)})
 }
 
-// PreparedApprovalSlot is the terminal batch seam that pre decides a guard and publishes its prompt
-type PreparedApprovalSlot interface {
-	Preparing() bool
-	ConsumePreparedGuard(ctx context.Context, env *Env, command, envType string, hasHostAccess bool) (GuardResult, bool)
-	RegisterPreparedApproval(sessionKey string, entry *ApprovalEntry)
-	ApprovalPublished()
-}
-
-type preparedSlotKey struct{}
-
 type approvalTaskKey struct{}
 
 // WithApprovalTaskID binds the task running a guarded command to the context
@@ -1581,20 +1571,6 @@ func ApprovalTaskID(ctx context.Context) string {
 	return id
 }
 
-// WithPreparedApprovalSlot binds the batch slot of the running terminal call to the context
-func WithPreparedApprovalSlot(ctx context.Context, slot PreparedApprovalSlot) context.Context {
-	return context.WithValue(ctx, preparedSlotKey{}, slot)
-}
-
-// Batch slot bound to the context or nil
-func preparedApprovalSlot(ctx context.Context) PreparedApprovalSlot {
-	if ctx == nil {
-		return nil
-	}
-	slot, _ := ctx.Value(preparedSlotKey{}).(PreparedApprovalSlot)
-	return slot
-}
-
 // CheckAllCommandGuards runs every pre exec security check and returns one approval decision
 func CheckAllCommandGuards(ctx context.Context, env *Env, command, envType string, hasHostAccess bool) GuardResult {
 	if shouldSkipContainerGuards(envType, hasHostAccess) {
@@ -1605,11 +1581,6 @@ func CheckAllCommandGuards(ctx context.Context, env *Env, command, envType strin
 	}
 	if blocked, ok := floorBlock(env, command, true); ok {
 		return blocked
-	}
-	if slot := preparedApprovalSlot(ctx); slot != nil {
-		if prepared, ok := slot.ConsumePreparedGuard(ctx, env, command, envType, hasHostAccess); ok {
-			return prepared
-		}
 	}
 	approvalMode := getApprovalMode(env)
 	if yoloActive(env) || approvalMode == "off" {

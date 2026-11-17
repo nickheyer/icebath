@@ -30,14 +30,6 @@ tools:
     - layout_read
     - layout_update
 
-# Composer-suggestion triggers (desktop brand pills).
-suggest:
-  keywords:
-    - miro
-    - whiteboard
-  hosts:
-    - miro.com
-
 post_install: |
   On first connection icebath opens a browser to authorize with
   Miro (or run `icebath mcp login miro`). Approve access,

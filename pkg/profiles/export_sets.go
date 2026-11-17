@@ -28,7 +28,7 @@ var DefaultExportExcludeRoot = func() map[string]bool {
 // Root entries of the default home a default profile export keeps, everything else at the root is dropped
 var DefaultExportIncludeRoot = map[string]bool{
 	"config.yaml": true, "SOUL.md": true, "MEMORY.md": true, "USER.md": true, "todo.json": true,
-	"system_prompt.md": true, "AGENTS.md": true, "CLAUDE.md": true, ".cursorrules": true, "desktop.json": true,
+	"system_prompt.md": true, "AGENTS.md": true, "CLAUDE.md": true, ".cursorrules": true,
 	"skills": true, "cron": true, "scripts": true, "sessions": true, "plugins": true, "memories": true,
 	"knowledge": true, "preferences": true,
 }

@@ -19,13 +19,12 @@ const (
 	defaultDiscoveryThreadName      = "cli-mcp-discovery"
 )
 
-// Discovery slots per profile home key, the armed deferred start and the toolsets spawn allowlist
+// Discovery slots per profile home key and the toolsets spawn allowlist
 var (
-	discoveryMu       sync.Mutex
-	discoveryStarted  = map[string]bool{}
-	discoveryRuns     = map[string]*discoveryRun{}
-	discoveryDeferred *deferredDiscovery
-	serverFilter      []string
+	discoveryMu      sync.Mutex
+	discoveryStarted = map[string]bool{}
+	discoveryRuns    = map[string]*discoveryRun{}
+	serverFilter     []string
 )
 
 // Discovery entry point the background goroutine runs, swapped by tests
@@ -62,12 +61,6 @@ func (r *discoveryRun) join(ctx context.Context, timeout *time.Duration) {
 	case <-expired:
 	case <-ctx.Done():
 	}
-}
-
-// deferredDiscovery holds the start an armed deferral fires, with its timer when a delay was given
-type deferredDiscovery struct {
-	fire  func()
-	timer *time.Timer
 }
 
 // Profile home key the caller is scoped to
@@ -261,47 +254,8 @@ func resolveDiscoveryTimeout(ctx context.Context, env *tools.Env, explicit *time
 	return secondsDuration(f)
 }
 
-// Arms a background discovery start after delay, nil delay arms it for the first client or agent build
-func DeferBackgroundDiscovery(ctx context.Context, env *tools.Env, logger *slog.Logger, threadName string, delay *time.Duration) {
-	discoveryMu.Lock()
-	defer discoveryMu.Unlock()
-	if discoveryStarted[discoveryHomeKey(ctx)] || discoveryDeferred != nil {
-		return
-	}
-	startCtx := context.WithoutCancel(ctx)
-	d := &deferredDiscovery{}
-	d.fire = func() {
-		discoveryMu.Lock()
-		if discoveryDeferred == d {
-			discoveryDeferred = nil
-		}
-		discoveryMu.Unlock()
-		startBackgroundDiscovery(startCtx, env, logger, threadName)
-	}
-	discoveryDeferred = d
-	if delay != nil {
-		d.timer = time.AfterFunc(max(*delay, 0), d.fire)
-	}
-}
-
-// Fires an armed deferred discovery start at once, a racing second caller finds the slot empty
-func StartDeferredDiscoveryNow() {
-	discoveryMu.Lock()
-	d := discoveryDeferred
-	discoveryDeferred = nil
-	discoveryMu.Unlock()
-	if d == nil {
-		return
-	}
-	if d.timer != nil {
-		d.timer.Stop()
-	}
-	d.fire()
-}
-
-// Fires a deferred start then waits for the home's discovery up to the resolved bound
+// Waits for the home's discovery up to the resolved bound
 func WaitForDiscovery(ctx context.Context, env *tools.Env, timeout *time.Duration, singleQuery bool) {
-	StartDeferredDiscoveryNow()
 	run := currentHomeRun(ctx)
 	if run == nil || !run.alive() {
 		return

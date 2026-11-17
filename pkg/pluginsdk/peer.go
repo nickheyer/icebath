@@ -191,8 +191,6 @@ func (p *peer) dispatch(ctx context.Context, method string, params map[string]an
 		return p.loadInstance(ctx, params)
 	case "profile_call":
 		return p.profileCall(ctx, params)
-	case "config_schema":
-		return configSchema, nil
 	case "obj_overrides":
 		obj := p.object(params["ref"])
 		return obj != nil && obj.Methods[text(params["method"])] != nil, nil

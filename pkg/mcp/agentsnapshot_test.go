@@ -503,17 +503,17 @@ func TestResumeOnAnotherSurfaceRestoresThePinnedToolBytes(t *testing.T) {
 }
 
 func TestAPinNeverReAddsAToolThisSessionsConfigExcludes(t *testing.T) {
-	useSnapshotRegistry(t, map[string]string{"read_file": "file", "terminal": "terminal", "browser_exec": "browser", "focus_pane": "desktop_ui"},
+	useSnapshotRegistry(t, map[string]string{"read_file": "file", "terminal": "terminal", "browser_exec": "browser", "image_generate": "image_gen"},
 		snapTool("read_file")["function"].(map[string]any), snapTool("terminal")["function"].(map[string]any),
-		snapTool("browser_exec")["function"].(map[string]any), snapTool("focus_pane")["function"].(map[string]any))
+		snapTool("browser_exec")["function"].(map[string]any), snapTool("image_generate")["function"].(map[string]any))
 	prev := persistAgentToolNamesFn
 	persistAgentToolNamesFn = func(context.Context, AgentToolSnapshot) {}
 	t.Cleanup(func() { persistAgentToolNamesFn = prev })
 	pin := map[string]any{"version": ToolPinVersion(), "tools": defsAsAny([]map[string]any{
-		snapTool("read_file"), snapTool("terminal"), snapTool("browser_exec"), snapTool("focus_pane")})}
+		snapTool("read_file"), snapTool("terminal"), snapTool("browser_exec"), snapTool("image_generate")})}
 	agent := newSnapAgent(t, []string{"read_file"}, []string{"icebath-cli"}, []string{"terminal"})
 	RestoreAgentToolPrefix(context.Background(), agent, pin)
-	if !reflect.DeepEqual(snapNames(agent.tools), []string{"read_file", "focus_pane"}) || !reflect.DeepEqual(agent.names, snapSet("read_file", "focus_pane")) {
+	if !reflect.DeepEqual(snapNames(agent.tools), []string{"read_file", "image_generate"}) || !reflect.DeepEqual(agent.names, snapSet("read_file", "image_generate")) {
 		t.Fatalf("tools=%v names=%v", snapNames(agent.tools), agent.names)
 	}
 }

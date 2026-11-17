@@ -60,13 +60,7 @@ func Reissue(ctx context.Context, env *tools.Env, op *tools.ConnectionOperation,
 		}
 		return "", tools.Mint(ctx, env, client, op, stale, true, tools.ActorUser, "")
 	}
-	var refusal string
-	var err error
-	if CatalogOwns(op.OpID) {
-		refusal, err = CatalogRetry(ctx, op, stale)
-	} else {
-		refusal, err = Retry(ctx, op, stale)
-	}
+	refusal, err := Retry(ctx, op, stale)
 	if err != nil {
 		return "", err
 	}
@@ -76,14 +70,8 @@ func Reissue(ctx context.Context, env *tools.Env, op *tools.ConnectionOperation,
 	return "", nil
 }
 
-// Hands the card's answer to the display, catalog or MCP module running the operation
+// Hands the card's answer to the catalog or MCP module running the operation
 func ApplyConnAnswer(ctx context.Context, op *tools.ConnectionOperation, raw string) error {
-	if op.Display != nil {
-		return tools.DisplayApplyAnswer(op, raw)
-	}
-	if CatalogOwns(op.OpID) {
-		return CatalogApplyAnswer(ctx, op, raw)
-	}
 	return ApplyAnswer(ctx, op, raw)
 }
 

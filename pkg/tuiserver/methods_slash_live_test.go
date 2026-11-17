@@ -76,8 +76,8 @@ func stubContextEngines(t *testing.T, payload agent.ContextBreakdown, details *a
 func TestContextBreakdownEngineUsedWithLiveAgent(t *testing.T) {
 	t.Setenv("ICEBATH_HOME", t.TempDir())
 	stubContextEngines(t, agent.ContextBreakdown{
-		Categories: []agent.ContextCategory{{ID: "system_prompt", Label: "System prompt", Tokens: 8000, Color: "dim"},
-			{ID: "conversation", Label: "Conversation", Tokens: 82000, Color: "normal"}},
+		Categories: []agent.ContextCategory{{ID: "system_prompt", Label: "System prompt", Tokens: 8000},
+			{ID: "conversation", Label: "Conversation", Tokens: 82000}},
 		ContextMax: 131072, ContextPercent: 68, ContextUsed: 90000, ContextSource: "provider_usage", EstimatedTotal: 90000, Model: "test-model",
 	}, nil)
 	out, ok := liveSlashCommandOutput(context.Background(), "sid-1", liveSlashSession(liveSlashAgent(t)), "context", "")
@@ -89,7 +89,7 @@ func TestContextBreakdownEngineUsedWithLiveAgent(t *testing.T) {
 func TestContextAllArgReachesDetails(t *testing.T) {
 	t.Setenv("ICEBATH_HOME", t.TempDir())
 	breakdownCalls, detailsCalls := stubContextEngines(t, agent.ContextBreakdown{
-		Categories: []agent.ContextCategory{{ID: "conversation", Label: "Conversation", Tokens: 1000, Color: "normal"}},
+		Categories: []agent.ContextCategory{{ID: "conversation", Label: "Conversation", Tokens: 1000}},
 		ContextMax: 10000, ContextPercent: 10, ContextUsed: 1000, ContextSource: "provider_usage", EstimatedTotal: 1000, Model: "test-model",
 	}, &agent.ContextDetails{})
 	if _, ok := liveSlashCommandOutput(context.Background(), "sid-1", liveSlashSession(liveSlashAgent(t)), "context", "all"); !ok {

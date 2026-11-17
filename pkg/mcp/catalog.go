@@ -16,7 +16,6 @@ import (
 	"strings"
 	"sync"
 	"syscall"
-	"unicode"
 	"unicode/utf8"
 
 	"gopkg.in/yaml.v3"
@@ -104,14 +103,6 @@ type ToolsSpec struct {
 	DefaultExcluded []string
 }
 
-type SuggestSpec struct {
-	Keywords     []string
-	Hosts        []string
-	Applications []string
-	Examples     []string
-	RequiresApp  bool
-}
-
 type CatalogEntry struct {
 	Name          string
 	Description   string
@@ -122,7 +113,6 @@ type CatalogEntry struct {
 	Tools         ToolsSpec
 	Install       *InstallSpec
 	PostInstall   string
-	Suggest       *SuggestSpec
 	ManifestPath  string
 }
 
@@ -250,16 +240,6 @@ func pyStrListRepr(items []string) string {
 		parts[i] = pyReprStr(s)
 	}
 	return "[" + strings.Join(parts, ", ") + "]"
-}
-
-// True for Python str.isprintable, letters marks numbers punctuation symbols and the plain space
-func pyIsPrintable(s string) bool {
-	for _, r := range s {
-		if r != ' ' && !unicode.In(r, unicode.L, unicode.M, unicode.N, unicode.P, unicode.S) {
-			return false
-		}
-	}
-	return true
 }
 
 func notStringError(v any) error {
@@ -491,87 +471,6 @@ func parseTools(path string, raw any) (ToolsSpec, error) {
 	return spec, nil
 }
 
-// Bounded display labels and aliases, never paths, commands or regexes
-func validateApplications(labels any) ([]string, error) {
-	l, ok := labels.([]any)
-	if !ok || len(l) > maxApplications {
-		return nil, errors.New("suggest.applications must be a list of at most 16 app labels")
-	}
-	out := make([]string, 0, len(l))
-	for _, label := range l {
-		s, isStr := label.(string)
-		if !isStr || !appLabelRe.MatchString(s) || s != pyStrip(s) || strings.Contains(s, "..") || strings.Contains(s, " --") {
-			return nil, errors.New("suggest.applications must contain safe app labels (1–80 characters)")
-		}
-		out = append(out, s)
-	}
-	return out, nil
-}
-
-func parseSuggest(path string, raw any) (*SuggestSpec, error) {
-	if raw == nil {
-		return nil, nil
-	}
-	m, err := requireMapping(path, "suggest", raw)
-	if err != nil {
-		return nil, err
-	}
-	kwRaw, hostsRaw := yOr(m["keywords"], []any{}), yOr(m["hosts"], []any{})
-	keywords, err := requireStrList(path, "suggest.keywords", kwRaw, true)
-	if err != nil {
-		return nil, err
-	}
-	hosts, err := requireStrList(path, "suggest.hosts", hostsRaw, true)
-	if err != nil {
-		return nil, err
-	}
-	appsRaw, ok := m["applications"]
-	if !ok {
-		appsRaw = []any{}
-	}
-	applications, err := validateApplications(appsRaw)
-	if err != nil {
-		return nil, catalogErr("%s: %s", path, err)
-	}
-	examplesRaw, ok := m["examples"]
-	if !ok {
-		examplesRaw = []any{}
-	}
-	examples, err := requireStrList(path, "suggest.examples", examplesRaw, true)
-	if err != nil {
-		return nil, err
-	}
-	tooLong := len(examples) > 6
-	for _, e := range examples {
-		if utf8.RuneCountInString(e) > 240 || !pyIsPrintable(e) {
-			tooLong = true
-		}
-	}
-	if tooLong {
-		return nil, catalogErr("%s: suggest.examples allows at most 6 single-line examples of 240 characters", path)
-	}
-	reqRaw, ok := m["requires_app"]
-	if !ok {
-		reqRaw = false
-	}
-	requiresApp, isBool := reqRaw.(bool)
-	if !isBool || (requiresApp && len(applications) == 0) {
-		return nil, catalogErr("%s: suggest.requires_app must be a boolean, with applications when true", path)
-	}
-	if len(keywords) == 0 && len(hosts) == 0 && len(applications) == 0 {
-		return nil, catalogErr("%s: 'suggest' requires at least one keyword, host or application", path)
-	}
-	spec := &SuggestSpec{Applications: applications, Examples: examples, RequiresApp: requiresApp,
-		Keywords: make([]string, len(keywords)), Hosts: make([]string, len(hosts))}
-	for i, k := range keywords {
-		spec.Keywords[i] = strings.ToLower(pyStrip(k))
-	}
-	for i, h := range hosts {
-		spec.Hosts[i] = strings.TrimLeft(strings.ToLower(pyStrip(h)), ".")
-	}
-	return spec, nil
-}
-
 func parseConnectorSlug(path string, value any) (string, error) {
 	if value == nil {
 		return "", nil
@@ -715,10 +614,6 @@ func parseManifest(fsys fs.FS, rel, path string) (*CatalogEntry, error) {
 	if err != nil {
 		return nil, err
 	}
-	suggest, err := parseSuggest(path, data["suggest"])
-	if err != nil {
-		return nil, err
-	}
 	slug, err := parseConnectorSlug(path, data["connector_slug"])
 	if err != nil {
 		return nil, err
@@ -729,7 +624,7 @@ func parseManifest(fsys fs.FS, rel, path string) (*CatalogEntry, error) {
 	}
 	return &CatalogEntry{Name: name, Description: description, Source: pyStrip(pyStr(yOr(data["source"], ""))),
 		Transport: transport, Auth: auth, ConnectorSlug: slug, Tools: toolsSpec, Install: install,
-		PostInstall: pyStr(yOr(data["post_install"], "")), Suggest: suggest, ManifestPath: path}, nil
+		PostInstall: pyStr(yOr(data["post_install"], "")), ManifestPath: path}, nil
 }
 
 // Every valid catalog entry sorted by name, recording skipped manifests for CatalogDiagnostics

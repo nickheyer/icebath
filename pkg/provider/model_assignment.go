@@ -428,7 +428,7 @@ func applyMainAssignmentSync(ctx context.Context, cfg map[string]any, provider, 
 	return out, nil
 }
 
-// ApplyModelAssignmentSync persists a main model pick, prepared carrying a validation done outside the config lock
+// Persists a main model pick, prepared carrying a validation done outside the config lock
 func ApplyModelAssignmentSync(ctx context.Context, provider, model, baseURL, apiKey string, prepared *PreparedMainAssignment) (map[string]any, error) {
 	cfg, err := configLoadFn(ctx)
 	if err != nil {

@@ -296,37 +296,6 @@ func RemoveServer(ctx context.Context, name string) (bool, error) {
 	return true, config.SaveUser(ctx, h, doc)
 }
 
-// Replaces the whole mcp_servers mapping after validating every entry, an empty map removes the key
-func ReplaceServers(ctx context.Context, servers map[string]any) (bool, []string, error) {
-	var issues []string
-	for _, name := range sortedKeys(servers) {
-		cfg, ok := servers[name].(map[string]any)
-		if !ok {
-			issues = append(issues, fmt.Sprintf("Server '%s': expected an object", name))
-			continue
-		}
-		issues = append(issues, ValidateServerEntry(name, cfg)...)
-	}
-	if len(issues) > 0 {
-		return false, issues, nil
-	}
-	h := home.Dir(ctx)
-	doc, err := config.ReadUser(h)
-	if err != nil {
-		return false, nil, err
-	}
-	if len(servers) > 0 {
-		copied := make(map[string]any, len(servers))
-		for k, v := range servers {
-			copied[k] = v
-		}
-		doc["mcp_servers"] = copied
-	} else {
-		delete(doc, "mcp_servers")
-	}
-	return true, nil, config.SaveUser(ctx, h, doc)
-}
-
 // Env key holding the API key of a server, MCP_<NAME>_API_KEY
 func envKeyForServer(name string) string {
 	return "MCP_" + strings.Trim(envKeySuffixRe.ReplaceAllString(strings.ToUpper(name), "_"), "_") + "_API_KEY"

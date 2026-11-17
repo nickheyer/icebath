@@ -978,7 +978,9 @@ func (a *MattermostAdapter) wsConnectAndListen(ctx context.Context) error {
 // Mention gates a channel post, the cleaned text or false when the post is ignored
 func (a *MattermostAdapter) applyChannelGating(ctx context.Context, channelID, messageText string) (string, bool, error) {
 	extra := a.Config.Extra
-	read := func(key, env string, def any) (any, error) { return gateway.ExtraOrSecret(ctx, extra, key, env, def, false) }
+	read := func(key, env string, def any) (any, error) {
+		return gateway.ExtraOrSecret(ctx, extra, key, env, def, false)
+	}
 	allowedRaw, err := read("allowed_channels", "MATTERMOST_ALLOWED_CHANNELS", "")
 	if err != nil {
 		return "", false, err

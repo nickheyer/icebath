@@ -261,7 +261,7 @@ func safeLoopSnapshot(s *SessionLoopState, deferredByGoal bool) *pyjson.Object {
 	return snapshot
 }
 
-// The persisted heartbeat fields the desktop renders, nil for no heartbeat or a cleared one
+// The persisted heartbeat fields a session snapshot carries, nil for no heartbeat or a cleared one
 func safeHeartbeatSnapshot(s *HeartbeatState) *pyjson.Object {
 	if s == nil || s.Status == "cleared" {
 		return nil

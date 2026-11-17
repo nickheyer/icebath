@@ -60,8 +60,12 @@ func (e *Error) PyTypeName() string { return e.Class }
 // Whether the error is an abort, a service failure that needs a fresh connection
 func (e *Error) IsAbort() bool { return e.Class == "abort" || e.Class == "readonly" }
 
-func imapError(format string, args ...any) *Error { return &Error{Class: "error", Msg: fmt.Sprintf(format, args...)} }
-func imapAbort(format string, args ...any) *Error { return &Error{Class: "abort", Msg: fmt.Sprintf(format, args...)} }
+func imapError(format string, args ...any) *Error {
+	return &Error{Class: "error", Msg: fmt.Sprintf(format, args...)}
+}
+func imapAbort(format string, args ...any) *Error {
+	return &Error{Class: "abort", Msg: fmt.Sprintf(format, args...)}
+}
 
 // OSError is a socket or TLS failure raised outside the IMAP error classes, its str the Python text
 type OSError struct {

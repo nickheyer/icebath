@@ -121,11 +121,6 @@ func readText(path string, limit int) string {
 	return strings.ToValidUTF8(text, "�")
 }
 
-var cpuModelOnce = cached(func() string { return cpuModelImpl() })
-
-// CPUModel is the CPU model, empty when unavailable
-func CPUModel() string { return cpuModelOnce() }
-
 var armImplementers = map[int]string{
 	0x41: "ARM", 0x42: "Broadcom", 0x43: "Cavium", 0x46: "Fujitsu", 0x48: "HiSilicon", 0x4E: "NVIDIA",
 	0x50: "Ampere", 0x51: "Qualcomm", 0x61: "Apple", 0x69: "Intel", 0x6D: "Microsoft", 0xC0: "Ampere",
@@ -151,11 +146,6 @@ func ParseCPUInfoVendor(text string) string {
 	}
 	return armImplementers[int(code)]
 }
-
-var cpuVendorOnce = cached(func() string { return cpuVendorImpl() })
-
-// CPUVendor is the CPU vendor, empty when unavailable
-func CPUVendor() string { return cpuVendorOnce() }
 
 // ParseMeminfoTotal returns MemTotal of meminfo text in bytes, zero when absent
 func ParseMeminfoTotal(text string) int64 {
@@ -306,11 +296,6 @@ func NvidiaGPUsFromAdapters(adapters []DisplayAdapter) []NvidiaGPU {
 	}
 	return out
 }
-
-var nvidiaGPUsOnce = cached(func() []NvidiaGPU { return nvidiaGPUsImpl() })
-
-// NvidiaGPUs is the name and PCI id of each NVIDIA GPU, empty without the driver or off Windows and Linux
-func NvidiaGPUs() []NvidiaGPU { return nvidiaGPUsOnce() }
 
 // InteractiveSession reports whether this process can reach an interactive user session
 func InteractiveSession() bool {

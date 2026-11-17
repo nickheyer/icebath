@@ -22,14 +22,6 @@ tools:
     - list_bounties
     - search_bounties
 
-suggest:
-  keywords:
-    - rentahuman
-    - hire a human
-    - real-world task
-  hosts:
-    - rentahuman.ai
-
 post_install: |
   On first connection, icebath opens a browser to sign in to RentAHuman and
   approve access to your account. By default, this catalog entry enables only

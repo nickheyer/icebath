@@ -316,5 +316,5 @@ func EditNode(ctx context.Context, env *tools.Env, nodeID, content string) (map[
 	})
 }
 
-// Learning mutations register nothing at import, journey and desktop callers invoke them
+// Learning mutations register nothing at import, journey callers invoke them
 func registerLearningMutations() {}

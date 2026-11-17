@@ -80,7 +80,7 @@ func FormatRefusalStderr(message *Refusal) string {
 	return message.Message
 }
 
-// Compact holders phrase like desktop x4, cli with the age of the oldest lease
+// Compact holders phrase like tui x4, cli with the age of the oldest lease
 func SummarizeHolders(entries []*pyjson.Object) string {
 	if len(entries) == 0 {
 		return ""

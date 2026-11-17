@@ -55,12 +55,6 @@ var (
 // Logger every server module writes through
 func logger() *slog.Logger { return slog.Default().With("logger", "tui_gateway.server") }
 
-// Launch profile home the gateway serves at call time
-func LaunchHome() string { return launchHome() }
-
-// Named profile home on this host, empty for the launch profile, an error naming an unknown profile
-func ProfileHome(profile string) (string, error) { return profileHome(profile) }
-
 // Home captured on the first read after the profile override, the value tui_gateway.server takes at import
 func importedHome() string {
 	homeImportOnce.Do(func() {

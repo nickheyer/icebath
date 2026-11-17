@@ -134,14 +134,6 @@ func BinaryAssetName(goos, goarch string) string {
 	return name
 }
 
-// Desktop app archive name for goos and goarch
-func DesktopAssetName(goos, goarch string) string {
-	if goos == "windows" {
-		return "icebath-desktop-" + goos + "-" + goarch + ".zip"
-	}
-	return "icebath-desktop-" + goos + "-" + goarch + ".tar.gz"
-}
-
 // Client honouring the proxy environment with header and whole request bounds
 func releaseHTTPClient(follow bool) *http.Client {
 	proxy := httpproxy.FromEnvironment().ProxyFunc()

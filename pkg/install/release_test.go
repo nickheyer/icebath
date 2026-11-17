@@ -81,16 +81,3 @@ func TestReleaseSelectionByCommitAndBranch(t *testing.T) {
 		t.Fatalf("unknown branch %+v %v", got, err)
 	}
 }
-
-func TestManifestAndFrameJSONMatchTheScriptProtocol(t *testing.T) {
-	want := `{"protocol_version":1,"stages":[{"name":"prerequisites","title":"System prerequisites","category":"runtime","needs_user_input":false},{"name":"repository","title":"Download Icebath Agent","category":"runtime","needs_user_input":false},{"name":"config","title":"Prepare config and skills","category":"configuration","needs_user_input":false},{"name":"products","title":"Install command and app","category":"runtime","needs_user_input":false},{"name":"runtimes","title":"Install Python dependencies","category":"runtime","needs_user_input":false},{"name":"setup","title":"Configure API keys and settings","category":"configuration","needs_user_input":true},{"name":"gateway","title":"Configure gateway service","category":"configuration","needs_user_input":true},{"name":"complete","title":"Finish install","category":"runtime","needs_user_input":false}]}`
-	if got := ManifestJSON(false); got != want {
-		t.Fatalf("manifest\n%s", got)
-	}
-	if got := FrameJSON(true, "setup", true, "needs user input"); got != `{"ok":true,"stage":"setup","skipped":true,"reason":"needs user input"}` {
-		t.Fatalf("frame %s", got)
-	}
-	if got := FrameJSON(true, "config", false, ""); got != `{"ok":true,"stage":"config","skipped":false}` {
-		t.Fatalf("frame %s", got)
-	}
-}

@@ -370,7 +370,7 @@ func surfaceEnv(t *testing.T, surface bool) *tools.Env {
 
 func TestCompletionNotificationCarriesDelegationAttribution(t *testing.T) {
 	child := newFakeChild(&AIAgent{sessionID: "sess-attr-3"})
-	registerFake("sa-1-attr0003", child, map[string]any{"delegation_id": "deleg_attr_3", "goal": "run the npm ci for the desktop app"})
+	registerFake("sa-1-attr0003", child, map[string]any{"delegation_id": "deleg_attr_3", "goal": "run the npm ci for the docs site"})
 	defer unregisterSubagent("sa-1-attr0003", nil)
 	reg := tools.NewProcessRegistry()
 	reg.CompletionQueue.Put(childCompletionEvt("sa-1-attr0003", "proc_deadbeef0001"))
@@ -379,7 +379,7 @@ func TestCompletionNotificationCarriesDelegationAttribution(t *testing.T) {
 		t.Fatalf("results %v", results)
 	}
 	text := results[0].Text
-	for _, want := range []string{"Started by subagent sa-1-attr0003", "deleg_attr_3", "run the npm ci for the desktop app"} {
+	for _, want := range []string{"Started by subagent sa-1-attr0003", "deleg_attr_3", "run the npm ci for the docs site"} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("missing %q in %q", want, text)
 		}

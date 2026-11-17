@@ -21,7 +21,7 @@ type staleRefreshCalls struct {
 func runStaleRefresh(t *testing.T, platform string, policy gateway.ActiveLaunchPolicy) *staleRefreshCalls {
 	t.Helper()
 	row := pyjson.NewObject()
-	row.Set("system_prompt", "SYSTEM PROMPT BODY\n\nConversation started: Monday, January 05, 2026\nModel: test-model\nProvider: openrouter\nPlatform: desktop")
+	row.Set("system_prompt", "SYSTEM PROMPT BODY\n\nConversation started: Monday, January 05, 2026\nModel: test-model\nProvider: openrouter\nPlatform: tui")
 	row.Set("tool_names", nil)
 	a, _ := restoreAgent(t, restoreRowStore(t, row), "NEW_PROMPT")
 	a.platform, a.passSessionID, a.sessionTitleHint = platform, false, "Bot Chat"
@@ -41,7 +41,7 @@ func runStaleRefresh(t *testing.T, platform string, policy gateway.ActiveLaunchP
 	loopPersistAgentToolNames = func(context.Context, mcp.AgentToolSnapshot) { calls.pinned++ }
 	TUIGatewayToolsets = func(_ context.Context, surface string) ([]string, []string) {
 		calls.builder = append(calls.builder, surface)
-		return []string{"terminal", "file", "desktop_ui"}, []string{"computer_use"}
+		return []string{"terminal", "file", "web"}, []string{"computer_use"}
 	}
 	ctx := tools.WithToolEnv(context.Background(), a.env)
 	if policy != nil {
@@ -57,12 +57,12 @@ func runStaleRefresh(t *testing.T, platform string, policy gateway.ActiveLaunchP
 }
 
 func TestStaleEpochRebuildsToolsThroughTheSurfaceBuilder(t *testing.T) {
-	calls := runStaleRefresh(t, "desktop", nil)
-	if !reflect.DeepEqual(calls.builder, []string{"desktop"}) || len(calls.refreshes) != 1 {
+	calls := runStaleRefresh(t, "tui", nil)
+	if !reflect.DeepEqual(calls.builder, []string{"tui"}) || len(calls.refreshes) != 1 {
 		t.Fatalf("builder %v refreshes %v", calls.builder, calls.refreshes)
 	}
 	opts := calls.refreshes[0]
-	if !reflect.DeepEqual(opts.EnabledOverride, []string{"terminal", "file", "desktop_ui"}) || !reflect.DeepEqual(opts.DisabledOverride, []string{"computer_use"}) {
+	if !reflect.DeepEqual(opts.EnabledOverride, []string{"terminal", "file", "web"}) || !reflect.DeepEqual(opts.DisabledOverride, []string{"computer_use"}) {
 		t.Fatalf("overrides %+v", opts)
 	}
 	if opts.PreservePrefix || calls.pinned == 0 {
@@ -78,7 +78,7 @@ func TestStaleEpochLeavesAPerProcessSurfaceAlone(t *testing.T) {
 }
 
 func TestFrozenSessionPolicyWinsOverLiveSurfaceConfig(t *testing.T) {
-	calls := runStaleRefresh(t, "desktop", &gateway.LocalSessionPolicy{Toolsets: []string{"file", "web"}})
+	calls := runStaleRefresh(t, "tui", &gateway.LocalSessionPolicy{Toolsets: []string{"file", "web"}})
 	if len(calls.builder) != 0 || len(calls.refreshes) != 1 {
 		t.Fatalf("builder %v refreshes %v", calls.builder, calls.refreshes)
 	}

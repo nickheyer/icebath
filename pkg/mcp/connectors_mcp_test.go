@@ -29,9 +29,9 @@ type fakeAttempt struct {
 
 func newFakeAttempt(url string) *fakeAttempt { return &fakeAttempt{authURL: url, status: "pending"} }
 
-func (a *fakeAttempt) AuthURL() string           { return a.authURL }
-func (a *fakeAttempt) Detail() string            { return "" }
-func (a *fakeAttempt) Flow() *DashboardOAuthFlow { return nil }
+func (a *fakeAttempt) AuthURL() string        { return a.authURL }
+func (a *fakeAttempt) Detail() string         { return "" }
+func (a *fakeAttempt) Flow() *ClientOAuthFlow { return nil }
 func (a *fakeAttempt) Poll() AttemptPoll {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -354,7 +354,7 @@ func TestConnMCPSecretsNeverReachTheModel(t *testing.T) {
 	}
 }
 
-func TestConnOffDesktopAuthorizeReturnsTheLinkAtOnceAndOpensNoOperation(t *testing.T) {
+func TestConnAuthorizeWithoutACardReturnsTheLinkAtOnceAndOpensNoOperation(t *testing.T) {
 	backend := newFakeConnBackend()
 	connFixture(t, backend)
 	out := manageMCP(context.Background(), map[string]any{"action": "authorize", "connectors": []any{mcpTarget("paper")}}, nil, backend)
@@ -407,7 +407,7 @@ func TestConnEnableAndAuthorizeNeedAConfiguredServer(t *testing.T) {
 	}
 }
 
-func TestConnADesktopSessionWithNoCallbackGetsTheLinkAtOnceAndOpensNoOperation(t *testing.T) {
+func TestConnASessionWithNoCallbackGetsTheLinkAtOnceAndOpensNoOperation(t *testing.T) {
 	backend := newFakeConnBackend()
 	connFixture(t, backend)
 	saved := tools.OperationDeadlineSeconds

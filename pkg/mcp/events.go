@@ -734,8 +734,8 @@ func subscribeEvent(ctx context.Context, srv *serverTask, args map[string]any) (
 	routeName := eventRouteName(srv.name, name, arguments)
 	existing := loadEventRoutes(h, srv.name)[routeName]
 	if existing != nil && existing["enabled"] == false {
-		return orderedJSON{{"error", fmt.Sprintf("The subscription to '%s' with these arguments is turned off in the "+
-			"webhook dashboard. Turn it back on there to resume it.", name)}}, nil
+		return orderedJSON{{"error", fmt.Sprintf("The subscription to '%s' with these arguments is turned off in "+
+			"webhook_subscriptions.json. Set its enabled flag back to true to resume it.", name)}}, nil
 	}
 	deliver := "log"
 	if pyTruthy(args["deliver"]) {

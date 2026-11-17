@@ -99,13 +99,13 @@ func TestListenerRecoversAfterTransientCaptureFailure(t *testing.T) {
 }
 
 func TestCaptureRecoveryIsBoundedAndCancellable(t *testing.T) {
-	for _, failure := range []string{"read", "open", "cancel", "external"} {
+	for _, failure := range []string{"read", "open", "cancel"} {
 		t.Run(failure, func(t *testing.T) {
 			var calls []int
 			closed := &captureList{}
 			var failures []*WakeWordDetector
 			det := NewWakeWordDetector(recoveryEngine(), noWake, WakeDetectorOptions{
-				OnFailure: func(d *WakeWordDetector) { failures = append(failures, d) }, ExternalAudio: failure == "external"})
+				OnFailure: func(d *WakeWordDetector) { failures = append(failures, d) }})
 			det.openCapture = func(frameLength int) (wakeCapture, error) {
 				calls = append(calls, frameLength)
 				if failure == "open" && len(calls) > 1 {
@@ -129,7 +129,7 @@ func TestCaptureRecoveryIsBoundedAndCancellable(t *testing.T) {
 				t.Fatalf("ready %v errors %v", ready.IsSet(), errs)
 			}
 			wantCalls := 4
-			if failure == "cancel" || failure == "external" {
+			if failure == "cancel" {
 				wantCalls = 1
 			}
 			if len(calls) != wantCalls {

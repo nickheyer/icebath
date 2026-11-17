@@ -1507,28 +1507,6 @@ func (s *recordingSlot) RegisterPreparedApproval(sessionKey string, entry *Appro
 }
 func (s *recordingSlot) ApprovalPublished() { s.published++ }
 
-func TestPreparedApprovalSlotSeam(t *testing.T) {
-	env := approvalTestEnv(t, "slot", nil, map[string]any{"gateway": true})
-	slot := &recordingSlot{decision: &GuardResult{Approved: true, UserApproved: true}}
-	ctx := WithPreparedApprovalSlot(WithApprovalTaskID(context.Background(), "task-3"), slot)
-	if r := CheckAllCommandGuards(ctx, env, "rm -rf .git", "local", false); !r.Approved || !r.UserApproved {
-		t.Fatalf("prepared decision not consumed %+v", r)
-	}
-	if len(slot.consumed) != 1 || slot.consumed[0] != "rm -rf .git|task-3" {
-		t.Fatalf("consumed %v", slot.consumed)
-	}
-	RegisterGatewayNotify("slot", resolvingNotify("slot", "once"))
-	if r := CheckAllCommandGuards(ctx, env, "rm -rf .git", "local", false); !r.Approved {
-		t.Fatalf("live flow %+v", r)
-	}
-	if slot.published != 1 || len(slot.entries) != 1 {
-		t.Fatalf("published %d entries %d", slot.published, len(slot.entries))
-	}
-	if r := CheckAllCommandGuards(ctx, env, "sudo reboot", "local", false); r.Approved {
-		t.Fatal("floors run before the prepared slot")
-	}
-}
-
 func TestElicitationConsent(t *testing.T) {
 	env := approvalTestEnv(t, "elicit", nil, map[string]any{"gateway": true})
 	if got := RequestElicitationConsent(context.Background(), env, "msg", "desc", ElicitationOptions{}); got != "decline" {

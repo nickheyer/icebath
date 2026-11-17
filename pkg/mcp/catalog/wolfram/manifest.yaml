@@ -17,16 +17,6 @@ transport:
 auth:
   type: none
 
-# Composer-suggestion triggers (desktop brand pills).
-suggest:
-  keywords:
-    - wolfram
-    - wolfram alpha
-    - computation
-  hosts:
-    - wolfram.com
-    - wolframalpha.com
-
 post_install: |
   No account or credentials needed — tools are available as soon as the
   session restarts.

@@ -28,14 +28,6 @@ func unionSources(base map[string]bool, extra ...string) map[string]bool {
 	return out
 }
 
-// CreateSurface maps desktop to the gui session.create label and leaves every other source unchanged
-func CreateSurface(source string) string {
-	if source == "desktop" {
-		return "gui"
-	}
-	return source
-}
-
 // IsAttended reports whether a person reads the agent's turns, false for subagents, library callers and finite turns
 func IsAttended(a *AIAgent) bool {
 	if a == nil || a.platform == "" || a.platform == "subagent" {

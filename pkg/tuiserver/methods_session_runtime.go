@@ -318,7 +318,7 @@ func sessionSave(ctx context.Context, rid any, params map[string]any, session *t
 // Pops the live session under the resume lock and finalizes it, returning its end messages
 func sessionClose(ctx context.Context, rid any, params map[string]any) map[string]any {
 	sessionResumeLock.Lock()
-	session := popSessionByID(ctx, strOr(orEmpty(params["session_id"])))
+	session := popSessionByID(strOr(orEmpty(params["session_id"])))
 	sessionResumeLock.Unlock()
 	closed := teardownPoppedSession(ctx, session, "tui_close")
 	messages := []any{}

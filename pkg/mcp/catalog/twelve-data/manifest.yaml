@@ -28,14 +28,6 @@ tools:
     - oauth_configure
     - get_api_usage
 
-# Composer-suggestion triggers (desktop brand pills).
-suggest:
-  keywords:
-    - twelve data
-    - stock price
-  hosts:
-    - twelvedata.com
-
 post_install: |
   On first connection icebath opens a browser to authorize with
   Twelve Data (or run `icebath mcp login twelve-data`). Approve access,

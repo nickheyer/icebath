@@ -70,7 +70,7 @@ func TestVerifyOnStopEnvCanEnable(t *testing.T) {
 }
 
 func TestVerifyOnStopAutoOnForInteractiveSurfaces(t *testing.T) {
-	for _, source := range []string{"cli", "tui", "desktop", "codex", "local"} {
+	for _, source := range []string{"cli", "tui", "codex", "local"} {
 		t.Run(source, func(t *testing.T) {
 			clearVerifyEnv(t)
 			t.Setenv("ICEBATH_SESSION_SOURCE", source)

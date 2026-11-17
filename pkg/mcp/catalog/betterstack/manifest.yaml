@@ -42,15 +42,6 @@ tools:
     - "*team_member*"
     - "*team member*"
 
-# Composer-suggestion triggers (desktop brand pills).
-suggest:
-  keywords:
-    - better stack
-    - betterstack
-    - uptime monitor
-  hosts:
-    - betterstack.com
-
 post_install: |
   On first connection icebath opens a browser to authorize with
   Better Stack (or run `icebath mcp login betterstack`). Approve access,

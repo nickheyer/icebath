@@ -18,13 +18,6 @@ transport:
 auth:
   type: oauth
 
-# Composer-suggestion triggers (desktop brand pills).
-suggest:
-  keywords:
-    - paypal
-  hosts:
-    - developer.paypal.com
-
 post_install: |
   On first connection icebath opens a browser to authorize with
   Paypal (or run `icebath mcp login paypal`). Approve access,
