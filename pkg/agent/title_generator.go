@@ -16,6 +16,7 @@ import (
 	"github.com/dlclark/regexp2/v2"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -127,9 +128,9 @@ func titleConfigMap(v any) (map[string]any, bool) {
 	return nil, false
 }
 
-// AttributeError Python raises calling get on a non mapping value
+// Refusal of a title config section that is not a mapping
 func titleNoGetError(v any) error {
-	return &pyint.Error{Kind: "AttributeError", Msg: "'" + pyrepr.TypeName(v) + "' object has no attribute 'get'"}
+	return &pyint.Error{Kind: "AttributeError", Msg: "title generation config section is " + errchain.Kind(v) + " where a mapping was expected"}
 }
 
 // auxiliary.title_generation mapping, empty when unset, an error where a level is a non mapping value
@@ -522,7 +523,7 @@ func titleSafeCallback(callback any, args []any, logFmt, label string) {
 	}
 	fn := reflect.ValueOf(callback)
 	if fn.Kind() != reflect.Func {
-		panic(fmt.Sprintf("'%s' object is not callable", pyrepr.TypeName(callback)))
+		panic(fmt.Sprintf("title callback is %s where a function was expected", errchain.Kind(callback)))
 	}
 	if fn.IsNil() {
 		return
@@ -629,7 +630,7 @@ func requestTitle(ctx context.Context, prompt, snippet string, o generateTitleOp
 	if v := provider.MessageField(message, "content"); pyrepr.Truthy(v) {
 		s, ok := v.(string)
 		if !ok {
-			return "", &pyint.Error{Kind: "AttributeError", Msg: "'" + pyrepr.TypeName(v) + "' object has no attribute 'strip'"}
+			return "", &pyint.Error{Kind: "AttributeError", Msg: "title model reply content is " + errchain.Kind(v) + " where text was expected"}
 		}
 		content = s
 	}
@@ -643,7 +644,7 @@ func requestTitle(ctx context.Context, prompt, snippet string, o generateTitleOp
 		return "", nil
 	}
 	if title != "" && isPromptExampleEcho(title) {
-		pkgLog().Debug("Rejecting prompt-example echo title: " + pyrepr.StrRepr(title))
+		pkgLog().Debug("Rejecting prompt-example echo title: " + errchain.Show(title))
 		return "", nil
 	}
 	return title, nil
@@ -784,7 +785,7 @@ func persistSessionTitle(ctx context.Context, db any, sessionID, title, source s
 		}
 		w, ok := db.(sessionTitleSetter)
 		if !ok {
-			return "", &pyint.Error{Kind: "AttributeError", Msg: "'" + pyrepr.TypeName(db) + "' object has no attribute 'set_session_title'"}
+			return "", &pyint.Error{Kind: "AttributeError", Msg: "the session store cannot set session titles"}
 		}
 		done, err := w.SetSessionTitle(ctx, sessionID, candidate)
 		if err != nil {

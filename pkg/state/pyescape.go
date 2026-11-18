@@ -1,6 +1,8 @@
 package state
 
 import (
+	"errors"
+	"fmt"
 	"unicode/utf8"
 
 	"golang.org/x/text/cases"
@@ -50,7 +52,11 @@ func latin1Ignore(s string) []byte {
 func pyUnicodeEscapeDecode(data []byte) (string, error) {
 	text, err := pycodecs.Decode(data, "unicode_escape")
 	if err != nil {
-		return "", &pyConvError{"UnicodeDecodeError", err.Error()}
+		var bad *pycodecs.UnicodeDecodeError
+		if errors.As(err, &bad) {
+			return "", &pyConvError{"UnicodeDecodeError", fmt.Sprintf("invalid escape at byte %d of a mount path: %s", bad.Pos, bad.Reason)}
+		}
+		return "", &pyConvError{"UnicodeDecodeError", "invalid escape in a mount path: " + err.Error()}
 	}
 	return text, nil
 }

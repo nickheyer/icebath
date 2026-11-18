@@ -74,11 +74,7 @@ var _ = Method("display.switchSandboxImage", DisplaySwitchSandboxImageParams, Di
 
 var _ = Method("display.install", ProfileParams, DisplayInstallResult, "Run the distro package install on the gateway host; progress streams as display.install.log/.done.")
 
-var DisplayInstallSudoParams = pydantic.Extend(ServerRequestParams, "DisplayInstallSudoParams", ParamsConfig,
-	pydantic.Req("profile_key", pydantic.Str),
-)
 
-var _ = ServerRequestOf("display.install.sudo", DisplayInstallSudoParams, ValueResult, "Masked sudo password for the Bot Screen package install; app-level (empty session).")
 
 var DisplayStatusPayload = pydantic.NewModel("DisplayStatusPayload", ClosedConfig,
 	pydantic.Req("profile", pydantic.Str),

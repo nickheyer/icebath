@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -560,7 +561,7 @@ func topLevelMap(value any) (map[string]any, error) {
 	case map[string]any:
 		return v, nil
 	}
-	return nil, &PyError{Kind: "TypeError", Msg: "'" + jsonValueTypeName(value) + "' object is not a mapping"}
+	return nil, &PyError{Kind: "TypeError", Msg: "expected a mapping, got " + errchain.Kind(value)}
 }
 
 // Saved result and usage of a settled admission, an interrupted empty reply for a cancelled one
@@ -575,7 +576,7 @@ func settledAPIResult(ctx context.Context, a *SessionAuthority, admissionID stri
 			return nil, nil, err
 		}
 		if current == nil {
-			return nil, nil, &PyError{Kind: "TypeError", Msg: "'NoneType' object is not subscriptable"}
+			return nil, nil, &PyError{Kind: "TypeError", Msg: "the settled API turn result is missing"}
 		}
 		outcome, err := pyItem(current, "outcome")
 		if err != nil {
@@ -627,7 +628,7 @@ func ObserveAPIControls(ctx context.Context, admitted *APIAdmission, sink func(e
 		}
 		params, isDict := rawParams.(*pyjson.Object)
 		if !isDict {
-			panic(&PyError{Kind: "AttributeError", Msg: "'" + jsonValueTypeName(rawParams) + "' object has no attribute 'get'"})
+			panic(&PyError{Kind: "AttributeError", Msg: "the API control parameters are " + errchain.Kind(rawParams) + ", expected a mapping"})
 		}
 		eventType, _ := params.GetOr("type", nil).(string)
 		if params.GetOr("admission_id", nil) != any(admissionID) || !apiControlEvents[eventType] {
@@ -670,7 +671,7 @@ func ObserveAPIControls(ctx context.Context, admitted *APIAdmission, sink func(e
 			}
 			kind, isText := rawKind.(string)
 			if !isText {
-				return &PyError{Kind: "TypeError", Msg: "unsupported operand type(s) for +: '" + jsonValueTypeName(rawKind) + "' and 'str'"}
+				return &PyError{Kind: "TypeError", Msg: "the API control kind is " + errchain.Kind(rawKind) + ", expected text"}
 			}
 			if err := sink(kind+".request", prompt); err != nil {
 				return err

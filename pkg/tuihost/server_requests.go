@@ -11,6 +11,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/tuigateway"
 )
 
 const (
@@ -198,14 +199,8 @@ func findOpenLocked(id string) *ServerRequest {
 
 // Validates the request against its contract, publishes it and writes its frame, a cancel in between announced after
 func register(ctx context.Context, req *ServerRequest) error {
-	contractsMu.RLock()
-	contract := ServerRequests[req.Method]
-	contractsMu.RUnlock()
-	if contract == nil {
-		return fmt.Errorf("server request %s has no contract in tui_gateway/contracts", pyrepr.Repr(req.Method))
-	}
-	if _, problem := ValidateParams(contract, req.wireParams()); problem != "" {
-		return &RequestParamsError{problem}
+	if err := CheckRequestParams(req.Method, req.wireParams()); err != nil {
+		return err
 	}
 	var direct Transport
 	if t := CurrentTransport(ctx); req.SID == "" && t != nil {
@@ -234,6 +229,31 @@ func register(ctx context.Context, req *ServerRequest) error {
 		emitCancel(req, *withdrawn)
 	}
 	return nil
+}
+
+// Refusal of the params a server request is about to carry, naming the field that does not fit its typed contract
+func CheckRequestParams(method string, params *pyjson.Object) error {
+	typed := tuigateway.Lookup(tuigateway.KindRequest, method)
+	if typed == nil {
+		return fmt.Errorf("server request %s has no contract", pyrepr.Repr(method))
+	}
+	if err := typed.FitParams(params); err != nil {
+		return &RequestParamsError{err.Error()}
+	}
+	return nil
+}
+
+// Answer a client gave a server request, refused with the field named when it does not fit the typed answer
+func FittedAnswer(method string, raw any) (*pyjson.Object, error) {
+	typed := tuigateway.Lookup(tuigateway.KindRequest, method)
+	if typed == nil {
+		return nil, fmt.Errorf("server request %s has no contract", pyrepr.Repr(method))
+	}
+	if err := typed.CheckResult(raw); err != nil {
+		return nil, err
+	}
+	result, _ := pyjson.AsObject(raw)
+	return result, nil
 }
 
 // Params of a server request that its contract rejects, the ValueError of the sender
@@ -408,11 +428,10 @@ func ResolveResponse(frame *pyjson.Object, transport Transport) bool {
 	if errValue, isError := frame.Get("error"); isError {
 		requestsLog().Debug(fmt.Sprintf("server request %s (%s) answered with error: %s", rid, req.Method, pyrepr.Str(errValue)))
 		req.result, req.answered = nil, false
+	} else if result, refused := FittedAnswer(req.Method, frame.GetOr("result", nil)); refused != nil {
+		requestsLog().Warn(fmt.Sprintf("server request %s (%s) answer refused: %s", rid, req.Method, refused))
+		req.result, req.answered = nil, false
 	} else {
-		result, isObject := frame.GetOr("result", nil).(*pyjson.Object)
-		if !isObject {
-			result = pyjson.NewObject()
-		}
 		req.result = result
 		if len(req.qids) > 0 {
 			req.result = settleBatch(req.locked, req.result, "")

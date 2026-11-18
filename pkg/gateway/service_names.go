@@ -28,7 +28,7 @@ const (
 
 var (
 	serviceProfileNameRE = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,63}\n?$`)
-	errUnitDecode        = errors.New("'utf-8' codec can't decode the systemd unit file")
+	errUnitDecode        = errors.New("the systemd unit file is not valid UTF-8")
 	serviceGeteuid       = os.Geteuid
 	serviceGOOS          = runtime.GOOS
 	systemUnitDir        = "/etc/systemd/system"
@@ -141,7 +141,7 @@ func ProfileSuffix(ctx context.Context) (string, error) {
 		return name, nil
 	}
 	if !utf8.ValidString(resolved) {
-		return "", errors.New("'utf-8' codec can't encode characters: surrogates not allowed")
+		return "", errors.New("the profile home path is not valid UTF-8")
 	}
 	sum := sha256.Sum256([]byte(resolved))
 	return hex.EncodeToString(sum[:])[:8], nil

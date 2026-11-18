@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
@@ -62,7 +63,7 @@ func commandcodeFetchModels(ctx context.Context, baseURL string, timeout time.Du
 	data, err := modelsGetJSON(ctx, commandcodeModelsURLFor(baseURL), timeout, pyhttpx.OrderedHeaderMap(pyhttpx.HeaderLine{Name: "Accept", Value: "application/json"}, pyhttpx.HeaderLine{Name: "User-Agent", Value: profileUserAgent()}), nil)
 	if err == nil {
 		if _, isDict := data.(map[string]any); !isDict {
-			err = fmt.Errorf("'%s' object has no attribute 'get'", pyTypeName(data))
+			err = fmt.Errorf("the models reply is %s, expected a mapping", errchain.Kind(data))
 		}
 	}
 	if err != nil {

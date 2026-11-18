@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
@@ -147,7 +148,7 @@ func prepareWorkspace(ctx context.Context, a *SessionAuthority, live *LiveSessio
 	}
 	ordered, ok := loaded.(*pyjson.Object)
 	if !ok {
-		return nil, &PyError{Kind: "TypeError", Msg: "'" + pyTypeName(loaded) + "' object does not support item assignment"}
+		return nil, &PyError{Kind: "TypeError", Msg: "the workspace policy is " + errchain.Kind(loaded) + ", expected a mapping"}
 	}
 	ordered.Set("TERMINAL_CWD", cwd)
 	text, err := pyjson.Dumps(ordered)

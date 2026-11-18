@@ -10,6 +10,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
@@ -419,7 +420,7 @@ func (s *CodexAppServerSession) EnsureStarted() (string, error) {
 					keys = append(keys, k)
 				}
 			} else {
-				return "", &codexPyError{"AttributeError", fmt.Sprintf("'%s' object has no attribute 'keys'", pyrepr.TypeName(result))}
+				return "", &codexPyError{"AttributeError", fmt.Sprintf("the Codex app server start reply is %s, expected a mapping", errchain.Kind(result))}
 			}
 			sort.Strings(keys)
 			return "", &CodexAppServerError{Code: -32603, Message: fmt.Sprintf("codex thread/start returned no thread id (payload keys: %s)", pyrepr.Repr(keys))}

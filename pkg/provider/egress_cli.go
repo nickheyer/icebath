@@ -149,7 +149,7 @@ func (p *egressParser) printHelp(w io.Writer) {
 	}
 	choices := "{" + strings.Join(names, ",") + "}"
 	var b strings.Builder
-	fmt.Fprintf(&b, "usage: icebath egress [-h] %s ...\n\npositional arguments:\n  %s\n", choices, choices)
+	fmt.Fprintf(&b, "usage: icebath egress [-h] %s ...\n\narguments:\n  %s\n", choices, choices)
 	for _, cmd := range p.Commands {
 		fmt.Fprintf(&b, "    %-20s%s\n", cmd.Name, cmd.Help)
 	}

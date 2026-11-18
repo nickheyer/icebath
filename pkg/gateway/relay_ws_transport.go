@@ -15,6 +15,7 @@ import (
 
 	"github.com/gorilla/websocket"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
@@ -774,7 +775,7 @@ func (t *WebSocketRelayTransport) GetChatInfo(ctx context.Context, chatID string
 	if ci, ok := result["chat_info"]; ok && pyrepr.Truthy(ci) {
 		m, ok := ci.(map[string]any)
 		if !ok {
-			return nil, &PyError{"AttributeError", "'" + pyrepr.TypeName(ci) + "' object has no attribute 'get'"}
+			return nil, &PyError{"AttributeError", "the relay chat info is " + errchain.Kind(ci) + ", expected a mapping"}
 		}
 		info = m
 	}
@@ -886,7 +887,7 @@ func (t *WebSocketRelayTransport) requestResponse(ctx context.Context, action ma
 	result, err := p.fut.wait(ctx, t.outboundTimeoutS)
 	var shape *relayResultShapeError
 	if errors.As(err, &shape) {
-		return nil, &PyError{"AttributeError", "'" + shape.TypeName + "' object has no attribute 'get'"}
+		return nil, &PyError{"AttributeError", shape.Error()}
 	}
 	if err != nil {
 		var pe *PyError
@@ -903,10 +904,10 @@ func (t *WebSocketRelayTransport) requestResponse(ctx context.Context, action ma
 }
 
 // Outbound result that is not a mapping, raised where the caller first reads it
-type relayResultShapeError struct{ TypeName string }
+type relayResultShapeError struct{ Kind string }
 
 func (e *relayResultShapeError) Error() string {
-	return "'" + e.TypeName + "' object has no attribute 'get'"
+	return "the relay send result is " + e.Kind + ", expected a mapping"
 }
 
 // Random 32 hex digit request id
@@ -1218,12 +1219,12 @@ func (t *WebSocketRelayTransport) handleFrame(ctx context.Context, line string) 
 	}
 	frame, ok := pyjson.AsObject(parsed)
 	if !ok {
-		return &PyError{"AttributeError", "'" + pyrepr.TypeName(parsed) + "' object has no attribute 'get'"}
+		return &PyError{"AttributeError", "a relay frame is " + errchain.Kind(parsed) + ", expected a mapping"}
 	}
 	typ := frame.GetOr("type", nil)
 	switch typ.(type) {
 	case []any, *pyjson.Object:
-		return &PyError{"TypeError", "unhashable type: '" + pyrepr.TypeName(typ) + "'"}
+		return &PyError{"TypeError", "a relay frame type is " + errchain.Kind(typ) + ", expected text"}
 	}
 	switch typ {
 	case "descriptor":
@@ -1241,7 +1242,7 @@ func (t *WebSocketRelayTransport) handleFrame(ctx context.Context, line string) 
 		rawID := frame.GetOr("requestId", "")
 		switch rawID.(type) {
 		case []any, *pyjson.Object:
-			return &PyError{"TypeError", "unhashable type: '" + pyrepr.TypeName(rawID) + "'"}
+			return &PyError{"TypeError", "a relay frame id is " + errchain.Kind(rawID) + ", expected text"}
 		}
 		id, _ := rawID.(string)
 		t.mu.Lock()
@@ -1252,7 +1253,7 @@ func (t *WebSocketRelayTransport) handleFrame(ctx context.Context, line string) 
 			if result, ok := pyjson.Plain(rawResult).(map[string]any); ok {
 				p.fut.settle(result, nil)
 			} else {
-				p.fut.settle(nil, &relayResultShapeError{TypeName: pyrepr.TypeName(rawResult)})
+				p.fut.settle(nil, &relayResultShapeError{Kind: errchain.Kind(rawResult)})
 			}
 		}
 	case "interrupt_inbound":

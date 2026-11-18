@@ -162,7 +162,7 @@ type doctorCheckEntry struct {
 	Check doctorCheckFunc
 }
 
-// Ordered doctor walk, an empty title meaning the check prints its own header or none
+// Ordered doctor walk, an empty title meaning the check prints its own header or none, tiers adding theirs at init
 var doctorChecks = []doctorCheckEntry{
 	{"Security Advisories", checkSecurityAdvisories}, {"MCP Server Security", checkMCPSecurity},
 	{"Python Environment", checkPythonEnvironment}, {"SSL / CA Certificates", checkCertificates},
@@ -181,7 +181,6 @@ var doctorChecks = []doctorCheckEntry{
 	{"Memory Provider", checkMemoryProvider}, {"", checkPluginsDisabledByUpdate},
 	{"", checkPluginsInBothLists},
 	{"NeMo Relay Plugins", checkRelayPlugins},
-	{"Optional Python Features", checkPythonExtras},
 	{"", checkProfiles},
 }
 

@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -156,7 +157,7 @@ func stripArg(args map[string]any, key, fallback string) (string, error) {
 	}
 	s, ok := v.(string)
 	if !ok {
-		return "", &videoHandlerError{"AttributeError", fmt.Sprintf("'%s' object has no attribute 'strip'", pyrepr.TypeName(v))}
+		return "", &videoHandlerError{"AttributeError", fmt.Sprintf("%s must be text, got %s", key, errchain.Kind(v))}
 	}
 	return strings.TrimSpace(s), nil
 }

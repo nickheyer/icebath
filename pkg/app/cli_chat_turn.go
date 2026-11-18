@@ -18,7 +18,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrich"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
-	"github.com/nickheyer/icebath/pkg/media"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/skills"
 	"github.com/nickheyer/icebath/pkg/state"
@@ -33,10 +32,6 @@ var (
 	agentJoinTimeout         = 30 * time.Second
 	ttsDrainTimeout          = 120 * time.Second
 	ttsReleaseTimeout        = 5 * time.Second
-	checkTTSRequirements     = media.CheckTTSRequirements
-	streamTTSToSpeaker       = media.StreamTTSToSpeaker
-	startThinkingSound       = media.StartThinkingSound
-	stopThinkingSound        = media.StopThinkingSound
 	loadFallbackChainConfig  = config.LoadUserEffectiveFailClosed
 	decideImageInputMode     = tools.DecideImageInputMode
 	buildNativeContentParts  = tools.BuildNativeContentParts
@@ -285,6 +280,27 @@ func (c *CLI) chatStageUserMessage(a cliAgent, message any) map[string]any {
 	return displayMetadata
 }
 
+// Wake word and full duplex state of the voice mixin
+type cliVoiceExtra struct {
+	fdActive            *syncEvent
+	noSpeechCount       int
+	wakeWordActive      bool
+	wakeSuspended       bool
+	wakeStartNewSession bool
+	wakeWatchdogStarted bool
+}
+
+// Voice mode audio of the chat turn, set by the voice mode file and nil in a build without it
+var (
+	checkTTSRequirements    func(ctx context.Context) bool
+	streamTTSToSpeaker      func(ctx context.Context, textQueue *inputQueue, stopEvent, ttsDoneEvent *syncEvent, displayCallback func(string), provider string)
+	startThinkingSound      func(ctx context.Context, shouldPlay func() bool) bool
+	stopThinkingSound       func()
+	takeSpeechInterrupted   func() bool
+	voiceFullDuplexListener func(c *CLI)
+	voiceSpeakResponseAsync func(c *CLI, text string)
+)
+
 // Arms the full duplex listener and the streaming TTS pipeline of this turn in voice mode
 func (c *CLI) chatSetupTurnAudio(turn *chatTurn) {
 	if turn.muteNotificationReply {
@@ -297,7 +313,7 @@ func (c *CLI) chatSetupTurnAudio(turn *chatTurn) {
 		c.voiceLock.Lock()
 		c.voiceLastTTSText = ""
 		c.voiceLock.Unlock()
-		go c.voiceFullDuplexListener()
+		go voiceFullDuplexListener(c)
 	}
 	if voiceTTS {
 		func() {
@@ -306,7 +322,7 @@ func (c *CLI) chatSetupTurnAudio(turn *chatTurn) {
 					pkgLog().Debug("streaming TTS arm check failed", "error", r)
 				}
 			}()
-			turn.useStreamingTTS = checkTTSRequirements(c.ctx)
+			turn.useStreamingTTS = checkTTSRequirements != nil && checkTTSRequirements(c.ctx)
 		}()
 	}
 	if turn.useStreamingTTS {
@@ -373,7 +389,7 @@ func (c *CLI) chatRunAgent(turn *chatTurn, message any) {
 			agentMessage, changed = prependNoteToMessage(agentMessage, note), true
 		}
 	}
-	if media.TakeSpeechInterrupted() {
+	if takeSpeechInterrupted != nil && takeSpeechInterrupted() {
 		agentMessage, changed = prependNoteToMessage(agentMessage, agent.SpeechInterruptedNote), true
 	}
 	c.uiMu.Lock()
@@ -493,7 +509,7 @@ func (c *CLI) chatMonitorAgentThread(turn *chatTurn, done <-chan struct{}) any {
 					turn.thinkingStarted = false
 				}
 			}()
-			turn.thinkingStarted = startThinkingSound(c.ctx, func() bool {
+			turn.thinkingStarted = startThinkingSound != nil && startThinkingSound(c.ctx, func() bool {
 				c.voiceLock.Lock()
 				recording := c.voiceRecording
 				c.voiceLock.Unlock()
@@ -771,7 +787,7 @@ func (c *CLI) chatRenderTurn(turn *chatTurn, done <-chan struct{}, interruptMsg 
 	voiceTTS := c.voiceTTS
 	c.voiceLock.Unlock()
 	if voiceTTS && response != "" && !turn.useStreamingTTS {
-		c.voiceSpeakResponseAsync(response)
+		voiceSpeakResponseAsync(c, response)
 	}
 	if pyrepr.Truthy(interruptPayloadValue(pendingMessage)) {
 		c.requeueInterruptedInput(pendingMessage)

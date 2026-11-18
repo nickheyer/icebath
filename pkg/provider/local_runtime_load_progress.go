@@ -15,6 +15,8 @@ import (
 	"sync"
 	"time"
 	"unicode/utf8"
+
+	"github.com/nickheyer/icebath/pkg/errchain"
 )
 
 const (
@@ -100,25 +102,7 @@ func loadDict(v any) (map[string]any, error) {
 	if m, ok := v.(map[string]any); ok {
 		return m, nil
 	}
-	return nil, fmt.Errorf("'%s' object has no attribute 'get'", loadPyTypeName(v))
-}
-
-func loadPyTypeName(v any) string {
-	switch v.(type) {
-	case nil:
-		return "NoneType"
-	case bool:
-		return "bool"
-	case string:
-		return "str"
-	case []any:
-		return "list"
-	case float64:
-		return "float"
-	case map[string]any:
-		return "dict"
-	}
-	return "int"
+	return nil, fmt.Errorf("expected a mapping, got %s", errchain.Kind(v))
 }
 
 // Iterates a decoded JSON value the way a Python for loop does, a skippable error when it is not iterable
@@ -139,7 +123,7 @@ func loadIterate(v any) ([]any, error) {
 		}
 		return out, nil
 	}
-	return nil, &loadSkippableError{fmt.Sprintf("'%s' object is not iterable", loadPyTypeName(v))}
+	return nil, &loadSkippableError{fmt.Sprintf("expected a list, got %s", errchain.Kind(v))}
 }
 
 // Keys of an object built in Go sorted, the SSE reader substitutes document order before applying
@@ -352,7 +336,7 @@ func streamLoadEvents(base, key string) error {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		return fmt.Errorf("HTTP Error %d: %s", resp.StatusCode, http.StatusText(resp.StatusCode))
+		return fmt.Errorf("HTTP %d %s", resp.StatusCode, http.StatusText(resp.StatusCode))
 	}
 	var buf []byte
 	chunk := make([]byte, 4096)

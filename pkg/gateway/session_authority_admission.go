@@ -166,7 +166,7 @@ func (a *SessionAuthority) agent(ref SessionRef) (any, error) {
 	if cached, ok := a.Runner.(cachedAgentRunner); ok {
 		return cached.CachedAgentFor(key), nil
 	}
-	return nil, fmt.Errorf("'%T' object has no attribute '_cached_agent_for'", a.Runner)
+	return nil, fmt.Errorf("the gateway runner (%T) cannot look up a cached agent", a.Runner)
 }
 
 // Handle of a session the actor may read

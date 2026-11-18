@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -121,7 +122,7 @@ func readLegacyRecord(path string) (*pyjson.Object, error) {
 	}
 	obj, ok := v.(*pyjson.Object)
 	if !ok {
-		return nil, fmt.Errorf("expected a JSON object, got %s", pyTypeName(v))
+		return nil, fmt.Errorf("expected a JSON object, got %s", errchain.Kind(v))
 	}
 	return obj, nil
 }

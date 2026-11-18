@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
@@ -1016,7 +1017,7 @@ func mergeChangedPaths(existing any, changed []string) ([]any, error) {
 			items = append(items, pystr.FromRunes([]rune{r}))
 		}
 	default:
-		return nil, &pyint.Error{Kind: "TypeError", Msg: fmt.Sprintf("'%s' object is not iterable", pyrepr.TypeName(existing))}
+		return nil, &pyint.Error{Kind: "TypeError", Msg: fmt.Sprintf("recorded changed paths are %s where a list was expected", errchain.Kind(existing))}
 	}
 	for _, p := range changed {
 		items = append(items, p)
@@ -1025,7 +1026,7 @@ func mergeChangedPaths(existing any, changed []string) ([]any, error) {
 	for _, item := range items {
 		switch item.(type) {
 		case []any, *pyjson.Object:
-			return nil, &pyint.Error{Kind: "TypeError", Msg: fmt.Sprintf("unhashable type: '%s'", pyrepr.TypeName(item))}
+			return nil, &pyint.Error{Kind: "TypeError", Msg: fmt.Sprintf("recorded changed path is %s where text was expected", errchain.Kind(item))}
 		}
 		seen := false
 		for _, m := range merged {
@@ -1072,8 +1073,7 @@ func pyOrder(a, b any, op string) (bool, error) {
 		cmp, ok = af.Cmp(bf), true
 	}
 	if !ok {
-		return false, &pyint.Error{Kind: "TypeError", Msg: fmt.Sprintf("'%s' not supported between instances of '%s' and '%s'",
-			op, pyrepr.TypeName(a), pyrepr.TypeName(b))}
+		return false, &pyint.Error{Kind: "TypeError", Msg: fmt.Sprintf("cannot compare %s with %s", errchain.Kind(a), errchain.Kind(b))}
 	}
 	if op == ">" {
 		return cmp > 0, nil

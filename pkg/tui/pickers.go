@@ -8,6 +8,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
+	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"github.com/nickheyer/icebath/pkg/ui/cards"
 	"github.com/nickheyer/icebath/pkg/ui/keys"
 	"github.com/nickheyer/icebath/pkg/ui/render"
@@ -71,33 +72,23 @@ func whenText(epochSeconds float64) string {
 func (a *app) openModelPicker() tea.Cmd { return a.loadModelPicker(false) }
 
 func (a *app) loadModelPicker(refresh bool) tea.Cmd {
-	params := map[string]any{"include_unconfigured": true}
 	sid := a.store.ui.Sid
-	if sid != "" {
-		params["session_id"] = sid
-	}
-	if refresh {
-		params["refresh"] = true
-	}
+	params := tuigateway.ModelOptionsParams{IncludeUnconfigured: true, SessionID: sid, Refresh: refresh}
 	a.store.ui.Status = "loading models…"
-	return a.events.rpc("model.options", params, func(r map[string]any) tea.Cmd {
+	return ask(a.events.rpc, a.sys, tuigateway.ModelOptions, params, func(r *tuigateway.ModelOptionsResult) tea.Cmd {
 		a.store.ui.Status = a.store.statusFromBusy()
 		if r == nil {
 			return nil
 		}
-		providers, _ := r["providers"].([]any)
 		current := infoText(infoOf(a.store.ui.Info).Model)
 		var items []wm.Item
-		for _, raw := range providers {
-			p, _ := raw.(map[string]any)
-			slug, _ := p["slug"].(string)
-			name, _ := p["name"].(string)
+		for _, p := range r.Providers {
+			slug, name := p.Slug, p.Name
 			if name == "" {
 				name = slug
 			}
-			if p["authenticated"] == false {
-				keyEnv, _ := p["key_env"].(string)
-				detail, _ := p["warning"].(string)
+			if p.Unauthenticated() {
+				keyEnv, detail := p.KeyEnv, p.Warning
 				if keyEnv == "" {
 					items = append(items, wm.Item{ID: "provider:" + slug, Title: "○ " + name, Detail: detail, Run: func() tea.Cmd {
 						a.sys(name + ": " + detail)
@@ -110,11 +101,8 @@ func (a *app) loadModelPicker(refresh bool) tea.Cmd {
 						if trimJS(key) == "" {
 							return nil
 						}
-						save := map[string]any{"slug": slug, "api_key": trimJS(key)}
-						if sid != "" {
-							save["session_id"] = sid
-						}
-						return a.events.rpc("model.save_key", save, func(res map[string]any) tea.Cmd {
+						save := tuigateway.ModelSaveKeyParams{Slug: slug, APIKey: trimJS(key), SessionID: sid}
+						return ask(a.events.rpc, a.sys, tuigateway.ModelSaveKey, save, func(res *tuigateway.ModelSaveKeyResult) tea.Cmd {
 							if res == nil {
 								return nil
 							}
@@ -125,9 +113,9 @@ func (a *app) loadModelPicker(refresh bool) tea.Cmd {
 				}})
 				continue
 			}
-			for _, model := range stringList(p["models"]) {
+			for _, model := range p.Models {
 				title := model
-				if model == current && truthyJS(p["is_current"]) {
+				if model == current && p.IsCurrent {
 					title = "● " + model
 				}
 				items = append(items, wm.Item{ID: slug + "/" + model, Title: title, Detail: name, Run: func() tea.Cmd {
@@ -135,12 +123,9 @@ func (a *app) loadModelPicker(refresh bool) tea.Cmd {
 				}})
 			}
 			items = append(items, wm.Item{ID: "disconnect:" + slug, Title: "disconnect " + name, Detail: "remove the saved credentials of this provider", Run: func() tea.Cmd {
-				drop := map[string]any{"slug": slug}
-				if sid != "" {
-					drop["session_id"] = sid
-				}
-				return a.events.rpc("model.disconnect", drop, func(res map[string]any) tea.Cmd {
-					if truthyJS(res["disconnected"]) {
+				drop := tuigateway.ModelDisconnectParams{Slug: slug, SessionID: sid}
+				return ask(a.events.rpc, a.sys, tuigateway.ModelDisconnect, drop, func(res *tuigateway.ModelDisconnectResult) tea.Cmd {
+					if res != nil && res.Disconnected {
 						a.sys(name + " disconnected")
 					}
 					return nil

@@ -7,6 +7,7 @@ import (
 	"os"
 	"sync"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 
 	"github.com/google/uuid"
@@ -197,7 +198,7 @@ func (a *AIAgent) aliasToolSearchBridgeForXAI(t provider.Transport, toolsForAPI 
 		}
 		fnMap, ok := pyjson.Dict(fn)
 		if !ok {
-			pkgLog().Warn(fmt.Sprintf("%s⚠️ Failed to alias tool_search bridge for xAI: '%s' object has no attribute 'get'", a.logPrefix, pyrepr.TypeName(fn)))
+			pkgLog().Warn(fmt.Sprintf("%s⚠️ Failed to alias tool_search bridge for xAI: tool function is %s where a mapping was expected", a.logPrefix, errchain.Kind(fn)))
 			return toolsForAPI
 		}
 		if fnMap["name"] == "tool_search" {

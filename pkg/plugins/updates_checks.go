@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
@@ -110,13 +111,13 @@ func checkProvenanced(ctx context.Context, prov Provenance, fetch, lsRemote func
 		installed := readManifestField(prov.Path, "version")
 		if installed == "" {
 			result.UpdateAvailable = nil
-			result.Reason = fmt.Sprintf("feed declares version %s but the installed plugin.yaml records no version to compare", pyrepr.StrRepr(result.Latest))
+			result.Reason = fmt.Sprintf("feed declares version %s but the installed plugin.yaml records no version to compare", errchain.Show(result.Latest))
 			return result
 		}
 		result.Current = installed
 		result.UpdateAvailable = versionIsNewer(result.Latest, installed)
 		if result.UpdateAvailable == nil {
-			result.Reason = fmt.Sprintf("cannot compare feed version %s with installed version %s", pyrepr.StrRepr(result.Latest), pyrepr.StrRepr(installed))
+			result.Reason = fmt.Sprintf("cannot compare feed version %s with installed version %s", errchain.Show(result.Latest), errchain.Show(installed))
 		}
 		return result
 	}
@@ -149,7 +150,7 @@ func defaultLsRemote(ctx context.Context, source string) (string, error) {
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 	err := cmd.Run()
 	if runCtx.Err() == context.DeadlineExceeded {
-		return "", fmt.Errorf("Command '%s' timed out after 30 seconds", pyrepr.Repr([]any{gitExe, "ls-remote", source, "HEAD"}))
+		return "", fmt.Errorf("git ls-remote %s HEAD timed out after 30 seconds", source)
 	}
 	var exitErr *exec.ExitError
 	if err != nil && !errors.As(err, &exitErr) {

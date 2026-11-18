@@ -14,6 +14,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 
 	"github.com/nickheyer/icebath/pkg/config"
@@ -185,7 +186,7 @@ func pyContains(container any, n string) (bool, error) {
 		_, ok := c[n]
 		return ok, nil
 	}
-	return false, fmt.Errorf("argument of type '%T' is not iterable", container)
+	return false, fmt.Errorf("expected text, a list or a mapping, got %s", errchain.Kind(container))
 }
 
 // Tier one listing of loadable and plugin skills with categories

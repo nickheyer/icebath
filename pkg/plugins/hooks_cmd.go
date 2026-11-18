@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pycodecs"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -124,7 +125,7 @@ func hookMatcherPart(matcher string) string {
 	if matcher == "" {
 		return ""
 	}
-	return " matcher=" + pyrepr.Repr(matcher)
+	return " matcher=" + errchain.Show(matcher)
 }
 
 // Drift 1 when the script changed since approval, 0 when unchanged, -1 when either mtime is unknown
@@ -137,7 +138,7 @@ func hookMtimeDrift(spec *ShellHookSpec, entry map[string]any) (int, string, str
 	}
 	atText, ok := rawAt.(string)
 	if !ok {
-		return 0, at, now, fmt.Errorf("'>' not supported between instances of 'str' and '%s'", pyrepr.TypeName(rawAt))
+		return 0, at, now, fmt.Errorf("recorded hook script time is %s where text was expected", errchain.Kind(rawAt))
 	}
 	if now > atText {
 		return 1, at, now, nil
@@ -222,7 +223,7 @@ func defaultHookPayload(event string) (map[string]any, bool) {
 func hooksTest(ctx context.Context, args HooksArgs, w io.Writer) error {
 	event := args.Event
 	if !validHooks[event] {
-		fmt.Fprintf(w, "Unknown event: %s\n", pyrepr.Repr(event))
+		fmt.Fprintf(w, "Unknown event: %s\n", errchain.Show(event))
 		fmt.Fprintf(w, "Valid events: %s\n", strings.Join(ValidHooks(), ", "))
 		return nil
 	}

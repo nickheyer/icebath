@@ -7,6 +7,7 @@ import (
 
 	"github.com/dlclark/regexp2/v2"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -36,7 +37,7 @@ func mustFullmatchPy(pattern string) *regexp2.Regexp {
 type notDictError struct{ value any }
 
 func (e notDictError) Error() string {
-	return fmt.Sprintf("'%s' object has no attribute 'get'", pyrepr.TypeName(e.value))
+	return fmt.Sprintf("a media capture entry is %s, expected a mapping", errchain.Kind(e.value))
 }
 
 // Value under key of a decoded dict, an error for anything else
@@ -239,7 +240,7 @@ func canonicalCapturePaths(turn []any) (map[string]string, error) {
 		}
 		switch role.(type) {
 		case []any, map[string]any, *pyjson.Object:
-			return nil, fmt.Errorf("unhashable type: '%s'", pyrepr.TypeName(role))
+			return nil, fmt.Errorf("a media capture role is %s, expected text", errchain.Kind(role))
 		}
 		if role != "tool" && role != "function" {
 			continue

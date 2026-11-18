@@ -12,7 +12,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -162,7 +162,7 @@ func ddgsSpawnWorker(childEnv map[string]string) (*ddgsWorkerProc, *os.File, *os
 		stdoutR.Close()
 		var pe *os.PathError
 		if errors.As(err, &pe) {
-			return nil, nil, nil, raise("OSError", "%s: %s", pyhttpx.OSErrorText(pe.Err), pyrepr.StrRepr(exe))
+			return nil, nil, nil, raise("OSError", "%s: %s", errchain.OSText(pe.Err), pyrepr.StrRepr(exe))
 		}
 		return nil, nil, nil, err
 	}

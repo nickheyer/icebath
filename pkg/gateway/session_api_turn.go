@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"regexp"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -85,14 +86,14 @@ func pyIterMembers(value any) ([]any, error) {
 		}
 		return members, nil
 	}
-	return nil, &PyError{Kind: "TypeError", Msg: "'" + jsonValueTypeName(value) + "' object is not iterable"}
+	return nil, &PyError{Kind: "TypeError", Msg: "expected a list, got " + errchain.Kind(value)}
 }
 
 // Value of key in a decoded dict, the AttributeError Python raises calling get on anything else
 func pyDictGet(value any, key string, def any) (any, error) {
 	obj, ok := value.(*pyjson.Object)
 	if !ok {
-		return nil, &PyError{Kind: "AttributeError", Msg: "'" + jsonValueTypeName(value) + "' object has no attribute 'get'"}
+		return nil, &PyError{Kind: "AttributeError", Msg: "expected a mapping, got " + errchain.Kind(value)}
 	}
 	if item, present := obj.Get(key); present {
 		return item, nil
@@ -110,7 +111,7 @@ func checkAPITurnEnvelope(data any) error {
 	for _, member := range members {
 		switch member.(type) {
 		case []any, *pyjson.Object:
-			return &PyError{Kind: "TypeError", Msg: "unhashable type: '" + jsonValueTypeName(member) + "'"}
+			return &PyError{Kind: "TypeError", Msg: "an API turn envelope member is " + errchain.Kind(member) + ", expected text"}
 		}
 		keys[member] = true
 	}
@@ -162,7 +163,7 @@ func checkAPITurn(ctx context.Context, a *SessionAuthority, ref SessionRef, payl
 		return nil, &pyKeyError{ref.SessionID}
 	}
 	if live.Source == nil {
-		return nil, &PyError{Kind: "AttributeError", Msg: "'NoneType' object has no attribute 'platform'"}
+		return nil, &PyError{Kind: "AttributeError", Msg: "the API turn has no source"}
 	}
 	if live.Source.Platform == PlatformAPIServer {
 		if err := restoreAPISession(ctx, a, ref.SessionID); err != nil {
@@ -329,7 +330,7 @@ func prepareAPIExecution(ctx context.Context, a *SessionAuthority, ref SessionRe
 		media, _ := data.Get("media")
 		mediaList, _ := media.([]any)
 		if pyrepr.Truthy(media) && mediaList == nil {
-			return nil, &PyError{Kind: "TypeError", Msg: "'" + jsonValueTypeName(media) + "' object is not iterable"}
+			return nil, &PyError{Kind: "TypeError", Msg: "the API turn media are " + errchain.Kind(media) + ", expected a list"}
 		}
 		restored, err := RestoreAPIImages(ctx, parts, mediaList)
 		if err != nil {
@@ -472,7 +473,7 @@ func publishAPIEvent(a *SessionAuthority, sessionID, eventType string, payload a
 		}
 		text = value
 	default:
-		return false, &PyError{Kind: "TypeError", Msg: "'" + jsonValueTypeName(payload) + "' object is not subscriptable"}
+		return false, &PyError{Kind: "TypeError", Msg: "the API event payload is " + errchain.Kind(payload) + ", expected a mapping"}
 	}
 	if text == nil {
 		return false, nil

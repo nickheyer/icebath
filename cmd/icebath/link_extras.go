@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"runtime"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/acp"
@@ -27,6 +28,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway/platforms/hosted"
 	_ "github.com/nickheyer/icebath/pkg/gatewayapi"
 	"github.com/nickheyer/icebath/pkg/gatewaycli"
+	"github.com/nickheyer/icebath/pkg/gatewayrun"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/kanban"
 	"github.com/nickheyer/icebath/pkg/linktier"
@@ -47,13 +49,27 @@ var _ acp.ReasoningCallbackSetter = (*agent.AIAgent)(nil)
 
 func init() {
 	linktier.Link(linktier.Extras)
+	childEntriesFirst = append(childEntriesFirst, func(ctx context.Context) { selfupdate.DispatchCustodyLauncher() })
 	childEntriesAfterPruneExtras = append(childEntriesAfterPruneExtras, func(ctx context.Context) { botdesktop.DispatchIdleWatchEntry() })
+	tierStartup[phaseAfterLauncher] = append(tierStartup[phaseAfterLauncher], func([]string) {
+		if restoreInterruptedPull() {
+			relaunchAfterRestore()
+		}
+	})
+	tierStartup[phaseAfterPinHome] = append(tierStartup[phaseAfterPinHome], runLegacyPostSwap)
+	tierStartup[phaseBeforeParser] = append(tierStartup[phaseBeforeParser], func([]string) { os.Args = selfupdate.TakeRelaunchMarker(os.Args) })
+	tierStartup[phaseAfterParser] = append(tierStartup[phaseAfterParser], finishOwedSourceUpdate)
+	tierStartup[phaseBeforeDotenv] = append(tierStartup[phaseBeforeDotenv], func([]string) { ensureBinLaunchers() })
+	tierStartup[phaseRun] = append(tierStartup[phaseRun], updateRunSteps)
 	childEntriesAfterCodex = append(childEntriesAfterCodex, func(ctx context.Context) { cron.DispatchExternalWorkerEntry(exit) })
 	childEntriesLast = append(childEntriesLast, func(ctx context.Context) { acp.DispatchModuleEntry(ctx, exit) })
 	tierWiring = append(tierWiring, installExtrasWiring)
 	tierCLI = append(tierCLI, bindCron, bindLSP, bindComputerUse, func(cli *commands.CLI) {
 		bindGroups(cli, map[string]groupHandler{"acp": acpGroup, "backup": backupGroup, "browser": browserGroup, "import": importGroup,
-			"kanban": kanbanGroup, "vault": vaultGroup})
+			"kanban": kanbanGroup, "vault": vaultGroup, "security": securityGroup, "update": updateGroup, "update-takeover": updateTakeoverGroup,
+			"update-finish": updateFinishGroup, "update-restart-recovery": updateRestartRecoveryGroup,
+			"update-completion": updateCompletionGroup, "venv-sync": venvSyncGroup, "source-completion": sourceCompletionGroup,
+			"import-health": importHealthGroup})
 	})
 	tierAtExit = append(tierAtExit, func() { browser.AtexitCleanup(context.Background()) }, codeexec.ShutdownAllKernels,
 		codeexec.ShutdownAllRemoteKernels, codeexec.ShutdownComputerUseBackends, cron.ShutdownParallelPools, lsp.AtExitShutdown)
@@ -72,6 +88,9 @@ func init() {
 
 // Hooks the extras tier installs into the core packages
 func installExtrasWiring() {
+	gatewayrun.CheckRuntime, gatewayrun.MaybeRunBootBootstrap = selfupdate.CheckRuntime, selfupdate.MaybeRunBootBootstrap
+	selfupdate.RunCLIHook = run
+	tools.GitlockRunGit = selfupdate.GitlockRunGit
 	acp.NewSurfaceLabelReader = func(db *state.SessionDB) acp.RichSessionLister { return gatewaycli.NewSurfaceLabelReader(db) }
 	acp.NewPreparedMutations = func() acp.PreparedMutations { return app.NewACPMutations() }
 	acp.SlashMutation, acp.ModelRefusalText, acp.ConfirmationTitle = app.ACPSlashMutation, app.ACPModelRefusalText, app.ACPConfirmationTitle
@@ -395,4 +414,134 @@ func bindProjectBoardWorkdir(ctx context.Context, board, primaryPath string) err
 	}
 	_, err = kanban.WriteBoardMetadata(ctx, &slug, kanban.BoardMetadataUpdate{DefaultWorkdir: &primaryPath})
 	return err
+}
+
+// Finishes a historical updater's handoff when argv names one
+func runLegacyPostSwap([]string) {
+	if handoff, tail, ok := pm.LegacyPostSwapInvocation(os.Args[1:]); ok {
+		exit(selfupdate.LegacyPostSwapMain(context.Background(), handoff, tail, os.Stderr))
+	}
+}
+
+// Finishes an owed source update and activates committed dependencies before the command is parsed
+func finishOwedSourceUpdate([]string) {
+	if code, stop := selfupdate.BootLaunch(context.Background(), pm.RepoRoot(), os.Args); stop {
+		exit(code)
+	}
+}
+
+// Sweeps update leftovers, reports owed restarts, runs the boot bootstrap and prints the runtime verdict
+func updateRunSteps(argv []string) {
+	cleanupQuarantinedExes()
+	selfupdate.SweepStaleBytecodeIfCheckoutChanged()
+	recoverUpdateDebtsOnStartup()
+	first, _ := firstPositional(argv)
+	if first != "update" {
+		maybeRunBootBootstrap(pm.InstallRoot())
+	}
+	if problem := checkRuntime(pm.InstallRoot()); problem != "" {
+		fmt.Fprintln(os.Stderr, "⚠ "+problem)
+	}
+}
+
+// Puts the old tree back after an update killed mid swap, true when a restore happened
+func restoreInterruptedPull() bool {
+	return selfupdate.RestoreInterruptedPull(context.Background(), pm.RepoRoot(), false)
+}
+
+// Re executes the command once the restore landed
+func relaunchAfterRestore() {
+	exit(selfupdate.RelaunchAfterRestore(os.Args))
+}
+
+// Re stages the Windows bin launchers from the default root, inaction everywhere else
+func ensureBinLaunchers() {
+	if runtime.GOOS != "windows" {
+		return
+	}
+	selfupdate.EnsureWindowsBinLaunchers(pm.RepoRoot(), nil, nil)
+}
+
+// Sweeps stale quarantined Windows executables from earlier updates
+func cleanupQuarantinedExes() {
+	if runtime.GOOS != "windows" {
+		return
+	}
+	selfupdate.CleanupQuarantinedExes(context.Background(), pm.RepoRoot(), "")
+}
+
+// Reports a fleet restart a previous update still owes and recovers gateways a killed update paused
+func recoverUpdateDebtsOnStartup() {
+	ctx := context.Background()
+	if selfupdate.UpdateInternalCommand(os.Args[1:]) {
+		return
+	}
+	if !containsArg(os.Args[1:], "update") {
+		selfupdate.WarnPendingFleetRestartOnStartup(ctx, home.Dir(ctx), os.Stderr)
+	}
+	selfupdate.RecoverPausedGateways(ctx, os.Args[1:])
+}
+
+// Runs the boot bootstrap when the install identity changed since the last recorded run
+func maybeRunBootBootstrap(projectRoot string) {
+	selfupdate.MaybeRunBootBootstrap(context.Background(), projectRoot)
+}
+
+// One passive PM verdict on every dispatch, the problem text or empty
+func checkRuntime(installRoot string) string {
+	problem, err := selfupdate.CheckRuntime(context.Background(), installRoot)
+	if err != nil {
+		pkgLog().Debug("pm startup check failed", "error", err)
+		return ""
+	}
+	return problem
+}
+
+func securityGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path string, args []string) (int, error) {
+	sub := secondWord(path)
+	if sub == "" || sub == "audit" {
+		return selfupdate.CmdSecurityAudit(ctx, home.Dir(ctx), namespace(cli, cmd, path, args), cmd.OutOrStdout())
+	}
+	cmd.PrintErrf("unknown security subcommand: %s\n", sub)
+	return 2, nil
+}
+
+func updateGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path string, args []string) (int, error) {
+	return selfupdate.CmdUpdate(ctx, selfupdate.UpdateInvocation{Namespace: namespace(cli, cmd, path, args), ProjectRoot: pm.RepoRoot(),
+		Stdout: cmd.OutOrStdout(), Stderr: cmd.ErrOrStderr()})
+}
+
+func updateTakeoverGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path string, args []string) (int, error) {
+	return selfupdate.CmdUpdateTakeover(ctx, namespace(cli, cmd, path, args), cmd.OutOrStdout())
+}
+
+// Finishes an update in the selected checkout from a request file
+func updateFinishGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path string, args []string) (int, error) {
+	ns := namespace(cli, cmd, path, args)
+	return selfupdate.UpdateFinishMain(ctx, nsString(ns, "context"), nsString(ns, "result"), cmd.OutOrStdout(), cmd.ErrOrStderr()), nil
+}
+
+// Restarts supervised gateways and serve units from the payload on stdin over the entry's raw arguments
+func updateRestartRecoveryGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path string, args []string) (int, error) {
+	return selfupdate.UpdateRestartRecoveryMain(ctx, args, cmd.InOrStdin(), cmd.OutOrStdout(), cmd.ErrOrStderr()), nil
+}
+
+// Runs the post commit completion of a source update over the entry's raw arguments
+func updateCompletionGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path string, args []string) (int, error) {
+	return selfupdate.UpdateCompletionMain(ctx, args, cmd.OutOrStdout(), cmd.ErrOrStderr()), nil
+}
+
+// Reports or syncs a checkout's dependencies over the entry's raw arguments
+func venvSyncGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path string, args []string) (int, error) {
+	return selfupdate.VenvSyncMain(ctx, args, cmd.OutOrStdout(), cmd.ErrOrStderr()), nil
+}
+
+// Runs the completion tail a source update launch starts in its custody
+func sourceCompletionGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path string, args []string) (int, error) {
+	return selfupdate.SourceCompletionMain(ctx, args, cmd.OutOrStdout(), cmd.ErrOrStderr()), nil
+}
+
+// Answers the import health probe an update runs against this install's binary
+func importHealthGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path string, args []string) (int, error) {
+	return selfupdate.ImportHealthMain(args, cmd.OutOrStdout()), nil
 }

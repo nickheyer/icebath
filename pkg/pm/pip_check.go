@@ -92,14 +92,6 @@ func tomlText(v any) string {
 	return tomlRepr(v)
 }
 
-// Refuses bytes that are not UTF-8 with the UnicodeDecodeError Python raises
-func utf8Strict(data []byte) error {
-	if err := strictUTF8(data); err != nil {
-		return &PyError{Class: "UnicodeDecodeError", Message: err.Error()}
-	}
-	return nil
-}
-
 // Reads a lock file as strict UTF-8
 func readUTF8(path string) (string, error) {
 	data, err := os.ReadFile(path)

@@ -431,7 +431,7 @@ func (s *ResponseStore) RequestModel(ctx context.Context, key string, fallback a
 		return fallback, err
 	}
 	if !modelJSON.Valid {
-		return nil, &PyError{Kind: "TypeError", Msg: "the JSON object must be str, bytes or bytearray, not NoneType"}
+		return nil, &PyError{Kind: "TypeError", Msg: "the stored response has no request model"}
 	}
 	return pyjson.Loads(modelJSON.String)
 }

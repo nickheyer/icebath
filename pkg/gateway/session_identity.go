@@ -221,7 +221,7 @@ func restoreIdentity(ctx context.Context, source *SessionSource, runner any, tra
 func identityRuntimeHome(ctx context.Context, runner any, source *SessionSource) (string, error) {
 	resolver, ok := runner.(identityHomeRunner)
 	if !ok {
-		return "", fmt.Errorf("'%T' object has no attribute '_resolve_profile_home_for_source'", runner)
+		return "", fmt.Errorf("the gateway runner (%T) cannot resolve the profile home of a source", runner)
 	}
 	return resolver.ResolveProfileHomeForSource(ctx, source)
 }
@@ -242,7 +242,7 @@ func resolveIdentity(ctx context.Context, source *SessionSource, runner Transpor
 		}
 		owning, ok := runner.(identityOwningRunner)
 		if !ok {
-			return nil, fmt.Errorf("'%T' object has no attribute '_owning_profile'", runner)
+			return nil, fmt.Errorf("the gateway runner (%T) cannot name its owning profile", runner)
 		}
 		_, profile := owning.OwningProfile(adapter, platform)
 		ownerProfile = pystr.Strip(profile)
@@ -292,7 +292,7 @@ func resolveIdentity(ctx context.Context, source *SessionSource, runner Transpor
 		}
 		resolver, ok := runner.(SourceProfileResolver)
 		if !ok {
-			return nil, fmt.Errorf("'%T' object has no attribute '_profile_name_for_source'", runner)
+			return nil, fmt.Errorf("the gateway runner (%T) cannot name the profile of a source", runner)
 		}
 		routed, err := resolver.ProfileNameForSource(ctx, source, adapterProfile)
 		var rejected *ProfileRouteRejected

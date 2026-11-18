@@ -24,6 +24,7 @@ import (
 	"golang.org/x/net/html/charset"
 	"golang.org/x/text/unicode/norm"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyhtml"
 	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -247,7 +248,7 @@ func (c *ddgsHTTPClient) request(ctx context.Context, method, target string, par
 	}
 	raw, err := pyhttpx.DecodeContent(resp.Header, resp.Body)
 	if err != nil {
-		return nil, raise("DDGSException", "DecodeError: DecodeError(%s)", pyrepr.StrRepr(err.Error()))
+		return nil, raise("DDGSException", "the search reply could not be decoded: %s", err.Error())
 	}
 	return &ddgsResponse{status: resp.Status, text: ddgsDecodeText(resp.Header.Get("Content-Type"), raw)}, nil
 }
@@ -274,7 +275,7 @@ func ddgsNormalizeText(v any) (any, error) {
 	}
 	s, ok := v.(string)
 	if !ok {
-		return nil, raise("TypeError", "expected string or bytes-like object, got '%s'", pyrepr.TypeName(v))
+		return nil, raise("TypeError", "a search result text is %s, expected text", errchain.Kind(v))
 	}
 	s = norm.NFC.String(pyhtml.Unescape(ddgsStripTagsRe.ReplaceAllString(s, "")))
 	s = strings.Map(func(r rune) rune {
@@ -296,11 +297,11 @@ func ddgsNormalizeURL(v any) (any, error) {
 		return strings.ReplaceAll(pyurl.Unquote(s), " ", "+"), nil
 	case []any, *pyjson.Object:
 		if in, _ := pyContains(v, "%"); in {
-			return nil, raise("TypeError", "expected string or bytes-like object, got '%s'", pyrepr.TypeName(v))
+			return nil, raise("TypeError", "a search result URL is %s, expected text", errchain.Kind(v))
 		}
-		return nil, raise("AttributeError", "'%s' object has no attribute 'split'", pyrepr.TypeName(v))
+		return nil, raise("AttributeError", "a search result URL is %s, expected text", errchain.Kind(v))
 	}
-	return nil, raise("TypeError", "argument of type '%s' is not iterable", pyrepr.TypeName(v))
+	return nil, raise("TypeError", "a search result URL is %s, expected text", errchain.Kind(v))
 }
 
 // Python item in container for a decoded value, the TypeError of a non container
@@ -319,7 +320,7 @@ func pyContains(container any, item string) (bool, error) {
 		_, ok := c.Get(item)
 		return ok, nil
 	}
-	return false, raise("TypeError", "argument of type '%s' is not iterable", pyrepr.TypeName(container))
+	return false, raise("TypeError", "expected text, a list or a mapping to search, got %s", errchain.Kind(container))
 }
 
 // Python len of a decoded value, the TypeError of an unsized one
@@ -332,7 +333,7 @@ func pyValueLen(v any) (int, error) {
 	case *pyjson.Object:
 		return x.Len(), nil
 	}
-	return 0, raise("TypeError", "object of type '%s' has no len()", pyrepr.TypeName(v))
+	return 0, raise("TypeError", "expected text, a list or a mapping to count, got %s", errchain.Kind(v))
 }
 
 // Python subscript of a decoded value with the KeyError, IndexError or TypeError it raises
@@ -348,30 +349,30 @@ func pySubscript(v any, key any) (any, error) {
 	case []any:
 		i, ok := key.(int)
 		if !ok {
-			return nil, raise("TypeError", "list indices must be integers or slices, not %s", pyrepr.TypeName(key))
+			return nil, raise("TypeError", "a list position is %s, expected a whole number", errchain.Kind(key))
 		}
 		if i < 0 {
 			i += len(c)
 		}
 		if i < 0 || i >= len(c) {
-			return nil, raise("IndexError", "list index out of range")
+			return nil, raise("IndexError", "the list has no item at that position")
 		}
 		return c[i], nil
 	case string:
 		i, ok := key.(int)
 		if !ok {
-			return nil, raise("TypeError", "string indices must be integers, not '%s'", pyrepr.TypeName(key))
+			return nil, raise("TypeError", "a text position is %s, expected a whole number", errchain.Kind(key))
 		}
 		rs := []rune(c)
 		if i < 0 {
 			i += len(rs)
 		}
 		if i < 0 || i >= len(rs) {
-			return nil, raise("IndexError", "string index out of range")
+			return nil, raise("IndexError", "the text has no character at that position")
 		}
 		return string(rs[i]), nil
 	}
-	return nil, raise("TypeError", "'%s' object is not subscriptable", pyrepr.TypeName(v))
+	return nil, raise("TypeError", "expected a list, text or a mapping, got %s", errchain.Kind(v))
 }
 
 // json.loads of an engine answer, the JSONDecodeError text on failure
@@ -859,7 +860,7 @@ func ddgsWikipediaExtract(body string) (any, error) {
 	}
 	obj, ok := pages.(*pyjson.Object)
 	if !ok {
-		return nil, raise("AttributeError", "'%s' object has no attribute 'values'", pyrepr.TypeName(pages))
+		return nil, raise("AttributeError", "the Wikipedia pages are %s, expected a mapping", errchain.Kind(pages))
 	}
 	if obj.Len() == 0 {
 		return nil, raise("StopIteration", "")

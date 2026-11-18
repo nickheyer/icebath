@@ -369,7 +369,7 @@ func entryTime(data *pyjson.Object, key string) (pyDatetime, error) {
 	}
 	s, ok := raw.(string)
 	if !ok {
-		return pyDatetime{}, &SessionEntryError{Kind: "TypeError", Msg: "fromisoformat: argument must be str"}
+		return pyDatetime{}, &SessionEntryError{Kind: "TypeError", Msg: "the session entry time is not ISO 8601 text"}
 	}
 	d, err := fromISOFormat(s)
 	if err != nil {

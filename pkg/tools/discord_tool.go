@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -134,7 +135,7 @@ func DiscordRequest(ctx context.Context, method, path, token string, params [][2
 // Reason text of a transport failure the way urllib's URLError shows its socket error
 func discordTransportReason(err error) string {
 	if class := pypath.OSErrorClass(err); class != "OSError" {
-		return pypath.OSErrorText(err)
+		return errchain.OSText(err)
 	}
 	return err.Error()
 }

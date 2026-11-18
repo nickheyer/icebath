@@ -17,6 +17,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/hostinfo"
 )
 
@@ -379,7 +380,7 @@ func catalogInt(v any) (int64, error) { return growthPyInt(v) }
 func catalogKey(m any, key string) (any, error) {
 	obj, ok := m.(map[string]any)
 	if !ok {
-		return nil, fmt.Errorf("'%s' object is not subscriptable", lrPyTypeName(m))
+		return nil, fmt.Errorf("a catalog entry is %s, expected a mapping", errchain.Kind(m))
 	}
 	v, ok := obj[key]
 	if !ok {
@@ -392,7 +393,7 @@ func catalogKey(m any, key string) (any, error) {
 func catalogString(v any, key string) (string, error) {
 	s, ok := v.(string)
 	if !ok {
-		return "", fmt.Errorf("catalog field %s must be a string, got %s", key, lrPyTypeName(v))
+		return "", fmt.Errorf("catalog field %s must be text, got %s", key, errchain.Kind(v))
 	}
 	return s, nil
 }
@@ -466,11 +467,11 @@ func catalogFloat(v any) (float64, error) {
 		}
 		f, err := strconv.ParseFloat(strings.ReplaceAll(text, "_", ""), 64)
 		if err != nil && !errors.Is(err, strconv.ErrRange) || strings.Contains(text, "__") || strings.HasPrefix(text, "_") || strings.HasSuffix(text, "_") {
-			return 0, fmt.Errorf("could not convert string to float: %s", pyRepr(t))
+			return 0, fmt.Errorf("%s is not a number", pyRepr(t))
 		}
 		return f, nil
 	}
-	return 0, fmt.Errorf("float() argument must be a string or a real number, not '%s'", lrPyTypeName(v))
+	return 0, fmt.Errorf("expected a number, got %s", errchain.Kind(v))
 }
 
 // Python dict of a sampling value in insertion order, objects keep their document key order
@@ -516,14 +517,14 @@ func catalogSettings(v any, order []string) ([]CatalogSetting, error) {
 		}
 		return out, nil
 	}
-	return nil, fmt.Errorf("'%s' object is not iterable", lrPyTypeName(v))
+	return nil, fmt.Errorf("expected a list, got %s", errchain.Kind(v))
 }
 
 // Parses a decoded catalog document, an error for a schema this build does not read
 func loadCatalog(doc any, samplingOrder func(int) []string) ([]CatalogEntry, error) {
 	obj, ok := doc.(map[string]any)
 	if !ok {
-		return nil, fmt.Errorf("'%s' object has no attribute 'get'", lrPyTypeName(doc))
+		return nil, fmt.Errorf("the model catalog is %s, expected a mapping", errchain.Kind(doc))
 	}
 	rawVersion, present := obj["schema_version"]
 	if !present {
@@ -709,7 +710,7 @@ func catalogFetchDocument() ([]byte, error) {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("HTTP Error %d: %s", resp.StatusCode, http.StatusText(resp.StatusCode))
+		return nil, fmt.Errorf("HTTP %d %s", resp.StatusCode, http.StatusText(resp.StatusCode))
 	}
 	return io.ReadAll(resp.Body)
 }

@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pymimetypes"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
@@ -328,7 +329,7 @@ func kreaEnhanceImage(ctx context.Context, baseURL, token, imageURL, prompt stri
 	}
 	if err == nil && pyTruthy(body) {
 		if _, _, isObj := jsonObjectGet(body, "job_id"); !isObj {
-			err = fmt.Errorf("'%s' object has no attribute 'get'", pyrepr.TypeName(body))
+			err = fmt.Errorf("Krea enhance reply is %s where a mapping was expected", errchain.Kind(body))
 		}
 	}
 	if err != nil {
@@ -587,7 +588,7 @@ func kreaSubmitJob(ctx context.Context, baseURL, token, modelPath string, payloa
 		return "", fail(failure.Error, failure.ErrorType), nil
 	}
 	if _, _, isObj := jsonObjectGet(body, "job_id"); !isObj {
-		return "", nil, fmt.Errorf("'%s' object has no attribute 'get'", pyrepr.TypeName(body))
+		return "", nil, fmt.Errorf("Krea job reply is %s where a mapping was expected", errchain.Kind(body))
 	}
 	jobID, _ := kreaGet(body, "job_id").(string)
 	if jobID == "" {

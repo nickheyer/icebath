@@ -15,7 +15,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
-// Steps of packages above this one that the module entry runs, each assigned in cmd/icebath wiring
+// Steps of packages above this one that the module entry runs, assigned by cmd/icebath, the update steps nil without the updater
 var (
 	CheckRuntime          func(ctx context.Context, projectRoot string) (string, error)
 	MaybeRunBootBootstrap func(ctx context.Context, projectRoot string)
@@ -74,13 +74,17 @@ func Main(ctx context.Context, argv []string, stdout, stderr io.Writer) int {
 	}, "")
 	bestEffort(func() (bool, error) { gateway.ArmStartupWatchdog(ctx); return true, nil }, "")
 	bestEffort(func() (bool, error) { return ConfigureWindowsStdio(), nil }, "")
-	if problem, ok := bestEffort(func() (string, error) { return CheckRuntime(ctx, pm.InstallRoot()) }, ""); !ok {
-		pkgLog().Debug("pm startup check failed")
-	} else if problem != "" {
-		pkgLog().Warn(problem)
+	if CheckRuntime != nil {
+		if problem, ok := bestEffort(func() (string, error) { return CheckRuntime(ctx, pm.InstallRoot()) }, ""); !ok {
+			pkgLog().Debug("pm startup check failed")
+		} else if problem != "" {
+			pkgLog().Warn(problem)
+		}
 	}
-	if _, ok := bestEffort(func() (bool, error) { MaybeRunBootBootstrap(ctx, pm.InstallRoot()); return true, nil }, ""); !ok {
-		pkgLog().Debug("boot bootstrap failed")
+	if MaybeRunBootBootstrap != nil {
+		if _, ok := bestEffort(func() (bool, error) { MaybeRunBootBootstrap(ctx, pm.InstallRoot()); return true, nil }, ""); !ok {
+			pkgLog().Debug("boot bootstrap failed")
+		}
 	}
 	configPath, code, done := parseRunMainArgs(argv, stdout, stderr)
 	if done {

@@ -152,7 +152,7 @@ func minimaxResolveTokenExpiryUnix(expiredIn int64, now time.Time) float64 {
 func minimaxExpiryFields(expiredIn any) (map[string]any, error) {
 	raw, ok := pyInt(expiredIn)
 	if !ok {
-		return nil, fmt.Errorf("invalid literal for int(): %s", pyStr(expiredIn))
+		return nil, fmt.Errorf("the MiniMax token lifetime %s is not a whole number", pyStr(expiredIn))
 	}
 	now := nowFunc().UTC()
 	expiresAt := minimaxResolveTokenExpiryUnix(int64(raw), now)
@@ -280,14 +280,14 @@ func minimaxOAuthLogin(env PoolEnv, out io.Writer, region string, openBrowser bo
 	if raw := codeData["interval"]; raw != nil {
 		v, ok := pyInt(raw)
 		if !ok {
-			return nil, fmt.Errorf("invalid literal for int(): %s", pyStr(raw))
+			return nil, fmt.Errorf("the MiniMax device code value %s is not a whole number", pyStr(raw))
 		}
 		intervalMS = &v
 	}
 	fmt.Fprintln(out, "Waiting for approval...")
 	expiredIn, ok := pyInt(codeData["expired_in"])
 	if !ok {
-		return nil, fmt.Errorf("invalid literal for int(): %s", pyStr(codeData["expired_in"]))
+		return nil, fmt.Errorf("the MiniMax device code lifetime %s is not a whole number", pyStr(codeData["expired_in"]))
 	}
 	tokenData, err := minimaxPollToken(ctx, client, portalBaseURL, pconfig.ClientID, pyStr(codeData["user_code"]), verifier, int64(expiredIn), intervalMS)
 	if err != nil {

@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pydict"
 	"github.com/nickheyer/icebath/pkg/internal/pyfs"
@@ -376,7 +377,7 @@ func loadPairingJSONFile(path string) (*pyjson.Object, error) {
 				"If you ran `docker exec <container> icebath pairing approve ...` as root, "+
 				"re-run with `docker exec -u icebath <container> ...` and "+
 				"chown the existing file to the icebath user, or restart the "+
-				"container so the entrypoint can fix ownership.", path, pairingEUID(), ownerInfo, pypath.OSErrorText(err)))
+				"container so the entrypoint can fix ownership.", path, pairingEUID(), ownerInfo, errchain.OSText(err)))
 		}
 		return pyjson.NewObject(), nil
 	}
@@ -513,7 +514,7 @@ func pairingLimit(limits *pyjson.Object, key string) (float64, error) {
 	if number, ok := pairingNumber(value); ok {
 		return number, nil
 	}
-	return 0, &PyError{Kind: "TypeError", Msg: "unsupported operand type(s) for -: 'float' and '" + pyrepr.TypeName(value) + "'"}
+	return 0, &PyError{Kind: "TypeError", Msg: "a pairing limit time is " + errchain.Kind(value) + ", expected a number"}
 }
 
 type approvedCacheEntry struct {
@@ -687,7 +688,7 @@ func (s *PairingStore) ListApproved(platform string) ([]*pyjson.Object, error) {
 			row := pyjson.ObjectOf("platform", p, "user_id", uid)
 			info, ok := approved.Vals[uid].(*pyjson.Object)
 			if !ok {
-				return nil, &PyError{Kind: "TypeError", Msg: "'" + pyrepr.TypeName(approved.Vals[uid]) + "' object is not a mapping"}
+				return nil, &PyError{Kind: "TypeError", Msg: "an approved pairing is " + errchain.Kind(approved.Vals[uid]) + ", expected a mapping"}
 			}
 			row.Update(info)
 			rows = append(rows, row)
@@ -867,7 +868,7 @@ func (s *PairingStore) ApproveCode(ctx context.Context, platform, code string) (
 		object := entry.(*pyjson.Object)
 		saltText, ok := object.GetOr("salt", nil).(string)
 		if !ok {
-			return nil, &PyError{Kind: "TypeError", Msg: "fromhex() argument must be str, not " + pyrepr.TypeName(object.GetOr("salt", nil))}
+			return nil, &PyError{Kind: "TypeError", Msg: "the stored pairing salt is " + errchain.Kind(object.GetOr("salt", nil)) + ", expected hexadecimal text"}
 		}
 		salt, err := pystr.BytesFromHex(saltText)
 		if err != nil {
@@ -875,7 +876,7 @@ func (s *PairingStore) ApproveCode(ctx context.Context, platform, code string) (
 		}
 		stored, ok := object.GetOr("hash", nil).(string)
 		if !ok {
-			return nil, &PyError{Kind: "TypeError", Msg: "unsupported operand types(s) or combination of types: 'str' and '" + pyrepr.TypeName(object.GetOr("hash", nil)) + "'"}
+			return nil, &PyError{Kind: "TypeError", Msg: "the stored pairing hash is " + errchain.Kind(object.GetOr("hash", nil)) + ", expected text"}
 		}
 		if subtle.ConstantTimeCompare([]byte(hashPairingCode(code, salt)), []byte(stored)) == 1 {
 			return s.finishApproval(ctx, platform, pending, entryID, object)

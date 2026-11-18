@@ -245,7 +245,7 @@ func openRestartWatcherStdio() (fh *os.File, logPath string) {
 // Respawn cwd, env overlay, old pid and command a watcher was spawned with
 func parseRestartWatcherArgs(args []string) (string, map[string]string, int, []string, error) {
 	if len(args) < 3 {
-		return "", nil, 0, nil, errors.New("IndexError: list index out of range")
+		return "", nil, 0, nil, errors.New("usage: restart watcher CWD ENV_JSON OLD_PID COMMAND...")
 	}
 	var respawnCwd string
 	if err := json.Unmarshal([]byte(args[0]), &respawnCwd); err != nil {
@@ -281,7 +281,7 @@ func GatewayRestartWatcherMain(ctx context.Context, args []string, stderr io.Wri
 		defer stdio.Close()
 	}
 	if len(command) == 0 {
-		fmt.Fprintln(stderr, "IndexError: list index out of range")
+		fmt.Fprintln(stderr, "usage: restart watcher CWD ENV_JSON OLD_PID COMMAND..., the command is missing")
 		return 1
 	}
 	baseEnv := map[string]string{}

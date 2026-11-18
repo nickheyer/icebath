@@ -214,7 +214,7 @@ func TestSubagentLifecycleRequestErrors(t *testing.T) {
 	}{
 		{map[string]any{"goal": "review", "future_field": true}, "future_field"},
 		{42, "request must be a SubagentLaunchRequest"},
-		{map[string]any{"role": "leaf"}, "missing 1 required positional argument: 'goal'"},
+		{map[string]any{"role": "leaf"}, "goal is missing"},
 		{map[string]any{"goal": "  "}, "goal must be a non-empty string"},
 		{map[string]any{"goal": 5}, "goal must be a non-empty string"},
 		{map[string]any{"goal": "x", "role": "boss"}, "role must be 'leaf' or 'orchestrator'."},

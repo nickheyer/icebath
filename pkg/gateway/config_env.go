@@ -214,7 +214,7 @@ func entryDepsOK(ctx context.Context, entry *PlatformEntry) (ok bool) {
 		}
 	}()
 	if entry.CheckFn == nil {
-		pkgLog().Debug(fmt.Sprintf("check_fn for %s raised: 'NoneType' object is not callable", entry.Name))
+		pkgLog().Debug(fmt.Sprintf("check_fn for %s failed: the check is not set", entry.Name))
 		return false
 	}
 	return entry.RunCheck(ctx)

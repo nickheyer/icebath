@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -172,7 +173,7 @@ func (r *HostedRoomAuthorityRPC) dispatch(ctx context.Context, operation string,
 	case "approve":
 		return r.approve(ctx, params)
 	}
-	return nil, fmt.Errorf("'HostedRoomAuthorityRPC' object has no attribute '_%s'", operation)
+	return nil, fmt.Errorf("the hosted room authority has no %s operation", operation)
 }
 
 func (r *HostedRoomAuthorityRPC) resolveExact(ctx context.Context, params map[string]any) (any, error) {
@@ -206,7 +207,7 @@ func (r *HostedRoomAuthorityRPC) create(ctx context.Context, params map[string]a
 	case nil:
 	default:
 		if pyrepr.Truthy(section) {
-			return nil, fmt.Errorf("'%s' object is not iterable", pyrepr.TypeName(section))
+			return nil, fmt.Errorf("the hosted room section is %s, expected a list", errchain.Kind(section))
 		}
 	}
 	disabled := map[string]bool{"clarify": true}
@@ -327,7 +328,7 @@ func taskIdentityFromKwargs(value any) (TaskIdentity, error) {
 	}
 	for key := range fields {
 		if !slices.Contains([]string{"room_id", "task_id", "thread_id", "turn_id"}, key) {
-			return TaskIdentity{}, &DriverValidationError{"TaskIdentity got an unexpected keyword argument '" + key + "'"}
+			return TaskIdentity{}, &DriverValidationError{"a task identity has no field " + key}
 		}
 	}
 	for _, key := range []string{"room_id", "task_id", "thread_id", "turn_id"} {
@@ -578,7 +579,7 @@ func (r *HostedRoomAuthorityRPC) results(ctx context.Context, params map[string]
 		}
 		text, isText := receipt["text"].(string)
 		if !isText {
-			return nil, fmt.Errorf("'%s' object has no attribute 'encode'", pyrepr.TypeName(receipt["text"]))
+			return nil, fmt.Errorf("the hosted receipt text is %s, expected text", errchain.Kind(receipt["text"]))
 		}
 		if len(text) > MaxTerminalTextBytes {
 			receipt["text"] = strings.ToValidUTF8(text[:MaxTerminalTextBytes+4], "")
@@ -757,7 +758,7 @@ func hostedResultMap(value any, err error) (map[string]any, error) {
 	if mapping, ok := hostedMapping(pyjson.Plain(value)); ok {
 		return mapping, nil
 	}
-	return nil, fmt.Errorf("hosted operation returned %s, not a mapping", pyrepr.TypeName(value))
+	return nil, fmt.Errorf("hosted operation returned %s, not a mapping", errchain.Kind(value))
 }
 
 // Plain rows of a dispatch result list, non mappings refused
@@ -773,13 +774,13 @@ func hostedResultRows(value any, err error) ([]map[string]any, error) {
 		for _, raw := range rows {
 			row, ok := hostedMapping(raw)
 			if !ok {
-				return nil, fmt.Errorf("hosted operation returned a %s row", pyrepr.TypeName(raw))
+				return nil, fmt.Errorf("hosted operation returned a row that is %s", errchain.Kind(raw))
 			}
 			out = append(out, row)
 		}
 		return out, nil
 	}
-	return nil, fmt.Errorf("hosted operation returned %s, not a list", pyrepr.TypeName(value))
+	return nil, fmt.Errorf("hosted operation returned %s, not a list", errchain.Kind(value))
 }
 
 func (r *HostedRoomAuthorityRPC) ResolveExact(ctx context.Context, profile, title, source string) (map[string]any, error) {

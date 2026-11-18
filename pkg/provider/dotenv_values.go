@@ -15,7 +15,7 @@ func DotenvSetValues(path string) (map[string]string, error) {
 	}
 	raw = bytes.TrimPrefix(raw, []byte("\xef\xbb\xbf"))
 	if !utf8.Valid(raw) {
-		return nil, fmt.Errorf("'utf-8' codec can't decode %s", path)
+		return nil, fmt.Errorf("%s is not valid UTF-8", path)
 	}
 	assignments := parseDotenvText(translateUniversalNewlines(string(raw)))
 	env := ProcessSourceEnvironment().Snapshot()

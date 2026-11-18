@@ -15,6 +15,7 @@ import (
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 )
 
@@ -95,7 +96,7 @@ func SavePluginSetting(ctx context.Context, h, pluginID string, segments []strin
 	fullPath := append([]string{"plugins", "entries", pluginID, "settings"}, segments...)
 	dotted := strings.Join(fullPath, ".")
 	if config.IsKeyManaged(dotted) {
-		return &PluginPermissionError{Msg: fmt.Sprintf("Plugin setting %s is administrator-managed", config.PyRepr(dotted))}
+		return &PluginPermissionError{Msg: fmt.Sprintf("Plugin setting %s is administrator-managed", errchain.Show(dotted))}
 	}
 	partial := nestedPluginMapping(fullPath[:4], nestedPluginMapping(segments, value)).(map[string]any)
 	configPath := home.ConfigPath(h)
@@ -271,7 +272,7 @@ func (s *PluginState) Set(key string, value any) error {
 		enc.SetEscapeHTML(false)
 		enc.SetIndent("", "  ")
 		if err := enc.Encode(data); err != nil {
-			return &HostBuiltinError{Type: "ValueError", Message: fmt.Sprintf("Plugin state value for %s is not JSON-serializable", config.PyRepr(key))}
+			return &HostBuiltinError{Type: "ValueError", Message: fmt.Sprintf("Plugin state value for %s is not JSON-serializable", errchain.Show(key))}
 		}
 		encoded := bytes.TrimSuffix(buf.Bytes(), []byte("\n"))
 		if len(encoded) > s.QuotaBytes() {

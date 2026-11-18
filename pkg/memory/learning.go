@@ -207,7 +207,7 @@ func isoEpochSeconds(t time.Time) int64 {
 
 // Error text of an ISO string fromisoformat refuses
 func invalidISOFormat(s string) error {
-	return fmt.Errorf("Invalid isoformat string: %s", pyRepr(s))
+	return fmt.Errorf("%s is not an ISO date and time", s)
 }
 
 // Parses an ISO 8601 string with the rules of CPython datetime fromisoformat, naive results in UTC
@@ -678,9 +678,12 @@ func pyUTF8DecodeError(data []byte) error {
 			reason, span = "invalid start byte", 1
 		}
 		if span == 1 {
-			return &pyError{class: "UnicodeDecodeError", msg: fmt.Sprintf("'utf-8' codec can't decode byte 0x%02x in position %d: %s", ch, i, reason)}
+			verb := map[string]string{"invalid start byte": "cannot start a character", "invalid continuation byte": "begins a character that the next byte breaks",
+				"unexpected end of data": "begins a character the text ends inside"}[reason]
+			return &pyError{class: "UnicodeDecodeError", msg: fmt.Sprintf("not valid UTF-8: byte 0x%02x at position %d %s", ch, i, verb)}
 		}
-		return &pyError{class: "UnicodeDecodeError", msg: fmt.Sprintf("'utf-8' codec can't decode bytes in position %d-%d: %s", i, i+span-1, reason)}
+		verb := map[string]string{"invalid continuation byte": "begin a character that the next byte breaks", "unexpected end of data": "begin a character the text ends inside"}[reason]
+		return &pyError{class: "UnicodeDecodeError", msg: fmt.Sprintf("not valid UTF-8: bytes at positions %d-%d %s", i, i+span-1, verb)}
 	}
 	return nil
 }
@@ -923,7 +926,7 @@ func MemoryCards(h string) ([]map[string]any, error) {
 		for idx, chunk := range ReadEntriesFile(path) {
 			lines := pySplitLines(chunk)
 			if len(lines) == 0 {
-				return nil, &pyError{class: "IndexError", msg: "list index out of range"}
+				return nil, &pyError{class: "IndexError", msg: fmt.Sprintf("memory entry %d of %s is empty", idx, path)}
 			}
 			first := pyStrip(strings.TrimLeft(pyStrip(lines[0]), "# "))
 			title := first

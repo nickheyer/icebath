@@ -1,4 +1,4 @@
-//go:build !linux && !windows
+//go:build !linux && !windows && !icebath_core && !icebath_noextras
 
 package selfupdate
 

@@ -378,7 +378,7 @@ func RunCodexStream(ctx context.Context, agent ChatCompletionAgent, apiKwargs ma
 	if !pyrepr.Truthy(activeClient) {
 		ensurer, ok := agent.(codexPrimaryClientEnsurer)
 		if !ok {
-			return nil, &auxAttributeError{typeName: pyrepr.TypeName(agent), attr: "_ensure_primary_openai_client"}
+			return nil, &auxAttributeError{msg: fmt.Sprintf("the agent (%T) cannot open its primary OpenAI client", agent)}
 		}
 		var err error
 		if activeClient, err = ensurer.EnsurePrimaryOpenAIClient(ctx, "codex_stream_direct"); err != nil {
@@ -508,7 +508,7 @@ func RunCodexStream(ctx context.Context, agent ChatCompletionAgent, apiKwargs ma
 		streamKwargs["stream"] = true
 		creator, ok := activeClient.(codexResponsesCreator)
 		if !ok {
-			return nil, &auxAttributeError{typeName: pyrepr.TypeName(activeClient), attr: "responses"}
+			return nil, &auxAttributeError{msg: fmt.Sprintf("the active client (%T) has no Responses API", activeClient)}
 		}
 		return creator.CreateResponse(ctx, BypassSDKRequestTransform(streamKwargs, nil, false))
 	}
@@ -630,7 +630,7 @@ func RunCodexStream(ctx context.Context, agent ChatCompletionAgent, apiKwargs ma
 	if wantsCommentary {
 		firer, ok := agent.(codexCommentaryFirer)
 		if !ok {
-			return nil, &auxAttributeError{typeName: pyrepr.TypeName(agent), attr: "_fire_streamed_codex_commentary"}
+			return nil, &auxAttributeError{msg: fmt.Sprintf("the agent (%T) cannot stream Codex commentary", agent)}
 		}
 		onCommentaryMessage = live(firer.FireStreamedCodexCommentary)
 	}

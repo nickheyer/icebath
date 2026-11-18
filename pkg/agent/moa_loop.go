@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -1039,7 +1040,7 @@ func presetTemperature(preset map[string]any, key string) *float64 {
 	}
 	f, err := pyint.Float(value)
 	if err != nil {
-		pkgLog().Warn(fmt.Sprintf("ignoring non-numeric %s=%s in MoA preset", key, pyrepr.Repr(value)))
+		pkgLog().Warn(fmt.Sprintf("ignoring non-numeric %s=%s in MoA preset", key, errchain.Show(value)))
 		return nil
 	}
 	return &f

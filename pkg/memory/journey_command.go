@@ -16,6 +16,7 @@ import (
 	xterm "github.com/charmbracelet/x/term"
 	"github.com/nickheyer/icebath/pkg/cliui"
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyrich"
@@ -664,7 +665,7 @@ func journeyCmdDelete(ctx context.Context, env *tools.Env, ns map[string]any, w 
 		return 1, nil
 	}
 	if !nsJourneyBool(ns, "yes") {
-		answer, err := journeyInput(fmt.Sprintf("  Delete %s? [y/N] ", pyrepr.Repr(pyrepr.Str(detail["label"]))))
+		answer, err := journeyInput(fmt.Sprintf("  Delete %s? [y/N] ", errchain.Show(pyrepr.Str(detail["label"]))))
 		if err != nil {
 			fmt.Fprintln(w, "\n  aborted")
 			return 1, nil

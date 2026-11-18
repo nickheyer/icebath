@@ -174,9 +174,9 @@ func (d *SessionDB) RetargetLocalAutomation(ctx context.Context, epoch int64, se
 			target, _ := descriptor.Get("target")
 			switch target.(type) {
 			case []any:
-				return &pyConvError{"TypeError", "unhashable type: 'list'"}
+				return &pyConvError{"TypeError", "the automation target is a list, expected text"}
 			case *pyjson.Object:
-				return &pyConvError{"TypeError", "unhashable type: 'dict'"}
+				return &pyConvError{"TypeError", "the automation target is a mapping, expected text"}
 			}
 			if name, ok := target.(string); !ok || !old[name] {
 				continue

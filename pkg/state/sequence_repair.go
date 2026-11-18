@@ -55,28 +55,6 @@ func seqIter(v any) ([]any, error) {
 	return nil, fmt.Errorf("expected a list, got %s", errchain.Kind(v))
 }
 
-// Python type name of a value for exception text
-func seqTypeName(v any) string {
-	switch v.(type) {
-	case nil:
-		return "NoneType"
-	case bool:
-		return "bool"
-	case int, int64:
-		return "int"
-	case float64:
-		return "float"
-	case string:
-		return "str"
-	case map[string]any, pyObject:
-		return "dict"
-	}
-	if _, ok := listItems(v); ok {
-		return "list"
-	}
-	return fmt.Sprintf("%T", v)
-}
-
 // Codex Responses interim turn that carries its own continuation state and replays verbatim
 func isCodexInterim(m map[string]any) bool {
 	return seqTruthy(m["codex_reasoning_items"]) || seqTruthy(m["codex_message_items"]) || m["finish_reason"] == "incomplete"

@@ -83,7 +83,7 @@ func tryFrame(sent bool, err error, failLog string, excInfo bool) bool {
 func (s *GatewayStreamConsumer) sendFrame(ctx context.Context, text string, finalize bool) (bool, error) {
 	native, ok := s.adapter.(NativeStreamAdapter)
 	if !ok {
-		return false, fmt.Errorf("'%T' object has no attribute 'send_stream_frame'", s.adapter)
+		return false, fmt.Errorf("the platform adapter (%T) cannot send stream frames", s.adapter)
 	}
 	return native.SendStreamFrame(ctx, text, finalize, s.chatID, s.initialReplyToID, s.turnID)
 }

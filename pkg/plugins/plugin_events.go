@@ -5,8 +5,8 @@ import (
 	"unicode/utf8"
 
 	"github.com/dlclark/regexp2/v2"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 // Compiles a Python re pattern with Python semantics, panicking on an invalid pattern
@@ -47,11 +47,11 @@ func (e *PluginEventPayloadError) PyTypeName() string { return "TypeError" }
 // Wire name plugin dot id dot event, a ValueError for an id or event that cannot form one
 func PluginEventName(pluginID, event string) (string, error) {
 	if !pyReMatch(pluginIDPattern, pluginID) {
-		return "", &PluginEventNameError{Msg: fmt.Sprintf("invalid plugin id %s: expected [a-z0-9_-]{1,64}", pyrepr.Repr(pluginID))}
+		return "", &PluginEventNameError{Msg: fmt.Sprintf("invalid plugin id %s: expected [a-z0-9_-]{1,64}", errchain.Show(pluginID))}
 	}
 	if utf8.RuneCountInString(event) > 128 || !pyReMatch(pluginEventPattern, event) {
 		return "", &PluginEventNameError{Msg: fmt.Sprintf("invalid plugin event %s: expected dot-separated segments of [A-Za-z0-9_-] "+
-			"(the plugin id already namespaces the name)", pyrepr.Repr(event))}
+			"(the plugin id already namespaces the name)", errchain.Show(event))}
 	}
 	return PluginEventPrefix + pluginID + "." + event, nil
 }
@@ -62,7 +62,7 @@ func BroadcastPluginEvent(pluginID, event string, payload any) error {
 	if payload != nil {
 		dict, ok := payload.(map[string]any)
 		if !ok {
-			return &PluginEventPayloadError{Msg: "plugin event payload must be a dict or None, got " + pyrepr.TypeName(payload)}
+			return &PluginEventPayloadError{Msg: "plugin event payload must be a mapping or nothing, got " + errchain.Kind(payload)}
 		}
 		body = dict
 	}

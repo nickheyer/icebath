@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
@@ -119,7 +120,7 @@ func normalizePerplexitySnippets(response any, urls []string) ([]*WebPage, error
 		case string:
 			byURL[k] = d
 		case []any, map[string]any, *pyjson.Object:
-			return nil, errors.New("unhashable type: '" + pyrepr.TypeName(k) + "'")
+			return nil, errors.New("a Perplexity result URL is " + errchain.Kind(k) + ", expected text")
 		}
 	}
 	docs := make([]*WebPage, 0, len(urls))

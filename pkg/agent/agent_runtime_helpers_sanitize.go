@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -133,7 +134,7 @@ func sanitizeToolCallArguments(messages *[]*state.Message, logger *slog.Logger, 
 				functionName = "?"
 			}
 			log.Warn(fmt.Sprintf("Corrupted tool_call arguments repaired before request (session=%s, message_index=%d, tool_call_id=%s, function=%s, original_arguments=%s)",
-				orDash(sessionID), idx, orDash(toolCallID), functionName, pyrepr.Repr(truncateRunes(arguments, fullArgsLogBound))))
+				orDash(sessionID), idx, orDash(toolCallID), functionName, errchain.Show(truncateRunes(arguments, fullArgsLogBound))))
 			tc.Function.Arguments = "{}"
 			msg.Persisted = false
 			if existing := findToolResult(msgs, idx+1, *tc); existing == nil {
@@ -456,7 +457,7 @@ func dropInvalidRoles(messages []map[string]any) []map[string]any {
 	for _, m := range messages {
 		role, _ := m["role"].(string)
 		if !validAPIRoles[role] {
-			pkgLog().Debug("Pre-call sanitizer: dropping message with invalid role " + pyrepr.Repr(m["role"]))
+			pkgLog().Debug("Pre-call sanitizer: dropping message with invalid role " + errchain.Show(m["role"]))
 			continue
 		}
 		kept = append(kept, m)
@@ -512,7 +513,7 @@ func repairInvalidToolCallNames(messages []map[string]any) {
 			}
 			nameText, _ := name.(string)
 			pkgLog().Warn(fmt.Sprintf("Pre-call sanitizer: repairing tool_call with invalid function.name %s -> %s (id=%s)",
-				pyrepr.Repr(truncateRunes(nameText, 80)), pyrepr.Repr(coerced), getToolCallID(tc)))
+				errchain.Show(truncateRunes(nameText, 80)), errchain.Show(coerced), getToolCallID(tc)))
 			if !copied {
 				tcs = slices.Clone(original)
 				msg["tool_calls"] = tcs

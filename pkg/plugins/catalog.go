@@ -12,6 +12,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -175,15 +176,15 @@ func EntryFromMapping(raw any, label string) *PluginCatalogEntry {
 	problem := ""
 	switch {
 	case !catalogNameRe.MatchString(name):
-		problem = "invalid name " + pyrepr.StrRepr(name) + " (must match [a-z0-9_-]{1,64})"
+		problem = "invalid name " + errchain.Show(name) + " (must match [a-z0-9_-]{1,64})"
 	case !strings.HasPrefix(repo, "https://"):
-		problem = "repo must be an https:// URL (got " + pyrepr.StrRepr(repo) + ")"
+		problem = "repo must be an https:// URL (got " + errchain.Show(repo) + ")"
 	case !catalogShaRe.MatchString(sha):
-		problem = "sha must be a full 40-character hex commit SHA (got " + pyrepr.Repr(data["sha"]) + ")"
+		problem = "sha must be a full 40-character hex commit SHA (got " + errchain.Show(data["sha"]) + ")"
 	case !containsString(CatalogTiers, tier):
-		problem = "tier must be one of " + strings.Join(CatalogTiers, "/") + " (got " + pyrepr.StrRepr(tier) + ")"
+		problem = "tier must be one of " + strings.Join(CatalogTiers, "/") + " (got " + errchain.Show(tier) + ")"
 	case !containsString(CatalogCategories, category):
-		problem = "category must be one of " + strings.Join(CatalogCategories, "/") + " (got " + pyrepr.StrRepr(category) + ")"
+		problem = "category must be one of " + strings.Join(CatalogCategories, "/") + " (got " + errchain.Show(category) + ")"
 	}
 	if problem != "" {
 		pkgLog().Warn("Plugin catalog: " + label + ": " + problem)
@@ -192,12 +193,12 @@ func EntryFromMapping(raw any, label string) *PluginCatalogEntry {
 	caps, _ := asStringMap(data["capabilities"])
 	version := pystr.Strip(catalogField(data, "version", ""))
 	if version != "" && !catalogVersionRe.MatchString(version) {
-		pkgLog().Warn("Plugin catalog: " + label + ": ignoring version " + pyrepr.StrRepr(version) + " (max 32 chars of [A-Za-z0-9._+-])")
+		pkgLog().Warn("Plugin catalog: " + label + ": ignoring version " + errchain.Show(version) + " (max 32 chars of [A-Za-z0-9._+-])")
 		version = ""
 	}
 	image := pystr.Strip(catalogField(data, "image", ""))
 	if image != "" && !IsAllowedImageURL(image) {
-		pkgLog().Warn("Plugin catalog: " + label + ": ignoring image " + pyrepr.StrRepr(image) + " (must be https on a GitHub host)")
+		pkgLog().Warn("Plugin catalog: " + label + ": ignoring image " + errchain.Show(image) + " (must be https on a GitHub host)")
 		image = ""
 	}
 	declared := catalogStrList(data["screenshots"])

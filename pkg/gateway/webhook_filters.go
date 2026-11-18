@@ -14,6 +14,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -133,7 +134,7 @@ func webhookLoadFilterFileValues(ctx context.Context, pathValue any) ([]any, err
 	}
 	data = []byte(strings.TrimPrefix(string(data), "\ufeff"))
 	if !utf8.Valid(data) {
-		return nil, &PyError{Kind: "UnicodeDecodeError", Msg: "'utf-8' codec can't decode bytes: invalid continuation byte"}
+		return nil, &PyError{Kind: "UnicodeDecodeError", Msg: "the webhook filter file is not valid UTF-8"}
 	}
 	raw := string(data)
 	decoded, err := pyjson.Loads(raw)
@@ -180,20 +181,20 @@ func webhookPyIn(item, container any) (bool, error) {
 			_, found := obj.Get(key)
 			return found, nil
 		case *pyjson.Object, map[string]any, []any:
-			return false, &PyError{Kind: "TypeError", Msg: fmt.Sprintf("unhashable type: '%s'", pyrepr.TypeName(item))}
+			return false, &PyError{Kind: "TypeError", Msg: fmt.Sprintf("a webhook filter value is %s, expected text or a number", errchain.Kind(item))}
 		}
 		return false, nil
 	case string:
 		needle, ok := item.(string)
 		if !ok {
-			return false, &PyError{Kind: "TypeError", Msg: fmt.Sprintf("'in <string>' requires string as left operand, not %s", pyrepr.TypeName(item))}
+			return false, &PyError{Kind: "TypeError", Msg: fmt.Sprintf("a webhook filter value to find in text is %s, expected text", errchain.Kind(item))}
 		}
 		return strings.Contains(c, needle), nil
 	}
 	if item == webhookMissing {
 		return false, nil
 	}
-	return false, &PyError{Kind: "TypeError", Msg: fmt.Sprintf("argument of type '%s' is not iterable", pyrepr.TypeName(container))}
+	return false, &PyError{Kind: "TypeError", Msg: fmt.Sprintf("a webhook filter list is %s, expected a list", errchain.Kind(container))}
 }
 
 // Whether the operand occurs in a container value or its text occurs in a scalar value
@@ -279,7 +280,7 @@ func NewWebhookRouteProcessor(scriptTimeoutSeconds int) *WebhookRouteProcessor {
 func webhookPayloadGet(payload any, key string, def any) (any, error) {
 	obj, ok := pyjson.AsObject(payload)
 	if !ok {
-		return nil, &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("'%s' object has no attribute 'get'", pyrepr.TypeName(payload))}
+		return nil, &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("the webhook payload is %s, expected a mapping", errchain.Kind(payload))}
 	}
 	return obj.GetOr(key, def), nil
 }
@@ -510,7 +511,7 @@ func (p *WebhookRouteProcessor) RunRouteScript(ctx context.Context, scriptValue 
 		if obj, ok := pyjson.AsObject(payload); ok {
 			merged = obj.Copy()
 		} else {
-			return false, nil, &PyError{Kind: "TypeError", Msg: fmt.Sprintf("'%s' object is not a mapping", pyrepr.TypeName(payload))}
+			return false, nil, &PyError{Kind: "TypeError", Msg: fmt.Sprintf("the webhook payload is %s, expected a mapping", errchain.Kind(payload))}
 		}
 		merged.Set("script_output", stdout)
 		transformed = merged

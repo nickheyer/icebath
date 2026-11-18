@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pycopy"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -820,7 +821,7 @@ func announceCompressionStart(a *AIAgent, messageCount int, approxTokens *int, f
 	if approxTokens != nil && *approxTokens != 0 {
 		tokens = groupThousands(*approxTokens)
 	}
-	pkgLog().Info(fmt.Sprintf("context compression started: session=%s messages=%d tokens=~%s model=%s focus=%s", sid, messageCount, tokens, a.model, pyrepr.Repr(optionalStringAny(focusTopic))))
+	pkgLog().Info(fmt.Sprintf("context compression started: session=%s messages=%d tokens=~%s model=%s focus=%s", sid, messageCount, tokens, a.model, errchain.Show(optionalStringAny(focusTopic))))
 	status := CompactionStatus
 	if !force {
 		msg := AutomaticCompactionStatusMessage(a.contextCompressor, "compress", status, map[string]any{

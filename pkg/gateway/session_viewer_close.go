@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
@@ -314,7 +315,7 @@ func orphanCandidate(ctx context.Context, a *SessionAuthority, sessionID string)
 	if policy, ok := receipt.Get("policy"); ok {
 		obj, isObj := policy.(*pyjson.Object)
 		if !isObj {
-			return false, &PyError{Kind: "AttributeError", Msg: "'" + jsonValueTypeName(policy) + "' object has no attribute 'get'"}
+			return false, &PyError{Kind: "AttributeError", Msg: "the viewer session policy is " + errchain.Kind(policy) + ", expected a mapping"}
 		}
 		source, _ = obj.Get("source")
 	}
@@ -337,7 +338,7 @@ func orphanReceiptRow(ctx context.Context, a *SessionAuthority, sessionID string
 	}
 	entry, ok := rawEntry.(*pyjson.Object)
 	if !ok {
-		return nil, nil, &PyError{Kind: "TypeError", Msg: "'" + jsonValueTypeName(rawEntry) + "' object is not subscriptable"}
+		return nil, nil, &PyError{Kind: "TypeError", Msg: "a viewer receipt entry is " + errchain.Kind(rawEntry) + ", expected a mapping"}
 	}
 	target, err := receiptField(entry, "session_id")
 	if err != nil {

@@ -12,6 +12,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/nickheyer/icebath/pkg/errchain"
 )
 
 // Python or SQLite version as three unbounded integers, the shape _version_tuple returns
@@ -57,20 +59,7 @@ func pyIterate(v any) ([]any, error) {
 		}
 		return out, nil
 	}
-	return nil, &pyConvError{"TypeError", fmt.Sprintf("'%s' object is not iterable", pyTypeName(v))}
-}
-
-// Python type name of a decoded JSON value
-func pyTypeName(v any) string {
-	switch v.(type) {
-	case nil:
-		return "NoneType"
-	case bool:
-		return "bool"
-	case json.Number, int, int64:
-		return "int"
-	}
-	return "float"
+	return nil, &pyConvError{"TypeError", fmt.Sprintf("expected a list of rows, got %s", errchain.Kind(v))}
 }
 
 // int of every part padded with zeros to three and cut at three, with the errors int and iteration raise

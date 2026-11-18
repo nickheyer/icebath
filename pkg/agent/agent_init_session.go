@@ -197,12 +197,12 @@ func applyDisplayConfig(a *AIAgent, agentCfg map[string]any, platform string) er
 		a.lmstudioLoadMode = loadMode
 	}
 	if a.lmstudioLoadMode != loadMode {
-		pkgLog().Warn(fmt.Sprintf("Invalid model.lmstudio_load_mode=%s; expected 'explicit' or 'jit'. Using explicit.", pyrepr.Repr(modelSection["lmstudio_load_mode"])))
+		pkgLog().Warn(fmt.Sprintf("Invalid model.lmstudio_load_mode=%s; expected 'explicit' or 'jit'. Using explicit.", errchain.Show(modelSection["lmstudio_load_mode"])))
 	}
 	streaming := strings.ToLower(strings.TrimSpace(pyrepr.Str(cfgValue(modelSection, "streaming", "true"))))
 	a.RetrySession().DisableStreaming = slices.Contains([]string{"false", "0", "no", "off"}, streaming)
 	if !a.RetrySession().DisableStreaming && !slices.Contains([]string{"true", "1", "yes", "on"}, streaming) {
-		pkgLog().Warn(fmt.Sprintf("Invalid model.streaming=%s; expected a boolean. Using streaming (default).", pyrepr.Repr(modelSection["streaming"])))
+		pkgLog().Warn(fmt.Sprintf("Invalid model.streaming=%s; expected a boolean. Using streaming (default).", errchain.Show(modelSection["streaming"])))
 	}
 	a.stream5xxProbeTS = 0
 	guardrails, _ := agentCfg["tool_loop_guardrails"].(map[string]any)
@@ -327,7 +327,7 @@ func applyAgentSection(a *AIAgent, agentCfg map[string]any) {
 	a.intentAckContinuation = cfgValue(section, "intent_ack_continuation", "auto")
 	verbosity := strings.ToLower(strings.TrimSpace(cfgText(section["text_verbosity"])))
 	if verbosity != "" && verbosity != "low" && verbosity != "medium" && verbosity != "high" {
-		pkgLog().Warn(fmt.Sprintf("Unknown agent.text_verbosity %s; expected low, medium or high — ignoring", pyrepr.Repr(verbosity)))
+		pkgLog().Warn(fmt.Sprintf("Unknown agent.text_verbosity %s; expected low, medium or high — ignoring", errchain.Show(verbosity)))
 		verbosity = ""
 	}
 	a.textVerbosity = verbosity

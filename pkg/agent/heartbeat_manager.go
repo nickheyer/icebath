@@ -9,8 +9,8 @@ import (
 	"regexp"
 	"sync"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
 )
@@ -55,7 +55,7 @@ func ParseHeartbeatInterval(text string) (*big.Int, error) {
 	unit := pystr.Lower(m[2])
 	factor, known := heartbeatUnitSeconds[unit]
 	if !known {
-		return nil, &pyint.Error{Kind: "KeyError", Msg: pyrepr.StrRepr(unit)}
+		return nil, &pyint.Error{Kind: "KeyError", Msg: "unknown interval unit " + unit}
 	}
 	seconds, err := pyint.Of(value * factor)
 	if err != nil {
@@ -211,6 +211,11 @@ func (m *HeartbeatManager) Set(prompt string, intervalSeconds any) (*HeartbeatSt
 	}
 	interval, err := pyint.Of(intervalSeconds)
 	if err != nil {
+		pkgLog().Debug("heartbeat interval refused: " + errchain.Text(err))
+		var pe *pyint.Error
+		if errors.As(err, &pe) {
+			return nil, &pyint.Error{Kind: pe.Kind, Msg: "heartbeat interval must be a whole number of seconds, got " + errchain.Show(intervalSeconds)}
+		}
 		return nil, err
 	}
 	if interval.Cmp(big.NewInt(MinHeartbeatIntervalSeconds)) < 0 {

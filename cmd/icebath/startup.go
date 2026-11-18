@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
@@ -23,7 +22,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/logging"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/provider"
-	"github.com/nickheyer/icebath/pkg/selfupdate"
 	"github.com/nickheyer/icebath/pkg/startupfast"
 	"github.com/nickheyer/icebath/pkg/tools"
 	"github.com/nickheyer/icebath/pkg/tuiserver"
@@ -45,7 +43,7 @@ func startProcess(ctx context.Context) {
 
 // Hidden child modes a re-executed binary dispatches once the hooks their Python imports install are wired
 func dispatchChildEntries(ctx context.Context) {
-	selfupdate.DispatchCustodyLauncher()
+	runChildEntries(ctx, childEntriesFirst)
 	home.DispatchScratchPruneEntry(ctx)
 	runChildEntries(ctx, childEntriesAfterPrunePlugins)
 	runChildEntries(ctx, childEntriesAfterPruneExtras)
@@ -235,49 +233,6 @@ func armStartupWatchdog() {
 	gateway.ArmStartupWatchdog(context.Background())
 }
 
-// Puts the old tree back after an update killed mid swap, true when a restore happened
-func restoreInterruptedPull() bool {
-	return selfupdate.RestoreInterruptedPull(context.Background(), pm.RepoRoot(), false)
-}
-
-// Re executes the command once the restore landed
-func relaunchAfterRestore() {
-	exit(selfupdate.RelaunchAfterRestore(os.Args))
-}
-
-// Re stages the Windows bin launchers from the default root, inaction everywhere else
-func ensureBinLaunchers() {
-	if runtime.GOOS != "windows" {
-		return
-	}
-	selfupdate.EnsureWindowsBinLaunchers(pm.RepoRoot(), nil, nil)
-}
-
-// Sweeps stale quarantined Windows executables from earlier updates
-func cleanupQuarantinedExes() {
-	if runtime.GOOS != "windows" {
-		return
-	}
-	selfupdate.CleanupQuarantinedExes(context.Background(), pm.RepoRoot(), "")
-}
-
-// Reports a fleet restart a previous update still owes and recovers gateways a killed update paused
-func recoverUpdateDebtsOnStartup() {
-	ctx := context.Background()
-	if selfupdate.UpdateInternalCommand(os.Args[1:]) {
-		return
-	}
-	if !containsArg(os.Args[1:], "update") {
-		selfupdate.WarnPendingFleetRestartOnStartup(ctx, home.Dir(ctx), os.Stderr)
-	}
-	selfupdate.RecoverPausedGateways(ctx, os.Args[1:])
-}
-
-// Runs the boot bootstrap when the install identity changed since the last recorded run
-func maybeRunBootBootstrap(projectRoot string) {
-	selfupdate.MaybeRunBootBootstrap(context.Background(), projectRoot)
-}
-
 // Prints the install's runtime command for a launch asked for it and exits with its status
 func printLauncherRuntimeCommand(pinned bool) {
 	if pinned || len(os.Args) < 2 || os.Args[1] != "--print-runtime-command" {
@@ -286,23 +241,11 @@ func printLauncherRuntimeCommand(pinned bool) {
 	exit(pm.LaunchersMain(context.Background(), pm.RepoRoot(), os.Args[1:], os.Stdout, os.Stderr))
 }
 
-// Finishes an owed source update and activates committed dependencies before the command is parsed
+// Registers the CLI parser with pm between the steps a tier runs around it before the command is parsed
 func bootLaunch() {
-	os.Args = selfupdate.TakeRelaunchMarker(os.Args)
+	runStartupPhase(phaseBeforeParser, os.Args)
 	pm.SetCommandArgv(commands.NewCLI().CommandArgv)
-	if code, stop := selfupdate.BootLaunch(context.Background(), pm.RepoRoot(), os.Args); stop {
-		exit(code)
-	}
-}
-
-// One passive PM verdict on every dispatch, the problem text or empty
-func checkRuntime(installRoot string) string {
-	problem, err := selfupdate.CheckRuntime(context.Background(), installRoot)
-	if err != nil {
-		pkgLog().Debug("pm startup check failed", "error", err)
-		return ""
-	}
-	return problem
+	runStartupPhase(phaseAfterParser, os.Args)
 }
 
 func containsArg(argv []string, want string) bool {

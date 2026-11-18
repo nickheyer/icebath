@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/profiles"
@@ -182,8 +183,8 @@ func coerceRouteID(value any) *string {
 		s := pyrepr.Str(value)
 		return &s
 	}
-	pkgLog().Warn(fmt.Sprintf("Profile route discriminator %s (type %s) can never match an inbound id — quote it in config.yaml (e.g. chat_id: \"%s\").",
-		pyrepr.Repr(value), pyrepr.TypeName(value), pyrepr.Str(value)))
+	pkgLog().Warn(fmt.Sprintf("Profile route discriminator %v (%s) can never match an inbound id — quote it in config.yaml (e.g. chat_id: \"%s\").",
+		value, errchain.Kind(value), pyrepr.Str(value)))
 	s := pyrepr.Str(value)
 	return &s
 }
@@ -199,7 +200,7 @@ func ParseProfileRoutes(ctx context.Context, raw any) ([]*ProfileRoute, error) {
 		items = v
 	case string, map[string]any:
 	default:
-		return nil, &PyError{"TypeError", "'" + pyrepr.TypeName(raw) + "' object is not iterable"}
+		return nil, &PyError{"TypeError", "profile routes are " + errchain.Kind(raw) + ", expected a list"}
 	}
 	routes := []*ProfileRoute{}
 	for _, item := range items {
@@ -245,7 +246,7 @@ func ParseProfileRoutes(ctx context.Context, raw any) ([]*ProfileRoute, error) {
 		if b := entry["bot_profile"]; pyrepr.Truthy(b) {
 			s, isStr := b.(string)
 			if !isStr {
-				return nil, &PyError{"AttributeError", "'" + pyrepr.TypeName(b) + "' object has no attribute 'strip'"}
+				return nil, &PyError{"AttributeError", "a profile route field is " + errchain.Kind(b) + ", expected text"}
 			}
 			bot = botProfileKey(&s)
 		}

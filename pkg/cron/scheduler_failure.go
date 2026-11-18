@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -191,7 +192,7 @@ var staleYieldRe = mustPyRe(`stale code: booted on (\S+), disk is at (\S+)\)`)
 
 // Boot and disk revisions from a persisted ticker error that is a tick yield, false otherwise
 func staleCodeYieldLabels(recordedError string) (bootRev, diskRev string, ok bool) {
-	if recordedError == "" || !strings.HasPrefix(recordedError, "CronTickYielded") {
+	if !strings.Contains(recordedError, "Cron tick yielded to a fresh gateway process (stale code:") {
 		return "", "", false
 	}
 	m, err := staleYieldRe.FindStringMatch(recordedError)
@@ -271,7 +272,11 @@ func (s *Store) summarizeCronFailureForDelivery(job *Job, errText *string) strin
 		if job.Provider != nil {
 			prov = *job.Provider
 		}
-		if notice, ok := providerFailureNotice(s.home, name, id, classifyCronFailureReason(text), s.fallbackChainPhrase(job), prov); ok {
+		reason := job.run.failureReason
+		if reason == "" || reason == string(provider.ReasonUnknown) {
+			reason = classifyCronFailureReason(text)
+		}
+		if notice, ok := providerFailureNotice(s.home, name, id, reason, s.fallbackChainPhrase(job), prov); ok {
 			return notice
 		}
 	}
@@ -468,7 +473,7 @@ func resolveCronEnabledToolsets(ctx context.Context, job *Job, cfg config.Tree) 
 	if pt := cfg["platform_toolsets"]; pyrepr.Truthy(pt) {
 		if _, ok := pt.(map[string]any); !ok {
 			return nil, fmt.Errorf("Cron toolset resolution failed, so this run was refused rather than given every "+
-				"tool. Check `platform_toolsets.cron` in config.yaml (`icebath cron doctor`): '%s' object has no attribute 'get'", pyrepr.TypeName(pt))
+				"tool. Check `platform_toolsets.cron` in config.yaml (`icebath cron doctor`): platform_toolsets is %s, expected a mapping", errchain.Kind(pt))
 		}
 	}
 	enabled := tools.Default.PlatformTools(ctx, "", cfg, "cron", tools.PlatformToolsOptions{

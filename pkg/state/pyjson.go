@@ -101,7 +101,7 @@ func (o pyJSON) encode(b *strings.Builder, v any) error {
 			return o.encodeList(b, rv.Len(), func(i int) any { return rv.Index(i).Interface() })
 		case reflect.Map:
 			if rv.Type().Key().Kind() != reflect.String {
-				return fmt.Errorf("keys must be str, int, float, bool or None, not %s", rv.Type().Key())
+				return fmt.Errorf("cannot write a mapping with %s keys as JSON", rv.Type().Key())
 			}
 			obj := make(pyObject, 0, rv.Len())
 			iter := rv.MapRange()
@@ -117,7 +117,7 @@ func (o pyJSON) encode(b *strings.Builder, v any) error {
 			}
 			return o.encode(b, rv.Elem().Interface())
 		}
-		return fmt.Errorf("Object of type %T is not JSON serializable", v)
+		return fmt.Errorf("cannot write %T as JSON", v)
 	}
 	return nil
 }

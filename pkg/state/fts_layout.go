@@ -23,15 +23,15 @@ func storedForm(sql string) string {
 	return storedFormQuoted.ReplaceAllString(collapsed, "CREATE $1 $2")
 }
 
-// Stored form of the CREATE kind IF NOT EXISTS name statement in ddl, a ValueError when ddl lacks it
+// Stored form of the CREATE kind IF NOT EXISTS name statement in ddl, a refusal when ddl lacks it
 func expectedStoredSQL(ddl, kind, name string) (string, error) {
 	start := strings.Index(ddl, "CREATE "+kind+" IF NOT EXISTS "+name+" ")
 	if start < 0 {
-		return "", &pyConvError{"ValueError", "substring not found"}
+		return "", &pyConvError{"ValueError", "the schema has no CREATE " + kind + " statement for " + name}
 	}
 	end := strings.Index(ddl[start:], ";")
 	if end < 0 {
-		return "", &pyConvError{"ValueError", "substring not found"}
+		return "", &pyConvError{"ValueError", "the CREATE " + kind + " statement for " + name + " has no closing semicolon"}
 	}
 	return storedForm(strings.Replace(ddl[start:start+end], " IF NOT EXISTS", "", 1)), nil
 }

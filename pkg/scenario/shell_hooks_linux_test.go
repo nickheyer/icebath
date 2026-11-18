@@ -32,7 +32,7 @@ func TestScenarioShellHooksListAndTest(t *testing.T) {
 	s.Run("hooks", "test", "pre_tool_call", "--for-tool", "read_file").Exit(0).
 		Has("No shell hooks configured for event: pre_tool_call", "(with matcher filter --for-tool=read_file)").Lacks("Firing")
 	broken := s.Run("hooks", "test", "post_tool_call").Exit(0)
-	broken.Has("Firing 1 hook(s) for event 'post_tool_call':", "✗ error: command ", "cannot be parsed: No closing quotation",
+	broken.Has("Firing 1 hook(s) for event 'post_tool_call':", "✗ error: command ", "cannot be parsed: its quotes or escapes are unbalanced",
 		"parsed: <none — hook contributed nothing to the dispatcher>")
 	unknown := s.Run("hooks", "test", "no_such_event").Exit(0)
 	unknown.Has("Unknown event: 'no_such_event'", "Valid events: ")

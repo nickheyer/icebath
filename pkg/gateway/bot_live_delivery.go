@@ -22,6 +22,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/activesessions"
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyfs"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -311,28 +312,9 @@ func readTicket(path string) (map[string]any, error) {
 	}
 	obj, ok := decoded.(*pyjson.Object)
 	if !ok {
-		return nil, fmt.Errorf("ticket %s is not a JSON object (%s)", filepath.Base(path), deliveryTypeName(decoded))
+		return nil, fmt.Errorf("ticket %s is not a JSON object (%s)", filepath.Base(path), errchain.Kind(decoded))
 	}
 	return pyjson.Plain(obj).(map[string]any), nil
-}
-
-// Python type name of a decoded JSON value
-func deliveryTypeName(v any) string {
-	switch v.(type) {
-	case nil:
-		return "NoneType"
-	case bool:
-		return "bool"
-	case int64, *big.Int, int:
-		return "int"
-	case float64:
-		return "float"
-	case string:
-		return "str"
-	case []any:
-		return "list"
-	}
-	return "dict"
 }
 
 func deliveryIsInt(v any) bool {

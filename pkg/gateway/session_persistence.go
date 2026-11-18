@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/state"
@@ -530,7 +531,7 @@ func (s *SessionStore) importLegacySessionsJSON(ctx context.Context, dbHadEntrie
 	}
 	obj, ok := data.(*pyjson.Object)
 	if !ok {
-		fmt.Printf("[gateway] Warning: Failed to load sessions: %s object has no attribute 'items'\n", jsonTypeName(data))
+		fmt.Printf("[gateway] Warning: Failed to load sessions: sessions.json is %s, expected a mapping\n", errchain.Kind(data))
 		return retired
 	}
 	imported := 0
@@ -540,7 +541,7 @@ func (s *SessionStore) importLegacySessionsJSON(ctx context.Context, dbHadEntrie
 		}
 		entryData, ok := obj.Vals[key].(*pyjson.Object)
 		if !ok {
-			pkgLog().Warn(fmt.Sprintf("Skipping invalid session entry %q: expected dict, got %s", key, jsonTypeName(obj.Vals[key])))
+			pkgLog().Warn(fmt.Sprintf("Skipping invalid session entry %q: expected a mapping, got %s", key, errchain.Kind(obj.Vals[key])))
 			continue
 		}
 		sid, hasID := entryData.Get("session_id")
@@ -575,27 +576,6 @@ func (s *SessionStore) importLegacySessionsJSON(ctx context.Context, dbHadEntrie
 		pkgLog().Info(fmt.Sprintf("gateway.session: imported %d legacy sessions.json entr%s missing from state.db routing table", imported, plural))
 	}
 	return retired
-}
-
-// Python type name of a decoded JSON value
-func jsonTypeName(v any) string {
-	switch v.(type) {
-	case nil:
-		return "NoneType"
-	case bool:
-		return "bool"
-	case string:
-		return "str"
-	case int64:
-		return "int"
-	case float64:
-		return "float"
-	case []any:
-		return "list"
-	case *pyjson.Object:
-		return "dict"
-	}
-	return fmt.Sprintf("%T", v)
 }
 
 // Removes entries whose session ended in state.db at startup, repointing recoverable ones, lock held

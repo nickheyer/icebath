@@ -91,17 +91,17 @@ func TestReplayedHistoryEndsAtCurrentSchema(t *testing.T) {
 }
 
 func TestSchemaHistoryEditsAndLookups(t *testing.T) {
-	if _, err := DeclaredSnapshots("nope"); err == nil || err.Error() != "KeyError: 'nope'" {
+	if _, err := DeclaredSnapshots("nope"); err == nil || err.Error() != "no schema history for table nope" {
 		t.Fatalf("unknown table error = %v", err)
 	}
 	cols, err := applySchemaEdits([]string{"a", "b"}, []SchemaEdit{{"+", "z", ""}, {"+", "c", "a"}, {"-", "b", ""}})
 	if err != nil || !slices.Equal(cols, []string{"z", "a", "c"}) {
 		t.Fatalf("edits = %v %v", cols, err)
 	}
-	if _, err := applySchemaEdits([]string{"a"}, []SchemaEdit{{"-", "x", ""}}); err == nil || err.Error() != "ValueError: list.remove(x): x not in list" {
+	if _, err := applySchemaEdits([]string{"a"}, []SchemaEdit{{"-", "x", ""}}); err == nil || err.Error() != "a schema edit removes column x, which the table lacks" {
 		t.Fatalf("remove missing = %v", err)
 	}
-	if _, err := applySchemaEdits([]string{"a"}, []SchemaEdit{{"+", "c", "x"}}); err == nil || err.Error() != "ValueError: 'x' is not in list" {
+	if _, err := applySchemaEdits([]string{"a"}, []SchemaEdit{{"+", "c", "x"}}); err == nil || err.Error() != "a schema edit places a column after x, which the table lacks" {
 		t.Fatalf("insert after missing = %v", err)
 	}
 }

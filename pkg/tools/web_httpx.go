@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -122,7 +123,7 @@ func pySeqHead(v any, n int) (any, error) {
 	if _, ok := pyDict(v); ok {
 		return nil, fmt.Errorf("slice(None, %d, None)", n)
 	}
-	return nil, fmt.Errorf("'%s' object is not subscriptable", pyrepr.TypeName(v))
+	return nil, fmt.Errorf("expected a list, got %s", errchain.Kind(v))
 }
 
 // Brave and SearXNG row normalizer with str of every field and 1 based positions

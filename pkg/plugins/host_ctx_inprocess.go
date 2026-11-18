@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -18,7 +19,7 @@ func hostedCheck(v any) func() bool {
 	return func() bool {
 		f, ok := v.(*HostedCallable)
 		if !ok {
-			panic(&HostBuiltinError{Type: "TypeError", Message: "'" + pyTypeName(v) + "' object is not callable"})
+			panic(&HostBuiltinError{Type: "TypeError", Message: "check_fn is " + errchain.Kind(v) + " where a function was expected"})
 		}
 		result, err := f.Call(f.HostContext(), nil, nil)
 		if err != nil {

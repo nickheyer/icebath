@@ -192,7 +192,7 @@ func nativeCallbackOf(ctx context.Context) (AuthorityRunner, *MessageEvent, stri
 func adapterRelayTransport(adapter PlatformAdapter) (any, error) {
 	holder, ok := adapter.(relayTransportAdapter)
 	if !ok {
-		return nil, &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("'%T' object has no attribute '_transport'", adapter)}
+		return nil, &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("the platform adapter (%T) has no relay transport", adapter)}
 	}
 	return holder.RelayTransport(), nil
 }
@@ -258,7 +258,7 @@ func resealRelay(ctx context.Context, adapter PlatformAdapter, source, provenanc
 	}
 	transport, ok := raw.(relayTransport)
 	if !ok {
-		return nil, &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("'%T' object has no attribute '_upgrade_secret'", raw)}
+		return nil, &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("the relay transport (%T) cannot reseal an upgrade secret", raw)}
 	}
 	seal, err := relaySeal(transport, stored, base)
 	if err != nil {
@@ -324,7 +324,7 @@ func provenanceBinding(ctx context.Context, runner AuthorityRunner, source *Sess
 	}
 	bound, ok := runner.(provenanceRunner)
 	if !ok {
-		return nil, "", "", nil, &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("'%T' object has no attribute 'adapters'", runner)}
+		return nil, "", "", nil, &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("the gateway runner (%T) keeps no platform adapters", runner)}
 	}
 	type registry struct {
 		owner   *string
@@ -514,7 +514,7 @@ func captureProvenance(ctx context.Context, runner AuthorityRunner, event *Messa
 	} else {
 		resolver, can := runner.(TransportOwnerRunner)
 		if !can {
-			return nil, &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("'%T' object has no attribute '_transport_owner'", runner)}
+			return nil, &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("the gateway runner (%T) has no transport owner", runner)}
 		}
 		owner, _, owned = resolver.TransportOwner(event.Source)
 	}
@@ -583,7 +583,7 @@ func reauthorizeRoles(ctx context.Context, runner AuthorityRunner, source *Sessi
 	}
 	authz, ok := runner.(nativeAuthorizationRunner)
 	if !ok {
-		return false, &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("'%T' object has no attribute '_is_user_authorized_for_source'", runner)}
+		return false, &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("the gateway runner (%T) cannot check whether a user is authorized for a source", runner)}
 	}
 	direct, err := authz.IsUserAuthorizedForSource(ctx, source, false)
 	if err != nil || direct {

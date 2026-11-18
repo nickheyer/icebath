@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
@@ -91,27 +92,6 @@ func pyJSONStr(v any) string {
 	return pyJSONRepr(v)
 }
 
-// Python type name of a decoded JSON value for TypeError text
-func pyJSONTypeName(v any) string {
-	switch v.(type) {
-	case nil:
-		return "NoneType"
-	case bool:
-		return "bool"
-	case int64, *big.Int:
-		return "int"
-	case float64:
-		return "float"
-	case string:
-		return "str"
-	case []any:
-		return "list"
-	case *pyjson.Object:
-		return "dict"
-	}
-	return fmt.Sprintf("%T", v)
-}
-
 // Items enumerate yields for a decoded JSON value, or the TypeError for a non iterable
 func pyJSONIter(v any) ([]any, error) {
 	switch x := v.(type) {
@@ -132,14 +112,14 @@ func pyJSONIter(v any) ([]any, error) {
 		}
 		return out, nil
 	}
-	return nil, fmt.Errorf("'%s' object is not iterable", pyJSONTypeName(v))
+	return nil, fmt.Errorf("expected a list, got %s", errchain.Kind(v))
 }
 
 // TypeError for an unhashable JSON value used as a set or dict key
 func pyJSONHashable(v any) error {
 	switch v.(type) {
 	case []any, *pyjson.Object:
-		return fmt.Errorf("unhashable type: '%s'", pyJSONTypeName(v))
+		return fmt.Errorf("expected text or a number, got %s", errchain.Kind(v))
 	}
 	return nil
 }

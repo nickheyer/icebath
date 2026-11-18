@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -714,7 +715,7 @@ func requestsJSONObjectOrdered(raw []byte) (*pyjson.Object, error) {
 	}
 	obj, ok := pyjson.AsObject(parsed)
 	if !ok {
-		return nil, fmt.Errorf("'%s' object has no attribute 'get'", pyrepr.TypeName(parsed))
+		return nil, fmt.Errorf("OpenRouter video reply is %s where a mapping was expected", errchain.Kind(parsed))
 	}
 	return obj, nil
 }

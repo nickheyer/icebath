@@ -11,6 +11,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 )
 
 const (
@@ -342,7 +343,7 @@ func renderPromptSectionText(section *SystemPromptSection, sessionInfo map[strin
 		}
 		s, ok := v.(string)
 		if !ok {
-			skip(fmt.Sprintf("returned %s, not str; skipped", pyTypeName(v)))
+			skip(fmt.Sprintf("returned %s where text was expected; skipped", errchain.Kind(v)))
 			return "", false
 		}
 		value = s
@@ -360,27 +361,4 @@ func renderPromptSectionText(section *SystemPromptSection, sessionInfo map[strin
 		return "", false
 	}
 	return text, true
-}
-
-// Python type name of a decoded value, the Go type name for anything else
-func pyTypeName(v any) string {
-	switch v.(type) {
-	case nil:
-		return "NoneType"
-	case bool:
-		return "bool"
-	case int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64:
-		return "int"
-	case float32, float64:
-		return "float"
-	case string:
-		return "str"
-	case []byte:
-		return "bytes"
-	case map[string]any:
-		return "dict"
-	case []any:
-		return "list"
-	}
-	return strings.TrimLeft(fmt.Sprintf("%T", v), "*")
 }

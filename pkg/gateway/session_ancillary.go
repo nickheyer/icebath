@@ -486,7 +486,7 @@ func reloadMCP(ctx context.Context, c *AuthorityConnection, ref SessionRef, para
 	a := c.authority
 	refresher, ok := a.Runner.(mcpReloadRefresher)
 	if !ok {
-		return nil, &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("'%T' object has no attribute '_mcp_reload_refresh_cached_agents'", a.Runner)}
+		return nil, &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("the gateway runner (%T) cannot refresh cached agents after an MCP reload", a.Runner)}
 	}
 	refresher.MCPReloadRefreshCachedAgents(a.Runner.MultiplexProfiles(), servedProfileName(a.ProfileID))
 	session, err := commitSessionMCP(ctx, c, ref, params)

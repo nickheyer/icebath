@@ -200,7 +200,7 @@ func TestPlatformActionsVerbRouting(t *testing.T) {
 	if r := pa.SetThreadTitle(ctx, "telegram", "123", "77", "New title"); r["ok"] != true || tg.renamed[0] != "123/77/New title" {
 		t.Fatalf("telegram topic %v %v", r, tg.renamed)
 	}
-	if r := pa.SetThreadTitle(ctx, "telegram", "123", "abc", "t"); r["error"] != "action_failed" || r["detail"] != "invalid literal for int() with base 10: 'abc'" {
+	if r := pa.SetThreadTitle(ctx, "telegram", "123", "abc", "t"); r["error"] != "action_failed" || r["detail"] != "thread id abc is not a whole number" {
 		t.Fatalf("telegram bad thread %v", r)
 	}
 	if r := pa.SetThreadTitle(ctx, "discord", "123", "999", "Renamed"); r["ok"] != true || dc.renamed[0] != "999/Renamed" {
@@ -260,7 +260,7 @@ func TestPlatformActionsContextWiringAndHostCall(t *testing.T) {
 	if _, isMethod, async, err := pa.HostAttr(context.Background(), "set_thread_title"); !isMethod || !async || err != nil {
 		t.Fatal("set_thread_title is not a coroutine method")
 	}
-	if _, _, _, err := pa.HostAttr(context.Background(), "adapter"); err == nil || !strings.Contains(err.Error(), "'PlatformActions' object has no attribute 'adapter'") {
+	if _, _, _, err := pa.HostAttr(context.Background(), "adapter"); err == nil || !strings.Contains(err.Error(), "platform actions have no adapter") {
 		t.Fatalf("attr err %v", err)
 	}
 	ctx := paSetup(t, "{}\n", nil)

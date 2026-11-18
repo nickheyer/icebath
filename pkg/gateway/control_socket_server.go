@@ -188,17 +188,13 @@ func controlIDEchoable(id any) bool {
 
 // Python type name and message of a handler failure
 func controlErrorText(err error) string {
-	name := pyErrorKind(err)
-	if name == "" {
-		name = pyrepr.ExceptionName(err)
-	}
-	return name + ": " + pyrepr.ExceptionMessage(err)
+	return pyrepr.ExceptionMessage(err)
 }
 
 // Dispatches one decoded request to its verb, the request id stored for the response
 func (s *GatewayControlServer) answer(raw []byte, peerSubject string, requestID *any) (*pyjson.Object, error) {
 	if !utf8.Valid(raw) {
-		return nil, &PyError{Kind: "UnicodeDecodeError", Msg: "'utf-8' codec can't decode the control request"}
+		return nil, &PyError{Kind: "UnicodeDecodeError", Msg: "the control request is not valid UTF-8"}
 	}
 	decoded, err := pyjson.Loads(string(raw))
 	if err != nil {
@@ -346,9 +342,9 @@ func controlBindingText(value any) (*string, error) {
 	case string:
 		return &v, nil
 	case *pyjson.Object, map[string]any:
-		return nil, &PyError{Kind: "TypeError", Msg: "unhashable type: 'dict'"}
+		return nil, &PyError{Kind: "TypeError", Msg: "a control binding is a mapping, expected text"}
 	case []any:
-		return nil, &PyError{Kind: "TypeError", Msg: "unhashable type: 'list'"}
+		return nil, &PyError{Kind: "TypeError", Msg: "a control binding is a list, expected text"}
 	}
 	return nil, nil
 }

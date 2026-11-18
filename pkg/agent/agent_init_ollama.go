@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
 )
 
@@ -20,7 +20,7 @@ func configureOllamaNumCtx(ctx context.Context, a *AIAgent, modelCfg map[string]
 			v := int(n.Int64())
 			numCtx = &v
 		} else {
-			pkgLog().Debug("Invalid ollama_num_ctx config value: " + pyrepr.Repr(override))
+			pkgLog().Debug("Invalid ollama_num_ctx config value: " + errchain.Show(override))
 		}
 	}
 	if numCtx == nil && a.baseURL != "" && provider.IsLocalEndpoint(a.baseURL) {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 )
 
@@ -37,7 +38,7 @@ func anthropicProfileFetchModels(ctx context.Context, apiKey, baseURL string, ti
 		}
 		doc, isDict := data.(map[string]any)
 		if !isDict {
-			pkgLog().Debug("fetch_models(anthropic): '" + pyTypeName(data) + "' object has no attribute 'get'")
+			pkgLog().Debug("fetch_models(anthropic): the models reply is " + errchain.Kind(data) + ", expected a mapping")
 			return nil, false
 		}
 		items, present := doc["data"]
@@ -46,7 +47,7 @@ func anthropicProfileFetchModels(ctx context.Context, apiKey, baseURL string, ti
 		}
 		list, isList := items.([]any)
 		if !isList {
-			pkgLog().Debug("fetch_models(anthropic): '" + pyTypeName(items) + "' object is not iterable")
+			pkgLog().Debug("fetch_models(anthropic): the models list is " + errchain.Kind(items) + ", expected a list")
 			return nil, false
 		}
 		for _, it := range list {

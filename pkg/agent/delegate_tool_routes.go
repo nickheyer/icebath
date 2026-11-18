@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -37,7 +38,7 @@ func isDelegationValueError(err error) bool {
 func delegationProfileHome(name any) (string, error) {
 	s, ok := name.(string)
 	if !ok || pystr.Strip(s) == "" || !profiles.ProfileExists(s) {
-		return "", routeError("Profile %s does not exist (see `icebath profile list`).", pyrepr.Repr(name))
+		return "", routeError("Profile %s does not exist (see `icebath profile list`).", errchain.Show(name))
 	}
 	return profiles.GetProfileDir(s)
 }
@@ -259,7 +260,7 @@ func checkBackendEffort(index int, route, cfg map[string]any) error {
 	}
 	if config.ParseReasoningEffort(effort) == nil {
 		return routeError("Task %d: unknown reasoning_effort %s on this route. Use none or one of: %s.", index,
-			pyrepr.Repr(effort), strings.Join(config.ValidReasoningEfforts, ", "))
+			errchain.Show(effort), strings.Join(config.ValidReasoningEfforts, ", "))
 	}
 	return nil
 }

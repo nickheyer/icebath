@@ -145,7 +145,7 @@ func TestGatewayClientWebsocketAttachMode(t *testing.T) {
 		if err != nil || value.(map[string]any)["session_id"] != "fresh" {
 			t.Fatalf("created %v %v", value, err)
 		}
-		if ev := rec.events("gateway.start_timeout"); len(ev) != 1 || ev[0].Payload["python"] != "runtime.describe" || ev[0].Payload["stderr_tail"] != "JsonRpcGatewayError: owner busy" {
+		if ev := rec.events("gateway.start_timeout"); len(ev) != 1 || ev[0].Local != (gatewayStartTimeout{StderrTail: "JsonRpcGatewayError: owner busy"}) {
 			t.Fatalf("start timeout %#v", ev)
 		}
 		_ = k
@@ -523,7 +523,7 @@ func TestGatewayClientWebsocketAttachMode(t *testing.T) {
 		}
 		var delays []float64
 		for _, ev := range rec.events("gateway.reconnecting") {
-			delays = append(delays, ev.Payload["delay_ms"].(float64))
+			delays = append(delays, ev.Local.(gatewayReconnecting).DelayMs)
 		}
 		if len(delays) != 3 || delays[2] <= delays[0] {
 			t.Fatalf("delays %v", delays)
@@ -616,7 +616,7 @@ func TestGatewayLocalLaunch(t *testing.T) {
 		c.attach(rec.send)
 		eventually(t, "the start timeout", func() bool {
 			for _, ev := range rec.events("gateway.start_timeout") {
-				if strings.Contains(ev.Payload["stderr_tail"].(string), "update_paused") {
+				if strings.Contains(ev.Local.(gatewayStartTimeout).StderrTail, "update_paused") {
 					return true
 				}
 			}

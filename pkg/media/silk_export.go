@@ -7,8 +7,8 @@ import (
 	"strconv"
 )
 
-// ImportError of a managed environment that has no pilk module
-var ErrPilkMissing = errors.New("No module named 'pilk'")
+// Failure of a managed environment that has no pilk package
+var ErrPilkMissing = errors.New("the pilk Python package is not installed in the managed environment")
 
 const silkToWAVRateScript = `import json, sys
 try:

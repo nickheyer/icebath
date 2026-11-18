@@ -4,10 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/nickheyer/icebath/pkg/errchain"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 var (
@@ -165,5 +167,5 @@ func pyDictOrEmpty(v any) (map[string]any, error) {
 	if !pyTruthy(v) {
 		return map[string]any{}, nil
 	}
-	return nil, fmt.Errorf("'%s' object has no attribute 'get'", pyTypeName(v))
+	return nil, fmt.Errorf("expected a mapping, got %s", errchain.Kind(v))
 }

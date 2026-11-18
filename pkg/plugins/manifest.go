@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"gopkg.in/yaml.v3"
 )
 
@@ -309,7 +310,7 @@ func manifestInt(raw any, key, warn string) (int, bool) {
 			}
 		}
 	}
-	pkgLog().Warn(fmt.Sprintf(warn, key, config.PyRepr(raw)))
+	pkgLog().Warn(fmt.Sprintf(warn, key, errchain.Show(raw)))
 	return 0, false
 }
 
@@ -381,7 +382,7 @@ func parseManifestV2Fields(data map[string]any, key string) manifestV2Fields {
 	for _, item := range manifestFieldList(data, key, "requires_plugins", "a list") {
 		dep, ok := dependencyEntry(item)
 		if !ok {
-			pkgLog().Warn(fmt.Sprintf("Plugin %s: requires_plugins entry %s must be a plugin id string or a {id, version_range} mapping; skipping", key, config.PyRepr(item)))
+			pkgLog().Warn(fmt.Sprintf("Plugin %s: requires_plugins entry %s must be a plugin id string or a {id, version_range} mapping; skipping", key, errchain.Show(item)))
 			continue
 		}
 		out.requiresPlugins = append(out.requiresPlugins, dep)
@@ -389,7 +390,7 @@ func parseManifestV2Fields(data map[string]any, key string) manifestV2Fields {
 	for _, item := range manifestFieldList(data, key, "python_dependencies", "a list of requirement strings") {
 		s, ok := item.(string)
 		if !ok || pyStrip(s) == "" {
-			pkgLog().Warn(fmt.Sprintf("Plugin %s: python_dependencies entry %s must be a non-empty requirement string; skipping", key, config.PyRepr(item)))
+			pkgLog().Warn(fmt.Sprintf("Plugin %s: python_dependencies entry %s must be a non-empty requirement string; skipping", key, errchain.Show(item)))
 			continue
 		}
 		out.pythonDeps = append(out.pythonDeps, pyStrip(s))
@@ -428,7 +429,7 @@ func manifestConfigKeys(data map[string]any, key string) []string {
 	for _, item := range manifestFieldList(data, key, "config_keys", "a list of dotted config paths") {
 		p := configKeyPath(item)
 		if p == "" {
-			pkgLog().Warn(fmt.Sprintf("Plugin %s: config_keys entry %s must be a dotted path at least two levels deep; skipping", key, config.PyRepr(item)))
+			pkgLog().Warn(fmt.Sprintf("Plugin %s: config_keys entry %s must be a dotted path at least two levels deep; skipping", key, errchain.Show(item)))
 			continue
 		}
 		out = append(out, p)
@@ -442,13 +443,13 @@ func configSchemaEntries(key string, raw any) map[string]map[string]any {
 	for skey, spec := range asMap(raw) {
 		sm := asMap(spec)
 		if sm == nil {
-			pkgLog().Warn(fmt.Sprintf("Plugin %s: config_schema entry %s must be a mapping (e.g. {type: str}); skipping", key, config.PyRepr(skey)))
+			pkgLog().Warn(fmt.Sprintf("Plugin %s: config_schema entry %s must be a mapping (e.g. {type: str}); skipping", key, errchain.Show(skey)))
 			continue
 		}
 		if t, ok := sm["type"]; ok && t != nil {
 			if _, known := ConfigSchemaTypes[strings.ToLower(fmt.Sprint(t))]; !known {
 				pkgLog().Warn(fmt.Sprintf("Plugin %s: config_schema key %s declares unknown type %s (known: %s); type check will be skipped for it",
-					key, config.PyRepr(skey), config.PyRepr(t), strings.Join(sortedKeys(ConfigSchemaTypes), ", ")))
+					key, errchain.Show(skey), errchain.Show(t), strings.Join(sortedKeys(ConfigSchemaTypes), ", ")))
 			}
 		}
 		schema[skey] = sm
@@ -473,7 +474,7 @@ func parseProvidesLocales(raw any, key string) ([]string, map[string]map[string]
 		if m := asMap(raw); m != nil {
 			items = []any{m}
 		} else {
-			pkgLog().Warn(fmt.Sprintf("Plugin %s: provides_locales must be a list of language ids, got %s", key, config.PyTypeName(raw)))
+			pkgLog().Warn(fmt.Sprintf("Plugin %s: provides_locales must be a list of language ids, got %s", key, errchain.Kind(raw)))
 			return ids, meta
 		}
 	}
@@ -492,7 +493,7 @@ func parseProvidesLocales(raw any, key string) ([]string, map[string]map[string]
 			lang = normalizeLanguageID(item)
 		}
 		if !isLanguageID(lang) {
-			pkgLog().Warn(fmt.Sprintf("Plugin %s: ignoring invalid provides_locales entry %s", key, config.PyRepr(item)))
+			pkgLog().Warn(fmt.Sprintf("Plugin %s: ignoring invalid provides_locales entry %s", key, errchain.Show(item)))
 			continue
 		}
 		dup := false
@@ -502,7 +503,7 @@ func parseProvidesLocales(raw any, key string) ([]string, map[string]map[string]
 			}
 		}
 		if dup {
-			pkgLog().Warn(fmt.Sprintf("Plugin %s: duplicate provides_locales entry %s", key, config.PyRepr(lang)))
+			pkgLog().Warn(fmt.Sprintf("Plugin %s: duplicate provides_locales entry %s", key, errchain.Show(lang)))
 			continue
 		}
 		ids = append(ids, lang)
@@ -636,7 +637,7 @@ func ParseManifestFile(file, dir, source, prefix string) *Manifest {
 	}
 	data := asMap(doc)
 	if data == nil {
-		pkgLog().Warn(fmt.Sprintf("Failed to parse %s: top level must be a mapping, got %s (#14066)", file, config.PyTypeName(doc)))
+		pkgLog().Warn(fmt.Sprintf("Failed to parse %s: top level must be a mapping, got %s (#14066)", file, errchain.Kind(doc)))
 		return nil
 	}
 	if data == nil {
@@ -769,7 +770,7 @@ func ValidateConfigSchema(pluginID string, schema map[string]map[string]any, set
 			continue
 		}
 		if !valueHasKind(value, expected) {
-			warnings = append(warnings, fmt.Sprintf("plugins.entries.%s.settings.%s should be %s (got %s)", pluginID, skey, stype, kindName(value)))
+			warnings = append(warnings, fmt.Sprintf("plugins.entries.%s.settings.%s should be %s (got %s)", pluginID, skey, stype, errchain.Kind(value)))
 		}
 	}
 	return warnings
@@ -791,7 +792,7 @@ func kindName(v any) string {
 	case map[string]any, map[any]any:
 		return "dict"
 	case nil:
-		return "NoneType"
+		return "none"
 	}
 	return fmt.Sprintf("%T", v)
 }

@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pypwd"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
@@ -245,7 +245,7 @@ func legacyRemovalHandled(err error) bool {
 func legacyRemovalText(err error) string {
 	var pathErr *os.PathError
 	if errors.As(err, &pathErr) {
-		return pypath.OSErrorText(err)
+		return errchain.OSText(err)
 	}
 	return err.Error()
 }

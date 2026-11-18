@@ -439,7 +439,7 @@ func (d *SessionDB) RewindUserTurn(ctx context.Context, sessionID string, userOr
 			return nil, &RewindRuntimeError{"rewind did not retain its compaction handoff"}
 		}
 		if len(prefix) == 0 {
-			return nil, fmt.Errorf("IndexError: list assignment index out of range")
+			return nil, fmt.Errorf("the rewound user turn has no message to replace")
 		}
 		head := durablePrefix[len(durablePrefix)-1]
 		head["_row_id"], head[DBPersistedMarker] = replacementID, true

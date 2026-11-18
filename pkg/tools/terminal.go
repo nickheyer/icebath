@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pydeadline"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -289,7 +290,7 @@ func planExecution(env *Env, command any, taskID string, timeout *int, backgroun
 	cmd, ok := command.(string)
 	if !ok {
 		envLog(env).Warn("Rejected invalid terminal command value: " + pyrepr.TypeName(command))
-		return nil, &terminalRejected{errorJSON(fmt.Sprintf("Invalid command: expected string, got %s", pyrepr.TypeName(command)), -1, "error", nil)}
+		return nil, &terminalRejected{errorJSON(fmt.Sprintf("Invalid command: expected text, got %s", errchain.Kind(command)), -1, "error", nil)}
 	}
 	cfg, err := getEnvConfig(env)
 	if err != nil {
@@ -355,23 +356,6 @@ func planExecution(env *Env, command any, taskID string, timeout *int, backgroun
 		plan.effectiveTimeout = *timeout
 	}
 	return plan, nil
-}
-
-// Python type name of a JSON decoded value for the invalid command message
-func pyTypeName(v any) string {
-	switch v.(type) {
-	case nil:
-		return "NoneType"
-	case bool:
-		return "bool"
-	case float64, int, int64:
-		return "int"
-	case []any:
-		return "list"
-	case map[string]any:
-		return "dict"
-	}
-	return fmt.Sprintf("%T", v)
 }
 
 // Attaches the foreground to background promotion note to a spawn result, unchanged on error

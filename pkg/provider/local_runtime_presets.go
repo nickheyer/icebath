@@ -578,7 +578,7 @@ func presetReadBack(presetPath string, out map[string]*PresetEntry) error {
 		return err
 	}
 	if !utf8.Valid(data) {
-		return errors.New("'utf-8' codec can't decode the preset file")
+		return errors.New("the preset file is not valid UTF-8")
 	}
 	text := strings.TrimPrefix(string(data), "\xef\xbb\xbf")
 	doc, err := parseAWSINI(text)
@@ -650,12 +650,12 @@ func presetEntryFromFact(fact map[string]any) (*PresetEntry, error) {
 	allowed := map[string]bool{"model_id": true, "window": true, "spilled": true, "refusal": true, "keys": true}
 	for k := range fact {
 		if !allowed[k] {
-			return nil, fmt.Errorf("PresetEntry.__init__() got an unexpected keyword argument %s", pyRepr(k))
+			return nil, fmt.Errorf("a preset entry has no field %s", k)
 		}
 	}
 	for _, k := range []string{"model_id", "window", "spilled"} {
 		if _, ok := fact[k]; !ok {
-			return nil, fmt.Errorf("PresetEntry.__init__() missing 1 required positional argument: %s", pyRepr(k))
+			return nil, fmt.Errorf("a preset entry is missing its %s field", k)
 		}
 	}
 	window, err := growthPyInt(fact["window"])

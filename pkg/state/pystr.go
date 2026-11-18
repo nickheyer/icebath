@@ -10,6 +10,8 @@ import (
 	"strings"
 	"unicode"
 	"unicode/utf8"
+
+	"github.com/nickheyer/icebath/pkg/errchain"
 )
 
 // Whitespace as str.isspace sees it, the information separators included
@@ -154,7 +156,7 @@ func pyReprValue(v any) string {
 // Python exception class and message a numeric conversion raises
 type pyConvError struct{ Class, Msg string }
 
-func (e *pyConvError) Error() string { return e.Class + ": " + e.Msg }
+func (e *pyConvError) Error() string { return e.Msg }
 
 func (e *pyConvError) PyTypeName() string { return e.Class }
 
@@ -218,10 +220,10 @@ func pyIntOf(v any) (*big.Int, error) {
 		return big.NewInt(x), nil
 	case float64:
 		if math.IsNaN(x) {
-			return nil, &pyConvError{"ValueError", "cannot convert float NaN to integer"}
+			return nil, &pyConvError{"ValueError", "not a number (NaN) has no whole number value"}
 		}
 		if math.IsInf(x, 0) {
-			return nil, &pyConvError{"OverflowError", "cannot convert float infinity to integer"}
+			return nil, &pyConvError{"OverflowError", "infinity has no whole number value"}
 		}
 		n, _ := big.NewFloat(math.Trunc(x)).Int(nil)
 		return n, nil
@@ -235,9 +237,9 @@ func pyIntOf(v any) (*big.Int, error) {
 			n, _ := new(big.Int).SetString(sign+digits, 10)
 			return n, nil
 		}
-		return nil, &pyConvError{"ValueError", "invalid literal for int() with base 10: " + pyRepr(x)}
+		return nil, &pyConvError{"ValueError", pyRepr(x) + " is not a whole number"}
 	}
-	return nil, &pyConvError{"TypeError", "int() argument must be a string, a bytes-like object or a real number"}
+	return nil, &pyConvError{"TypeError", "expected a whole number or its text, got " + errchain.Kind(v)}
 }
 
 // float of a decoded JSON value with the TypeError, ValueError and OverflowError float raises
@@ -258,7 +260,7 @@ func pyFloatOf(v any) (float64, error) {
 		if n, ok := new(big.Int).SetString(x.String(), 10); ok {
 			f, _ := new(big.Float).SetInt(n).Float64()
 			if math.IsInf(f, 0) {
-				return 0, &pyConvError{"OverflowError", "int too large to convert to float"}
+				return 0, &pyConvError{"OverflowError", "the number is too large for a decimal value"}
 			}
 			return f, nil
 		}
@@ -267,9 +269,9 @@ func pyFloatOf(v any) (float64, error) {
 		if f, ok := pyParseFloat(x); ok {
 			return f, nil
 		}
-		return 0, &pyConvError{"ValueError", "could not convert string to float: " + pyRepr(x)}
+		return 0, &pyConvError{"ValueError", pyRepr(x) + " is not a number"}
 	}
-	return 0, &pyConvError{"TypeError", "float() argument must be a string or a real number"}
+	return 0, &pyConvError{"TypeError", "expected a number or its text, got " + errchain.Kind(v)}
 }
 
 // float of a string under the float constructor grammar, Unicode digits and digit underscores accepted

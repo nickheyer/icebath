@@ -5,6 +5,8 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+
+	"github.com/nickheyer/icebath/pkg/tuigateway"
 )
 
 // Gateway refusal with a code
@@ -33,7 +35,7 @@ func mustLack(t *testing.T, text string, parts ...string) {
 func TestDescribeTurnFailure(t *testing.T) {
 	t.Run("turns an auth error_surface into a plain title, a Details line and the /model + /retry hint", func(t *testing.T) {
 		raw := `Error code: 401 - {"error": {"message": "Incorrect API key provided", "type": "invalid_request_error"}}`
-		text := describeTurnFailure(map[string]any{"error": raw, "error_surface": map[string]any{"code": "auth", "layer": "auth", "provider": "openai", "retryable": false}, "recoverable": true})
+		text := describeTurnFailure(tuigateway.MessageCompletePayload{Error: &raw, ErrorSurface: &tuigateway.ErrorSurface{Code: "auth", Layer: "auth", Provider: ptr("openai"), Retryable: false}, Recoverable: ptr(true)})
 		lines := strings.Split(text, "\n")
 		mustContain(t, lines[0], "openai")
 		if regexp.MustCompile(`Error code|401|\{`).MatchString(lines[0]) || !strings.HasPrefix(lines[1], "Details: ") {
@@ -43,25 +45,25 @@ func TestDescribeTurnFailure(t *testing.T) {
 		mustContain(t, text, "/model", "/retry")
 	})
 	t.Run("names the local model server when the managed local runtime is down, not a custom endpoint", func(t *testing.T) {
-		text := describeTurnFailure(map[string]any{"error": "The local model server isn't running. It may still be starting.", "error_surface": map[string]any{"code": "local_runtime_unavailable", "layer": "endpoint", "provider": "llamacpp", "retryable": true}})
+		text := describeTurnFailure(tuigateway.MessageCompletePayload{Error: ptr("The local model server isn't running. It may still be starting."), ErrorSurface: &tuigateway.ErrorSurface{Code: "local_runtime_unavailable", Layer: "endpoint", Provider: ptr("llamacpp"), Retryable: true}})
 		mustContain(t, strings.Split(text, "\n")[0], "local model server")
 		mustLack(t, text, "custom model endpoint")
 		mustContain(t, text, "/model")
 	})
 	t.Run("names where to start a switched-off local model server, and never suggests /retry", func(t *testing.T) {
-		text := describeTurnFailure(map[string]any{"error": "The local model server is turned off.", "error_surface": map[string]any{"code": "local_runtime_unavailable", "layer": "endpoint", "provider": "llamacpp", "retryable": false}})
+		text := describeTurnFailure(tuigateway.MessageCompletePayload{Error: ptr("The local model server is turned off."), ErrorSurface: &tuigateway.ErrorSurface{Code: "local_runtime_unavailable", Layer: "endpoint", Provider: ptr("llamacpp"), Retryable: false}})
 		mustLack(t, text, "/retry")
 		mustContain(t, text, "/setup model")
 	})
 	t.Run("falls back to the layer copy, and to a generic title, when the code is unknown", func(t *testing.T) {
-		mustContain(t, describeTurnFailure(map[string]any{"error": "peer closed connection", "error_surface": map[string]any{"code": "weird", "layer": "streaming", "retryable": true}}), "/retry")
-		mustContain(t, describeTurnFailure(map[string]any{"error": "boom"}), "Details: boom")
+		mustContain(t, describeTurnFailure(tuigateway.MessageCompletePayload{Error: ptr("peer closed connection"), ErrorSurface: &tuigateway.ErrorSurface{Code: "weird", Layer: "streaming", Retryable: true}}), "/retry")
+		mustContain(t, describeTurnFailure(tuigateway.MessageCompletePayload{Error: ptr("boom")}), "Details: boom")
 	})
 	t.Run("honours error_surface.retryable=false even though the backend always sets recoverable=true", func(t *testing.T) {
-		no := describeTurnFailure(map[string]any{"error": "x", "error_surface": map[string]any{"code": "weird", "layer": "provider", "retryable": false}, "recoverable": true})
+		no := describeTurnFailure(tuigateway.MessageCompletePayload{Error: ptr("x"), ErrorSurface: &tuigateway.ErrorSurface{Code: "weird", Layer: "provider", Retryable: false}, Recoverable: ptr(true)})
 		mustLack(t, no, "/retry")
 		mustContain(t, no, "/model")
-		mustContain(t, describeTurnFailure(map[string]any{"error": "x", "error_surface": map[string]any{"code": "weird", "layer": "provider", "retryable": true}, "recoverable": true}), "/retry")
+		mustContain(t, describeTurnFailure(tuigateway.MessageCompletePayload{Error: ptr("x"), ErrorSurface: &tuigateway.ErrorSurface{Code: "weird", Layer: "provider", Retryable: true}, Recoverable: ptr(true)}), "/retry")
 	})
 }
 
@@ -287,7 +289,7 @@ func TestLocaleAwareResolution(t *testing.T) {
 		if tr("userMessages.backend.restarting") != "RESTART-XX" || sudo != "SUDO-XX" {
 			t.Fatal("pack not observed")
 		}
-		if got := strings.Split(describeTurnFailure(map[string]any{"error_surface": map[string]any{"code": "auth", "layer": "auth"}}), "\n")[0]; got != "AUTH-XX // XX" {
+		if got := strings.Split(describeTurnFailure(tuigateway.MessageCompletePayload{ErrorSurface: &tuigateway.ErrorSurface{Code: "auth", Layer: "auth"}}), "\n")[0]; got != "AUTH-XX // XX" {
 			t.Fatalf("got %q", got)
 		}
 	})

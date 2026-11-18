@@ -22,6 +22,7 @@ import (
 
 	_ "modernc.org/sqlite"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -386,7 +387,7 @@ func (c *retaindbClient) uploadFile(ctx context.Context, data []byte, filename, 
 	}
 	payload, ok := decodeBody(body)
 	if !ok {
-		return nil, fmt.Errorf("Expecting value: line 1 column 1 (char 0)")
+		return nil, fmt.Errorf("RetainDB upload reply is not valid JSON")
 	}
 	return payload, nil
 }
@@ -598,7 +599,9 @@ func (q *retaindbWriteQueue) close() {
 var (
 	whitespaceRun = regexp.MustCompile(`[` + pySpaceClass + `]+`)
 	nonAlnumSpace = regexp.MustCompile(`[^a-z0-9 ]`)
-	retaindbNoGet = func(v any) error { return fmt.Errorf("'%s' object has no attribute 'get'", pyTypeName(v)) }
+	retaindbNoGet = func(v any) error {
+		return fmt.Errorf("RetainDB returned %s where a mapping was expected", errchain.Kind(v))
+	}
 )
 
 func retaindbCompact(v any) string {
@@ -640,9 +643,9 @@ func buildRetainDBOverlay(profile, queryResult any, localEntries []string) (stri
 			case []any:
 				list = x
 			case string, map[string]any, *pyjson.Object:
-				return nil, retaindbNoGet("")
+				return nil, fmt.Errorf("RetainDB memories are %s where a list was expected", errchain.Kind(items))
 			default:
-				return nil, fmt.Errorf("'%s' object is not iterable", pyTypeName(items))
+				return nil, fmt.Errorf("RetainDB memories are %s where a list was expected", errchain.Kind(items))
 			}
 		}
 		if len(list) > 5 {
@@ -703,7 +706,7 @@ func bulletsOrNone(items []string) []string {
 func pyNumber(v any) (float64, error) {
 	switch x := v.(type) {
 	case nil:
-		return 0, errors.New("'>' not supported between instances of 'NoneType' and 'int'")
+		return 0, errors.New("RetainDB score is missing where a number was expected")
 	case bool:
 		if x {
 			return 1, nil
@@ -718,7 +721,7 @@ func pyNumber(v any) (float64, error) {
 	case json.Number:
 		return x.Float64()
 	}
-	return 0, fmt.Errorf("'>' not supported between instances of '%s' and 'int'", pyTypeName(v))
+	return 0, fmt.Errorf("RetainDB score is %s where a number was expected", errchain.Kind(v))
 }
 
 // Count field of an agent model, zero when absent
@@ -1087,22 +1090,22 @@ func pyIntArg(v any) (int, error) {
 		v = f
 	case float64:
 		if math.IsInf(x, 0) {
-			return 0, errors.New("cannot convert float infinity to integer")
+			return 0, errors.New("expected a whole number, got infinity")
 		}
 		if math.IsNaN(x) {
-			return 0, errors.New("cannot convert float NaN to integer")
+			return 0, errors.New("expected a whole number, got NaN")
 		}
 	case string:
 		if n, ok := pyInt(x); ok {
 			return n, nil
 		}
-		return 0, fmt.Errorf("invalid literal for int() with base 10: %s", pyRepr(x))
+		return 0, fmt.Errorf("%s is not a whole number", errchain.Show(x))
 	case nil, []any, map[string]any:
-		return 0, fmt.Errorf("int() argument must be a string, a bytes-like object or a real number, not '%s'", pyTypeName(v))
+		return 0, fmt.Errorf("expected a whole number, got %s", errchain.Kind(v))
 	}
 	n, ok := pyInt(v)
 	if !ok {
-		return 0, fmt.Errorf("int() argument must be a string, a bytes-like object or a real number, not '%s'", pyTypeName(v))
+		return 0, fmt.Errorf("expected a whole number, got %s", errchain.Kind(v))
 	}
 	return n, nil
 }
@@ -1128,16 +1131,16 @@ func pyFloatArg(v any) (float64, error) {
 		if f, err := strconv.ParseFloat(s, 64); err == nil && pyStrip(x) != "" {
 			return f, nil
 		}
-		return 0, fmt.Errorf("could not convert string to float: %s", pyRepr(x))
+		return 0, fmt.Errorf("%s is not a number", errchain.Show(x))
 	}
-	return 0, fmt.Errorf("float() argument must be a string or a real number, not '%s'", pyTypeName(v))
+	return 0, fmt.Errorf("expected a number, got %s", errchain.Kind(v))
 }
 
-// String argument a client route needs, the Python attribute error for anything else
-func strArg(v any, method string) (string, error) {
+// String argument a client route needs, an error naming the kind for anything else
+func strArg(v any) (string, error) {
 	s, ok := v.(string)
 	if !ok {
-		return "", fmt.Errorf("'%s' object has no attribute '%s'", pyTypeName(v), method)
+		return "", fmt.Errorf("expected text, got %s", errchain.Kind(v))
 	}
 	return s, nil
 }
@@ -1210,7 +1213,7 @@ func (p *RetainDBProvider) dispatch(ctx context.Context, client *retaindbClient,
 	case "retaindb_upload_file":
 		path, ok := value.(string)
 		if !ok {
-			return nil, fmt.Errorf("expected str, bytes or os.PathLike object, not %s", pyTypeName(value))
+			return nil, fmt.Errorf("upload path is %s where text was expected", errchain.Kind(value))
 		}
 		return p.toolUploadFile(ctx, client, userID, agentID, args, path)
 	case "retaindb_list_files":
@@ -1237,7 +1240,7 @@ func (p *RetainDBProvider) dispatch(ctx context.Context, client *retaindbClient,
 func quoteArg(v any) (string, error) {
 	s, ok := v.(string)
 	if !ok {
-		return "", fmt.Errorf("quote() doesn't support '%s' objects", pyTypeName(v))
+		return "", fmt.Errorf("path segment is %s where text was expected", errchain.Kind(v))
 	}
 	return s, nil
 }
@@ -1264,7 +1267,7 @@ func (p *RetainDBProvider) toolUploadFile(ctx context.Context, client *retaindbC
 		mimeType, _, _ = strings.Cut(t, ";")
 	}
 	scopeValue := argOr(args, "scope", "PROJECT")
-	scope, err := strArg(scopeValue, "upper")
+	scope, err := strArg(scopeValue)
 	if err != nil {
 		return nil, err
 	}
@@ -1330,7 +1333,7 @@ func (p *RetainDBProvider) toolReadFile(ctx context.Context, client *retaindbCli
 	name, ok := nameValue.(string)
 	if !strings.HasPrefix(mimeType, "text/") {
 		if !ok {
-			return nil, fmt.Errorf("'%s' object has no attribute 'endswith'", pyTypeName(nameValue))
+			return nil, fmt.Errorf("RetainDB file name is %s where text was expected", errchain.Kind(nameValue))
 		}
 		text := false
 		for _, ext := range retaindbTextExts {

@@ -15,6 +15,8 @@ import (
 	"unicode"
 	"unicode/utf16"
 	"unicode/utf8"
+
+	"github.com/nickheyer/icebath/pkg/errchain"
 )
 
 const (
@@ -80,7 +82,7 @@ func hfFetchJSON(url string) (any, error) {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		return nil, fmt.Errorf("HTTP Error %d: %s", resp.StatusCode, http.StatusText(resp.StatusCode))
+		return nil, fmt.Errorf("HTTP %d %s", resp.StatusCode, http.StatusText(resp.StatusCode))
 	}
 	raw, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -128,7 +130,7 @@ func hfIterate(v any) ([]any, error) {
 	case string:
 		return loadIterate(t)
 	}
-	return nil, fmt.Errorf("'%s' object is not iterable", loadPyTypeName(v))
+	return nil, fmt.Errorf("expected a list, got %s", errchain.Kind(v))
 }
 
 // Python int of a field or zero when falsy, an error where int raises
@@ -139,7 +141,7 @@ func hfInt(v any) (int64, error) {
 	if s, ok := v.(string); ok {
 		n, ok := pythonUnicodeIntText(s)
 		if !ok {
-			return 0, fmt.Errorf("invalid literal for int() with base 10: %s", pyRepr(s))
+			return 0, fmt.Errorf("%s is not a whole number", pyRepr(s))
 		}
 		return n, nil
 	}
@@ -151,7 +153,7 @@ func hfInt(v any) (int64, error) {
 		if f, isFloat := v.(float64); isFloat && math.IsNaN(f) {
 			return 0, fmt.Errorf("cannot convert float NaN to integer")
 		}
-		return 0, fmt.Errorf("int() argument must be a string, a bytes-like object or a real number, not '%s'", loadPyTypeName(v))
+		return 0, fmt.Errorf("expected a whole number, got %s", errchain.Kind(v))
 	}
 	return n, nil
 }
@@ -344,12 +346,12 @@ func hfJSONText(b []byte) (string, error) {
 	switch encoding {
 	case "utf-8":
 		if !utf8.Valid(b) {
-			return "", fmt.Errorf("'utf-8' codec can't decode the response body")
+			return "", fmt.Errorf("the response body is not valid UTF-8")
 		}
 		return string(b), nil
 	case "utf-16-be", "utf-16-le":
 		if len(b)%2 != 0 {
-			return "", fmt.Errorf("'%s' codec can't decode byte: truncated data", encoding)
+			return "", fmt.Errorf("the %s response body ends inside a character", encoding)
 		}
 		units := make([]uint16, len(b)/2)
 		for i := range units {
@@ -362,7 +364,7 @@ func hfJSONText(b []byte) (string, error) {
 		return string(utf16.Decode(units)), nil
 	}
 	if len(b)%4 != 0 {
-		return "", fmt.Errorf("'%s' codec can't decode bytes: truncated data", encoding)
+		return "", fmt.Errorf("the %s response body ends inside a character", encoding)
 	}
 	var sb strings.Builder
 	for i := 0; i < len(b); i += 4 {
@@ -373,7 +375,7 @@ func hfJSONText(b []byte) (string, error) {
 			r = uint32(b[i+3])<<24 | uint32(b[i+2])<<16 | uint32(b[i+1])<<8 | uint32(b[i])
 		}
 		if r > unicode.MaxRune {
-			return "", fmt.Errorf("'%s' codec can't decode bytes: code point not in range(0x110000)", encoding)
+			return "", fmt.Errorf("the %s response body holds a character beyond U+10FFFF", encoding)
 		}
 		sb.WriteRune(rune(r))
 	}

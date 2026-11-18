@@ -7,7 +7,7 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 )
 
 // Replacement coordinator slot of one key in one manager mapping
@@ -123,7 +123,7 @@ func (c *Context) RegisterSystemPromptSection(id string, content any, opts ...Se
 	existing := c.manager.systemPromptSections[id]
 	c.manager.mu.RUnlock()
 	if existing != nil {
-		return nil, fmt.Errorf("system prompt section %s is already registered by plugin %s", config.PyRepr(id), config.PyRepr(existing.Plugin))
+		return nil, fmt.Errorf("system prompt section %s is already registered by plugin %s", errchain.Show(id), errchain.Show(existing.Plugin))
 	}
 	return registerEntry(c, "system_prompt_section", id, c.manager.systemPromptSections, section, &existing,
 		fmt.Sprintf("Plugin %s registered system prompt section: %s", c.manifest.Name, id)), nil
@@ -133,7 +133,7 @@ func (c *Context) RegisterSystemPromptSection(id string, content any, opts ...Se
 func (c *Context) Emit(ctx context.Context, event string, payload map[string]any) (int, error) {
 	key := c.PluginID()
 	if event == "" {
-		pkgLog().Warn(fmt.Sprintf("Plugin '%s' tried to emit an invalid event name %s", key, config.PyRepr(event)))
+		pkgLog().Warn(fmt.Sprintf("Plugin '%s' tried to emit an invalid event name %s", key, errchain.Show(event)))
 		return 0, fmt.Errorf("Plugin '%s' emit() requires a non-empty event name", key)
 	}
 	if strings.Contains(event, ":") {

@@ -255,7 +255,7 @@ func a2aCompletion(ctx context.Context, client *GatewayClient, admissionID any) 
 func a2aMapping(frame any, key string) (map[string]any, error) {
 	m, ok := frame.(map[string]any)
 	if !ok {
-		return nil, &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("'%s' object has no attribute 'get'", pyrepr.TypeName(frame))}
+		return nil, &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("an A2A frame is %s, expected a mapping", errchain.Kind(frame))}
 	}
 	value := m[key]
 	if !pyrepr.Truthy(value) {
@@ -263,7 +263,7 @@ func a2aMapping(frame any, key string) (map[string]any, error) {
 	}
 	inner, ok := value.(map[string]any)
 	if !ok {
-		return nil, &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("'%s' object has no attribute 'get'", pyrepr.TypeName(value))}
+		return nil, &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("an A2A value is %s, expected a mapping", errchain.Kind(value))}
 	}
 	return inner, nil
 }

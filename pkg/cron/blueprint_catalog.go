@@ -164,7 +164,7 @@ func blueprintFormatErr(err error, prefix string) error {
 func pyIntText(s string) (string, error) {
 	n, ok := pystr.IntText(s)
 	if !ok {
-		return "", fmt.Errorf("invalid literal for int() with base 10: %s", pyrepr.StrRepr(s))
+		return "", fmt.Errorf("%s is not a whole number", s)
 	}
 	return n.String(), nil
 }

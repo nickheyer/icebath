@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -422,7 +423,7 @@ func xaiJSONObject(resp *pyhttpx.Response) (*pyjson.Object, error) {
 	}
 	obj, ok := pyjson.AsObject(parsed)
 	if !ok {
-		return nil, fmt.Errorf("'%s' object has no attribute 'get'", pyrepr.TypeName(parsed))
+		return nil, fmt.Errorf("xAI video reply is %s where a mapping was expected", errchain.Kind(parsed))
 	}
 	return obj, nil
 }
@@ -498,7 +499,7 @@ func submitXAIVideoPayload(ctx context.Context, env *tools.Env, apiKey, baseURL,
 		if v := mustGet(job, "status"); pyTruthy(v) {
 			s, ok := v.(string)
 			if !ok {
-				return nil, fmt.Errorf("'%s' object has no attribute 'lower'", pyrepr.TypeName(v))
+				return nil, fmt.Errorf("xAI video status is %s where text was expected", errchain.Kind(v))
 			}
 			status = strings.ToLower(s)
 		}
@@ -526,7 +527,7 @@ func submitXAIVideoPayload(ctx context.Context, env *tools.Env, apiKey, baseURL,
 		}
 		em, ok := errField.(map[string]any)
 		if !ok {
-			return nil, fmt.Errorf("'%s' object has no attribute 'get'", pyrepr.TypeName(errField))
+			return nil, fmt.Errorf("xAI video error is %s where a mapping was expected", errchain.Kind(errField))
 		}
 		message = em["message"]
 		if !pyTruthy(message) {

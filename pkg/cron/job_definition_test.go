@@ -91,13 +91,13 @@ func TestMergeRaisesThePythonErrorForMalformedRecords(t *testing.T) {
 		authored any
 		want     string
 	}{
-		{nil, "argument of type 'NoneType' is not iterable"},
-		{5, "argument of type 'int' is not iterable"},
-		{"username", "string indices must be integers, not 'str'"},
-		{"xyz", "'str' object has no attribute 'get'"},
-		{[]any{"prompt"}, "list indices must be integers or slices, not str"},
-		{[]any{1}, "'list' object has no attribute 'get'"},
-		{map[string]any{"repeat": 3}, "'int' object has no attribute 'get'"},
+		{nil, "a job definition is nothing, expected a mapping of job fields"},
+		{5, "a job definition is a number, expected a mapping of job fields"},
+		{"username", "a job definition is text, expected a mapping of job fields"},
+		{"xyz", "a job definition is text, expected a mapping of job fields"},
+		{[]any{"prompt"}, "a job definition is a list, expected a mapping of job fields"},
+		{[]any{1}, "a job definition is a list, expected a mapping of job fields"},
+		{map[string]any{"repeat": 3}, "the repeat field of a job definition is a number, expected a mapping holding times"},
 	}
 	for _, tc := range cases {
 		_, err := s.mergeOrName(local, tc.authored)
@@ -120,7 +120,7 @@ func TestImportKeepsALocalJobShippedAsNull(t *testing.T) {
 	}
 	orphan := pyjson.NewObject()
 	orphan.Set("ghost", nil)
-	if err := s.importJobDefinitions(context.Background(), orphan, "review"); err == nil || err.Error() != "argument of type 'NoneType' is not iterable" {
+	if err := s.importJobDefinitions(context.Background(), orphan, "review"); err == nil || err.Error() != "a job definition is nothing, expected a mapping of job fields" {
 		t.Fatalf("unmatched null record %v", err)
 	}
 }

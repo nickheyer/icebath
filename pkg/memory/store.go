@@ -18,6 +18,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 
 	"github.com/nickheyer/icebath/pkg/home"
@@ -1253,7 +1254,7 @@ func isFalse(v any) bool {
 func pyTypeName(v any) string {
 	switch x := v.(type) {
 	case nil:
-		return "NoneType"
+		return "none"
 	case bool:
 		return "bool"
 	case string:
@@ -1429,7 +1430,7 @@ func strMethodArg(v any) (string, error) {
 	if s, ok := v.(string); ok {
 		return s, nil
 	}
-	return "", &pyError{class: "AttributeError", msg: fmt.Sprintf("'%s' object has no attribute 'strip'", pyTypeName(v))}
+	return "", &pyError{class: "AttributeError", msg: fmt.Sprintf("expected text, got %s", errchain.Kind(v))}
 }
 
 // Text the threat scan reads, a crash for a value Python could not slice and normalize
@@ -1443,18 +1444,18 @@ func scanText(v any) (string, error) {
 				return "", err
 			}
 		}
-		return "", &pyError{class: "TypeError", msg: "normalize() argument 2 must be str, not list"}
+		return "", &pyError{class: "TypeError", msg: "memory text is a list where text was expected"}
 	case map[string]any:
-		return "", &pyError{class: "TypeError", msg: "unhashable type: 'slice'"}
+		return "", &pyError{class: "TypeError", msg: "memory text is a mapping where text was expected"}
 	}
-	return "", &pyError{class: "TypeError", msg: fmt.Sprintf("'%s' object is not subscriptable", pyTypeName(v))}
+	return "", &pyError{class: "TypeError", msg: fmt.Sprintf("memory text is %s where text was expected", errchain.Kind(v))}
 }
 
 // Crash for a value Python cannot hash in a set or dict membership test
 func hashable(v any) error {
 	switch v.(type) {
 	case []any, []string, []map[string]any, map[string]any:
-		return &pyError{class: "TypeError", msg: fmt.Sprintf("unhashable type: '%s'", pyTypeName(v))}
+		return &pyError{class: "TypeError", msg: fmt.Sprintf("memory value is %s where text or a number was expected", errchain.Kind(v))}
 	}
 	return nil
 }

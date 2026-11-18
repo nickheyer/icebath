@@ -11,7 +11,7 @@ const maxUnixPath = 100
 // Whether a socket path fits sun_path once UTF-8 encoded, an error for undecodable bytes str.encode refuses
 func fitsSunPath(path string) (bool, error) {
 	if !utf8.ValidString(path) {
-		return false, errors.New("'utf-8' codec can't encode characters: surrogates not allowed")
+		return false, errors.New("the control socket path is not valid UTF-8")
 	}
 	return len(path) <= maxUnixPath, nil
 }

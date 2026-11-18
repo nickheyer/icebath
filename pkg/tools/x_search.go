@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
@@ -586,7 +587,7 @@ func xSearchTool(ctx context.Context, env *Env, query string, allowedHandles, ex
 	}
 	data, ok := decoded.(*pyjson.Object)
 	if !ok {
-		msg := fmt.Sprintf("'%s' object has no attribute 'get'", pyrepr.TypeName(decoded))
+		msg := fmt.Sprintf("the X search reply is %s, expected a mapping", errchain.Kind(decoded))
 		log.Error("x_search failed", "error", msg)
 		return xSearchErrorJSON(msg, "AttributeError")
 	}

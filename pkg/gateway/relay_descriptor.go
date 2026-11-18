@@ -5,6 +5,7 @@ import (
 	"math"
 	"slices"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -77,7 +78,7 @@ func CapabilityDescriptorFromJSON(data string) (CapabilityDescriptor, error) {
 	}
 	raw, ok := pyjson.AsObject(parsed)
 	if !ok {
-		return CapabilityDescriptor{}, fmt.Errorf("'%s' object has no attribute 'items'", pyrepr.TypeName(parsed))
+		return CapabilityDescriptor{}, fmt.Errorf("the capability descriptor is %s, expected a mapping", errchain.Kind(parsed))
 	}
 	var missing []string
 	for _, k := range relayDescriptorRequired {

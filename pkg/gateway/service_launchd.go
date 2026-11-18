@@ -598,7 +598,7 @@ func LaunchdPlistIsCurrent(ctx context.Context) (bool, error) {
 	}
 	data := bytes.TrimPrefix(raw, []byte("\xef\xbb\xbf"))
 	if !utf8.Valid(data) {
-		return false, fmt.Errorf("'utf-8' codec can't decode %s", plistPath)
+		return false, fmt.Errorf("%s is not valid UTF-8", plistPath)
 	}
 	installed := string(data)
 	generated, err := launchdGeneratePlist(ctx)

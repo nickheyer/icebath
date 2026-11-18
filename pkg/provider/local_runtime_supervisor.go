@@ -25,6 +25,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -105,7 +106,7 @@ func lrStableAPIKey() (string, error) {
 	if raw, err := os.ReadFile(keyPath); err == nil {
 		raw = bytes.TrimPrefix(raw, []byte("\xef\xbb\xbf"))
 		if !utf8.Valid(raw) {
-			return "", fmt.Errorf("'utf-8' codec can't decode the api key file %s", keyPath)
+			return "", fmt.Errorf("the api key file %s is not valid UTF-8", keyPath)
 		}
 		existing := pyStripSpace(string(raw))
 		if utf8.RuneCountInString(existing) >= 16 {
@@ -172,7 +173,7 @@ type lrHTTPError struct {
 }
 
 func (e *lrHTTPError) Error() string {
-	return fmt.Sprintf("HTTP Error %d: %s", e.Code, http.StatusText(e.Code))
+	return fmt.Sprintf("HTTP %d %s", e.Code, http.StatusText(e.Code))
 }
 
 // Settable event with a wait that returns early when set
@@ -477,7 +478,7 @@ func (s *LlamaServerSupervisor) request(route string, body []byte, timeout time.
 	}
 	v, ok := moaJSONLoads(text)
 	if !ok {
-		return nil, fmt.Errorf("Expecting value: line 1 column 1 (char 0)")
+		return nil, fmt.Errorf("the local runtime reply is empty, expected JSON")
 	}
 	return v, nil
 }
@@ -917,7 +918,7 @@ func (s *LlamaServerSupervisor) Models(timeout time.Duration) (RouterModels, err
 	}
 	obj, ok := body.(map[string]any)
 	if !ok {
-		return out, fmt.Errorf("'%s' object has no attribute 'get'", pyTypeName(body))
+		return out, fmt.Errorf("the models reply is %s, expected a mapping", errchain.Kind(body))
 	}
 	data, present := obj["data"]
 	if !present {
@@ -928,12 +929,12 @@ func (s *LlamaServerSupervisor) Models(timeout time.Duration) (RouterModels, err
 		if m, isMap := data.(map[string]any); isMap && len(m) == 0 {
 			return out, nil
 		}
-		return out, fmt.Errorf("'%s' object is not iterable as model entries", pyTypeName(data))
+		return out, fmt.Errorf("the models list is %s, expected a list of model entries", errchain.Kind(data))
 	}
 	for _, item := range items {
 		m, ok := item.(map[string]any)
 		if !ok {
-			return out, fmt.Errorf("'%s' object is not subscriptable", pyTypeName(item))
+			return out, fmt.Errorf("a model entry is %s, expected a mapping", errchain.Kind(item))
 		}
 		rawID, ok := m["id"]
 		if !ok {
@@ -947,7 +948,7 @@ func (s *LlamaServerSupervisor) Models(timeout time.Duration) (RouterModels, err
 		if st, has := m["status"]; has {
 			stMap, isMap := st.(map[string]any)
 			if !isMap {
-				return out, fmt.Errorf("'%s' object has no attribute 'get'", pyTypeName(st))
+				return out, fmt.Errorf("a model status is %s, expected a mapping", errchain.Kind(st))
 			}
 			if v, has := stMap["value"]; has {
 				status = v
@@ -1070,11 +1071,11 @@ func (s *LlamaServerSupervisor) touch(modelID string, timeout time.Duration) (bo
 	}
 	obj, ok := resp.(map[string]any)
 	if !ok {
-		return false, fmt.Errorf("%s indices must be integers", pyTypeName(resp))
+		return false, fmt.Errorf("the touch reply is %s, expected a mapping", errchain.Kind(resp))
 	}
 	choices, ok := obj["choices"].([]any)
 	if !ok || len(choices) == 0 {
-		return false, errors.New("list index out of range")
+		return false, errors.New("the touch reply has no choices")
 	}
 	choice, ok := choices[0].(map[string]any)
 	if !ok {
@@ -1102,7 +1103,7 @@ func lrTextOrEmpty(v any) (string, error) {
 	}
 	s, ok := v.(string)
 	if !ok {
-		return "", fmt.Errorf("can only concatenate str (not \"%s\") to str", pyTypeName(v))
+		return "", fmt.Errorf("expected text, got %s", errchain.Kind(v))
 	}
 	return s, nil
 }
@@ -1192,7 +1193,7 @@ func (s *LlamaServerSupervisor) probeIdleErr(modelID *string) (bool, error) {
 			return false, err
 		}
 		if !utf8.Valid(raw) {
-			return false, errors.New("'utf-8' codec can't decode the metrics body")
+			return false, errors.New("the metrics body is not valid UTF-8")
 		}
 		for _, line := range pySplitLines(string(raw)) {
 			if !strings.HasPrefix(line, "llamacpp:requests_processing") {
@@ -1201,7 +1202,7 @@ func (s *LlamaServerSupervisor) probeIdleErr(modelID *string) (bool, error) {
 			fields := strings.FieldsFunc(line, pyIsSpace)
 			value, ok := lrPyFloat(fields[len(fields)-1])
 			if !ok {
-				return false, fmt.Errorf("could not convert string to float: %s", pyStringRepr(fields[len(fields)-1]))
+				return false, fmt.Errorf("metric value %s is not a number", pyStringRepr(fields[len(fields)-1]))
 			}
 			if value != 0 {
 				return false, nil
@@ -1218,7 +1219,7 @@ func lrAnySlotProcessing(slots any) (bool, error) {
 		for _, slot := range x {
 			m, ok := slot.(map[string]any)
 			if !ok {
-				return false, fmt.Errorf("'%s' object has no attribute 'get'", pyTypeName(slot))
+				return false, fmt.Errorf("a slot entry is %s, expected a mapping", errchain.Kind(slot))
 			}
 			if pyTruthy(m["is_processing"]) {
 				return true, nil
@@ -1229,14 +1230,14 @@ func lrAnySlotProcessing(slots any) (bool, error) {
 		if len(x) == 0 {
 			return false, nil
 		}
-		return false, errors.New("'str' object has no attribute 'get'")
+		return false, errors.New("the slots reply is a mapping, expected a list of slots")
 	case string:
 		if x == "" {
 			return false, nil
 		}
-		return false, errors.New("'str' object has no attribute 'get'")
+		return false, errors.New("the slots reply is text, expected a list of slots")
 	default:
-		return false, fmt.Errorf("'%s' object is not iterable", pyTypeName(slots))
+		return false, fmt.Errorf("the slots reply is %s, expected a list of slots", errchain.Kind(slots))
 	}
 }
 

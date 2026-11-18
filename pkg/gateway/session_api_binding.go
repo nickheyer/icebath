@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
 )
@@ -124,7 +125,7 @@ func loadsObject(text string) (*pyjson.Object, error) {
 	}
 	obj, ok := decoded.(*pyjson.Object)
 	if !ok {
-		return nil, &PyError{Kind: "TypeError", Msg: "'" + jsonValueTypeName(decoded) + "' object is not subscriptable"}
+		return nil, &PyError{Kind: "TypeError", Msg: "the stored API binding is " + errchain.Kind(decoded) + ", expected a mapping"}
 	}
 	return obj, nil
 }
@@ -162,7 +163,7 @@ func bindAPISteps(ctx context.Context, a *SessionAuthority, sessionID string, op
 		}
 		if live, held := a.live(sessionID); held && !isHistoryMount(live) {
 			if live.Source == nil {
-				return nil, &PyError{Kind: "AttributeError", Msg: "'NoneType' object has no attribute 'platform'"}
+				return nil, &PyError{Kind: "AttributeError", Msg: "the API session has no source"}
 			}
 			denied := live.Source.Platform != PlatformAPIServer
 			if !denied {
@@ -171,7 +172,7 @@ func bindAPISteps(ctx context.Context, a *SessionAuthority, sessionID string, op
 					return nil, err
 				}
 				if row == nil {
-					return nil, &PyError{Kind: "TypeError", Msg: "'NoneType' object is not subscriptable"}
+					return nil, &PyError{Kind: "TypeError", Msg: "the API session binding row is missing"}
 				}
 				stored, _ := row.Get("source")
 				denied = stored != any(storageSource)
@@ -441,7 +442,7 @@ func restoreAPISession(ctx context.Context, a *SessionAuthority, sessionID strin
 	}
 	entryDict, ok := rawEntry.(*pyjson.Object)
 	if !ok {
-		return &PyError{Kind: "AttributeError", Msg: "'" + jsonValueTypeName(rawEntry) + "' object has no attribute 'get'"}
+		return &PyError{Kind: "AttributeError", Msg: "a stored API session entry is " + errchain.Kind(rawEntry) + ", expected a mapping"}
 	}
 	entry, err := SessionEntryFromDict(ctx, entryDict)
 	if err != nil {
@@ -449,7 +450,7 @@ func restoreAPISession(ctx context.Context, a *SessionAuthority, sessionID strin
 	}
 	source := entry.Origin
 	if source == nil {
-		return &PyError{Kind: "AttributeError", Msg: "'NoneType' object has no attribute 'profile'"}
+		return &PyError{Kind: "AttributeError", Msg: "a stored API session entry has no origin"}
 	}
 	if _, err := pinAPIIdentity(ctx, a.Runner, source, entry.TransportProfile); err != nil {
 		return err
@@ -499,7 +500,7 @@ func restoreAPISession(ctx context.Context, a *SessionAuthority, sessionID strin
 		for i, part := range parts {
 			text, isText := part.(string)
 			if !isText {
-				return &PyError{Kind: "TypeError", Msg: fmt.Sprintf("sequence item %d: expected str instance, %s found", i, jsonValueTypeName(part))}
+				return &PyError{Kind: "TypeError", Msg: fmt.Sprintf("routing identity part %d is %s, expected text", i, errchain.Kind(part))}
 			}
 			identity[i] = text
 		}
@@ -510,7 +511,7 @@ func restoreAPISession(ctx context.Context, a *SessionAuthority, sessionID strin
 			}
 		}
 		if len(identity) < 2 {
-			return &PyError{Kind: "IndexError", Msg: "list index out of range"}
+			return &PyError{Kind: "IndexError", Msg: "the API session routing identity has fewer than two parts"}
 		}
 		title, _ := row.Get("title")
 		hidden, _ := row.Get("hidden")

@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"golang.org/x/crypto/blake2b"
 )
@@ -183,7 +184,7 @@ func IsContentBlank(content any) (bool, error) {
 			value, has := part.get("text")
 			text, isStr := value.(string)
 			if has && !isStr {
-				return false, fmt.Errorf("sequence item %d: expected str instance, %s found", index, pyrepr.TypeName(value))
+				return false, fmt.Errorf("text part %d is %s, expected text", index, errchain.Kind(value))
 			}
 			b.WriteString(text)
 			index++

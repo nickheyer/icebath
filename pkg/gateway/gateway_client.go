@@ -46,7 +46,7 @@ const GatewayDisconnected = "Gateway disconnected; turn outcome is unknown. " +
 
 const GatewayNotSent = "Gateway disconnected before the request was sent; nothing was sent."
 
-const unknownTicketParams = "PermissionError: invalid bootstrap parameters"
+const unknownTicketParams = "invalid bootstrap parameters"
 
 // WebSocket URL and subprotocols for dialing an owner with a session ticket
 func GatewayWSTarget(endpoint *GatewayEndpoint, ticket string) (string, []string) {

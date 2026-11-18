@@ -104,7 +104,7 @@ type TurnContext struct {
 	resultHolder                    map[string]any
 	toolsHolder                     []map[string]any
 	streamConsumerHolder            *gateway.GatewayStreamConsumer
-	streamingTTSConsumerHolder      *gateway.StreamingTTSConsumer
+	streamingTTSConsumerHolder      gateway.TTSStream
 	voiceAckFired                   bool
 	voiceAckGuild                   *int
 	voiceAckLoop                    gateway.EventLoop
@@ -174,14 +174,14 @@ func (c *TurnContext) setResult(result map[string]any) {
 }
 
 // Streaming TTS consumer the outer turn created, nil when voice streaming is off
-func (c *TurnContext) streamingTTSConsumer() *gateway.StreamingTTSConsumer {
+func (c *TurnContext) streamingTTSConsumer() gateway.TTSStream {
 	c.holderMu.Lock()
 	defer c.holderMu.Unlock()
 	return c.streamingTTSConsumerHolder
 }
 
 // Publishes the streaming TTS consumer of the turn
-func (c *TurnContext) setStreamingTTSConsumer(sc *gateway.StreamingTTSConsumer) {
+func (c *TurnContext) setStreamingTTSConsumer(sc gateway.TTSStream) {
 	c.holderMu.Lock()
 	c.streamingTTSConsumerHolder = sc
 	c.holderMu.Unlock()

@@ -125,17 +125,17 @@ func TestAdmissionMediaReferencesJoinsAttachmentAndNativeMedia(t *testing.T) {
 	}
 	bad := pyjson.NewObject()
 	bad.Set("attachments_v1", []any{})
-	if _, err := AdmissionMediaReferences(bad); err == nil || err.Error() != "'list' object has no attribute 'get'" {
+	if _, err := AdmissionMediaReferences(bad); err == nil || err.Error() != "the admission media section is a list, expected a mapping" {
 		t.Fatalf("list section error %v", err)
 	}
 	inner := pyjson.NewObject()
 	inner.Set("media", "ab")
 	bad.Set("attachments_v1", inner)
-	if _, err := AdmissionMediaReferences(bad); err == nil || err.Error() != "string indices must be integers, not 'str'" {
+	if _, err := AdmissionMediaReferences(bad); err == nil || err.Error() != "an admission media entry is text, expected a mapping" {
 		t.Fatalf("str media error %v", err)
 	}
 	inner.Set("media", 3)
-	if _, err := AdmissionMediaReferences(bad); err == nil || err.Error() != "'int' object is not iterable" {
+	if _, err := AdmissionMediaReferences(bad); err == nil || err.Error() != "the admission media list is a number, expected a list" {
 		t.Fatalf("int media error %v", err)
 	}
 }
@@ -246,7 +246,7 @@ func TestReleaseUnheldMediaIgnoresForeignAndRejectsMalformedReferences(t *testin
 		t.Fatalf("released %d %v", released, err)
 	}
 	noPath := pyjson.NewObject()
-	if _, err := releaseUnheldMedia(ctx, db, []any{noPath}, true); err == nil || err.Error() != "'path'" {
+	if _, err := releaseUnheldMedia(ctx, db, []any{noPath}, true); err == nil || err.Error() != "missing path" {
 		t.Fatalf("missing path error %v", err)
 	}
 	intPath := pyjson.NewObject()

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
 	"github.com/nickheyer/icebath/pkg/internal/pyfs"
@@ -912,7 +913,7 @@ func (s *Scope) MarkAgentCreated(ctx context.Context, name string) {
 // Sets a lifecycle state on a manageable skill and emits archived, stale or restored on a real change
 func (s *Scope) SetState(ctx context.Context, name, state string) {
 	if !validStates[state] {
-		s.logger().Debug(fmt.Sprintf("set_state: invalid state %s for %s", pyrepr.Repr(state), name))
+		s.logger().Debug(fmt.Sprintf("set_state: invalid state %s for %s", errchain.Show(state), name))
 		return
 	}
 	facts, ok := s.mutate(ctx, name, func(rec *pyjson.Object) (any, error) {

@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pydict"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -178,7 +179,7 @@ func (c *WebhookCoalescer) Enqueue(routeName string, coalesce *pyjson.Object, pa
 	keyValue, _ := coalesce.Get("key")
 	keyText, ok := keyValue.(string)
 	if !ok {
-		return false, &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("'%s' object has no attribute 'strip'", pyrepr.TypeName(keyValue))}
+		return false, &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("the webhook coalesce key is %s, expected text", errchain.Kind(keyValue))}
 	}
 	groupKey, resolved, err := c.GroupKey(routeName, keyText, payload, eventType)
 	if err != nil {

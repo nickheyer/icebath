@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
@@ -147,7 +148,7 @@ func finishTextResponse(ctx context.Context, a *AIAgent, s *LoopState) (PhaseVer
 		case "degenerate":
 			head := []rune(stallText)
 			pkgLog().Warn(fmt.Sprintf("Degenerate final: %d-char fragment %s ended the turn after %d tool result(s) — re-prompting (%d/2)",
-				len(head), pyrepr.Repr(string(head[:min(len(head), 40)])), toolRows, s.CodexAckContinuations+1))
+				len(head), errchain.Show(string(head[:min(len(head), 40)])), toolRows, s.CodexAckContinuations+1))
 		}
 		s.CodexAckContinuations++
 		interim := a.buildAssistantMessage(msg, "incomplete")

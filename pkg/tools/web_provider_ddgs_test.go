@@ -329,7 +329,7 @@ func TestDDGSNormalizers(t *testing.T) {
 			t.Errorf("text %q -> %q %v", c.in, got, err)
 		}
 	}
-	if _, err := ddgsNormalizeText(float64(3)); err == nil || err.Error() != "expected string or bytes-like object, got 'float'" {
+	if _, err := ddgsNormalizeText(float64(3)); err == nil || err.Error() != "a search result text is a number, expected text" {
 		t.Errorf("%v", err)
 	}
 	if got, _ := ddgsNormalizeURL("https://x.com/a%20b%2Fc d"); got != "https://x.com/a+b/c+d" {
@@ -337,11 +337,11 @@ func TestDDGSNormalizers(t *testing.T) {
 	}
 }
 
-// A page with no element raises the lxml ParserError ddgs reports
+// A page with no element raises the empty page refusal ddgs reports
 func TestDDGSLxmlDocumentIsEmpty(t *testing.T) {
 	t.Setenv("ICEBATH_HOME", t.TempDir())
 	for _, in := range []string{"", "  \n", "<!-- c -->"} {
-		if _, err := lxmlFromString(in); err == nil || err.Error() != "ParserError: Document is empty" {
+		if _, err := lxmlFromString(in); err == nil || err.Error() != "the page is empty" {
 			t.Errorf("%q -> %v", in, err)
 		}
 	}

@@ -12,7 +12,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/media"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -101,7 +100,7 @@ func (r *GatewayRunner) sendVoiceReply(ctx context.Context, event *gateway.Messa
 		if err != nil {
 			return err
 		}
-		raw, err := media.TextToSpeechTool(ctx, ttsText, audioPath)
+		raw, err := gateway.TextToSpeech(ctx, ttsText, audioPath)
 		if err != nil {
 			return err
 		}

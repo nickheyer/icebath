@@ -33,7 +33,7 @@ func TestBackgroundReviewHarnessDetectionAndStrip(t *testing.T) {
 			t.Fatalf("%v %v %v", tc.msg.Vals, got, err)
 		}
 	}
-	if _, err := isBackgroundReviewHarnessMessage(msgObj("role", []any{"user"})); err == nil || !strings.Contains(err.Error(), "unhashable type: 'list'") {
+	if _, err := isBackgroundReviewHarnessMessage(msgObj("role", []any{"user"})); err == nil || !strings.Contains(err.Error(), "the message role is a list, expected text") {
 		t.Fatalf("unhashable role %v", err)
 	}
 	messages := []any{

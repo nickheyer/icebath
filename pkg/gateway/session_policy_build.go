@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
@@ -484,7 +485,7 @@ func resolveToolsets(ctx context.Context, params, cfg map[string]any, source str
 	if hasExplicit {
 		list, ok := raw.([]any)
 		if !ok {
-			return nil, refuseText("toolsets", "must be a list of toolset names, got "+pyrepr.TypeName(raw))
+			return nil, refuseText("toolsets", "must be a list of toolset names, got "+errchain.Kind(raw))
 		}
 		explicit = list
 		known := func(name string) bool { return tools.Default.ValidateToolset(ctx, "", name) }
@@ -558,7 +559,7 @@ func resolveToolsets(ctx context.Context, params, cfg map[string]any, source str
 	if !hasExplicit && (source == "tui" || source == "gui") {
 		agent, isMap := cfg["agent"].(map[string]any)
 		if !isMap && pyrepr.Truthy(cfg["agent"]) {
-			return nil, fmt.Errorf("'%s' object has no attribute 'get'", pyrepr.TypeName(cfg["agent"]))
+			return nil, fmt.Errorf("the agent section of config.yaml is %s, expected a mapping", errchain.Kind(cfg["agent"]))
 		}
 		disabled := map[string]bool{}
 		for _, name := range tools.ParseConfigStringList(agent["disabled_toolsets"]) {

@@ -3,6 +3,7 @@ package gateway
 import (
 	"context"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/plugins"
@@ -38,7 +39,7 @@ func RegisterWorkerHooks(ctx context.Context, policy *LocalSessionPolicy) error 
 	if pyrepr.Truthy(kanbanValue) {
 		obj, isDict := kanbanValue.(*pyjson.Object)
 		if !isDict {
-			return &PyError{Kind: "AttributeError", Msg: "'" + pyTypeName(kanbanValue) + "' object has no attribute 'get'"}
+			return &PyError{Kind: "AttributeError", Msg: "the worker kanban settings are " + errchain.Kind(kanbanValue) + ", expected a mapping"}
 		}
 		kanban = obj
 	}
@@ -48,7 +49,7 @@ func RegisterWorkerHooks(ctx context.Context, policy *LocalSessionPolicy) error 
 	}
 	request, isDict := requestValue.(*pyjson.Object)
 	if !isDict {
-		return &PyError{Kind: "AttributeError", Msg: "'" + pyTypeName(requestValue) + "' object has no attribute 'get'"}
+		return &PyError{Kind: "AttributeError", Msg: "the worker request is " + errchain.Kind(requestValue) + ", expected a mapping"}
 	}
 	accept := request.GetOr("accept_hooks", nil) == true || kanban.GetOr("accept_hooks", nil) == true
 	cfg, err := policy.config(ctx, nil, true)

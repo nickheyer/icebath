@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math/big"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/goals"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
@@ -40,7 +41,7 @@ func (s *HeartbeatState) ToJSON() (string, error) {
 func HeartbeatStateFromJSON(raw string) (*HeartbeatState, error) {
 	d, err := pyjson.LoadsDict(raw)
 	if err != nil {
-		return nil, err
+		return nil, errchain.Reword(err, "stored heartbeat state is not a JSON mapping")
 	}
 	get := func(k string) any { return d.GetOr(k, nil) }
 	s := &HeartbeatState{Prompt: pyrepr.Str(pyOr(get("prompt"), ""))}

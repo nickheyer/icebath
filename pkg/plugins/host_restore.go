@@ -367,9 +367,9 @@ func pySetOf(items []any) (PySet, error) {
 		var key any
 		switch v := item.(type) {
 		case []any, PySet:
-			return nil, &HostBuiltinError{Type: "TypeError", Message: "unhashable type: 'list'"}
+			return nil, &HostBuiltinError{Type: "TypeError", Message: "a set cannot hold a list"}
 		case map[string]any, Record:
-			return nil, &HostBuiltinError{Type: "TypeError", Message: "unhashable type: 'dict'"}
+			return nil, &HostBuiltinError{Type: "TypeError", Message: "a set cannot hold a mapping"}
 		case bool:
 			key = int64(0)
 			if v {

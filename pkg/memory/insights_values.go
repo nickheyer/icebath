@@ -3,6 +3,7 @@ package memory
 import (
 	"fmt"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
@@ -51,7 +52,7 @@ func or0(v any) any {
 }
 
 func pyTypeError(op string, a, b any) error {
-	return fmt.Errorf("unsupported operand type(s) for %s: '%s' and '%s'", op, pyrepr.TypeName(a), pyrepr.TypeName(b))
+	return fmt.Errorf("cannot apply %s to %s and %s", op, errchain.Kind(a), errchain.Kind(b))
 }
 
 // Python a + b or a - b over int and float cells, a TypeError for any other operand
@@ -145,7 +146,7 @@ func pyCompare(a, b any) (int, error) {
 			return cmpOrdered(string(ab), string(bb)), nil
 		}
 	}
-	return 0, fmt.Errorf("'>' not supported between instances of '%s' and '%s'", pyrepr.TypeName(a), pyrepr.TypeName(b))
+	return 0, fmt.Errorf("cannot compare %s with %s", errchain.Kind(a), errchain.Kind(b))
 }
 
 func insightsNumber(v any) (float64, bool) {

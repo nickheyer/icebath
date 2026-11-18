@@ -423,7 +423,7 @@ func (d *SessionDB) ClaimSessionInput(ctx context.Context, in ClaimInput) (claim
 		}
 		current, ok := exactInt(session["runtime_generation"])
 		if !ok {
-			return &stateTypedError{"TypeError", "unsupported operand type(s) for +"}
+			return &stateTypedError{"TypeError", "the session runtime generation is not a whole number"}
 		}
 		generation := current + 1
 		admissionID, _ := rowValue(heads[0], "admission_id").(string)
@@ -767,7 +767,7 @@ func (d *SessionDB) ResolveUnknownSessionInput(ctx context.Context, epoch int64,
 				return runtimeRefusal("invalid_params")
 			}
 			if captured.Stored == nil {
-				return &stateTypedError{"TypeError", "'NoneType' object is not iterable"}
+				return &stateTypedError{"TypeError", "the captured session input has no stored request"}
 			}
 			if err := storeAdmissionResult(ctx, conn, row, admissionID, captured.Stored); err != nil {
 				return err

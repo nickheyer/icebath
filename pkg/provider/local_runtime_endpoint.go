@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 )
 
@@ -118,7 +119,7 @@ func managedGetJSON(ctx context.Context, base, apiKey, route string, timeout tim
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("HTTP Error %d: %s", resp.StatusCode, http.StatusText(resp.StatusCode))
+		return nil, fmt.Errorf("HTTP %d %s", resp.StatusCode, http.StatusText(resp.StatusCode))
 	}
 	raw, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -130,7 +131,7 @@ func managedGetJSON(ctx context.Context, base, apiKey, route string, timeout tim
 	}
 	body, ok := moaJSONLoads(text)
 	if !ok {
-		return nil, fmt.Errorf("Expecting value: line 1 column 1 (char 0)")
+		return nil, fmt.Errorf("the managed server reply is empty, expected JSON")
 	}
 	return body, nil
 }
@@ -159,9 +160,9 @@ func endpointPortInt(v any) (int, error) {
 		if n, ok := pythonUnicodeIntText(p); ok {
 			return int(n), nil
 		}
-		return 0, fmt.Errorf("invalid literal for int() with base 10: %s", pyRepr(p))
+		return 0, fmt.Errorf("port %s is not a whole number", pyRepr(p))
 	}
-	return 0, fmt.Errorf("int() argument must be a string, a bytes-like object or a real number, not '%s'", pyTypeName(v))
+	return 0, fmt.Errorf("a port is %s, expected a whole number", errchain.Kind(v))
 }
 
 // The local_runtime.detect_ports of cfg converted the way the tuple of int(p) does
@@ -172,7 +173,7 @@ func endpointDetectPorts(cfg map[string]any) ([]int, error) {
 	}
 	section, ok := raw.(map[string]any)
 	if !ok {
-		return nil, fmt.Errorf("'%s' object has no attribute 'get'", pyTypeName(raw))
+		return nil, fmt.Errorf("the endpoint settings are %s, expected a mapping", errchain.Kind(raw))
 	}
 	var items []any
 	switch ports := section["detect_ports"].(type) {
@@ -194,7 +195,7 @@ func endpointDetectPorts(cfg map[string]any) ([]int, error) {
 		}
 	default:
 		if pyTruthy(ports) {
-			return nil, fmt.Errorf("'%s' object is not iterable", pyTypeName(ports))
+			return nil, fmt.Errorf("the endpoint ports are %s, expected a list", errchain.Kind(ports))
 		}
 	}
 	out := make([]int, 0, len(items))

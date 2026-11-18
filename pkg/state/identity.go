@@ -5,6 +5,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
@@ -339,7 +340,7 @@ func stableToolKey(row map[string]any) (string, bool, error) {
 		}
 	default:
 		if pyTruthy(x) {
-			return "", false, &pyConvError{"TypeError", "object is not iterable"}
+			return "", false, &pyConvError{"TypeError", "a tool key part is " + errchain.Kind(x) + ", expected text or a list"}
 		}
 	}
 	ids := make([]string, len(entries))

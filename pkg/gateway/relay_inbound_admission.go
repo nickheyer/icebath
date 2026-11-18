@@ -80,7 +80,7 @@ func relayAdmit(ctx context.Context, a *RelayAdapter, runner any, event *Message
 	}
 	authority, ok := runner.(AuthorityRunner)
 	if !ok || authority == nil {
-		return &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("'%T' object has no attribute '_session_key_for_source'", runner)}
+		return &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("the gateway runner (%T) cannot derive a session key for a source", runner)}
 	}
 	sessionKey, err := runnerSessionKeyForSource(ctx, authority, event.Source)
 	if err != nil {

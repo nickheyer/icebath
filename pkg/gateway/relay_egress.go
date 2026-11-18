@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pydict"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -124,7 +125,7 @@ func liveRelayFronted() (fronted map[string]bool, ok bool, err error) {
 	}
 	fronts, isFronter := relay.(relayFronter)
 	if !isFronter {
-		panic(fmt.Sprintf("'%T' object has no attribute 'fronts_platform'", relay))
+		panic(fmt.Sprintf("the relay adapter (%T) cannot say which platforms it fronts", relay))
 	}
 	out := map[string]bool{}
 	for _, p := range PlatformMembers() {
@@ -268,7 +269,7 @@ func egressDirectoryIDs(ctx context.Context, platformName string) (map[string]bo
 		}
 	case string, *pyjson.Object:
 	default:
-		return ids, fmt.Errorf("'%s' object is not iterable", pyrepr.TypeName(entries))
+		return ids, fmt.Errorf("the egress directory is %s, expected a list", errchain.Kind(entries))
 	}
 	return ids, nil
 }

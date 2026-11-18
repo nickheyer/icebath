@@ -170,7 +170,7 @@ func controlSocketPath(home string) (string, error) {
 		return "", newDiscoveryError("invalid_control_pointer", "", "")
 	}
 	if !utf8.Valid(data) {
-		return "", errors.New("'utf-8' codec can't decode the control pointer")
+		return "", errors.New("the control pointer is not valid UTF-8")
 	}
 	target := pypath.PosixPurePathStr(pystr.Strip(string(data)))
 	if !filepath.IsAbs(target) {

@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
@@ -162,7 +163,7 @@ func discordFetchCapabilities(env *Env, token string) *pyjson.Object {
 	if err == nil {
 		o, isDict := app.(*pyjson.Object)
 		if !isDict {
-			err = fmt.Errorf("'%s' object has no attribute 'get'", pyTypeName(app))
+			err = fmt.Errorf("the Discord application reply is %s, expected a mapping", errchain.Kind(app))
 		} else {
 			flags, err = discordInt(o.GetOr("flags", int64(0)), 0)
 		}
@@ -227,11 +228,11 @@ func discordInt(v any, fallback int64) (int64, error) {
 		}
 		n, err := strconv.ParseInt(strings.ReplaceAll(pystr.Strip(t), "_", ""), 10, 64)
 		if err != nil {
-			return 0, fmt.Errorf("invalid literal for int() with base 10: %s", pyrepr.Repr(t))
+			return 0, fmt.Errorf("%q is not a whole number", t)
 		}
 		return n, nil
 	}
-	return 0, fmt.Errorf("int() argument must be a string, a bytes-like object or a real number, not '%s'", pyTypeName(v))
+	return 0, fmt.Errorf("expected a whole number, got %s", errchain.Kind(v))
 }
 
 // KeyError a missing required key of a Discord answer raises
@@ -243,7 +244,7 @@ func (e *discordKeyError) Error() string { return pyrepr.Repr(e.key) }
 func discordDict(v any) *pyjson.Object {
 	o, ok := v.(*pyjson.Object)
 	if !ok {
-		panic(fmt.Errorf("'%s' object has no attribute 'get'", pyTypeName(v)))
+		panic(fmt.Errorf("a Discord reply value is %s, expected a mapping", errchain.Kind(v)))
 	}
 	return o
 }
@@ -261,7 +262,7 @@ func discordReq(o *pyjson.Object, key string) any {
 func discordList(v any) []any {
 	items, ok := v.([]any)
 	if !ok {
-		panic(fmt.Errorf("'%s' object is not iterable", pyTypeName(v)))
+		panic(fmt.Errorf("a Discord reply value is %s, expected a list", errchain.Kind(v)))
 	}
 	return items
 }
@@ -529,7 +530,7 @@ func discordListPins(ctx context.Context, token string, a discordArgs) (string, 
 		msg := discordDict(m)
 		content, ok := msg.GetOr("content", "").(string)
 		if !ok {
-			panic(fmt.Errorf("'%s' object is not subscriptable", pyTypeName(msg.Vals["content"])))
+			panic(fmt.Errorf("a pinned message content is %s, expected text", errchain.Kind(msg.Vals["content"])))
 		}
 		if r := []rune(content); len(r) > 200 {
 			content = string(r[:200])
@@ -657,7 +658,7 @@ func discordLoadAllowedActionsConfig(env *Env) ([]string, bool) {
 	case []any:
 		items = t
 	default:
-		envLog(env).Warn(fmt.Sprintf("discord.server_actions: unexpected type %s; ignoring.", pyTypeName(raw)))
+		envLog(env).Warn(fmt.Sprintf("discord.server_actions: unexpected %s; ignoring.", errchain.Kind(raw)))
 		return nil, false
 	}
 	var names, invalid, known []string

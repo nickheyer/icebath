@@ -83,15 +83,6 @@ func storedRowText(content any) *string {
 	return nil
 }
 
-// Transcript rows of typed history as the transcript builder reads them
-func historyRows(rows []tuigateway.TranscriptMessage) []any {
-	out := make([]any, len(rows))
-	for i, row := range rows {
-		out[i] = wireParams(row)
-	}
-	return out
-}
-
 // First non empty text
 func firstText(values ...string) string {
 	for _, v := range values {

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
@@ -90,7 +91,7 @@ func releaseLaunchSecrets(ctx context.Context, a *SessionAuthority, sessionIDs [
 				fields, ok := loaded.(*pyjson.Object)
 				if !ok {
 					slots.mu.Unlock()
-					return &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("'%s' object has no attribute 'get'", pyTypeName(loaded))}
+					return &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("the launch secrets record is %s, expected a mapping", errchain.Kind(loaded))}
 				}
 				if session, has := fields.Get("session"); has {
 					owner, owned = session.(string)

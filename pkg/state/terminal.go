@@ -6,6 +6,7 @@ import (
 	"crypto/subtle"
 	"encoding/hex"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
@@ -113,7 +114,7 @@ func TerminalAPIAdmissions(ctx context.Context, conn SQLiteConn, requestID strin
 func terminalAdmission(ctx context.Context, conn SQLiteConn, admissionID any) (*pyjson.Object, error) {
 	id, ok := admissionID.(string)
 	if !ok {
-		return nil, &stateTypedError{"TypeError", "can only concatenate str to str"}
+		return nil, &stateTypedError{"TypeError", "the admission id is " + errchain.Kind(admissionID) + ", expected text"}
 	}
 	saved, err := connRow(ctx, conn, "SELECT value FROM state_meta WHERE key=?", TerminalAdmissionPrefix+id)
 	if err != nil || saved == nil {
@@ -172,7 +173,7 @@ func (d *SessionDB) retryTerminalAdmission(ctx context.Context, in SessionInput)
 			return err
 		}
 		if row == nil {
-			return &stateTypedError{"TypeError", "'NoneType' object is not subscriptable"}
+			return &stateTypedError{"TypeError", "the terminal admission row is missing"}
 		}
 		stored, _ := row.Get("payload_digest")
 		if !pyjson.Equal(stored, digest) {

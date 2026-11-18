@@ -330,7 +330,7 @@ func releaseAdmissionTurnMarker(ctx context.Context, a *SessionAuthority, event 
 	}
 	clearer, ok := a.Runner.(DurableActiveTurnClearer)
 	if !ok {
-		return &PyError{Kind: "AttributeError", Msg: "'" + pyTypeName(a.Runner) + "' object has no attribute '_clear_durable_active_turn'"}
+		return &PyError{Kind: "AttributeError", Msg: "the gateway runner cannot clear a durable active turn"}
 	}
 	return clearer.ClearDurableActiveTurn(ctx, event)
 }
@@ -400,7 +400,7 @@ func deliverSettled(ctx context.Context, a *SessionAuthority, admissionID string
 		closeProducerTurn(ctx, a, admissionID, ProcessingSuccess)
 		return nil
 	}
-	delivered, sendErr := false, error(&PyError{Kind: "AttributeError", Msg: "'" + pyTypeName(delivery.adapter) + "' object has no attribute '_unwrap_ephemeral'"})
+	delivered, sendErr := false, error(&PyError{Kind: "AttributeError", Msg: "the platform adapter cannot unwrap an ephemeral reply"})
 	if base := delivery.adapter.Base(); base != nil {
 		delivered, sendErr = base.deliverResponse(executionScope(ctx, a, delivery.home), delivery.event, delivery.route, delivery.response)
 	}

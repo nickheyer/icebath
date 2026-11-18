@@ -135,7 +135,7 @@ func TestStoreSystemPromptAndLegacyDedupe(t *testing.T) {
 		t.Fatalf("hash %v %v", hash, err)
 	}
 	var pe *pyint.Error
-	if _, err := storeSystemPrompt(ctx, conn, []byte("x")); !errors.As(err, &pe) || pe.Msg != "'bytes' object has no attribute 'encode'" {
+	if _, err := storeSystemPrompt(ctx, conn, []byte("x")); !errors.As(err, &pe) || pe.Msg != "the system prompt is bytes, expected text" {
 		t.Fatalf("bytes prompt %v", err)
 	}
 	if _, err := storeSystemPrompt(ctx, conn, "a\xed\xa0\x80"); !errors.As(err, &pe) || pe.Kind != "UnicodeEncodeError" || !strings.Contains(pe.Msg, `'\ud800' in position 1`) {

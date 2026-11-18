@@ -27,7 +27,7 @@ func pyFloatFromString(text string) (float64, error) {
 	}
 	s := b.String()
 	if !pyFloatTextRe.MatchString(s) {
-		return 0, fmt.Errorf("could not convert string to float: %q", text)
+		return 0, fmt.Errorf("%q is not a number", text)
 	}
 	switch strings.TrimLeft(s, "+-") {
 	case "inf", "infinity":

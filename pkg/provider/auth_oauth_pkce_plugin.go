@@ -18,6 +18,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/nickheyer/icebath/pkg/errchain"
 )
 
 // PKCEPoolSource marks loopback PKCE rows as manual so load_pool reseeding never prunes them
@@ -233,25 +235,9 @@ func pkcePostToken(env PoolEnv, provider string, cfg OAuthPKCEConfig, data map[s
 	}
 	obj, ok := payload.(map[string]any)
 	if !ok {
-		return nil, fmt.Errorf("'%s' object has no attribute 'get'", pyTypeName(payload))
+		return nil, fmt.Errorf("the token reply is %s, expected a mapping", errchain.Kind(payload))
 	}
 	return pkceTokenFields(provider, obj, data, code)
-}
-
-func pyTypeName(v any) string {
-	switch v.(type) {
-	case []any:
-		return "list"
-	case string:
-		return "str"
-	case float64:
-		return "float"
-	case bool:
-		return "bool"
-	case nil:
-		return "NoneType"
-	}
-	return "dict"
 }
 
 // Pool fields of a token payload, a response without refresh_token keeping the one that was sent

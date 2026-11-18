@@ -9,9 +9,9 @@ import (
 	"sync"
 	"syscall"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/mcp"
@@ -83,9 +83,9 @@ func (s *Store) acquireTickLock(lockFile string) (*os.File, error) {
 	}
 	if isFDExhaustion(err) {
 		s.log.Error(fmt.Sprintf("Cron tick could not acquire tick lock: %s — scheduler will "+
-			"attempt fd reclamation and retry with backoff", pypath.OSErrorText(err)))
+			"attempt fd reclamation and retry with backoff", errchain.OSText(err)))
 	} else if !isUnwritableErrno(err) {
-		s.log.Error(fmt.Sprintf("Cron tick could not acquire tick lock: %s", pypath.OSErrorText(err)))
+		s.log.Error(fmt.Sprintf("Cron tick could not acquire tick lock: %s", errchain.OSText(err)))
 	}
 	return nil, err
 }
@@ -391,10 +391,10 @@ func (s *Store) processDueJob(ctx context.Context, job *Job, adapters, loop any,
 				label = job.ID
 			}
 			storeHealthNoteUnwritable(s, err, fmt.Sprintf("skipped job '%s'", label), "claim", job)
-			ledger.SettleUnstarted(ctx, execID, job.ID, "Cron store unwritable; not started: "+pypath.OSErrorText(err))
+			ledger.SettleUnstarted(ctx, execID, job.ID, "Cron store unwritable; not started: "+errchain.OSText(err))
 			return false, nil
 		}
-		ledger.SettleUnstarted(ctx, execID, job.ID, fmt.Sprintf("Fire claim failed: %s: %s", cronExceptionName(err), err))
+		ledger.SettleUnstarted(ctx, execID, job.ID, fmt.Sprintf("Fire claim failed: %s", err))
 		return false, err
 	}
 	if !won {

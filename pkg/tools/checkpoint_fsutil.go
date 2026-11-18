@@ -89,7 +89,7 @@ func readUTF8SigText(path string) (string, error) {
 		return "", err
 	}
 	if !utf8.Valid(raw) {
-		return "", &checkpointValueError{msg: "'utf-8' codec can't decode " + path}
+		return "", &checkpointValueError{msg: path + " is not valid UTF-8"}
 	}
 	return strings.TrimPrefix(string(raw), "\ufeff"), nil
 }

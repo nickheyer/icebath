@@ -55,7 +55,24 @@ type gatewayEventMsg struct {
 	// Owner epoch and execution generation a canonical frame or its payload stamps, nil when unstamped
 	Epoch      *int64
 	Generation *int64
+	// Typed body of an event the client raises about its own link, nil for a wire event
+	Local any
 }
+
+// Line the gateway link reported on its error stream
+type gatewayStderr struct{ Line string }
+
+// Redial of a dropped link, its attempt number and the delay before it
+type gatewayReconnecting struct {
+	Attempt int
+	DelayMs float64
+}
+
+// Gateway that did not come up in time, the tail of its error output
+type gatewayStartTimeout struct{ StderrTail string }
+
+// Frame that was no message the client could read, its first characters
+type gatewayProtocolError struct{ Preview string }
 
 // Request the gateway sent the terminal UI, answered once through respond, fail or decline
 type serverRequest struct {
@@ -325,6 +342,12 @@ func (c *gatewayClient) deliver() {
 	c.mu.Unlock()
 }
 
+// Ready payload of a gateway.ready frame, a misfit left for the event handler to report
+func readyOf(ev gatewayEventMsg) tuigateway.GatewayReadyPayload {
+	ready, _ := tuigateway.GatewayReadyEvent.Payload(ev.Payload)
+	return ready
+}
+
 // Queues an event for the subscriber, buffering the newest two thousand before it subscribed
 func (c *gatewayClient) publishLocked(ev gatewayEventMsg) {
 	if ev.Type == "gateway.ready" {
@@ -332,7 +355,7 @@ func (c *gatewayClient) publishLocked(ev gatewayEventMsg) {
 		c.clearReconnectLocked()
 		c.reconnects = 0
 		c.clearReadyTimerLocked()
-		if ev.Payload["heartbeat"] == true && c.conn != nil && c.conn.open {
+		if val(readyOf(ev).Heartbeat) && c.conn != nil && c.conn.open {
 			c.startHeartbeatLocked()
 		}
 	}
@@ -381,12 +404,12 @@ func frameStamp(frame *int64, payload map[string]any, key string) *int64 {
 
 // Event off the socket, stamped with the owner's execution epoch on a canonical gateway and held for a pending attach
 func (c *gatewayClient) publishWireLocked(conn *gatewayConn, ev gatewayEventMsg) {
-	if !c.isCanonical && ev.Type == "gateway.ready" && c.attachURL != "" && ev.Payload["session_authority"] == true {
+	if !c.isCanonical && ev.Type == "gateway.ready" && c.attachURL != "" && val(readyOf(ev).SessionAuthority) {
 		c.adoptCanonicalAttachLocked(conn, ev)
 		return
 	}
 	if c.isCanonical && ev.Type == "gateway.ready" {
-		if truthyJS(ev.Payload["heartbeat"]) && conn.open {
+		if val(readyOf(ev).Heartbeat) && conn.open {
 			c.startHeartbeatLocked()
 		}
 		return
@@ -405,7 +428,7 @@ func (c *gatewayClient) publishWireLocked(conn *gatewayConn, ev gatewayEventMsg)
 // Negotiates the canonical wire on an explicit listener whose ready advertises a session authority
 func (c *gatewayClient) adoptCanonicalAttachLocked(conn *gatewayConn, ev gatewayEventMsg) {
 	c.isCanonical = true
-	if truthyJS(ev.Payload["heartbeat"]) && conn.open {
+	if val(readyOf(ev).Heartbeat) && conn.open {
 		c.startHeartbeatLocked()
 	}
 	ready := map[string]any{}
@@ -441,8 +464,7 @@ func (c *gatewayClient) describeThenReadyLocked(conn *gatewayConn, payload map[s
 				}
 				return
 			}
-			c.publishLocked(gatewayEventMsg{Type: "gateway.start_timeout", Payload: map[string]any{
-				"python": "runtime.describe", "cwd": "", "stderr_tail": jsErrorText(err)}})
+			c.publishLocked(gatewayEventMsg{Type: "gateway.start_timeout", Local: gatewayStartTimeout{StderrTail: jsErrorText(err)}})
 			if c.conn == conn {
 				c.closeGatewaySocketLocked()
 				c.handleTransportExitLocked(1, jsErrorText(err))
@@ -530,7 +552,7 @@ func (c *gatewayClient) scheduleReconnectLocked() {
 	c.reconnects++
 	ms := delay.Milliseconds()
 	c.lifecycleLocked(fmt.Sprintf("[lifecycle] scheduling gateway reconnect in %dms (attempt %d)", ms, c.reconnects))
-	c.publishLocked(gatewayEventMsg{Type: "gateway.reconnecting", Payload: map[string]any{"attempt": float64(c.reconnects), "delay_ms": float64(ms)}})
+	c.publishLocked(gatewayEventMsg{Type: "gateway.reconnecting", Local: gatewayReconnecting{Attempt: c.reconnects, DelayMs: float64(ms)}})
 	token := new(int)
 	c.reconnectToken = token
 	c.reconnectStop = c.clock.AfterFunc(delay, func() {
@@ -583,7 +605,7 @@ func (c *gatewayClient) startReadyTimerLocked(python, cwd string) {
 			}
 			tail := c.logTailLocked(20)
 			c.lifecycleLocked(fmt.Sprintf("[startup] timed out waiting for gateway.ready (python=%s, cwd=%s)", python, cwd))
-			c.publishLocked(gatewayEventMsg{Type: "gateway.start_timeout", Payload: map[string]any{"cwd": cwd, "python": python, "stderr_tail": tail}})
+			c.publishLocked(gatewayEventMsg{Type: "gateway.start_timeout", Local: gatewayStartTimeout{StderrTail: tail}})
 		})
 	})
 }
@@ -678,7 +700,7 @@ func (c *gatewayClient) protocolErrorLocked(what, text, emptyLabel string) {
 		preview = emptyLabel
 	}
 	c.pushLogLocked("[protocol] " + what + ": " + preview)
-	c.publishLocked(gatewayEventMsg{Type: "gateway.protocol_error", Payload: map[string]any{"preview": preview}})
+	c.publishLocked(gatewayEventMsg{Type: "gateway.protocol_error", Local: gatewayProtocolError{Preview: preview}})
 }
 
 // Runs the local bootstrap, starting the owner on the first launch and re-ensuring a lost one within the budget
@@ -713,7 +735,7 @@ func (c *gatewayClient) startLocalGatewayLocked() {
 			}
 			c.bootstrapErr = err
 			c.clearReadyTimerLocked()
-			c.publishLocked(gatewayEventMsg{Type: "gateway.start_timeout", Payload: map[string]any{"python": "gateway ensure", "cwd": "", "stderr_tail": err.Error()}})
+			c.publishLocked(gatewayEventMsg{Type: "gateway.start_timeout", Local: gatewayStartTimeout{StderrTail: err.Error()}})
 			c.detachLocked(err)
 			if line := terminalBootstrapLine(err.Error()); line != "" {
 				c.lifecycleLocked("[lifecycle] gateway bootstrap cannot start; not retrying: " + line)
@@ -795,7 +817,7 @@ func (c *gatewayClient) transportErrorLocked(conn *gatewayConn) {
 	}
 	line := "[gateway] websocket transport error"
 	c.pushLogLocked(line)
-	c.publishLocked(gatewayEventMsg{Type: "gateway.stderr", Payload: map[string]any{"line": line}})
+	c.publishLocked(gatewayEventMsg{Type: "gateway.stderr", Local: gatewayStderr{Line: line}})
 }
 
 // Liveness and heartbeat acknowledgement of every frame the current socket reads
@@ -1230,11 +1252,7 @@ func (c *gatewayClient) requestCanonical(ctx context.Context, method string, par
 	if wireMethod == "session.create" {
 		return c.createCanonical(ctx, wireParams, timeout)
 	}
-	value, err := c.requestOverWebSocket(ctx, wireMethod, wireParams, timeout)
-	if err != nil {
-		return nil, err
-	}
-	return canonicalResult(method, value, wireParams), nil
+	return c.requestOverWebSocket(ctx, wireMethod, wireParams, timeout)
 }
 
 // session.create plus the launch tool progress pin as one outcome, a doubtful create retried under its request id

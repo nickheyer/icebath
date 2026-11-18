@@ -15,7 +15,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/logging"
-	"github.com/nickheyer/icebath/pkg/media"
 )
 
 var toolCallLoggerMu sync.Mutex
@@ -78,7 +77,10 @@ func (r *GatewayRunner) runAgentStartStreamingTTS(ctx context.Context, tc *TurnC
 	if adapter == nil || !isVoice || !gateway.ShouldAutoTTSForChat(adapter, tc.source.ChatID) {
 		return
 	}
-	consumer, err := gateway.NewStreamingTTSConsumer(ctx, tc.sessionEnv, adapter, tc.source.ChatID, media.LoadTTSConfig(ctx, tc.sessionEnv), statusThreadMetadata, nil)
+	if gateway.OpenTTSStream == nil {
+		return
+	}
+	consumer, err := gateway.OpenTTSStream(ctx, tc.sessionEnv, adapter, tc.source.ChatID, statusThreadMetadata)
 	if err != nil {
 		pkgLog().Debug(fmt.Sprintf("Could not set up streaming TTS consumer: %s", err))
 		return

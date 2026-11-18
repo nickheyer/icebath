@@ -1930,7 +1930,7 @@ func DispatchAsyncDelegationBatch(ctx context.Context, env *Env, d AsyncDispatch
 				i += len(d.Goals)
 			}
 			if i < 0 || i >= len(d.Goals) {
-				return nil, fmt.Errorf("IndexError: list index out of range")
+				return nil, fmt.Errorf("goal %d is past the end of the goal list", i)
 			}
 			unitGoals = append(unitGoals, d.Goals[i])
 		}

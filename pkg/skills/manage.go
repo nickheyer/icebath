@@ -14,6 +14,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyfs"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -939,7 +940,7 @@ func optStringArg(payload map[string]any, key string) (*string, error) {
 	}
 	str, ok := v.(string)
 	if !ok {
-		return nil, &manageTypeError{msg: fmt.Sprintf("%s must be a string, not %s", key, pyTypeName(v))}
+		return nil, &manageTypeError{msg: fmt.Sprintf("%s must be text, got %s", key, errchain.Kind(v))}
 	}
 	return &str, nil
 }

@@ -19,7 +19,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/media"
 	"github.com/nickheyer/icebath/pkg/memory"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
@@ -338,7 +337,7 @@ func prepareTurnInput(ctx context.Context, sid string, session *tuihost.Session,
 	if !agent.EventPresentationMuted(ctx, "message.delta", sid) {
 		st.ttsQueue, st.thinkingStarted = startTurnVoice(ctx)
 	}
-	if media.TakeSpeechInterrupted() {
+	if takeSpeechInterrupted() {
 		runMessage = prependNote(runMessage, agent.SpeechInterruptedNote)
 	}
 	runMessage = prependNote(runMessage, pendingReactionNotes(ctx, session))
@@ -688,7 +687,7 @@ func releaseTurnScopes(ctx context.Context, sid string, session *tuihost.Session
 		*st.runOpts = agent.RunConversationOptions{}
 	}
 	if st.thinkingStarted {
-		suppress(media.StopThinkingSound)
+		suppress(stopThinkingSound)
 	}
 	if st.ttsQueue != nil {
 		st.ttsQueue.Finish()

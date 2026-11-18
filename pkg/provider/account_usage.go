@@ -15,6 +15,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/google/uuid"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
@@ -447,7 +448,7 @@ func accountUsageDo(ctx context.Context, client *http.Client, method, url string
 	}
 	m, ok := v.(map[string]any)
 	if !ok {
-		return nil, "", fmt.Errorf("'%s' object has no attribute 'get'", auTypeName(v))
+		return nil, "", fmt.Errorf("the account usage reply is %s, expected a mapping", errchain.Kind(v))
 	}
 	return m, repr, nil
 }
@@ -980,21 +981,6 @@ func auTruthy(v any) bool {
 	return pyTruthy(v)
 }
 
-func auTypeName(v any) string {
-	switch t := v.(type) {
-	case json.Number:
-		if strings.ContainsAny(string(t), ".eE") {
-			return "float"
-		}
-		return "int"
-	case map[string]any:
-		return "dict"
-	case int, int64:
-		return "int"
-	}
-	return pyTypeName(v)
-}
-
 // Python str of a value treated as empty when falsy
 func auStr(v any) string {
 	if !auTruthy(v) {
@@ -1018,7 +1004,7 @@ func auDictOr(v any) (map[string]any, error) {
 	}
 	m, ok := v.(map[string]any)
 	if !ok {
-		return nil, fmt.Errorf("'%s' object has no attribute 'get'", auTypeName(v))
+		return nil, fmt.Errorf("an account usage field is %s, expected a mapping", errchain.Kind(v))
 	}
 	return m, nil
 }
@@ -1057,13 +1043,13 @@ func auFloat(v any) (float64, error) {
 	case string:
 		return pyFloatString(t)
 	}
-	return 0, fmt.Errorf("float() argument must be a string or a real number, not '%s'", auTypeName(v))
+	return 0, fmt.Errorf("an account usage value is %s, expected a number", errchain.Kind(v))
 }
 
 // Python float of a string, whitespace, single underscores between digits, Unicode digits and inf or nan words
 func pyFloatString(s string) (float64, error) {
 	text := strings.TrimSpace(s)
-	bad := fmt.Errorf("could not convert string to float: %s", pyStringRepr(s))
+	bad := fmt.Errorf("%s is not a number", pyStringRepr(s))
 	var b strings.Builder
 	runes := []rune(text)
 	for i, r := range runes {

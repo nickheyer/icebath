@@ -112,7 +112,7 @@ func (b *BasePlatformAdapter) dispatchInlineReply(ctx context.Context, event *Me
 	threadMeta := threadMetadataForEvent(event)
 	handler := b.MessageHandler()
 	if handler == nil {
-		return errors.New("'NoneType' object is not callable")
+		return errors.New("no message handler is set on this platform adapter")
 	}
 	response, err := handler(ctx, event)
 	if err != nil {

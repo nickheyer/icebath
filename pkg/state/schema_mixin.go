@@ -13,10 +13,10 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"modernc.org/libc"
 	sqlite3 "modernc.org/sqlite/lib"
@@ -70,7 +70,7 @@ func sha256HexUTF8(text string) (string, error) {
 	for i, pos := 0, 0; i < len(text); pos++ {
 		r, n := pystr.DecodeRune(text[i:])
 		if pystr.IsSurrogate(r) {
-			return "", &pyint.Error{Kind: "UnicodeEncodeError", Msg: fmt.Sprintf("'utf-8' codec can't encode character '\\u%04x' in position %d: surrogates not allowed", r, pos)}
+			return "", &pyint.Error{Kind: "UnicodeEncodeError", Msg: fmt.Sprintf("the text holds a lone surrogate U+%04X at character %d, which UTF-8 cannot encode", r, pos)}
 		}
 		i += n
 	}
@@ -85,7 +85,7 @@ func storeSystemPrompt(ctx context.Context, conn SQLiteConn, systemPrompt any) (
 	}
 	text, ok := systemPrompt.(string)
 	if !ok {
-		return nil, &pyint.Error{Kind: "AttributeError", Msg: "'" + pyrepr.TypeName(systemPrompt) + "' object has no attribute 'encode'"}
+		return nil, &pyint.Error{Kind: "AttributeError", Msg: "the system prompt is " + errchain.Kind(systemPrompt) + ", expected text"}
 	}
 	hash, err := sha256HexUTF8(text)
 	if err != nil {
@@ -467,7 +467,7 @@ func executeDDLSkippingSettledTriggers(ctx context.Context, conn SQLiteConn, ddl
 			desired := strings.TrimRight(strings.Replace(current, "IF NOT EXISTS ", "", 1), ";")
 			fields := pystr.SplitWhitespace(desired, 3)
 			if len(fields) < 3 {
-				return &pyint.Error{Kind: "IndexError", Msg: "list index out of range"}
+				return &pyint.Error{Kind: "IndexError", Msg: "a stored trigger statement has no trigger name"}
 			}
 			if have, ok := stored[fields[2]]; ok && have == desired {
 				pendingDrop = ""

@@ -815,7 +815,7 @@ func driverRunFenceTransition(ctx context.Context, dbPath string, attempt TaskAt
 		if row.Vals["run_lease_generation"] != nil {
 			leaseGeneration = hrInt(row, "run_lease_generation")
 		} else if !nullAsZero {
-			return &pyjson.TypeError{Msg: "int() argument must be a string, a bytes-like object or a real number, not 'NoneType'"}
+			return &pyjson.TypeError{Msg: "the driver run fence has no number"}
 		}
 		if row.Vals["run_gateway_id"] != lease.GatewayID || row.Vals["run_process_generation"] != lease.ProcessGeneration || leaseGeneration != lease.LeaseGeneration {
 			return staleTask(guardStale)

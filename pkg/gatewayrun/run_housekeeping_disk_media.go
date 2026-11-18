@@ -6,7 +6,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/botmode"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/media"
 	"github.com/nickheyer/icebath/pkg/mediacache"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -15,7 +14,7 @@ import (
 func housekeepingMediaCaches(ctx context.Context) {
 	h := home.Dir(ctx)
 	env := &tools.Env{Home: h, TerminalScope: tools.GetTerminalScope(ctx)}
-	maxAge := float64(media.MediaCacheMaxAgeHours)
+	maxAge := float64(mediacache.MediaCacheMaxAgeHours)
 	cache := func(fn func(context.Context, string, float64) (int, error)) func() (int, error) {
 		return func() (int, error) { return fn(ctx, h, maxAge) }
 	}

@@ -135,7 +135,7 @@ func TestSearchQueryHelpers(t *testing.T) {
 		t.Fatal("other values flatten to empty")
 	}
 	bad, _ := pyjson.Loads(`[{"type": "text", "text": "a"}, {"type": "text", "text": 5}]`)
-	if _, err := flattenText(bad); err == nil || !strings.Contains(err.Error(), "sequence item 1: expected str instance, int found") {
+	if _, err := flattenText(bad); err == nil || !strings.Contains(err.Error(), "text part 1 is a number, expected text") {
 		t.Fatalf("join type error = %v", err)
 	}
 	for _, c := range []struct {

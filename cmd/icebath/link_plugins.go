@@ -48,7 +48,7 @@ var _ gateway.NativeStreamAdapter = (*wecom.Streamer)(nil)
 func init() {
 	linktier.Link(linktier.Plugins)
 	tierArgvEntries = append(tierArgvEntries, containerinit.Dispatch)
-	tierBeforeStart = append(tierBeforeStart, containerinit.DropRootInImage)
+	tierStartup[phaseBeforeStart] = append(tierStartup[phaseBeforeStart], containerinit.DropRootInImage)
 	childEntriesAfterPrunePlugins = append(childEntriesAfterPrunePlugins, relayhost.DispatchRelayHostEntry, googlemeet.DispatchMeetBotEntry)
 	childEntriesAfterStopMark = append(childEntriesAfterStopMark, stage.DispatchStageEntry)
 	tierWiring = append(tierWiring, installPluginsWiring)

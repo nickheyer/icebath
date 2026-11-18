@@ -76,7 +76,7 @@ type PromptBreakdown struct {
 // UTF-8 byte length of text, the strict encode error when it holds a lone surrogate
 func promptBytes(s string) (int, error) {
 	if err := pystr.StrictUTF8EncodeError(s); err != nil {
-		return 0, err
+		return 0, errchain.Reword(err, "text holds a lone surrogate that UTF-8 cannot encode")
 	}
 	return len(s), nil
 }

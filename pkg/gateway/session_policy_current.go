@@ -58,7 +58,7 @@ func (p *LocalSessionPolicy) CurrentServiceTier(ctx context.Context, runner any,
 	if sessionKey != "" {
 		peeker, ok := runner.(sessionStatePeekRunner)
 		if !ok {
-			return nil, &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("'%T' object has no attribute '_peek_session_state'", runner)}
+			return nil, &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("the gateway runner (%T) cannot read session state", runner)}
 		}
 		if state := peeker.PeekSessionState(sessionKey); state != nil {
 			if tier, set := state.ServiceTierOverride(); set {

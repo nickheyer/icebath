@@ -32,7 +32,7 @@ func TestToolMatcherSharedAndHomeScopedForget(t *testing.T) {
 		if ok, err := m.MatchesTool("terminal"); m.Matcher != "term.*" || !ok || err != nil {
 			t.Fatalf("matcher %q %v %v", m.Matcher, ok, err)
 		}
-		if _, err := m.MatchesTool(7); err == nil || !strings.Contains(err.Error(), "expected string or bytes-like object") {
+		if _, err := m.MatchesTool(7); err == nil || !strings.Contains(err.Error(), "tool name is a number where text was expected") {
 			t.Fatalf("non string name %v", err)
 		}
 	}

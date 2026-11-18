@@ -6,6 +6,7 @@ import (
 	"log/slog"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/logging"
@@ -43,7 +44,7 @@ func ResolveProfilePolicy(profileHome string) {
 	}
 	section, ok := security.(map[string]any)
 	if !ok {
-		pkgLog().Debug(fmt.Sprintf("redaction policy for %s not read: '%s' object has no attribute 'get'", profileHome, pyrepr.TypeName(security)))
+		pkgLog().Debug(fmt.Sprintf("redaction policy for %s not read: the security section is %s, expected a mapping", profileHome, errchain.Kind(security)))
 		return
 	}
 	NoteConfigPolicy(key, section["redact_secrets"])

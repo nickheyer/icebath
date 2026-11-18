@@ -15,6 +15,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -260,7 +261,7 @@ func runBrv(ctx context.Context, env *tools.Env, args []any, timeout time.Durati
 	for i, a := range args {
 		s, ok := a.(string)
 		if !ok {
-			return brvResult{Error: fmt.Sprintf("expected str, bytes or os.PathLike object, not %s", pyTypeName(a))}, nil
+			return brvResult{Error: fmt.Sprintf("brv argument is %s where text was expected", errchain.Kind(a))}, nil
 		}
 		argv[i] = s
 	}
@@ -546,7 +547,7 @@ func (p *ByteRoverProvider) HandleToolCall(ctx context.Context, toolName string,
 		run = func(value any) (brvResult, error) {
 			q, ok := value.(string)
 			if !ok {
-				return brvResult{}, fmt.Errorf("'%s' object has no attribute 'strip'", pyTypeName(value))
+				return brvResult{}, fmt.Errorf("query is %s where text was expected", errchain.Kind(value))
 			}
 			return p.query(ctx, q)
 		}

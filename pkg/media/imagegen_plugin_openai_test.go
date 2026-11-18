@@ -484,7 +484,7 @@ func TestOpenAIClientErrorsRetriesAndMultipart(t *testing.T) {
 	if oe, ok := err.(*openAIError); !ok || oe.Class != "InternalServerError" || err.Error() != "Error code: 503" {
 		t.Fatal(err)
 	}
-	if _, err := c.ImagesGenerate(context.Background(), map[string]any{"prompt": "p", "colour": "red"}); err == nil || err.Error() != "Images.generate() got an unexpected keyword argument 'colour'" {
+	if _, err := c.ImagesGenerate(context.Background(), map[string]any{"prompt": "p", "colour": "red"}); err == nil || err.Error() != "image generate request has an unknown option colour" {
 		t.Fatal(err)
 	}
 	f.reply = func(*http.Request) (int, string) { return 200, `{"data": []}` }

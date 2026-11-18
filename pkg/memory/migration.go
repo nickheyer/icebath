@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"github.com/mattn/go-isatty"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/plugins"
@@ -44,7 +45,7 @@ func ConfiguredMemoryProvider(h string) (string, error) {
 	}
 	mem, ok := raw.(map[string]any)
 	if !ok {
-		return "", &pyError{class: "AttributeError", msg: fmt.Sprintf("'%s' object has no attribute 'get'", pyTypeName(raw))}
+		return "", &pyError{class: "AttributeError", msg: fmt.Sprintf("config memory section is %s where a mapping was expected", errchain.Kind(raw))}
 	}
 	if !pyTruthy(mem["provider"]) {
 		return "", nil

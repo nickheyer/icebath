@@ -152,6 +152,8 @@ SCENARIOS = {
 
 # Tool error, parallel tool, delegation, memory and cron cases of the agent loop sweep
 W = "@ROOT@/work"
+PAGE = "http://127.0.0.1:%d" % (int("@PORT@") + 7)
+BV = lambda **kw: ("tool_call", {"calls": [{"name": "browser_vault", "arguments": kw}]})
 def T(*calls, **kw):
     return dict({"tools": [list(c) for c in calls]}, **kw)
 
@@ -330,6 +332,14 @@ SCENARIOS.update({
     "ptvisa": [OK], "ptvisb": [OK], "ptvisc": [OK], "ptvisd": [OK],
     "ptapprove": [T(("terminal", {"command": "rm -rf " + W + "/victim"}), ("terminal", {"command": "echo after-approval"})), OK],
     "ptstop": [T(("terminal", {"command": "sleep 6; echo slept"}), RF), OK],
+    "secview": [T(("skill_view", {"name": "drive-secret"})), OK],
+    "clarone": [T(("clarify", {"questions": [{"question": "Pick a color", "choices": ["red", "blue"]}]})), OK],
+    "clartwo": [T(("clarify", {"questions": [{"question": "First name?"}, {"question": "Pick fruits", "choices": ["apple", "pear"], "multi_select": True}]})), OK],
+    "sudoask": [T(("terminal", {"command": "sudo whoami"})), OK],
+    "sudoasknext": [T(("terminal", {"command": "sudo whoami"})), OK],
+    "vaultunlock": [T(BV(action="unlock", backend="bitwarden")), T(BV(action="list")), OK],
+    "vaultsave": [T(("browser_exec", {"code": "new_tab(%r)\nwait_for_load()\nprint(page_info())" % (PAGE + "/login.html")})), T(BV(action="save_login", label="drive site")), OK],
+    "vaultcode": [T(("browser_exec", {"code": "goto_url(%r)\nwait_for_load()\nprint(page_info())" % (PAGE + "/otp.html")})), T(BV(action="enter_code")), OK],
     "dgslow": [T(("delegate_task", {"tasks": [{"goal": "scn_dgcz child that takes a while"}]})), OK],
     "dgcz": [{"sleep": 6, "content": "Slow child done."}],
     "mmtwo2": [OK],

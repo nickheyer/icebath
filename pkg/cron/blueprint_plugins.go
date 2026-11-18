@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -99,7 +100,7 @@ func blueprintOptions(v any) ([]any, error) {
 		sort.Strings(keys)
 		return stringsToAny(keys), nil
 	}
-	return nil, fmt.Errorf("'%s' object is not iterable", pyrepr.TypeName(v))
+	return nil, fmt.Errorf("slot options must be a list or a mapping, got %s", errchain.Kind(v))
 }
 
 // Slot from an in process BlueprintSlot or its field mapping, the plugin host wire form
@@ -148,11 +149,14 @@ func blueprintSlotFrom(raw any) (BlueprintSlot, error) {
 		var missing []string
 		for _, f := range blueprintSlotFields[:3] {
 			if _, ok := data[f]; !ok {
-				missing = append(missing, "'"+f+"'")
+				missing = append(missing, f)
 			}
 		}
 		if len(missing) > 0 {
-			return slot, fmt.Errorf("slot %s: BlueprintSlot.__init__() %s", pyrepr.Repr(data["name"]), missingArgsText(missing))
+			if name, ok := data["name"].(string); ok {
+				return slot, fmt.Errorf("slot %s is missing %s", name, missingArgsText(missing))
+			}
+			return slot, fmt.Errorf("a slot is missing %s", missingArgsText(missing))
 		}
 		if typ, ok := data["type"].(string); !ok || !blueprintSlotTypes[typ] {
 			return slot, fmt.Errorf("unknown slot type %s (slot %s)", pyrepr.Repr(data["type"]), pyrepr.Str(data["name"]))
@@ -171,7 +175,7 @@ func blueprintSlotFrom(raw any) (BlueprintSlot, error) {
 			slot.Help = pyrepr.Str(v)
 		}
 	default:
-		return slot, fmt.Errorf("slot must be a mapping, got %s", pyrepr.TypeName(raw))
+		return slot, fmt.Errorf("slot must be a mapping, got %s", errchain.Kind(raw))
 	}
 	if s, ok := name.(string); !ok || !pyReMatches(blueprintSlotNameRe, s) {
 		return slot, fmt.Errorf("invalid slot name %s", pyrepr.Repr(name))
@@ -186,11 +190,11 @@ func blueprintSlotFrom(raw any) (BlueprintSlot, error) {
 func missingArgsText(names []string) string {
 	switch len(names) {
 	case 1:
-		return "missing 1 required positional argument: " + names[0]
+		return names[0]
 	case 2:
-		return "missing 2 required positional arguments: " + names[0] + " and " + names[1]
+		return names[0] + " and " + names[1]
 	}
-	return fmt.Sprintf("missing %d required positional arguments: %s, and %s", len(names), strings.Join(names[:len(names)-1], ", "), names[len(names)-1])
+	return strings.Join(names[:len(names)-1], ", ") + " and " + names[len(names)-1]
 }
 
 // Placeholder names of a template, each required to be a plain slot name
@@ -310,7 +314,7 @@ func pluginBlueprints(ctx context.Context) (out []AutomationBlueprint) {
 	defer func() {
 		if r := recover(); r != nil {
 			err := panicTraceback(r)
-			pkgLog().Warn("plugin automation blueprints unavailable\n" + tracebackFrames(err) + cronExceptionName(err) + ": " + err.Error())
+			pkgLog().Warn("plugin automation blueprints unavailable: "+err.Error(), "stack", tracebackFrames(err))
 			out = nil
 		}
 	}()

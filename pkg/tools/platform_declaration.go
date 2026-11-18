@@ -207,9 +207,9 @@ func platformStrOr(v any, def string) string {
 func platformHashable(v any) error {
 	switch v.(type) {
 	case []any:
-		return fmt.Errorf("unhashable type: 'list'")
+		return fmt.Errorf("a platform declaration value is a list, expected text")
 	case map[string]any, *pyjson.Object:
-		return fmt.Errorf("unhashable type: 'dict'")
+		return fmt.Errorf("a platform declaration value is a mapping, expected text")
 	}
 	return nil
 }

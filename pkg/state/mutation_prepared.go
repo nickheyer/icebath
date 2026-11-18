@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
@@ -59,7 +60,7 @@ func requiredScalar(ctx context.Context, conn SQLiteConn, query string, args ...
 		return nil, err
 	}
 	if !ok {
-		return nil, &stateTypedError{"TypeError", "'NoneType' object is not subscriptable"}
+		return nil, &stateTypedError{"TypeError", "a required prepared mutation value is missing"}
 	}
 	return value, nil
 }
@@ -68,7 +69,7 @@ func requiredScalar(ctx context.Context, conn SQLiteConn, query string, args ...
 func loadsStoredObject(raw any) (*pyjson.Object, error) {
 	text, ok := raw.(string)
 	if !ok {
-		return nil, &stateTypedError{"TypeError", fmt.Sprintf("the JSON object must be str, bytes or bytearray, not %s", pyTypeName(raw))}
+		return nil, &stateTypedError{"TypeError", fmt.Sprintf("the stored mutation value is %s, expected JSON text", errchain.Kind(raw))}
 	}
 	decoded, err := pyjson.Loads(text)
 	if err != nil {
@@ -76,7 +77,7 @@ func loadsStoredObject(raw any) (*pyjson.Object, error) {
 	}
 	obj, isObj := decoded.(*pyjson.Object)
 	if !isObj {
-		return nil, &stateTypedError{"TypeError", fmt.Sprintf("'%s' object is not a mapping", pyTypeName(decoded))}
+		return nil, &stateTypedError{"TypeError", fmt.Sprintf("the stored mutation object is %s, expected a mapping", errchain.Kind(decoded))}
 	}
 	return obj, nil
 }
@@ -286,7 +287,7 @@ func reasoningInTransaction(d *SessionDB, ctx context.Context, conn SQLiteConn, 
 		if inner, has := pick.Get("payload"); has {
 			innerObj, isObj := inner.(*pyjson.Object)
 			if !isObj {
-				return nil, nil, &stateTypedError{"AttributeError", fmt.Sprintf("'%s' object has no attribute 'pop'", pyTypeName(inner))}
+				return nil, nil, &stateTypedError{"AttributeError", fmt.Sprintf("the stored reasoning is %s, expected a mapping", errchain.Kind(inner))}
 			}
 			innerObj.Pop("reasoning")
 		}
@@ -391,7 +392,7 @@ func editPolicyInTransaction(d *SessionDB, ctx context.Context, conn SQLiteConn,
 func loadsAny(raw any) (any, error) {
 	text, ok := raw.(string)
 	if !ok {
-		return nil, &stateTypedError{"TypeError", fmt.Sprintf("the JSON object must be str, bytes or bytearray, not %s", pyTypeName(raw))}
+		return nil, &stateTypedError{"TypeError", fmt.Sprintf("the stored mutation value is %s, expected JSON text", errchain.Kind(raw))}
 	}
 	decoded, err := pyjson.Loads(text)
 	if err != nil {
@@ -423,7 +424,7 @@ func picksOn(ctx context.Context, conn SQLiteConn, sessionID any, before any) (m
 	}
 	sid, isStr := sessionID.(string)
 	if !isStr {
-		return nil, &stateTypedError{"TypeError", fmt.Sprintf("can only concatenate str (not \"%s\") to str", pyTypeName(sessionID))}
+		return nil, &stateTypedError{"TypeError", fmt.Sprintf("the session id of a pick is %s, expected text", errchain.Kind(sessionID))}
 	}
 	raw, ok, err := fetchScalar(ctx, conn, "SELECT value FROM state_meta WHERE key=?", LocalPolicyPrefix+sid)
 	if err != nil || !ok {
@@ -481,12 +482,12 @@ func hasPicksMember(decoded any) bool {
 func addPickMembers(picked map[string]bool, list any) error {
 	items, ok := list.([]any)
 	if !ok {
-		return &stateTypedError{"TypeError", fmt.Sprintf("'%s' object is not iterable", pyTypeName(list))}
+		return &stateTypedError{"TypeError", fmt.Sprintf("the pick members are %s, expected a list", errchain.Kind(list))}
 	}
 	for _, item := range items {
 		name, isStr := item.(string)
 		if !isStr {
-			return &stateTypedError{"TypeError", fmt.Sprintf("'<' not supported between instances of '%s' and 'str'", pyTypeName(item))}
+			return &stateTypedError{"TypeError", fmt.Sprintf("a pick member is %s, expected a session id", errchain.Kind(item))}
 		}
 		picked[name] = true
 	}

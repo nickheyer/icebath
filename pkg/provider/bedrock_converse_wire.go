@@ -74,7 +74,7 @@ func converseBlobDefault(v any) (any, error) {
 	}
 	raw, err := json.Marshal(v)
 	if err != nil {
-		return nil, &pyjson.TypeError{Msg: fmt.Sprintf("Object of type %T is not JSON serializable", v)}
+		return nil, &pyjson.TypeError{Msg: fmt.Sprintf("cannot write %T as JSON", v)}
 	}
 	return pyjson.LoadsBytes(raw)
 }

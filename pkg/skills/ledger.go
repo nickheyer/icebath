@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
@@ -192,7 +193,7 @@ func newLedgerItem(path, sha string) *pyjson.Object {
 func ledgerItemGet(item any, key string, fallback any) (any, error) {
 	o, ok := item.(*pyjson.Object)
 	if !ok {
-		return nil, fmt.Errorf("'%s' object has no attribute 'get'", pyrepr.TypeName(item))
+		return nil, fmt.Errorf("ledger item is %s where a mapping was expected", errchain.Kind(item))
 	}
 	if v, ok := o.Get(key); ok {
 		return v, nil
@@ -204,7 +205,7 @@ func ledgerItemGet(item any, key string, fallback any) (any, error) {
 func ledgerItemKey(item any, key string) (any, error) {
 	o, ok := item.(*pyjson.Object)
 	if !ok {
-		return nil, fmt.Errorf("'%s' object is not subscriptable", pyrepr.TypeName(item))
+		return nil, fmt.Errorf("ledger item is %s where a mapping holding %s was expected", errchain.Kind(item), key)
 	}
 	if v, ok := o.Get(key); ok {
 		return v, nil
@@ -233,7 +234,7 @@ func ledgerIter(v any) ([]any, error) {
 		}
 		return out, nil
 	}
-	return nil, fmt.Errorf("'%s' object is not iterable", pyrepr.TypeName(v))
+	return nil, fmt.Errorf("ledger value is %s where a list was expected", errchain.Kind(v))
 }
 
 // Python (a or []) + (b or []) over two ledger manifests
@@ -252,13 +253,13 @@ func ledgerConcat(a, b any) ([]any, error) {
 	case okA && okB:
 		return append(append([]any{}, la...), lb...), nil
 	case okA:
-		return nil, fmt.Errorf("can only concatenate list (not \"%s\") to list", pyrepr.TypeName(b))
+		return nil, fmt.Errorf("cannot join a list with %s", errchain.Kind(b))
 	case strA && strB:
 		return ledgerIter(sa + sb)
 	case strA:
-		return nil, fmt.Errorf("can only concatenate str (not \"%s\") to str", pyrepr.TypeName(b))
+		return nil, fmt.Errorf("cannot join text with %s", errchain.Kind(b))
 	}
-	return nil, fmt.Errorf("unsupported operand type(s) for +: '%s' and '%s'", pyrepr.TypeName(a), pyrepr.TypeName(b))
+	return nil, fmt.Errorf("cannot join %s with %s", errchain.Kind(a), errchain.Kind(b))
 }
 
 func ledgerObjects(items []*pyjson.Object) []any {
@@ -1201,7 +1202,7 @@ func (s *Scope) LedgerRollbackEntry(ctx context.Context, entryID string) (bool, 
 	actionV, _ := entry.Get("action")
 	switch actionV.(type) {
 	case []any, *pyjson.Object:
-		return false, "", fmt.Errorf("unhashable type: '%s'", pyrepr.TypeName(actionV))
+		return false, "", fmt.Errorf("ledger rollback action is %s where text was expected", errchain.Kind(actionV))
 	}
 	if a, ok := actionV.(string); ok && ledgerPackageRestoreActions[a] {
 		parents, err := ledgerSkillMDParents(before)
@@ -1300,7 +1301,7 @@ func (s *Scope) LedgerRollbackEntry(ctx context.Context, entryID string) (bool, 
 		}
 		data, ok := s.LedgerReadBlob(pyrepr.Str(sv))
 		if !ok {
-			return false, "", errors.New("memoryview: a bytes-like object is required, not 'NoneType'")
+			return false, "", fmt.Errorf("ledger blob %s is missing", pyrepr.Str(sv))
 		}
 		if err := os.WriteFile(fp, data, 0o666); err != nil {
 			return false, "", err

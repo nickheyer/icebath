@@ -188,7 +188,7 @@ func TestComputeSkillsBreakdownParsesRowsAndSharedLines(t *testing.T) {
 	if got != want {
 		t.Fatalf("breakdown\n got %s\nwant %s", got, want)
 	}
-	if _, err := computeSkillsBreakdown(env, "  - a\xed\xa0\x80b"); err == nil || err.Error() != `'utf-8' codec can't encode character '\ud800' in position 5: surrogates not allowed` {
+	if _, err := computeSkillsBreakdown(env, "  - a\xed\xa0\x80b"); err == nil || err.Error() != "text holds a lone surrogate that UTF-8 cannot encode" {
 		t.Fatalf("surrogate line error %v", err)
 	}
 }

@@ -152,7 +152,7 @@ func TestNodeDetection(t *testing.T) {
 		root := t.TempDir()
 		writePkg(t, root, pyjson.ObjectOf("scripts", pyjson.ObjectOf("dev", int64(5))))
 		_, err := DetectRecipe(root)
-		if err == nil || err.Error() != "expected string or bytes-like object, got 'int'" {
+		if err == nil || err.Error() != "start command is a number where text was expected" {
 			t.Fatalf("err %v", err)
 		}
 	})

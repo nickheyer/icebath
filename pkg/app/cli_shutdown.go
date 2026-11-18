@@ -11,7 +11,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/browser"
 	"github.com/nickheyer/icebath/pkg/mcp"
-	"github.com/nickheyer/icebath/pkg/media"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -79,10 +78,13 @@ func shutdownAgentMemoryProvider(a cliAgent) {
 	a.gateway().shutdownMemoryProvider()
 }
 
+// Stops a wake word listener the CLI owns, set by the voice mode file and nil in a build without it
+var stopWakeListening func(owner any)
+
 // Stops the CLI's wake word listener when this process owns one
 func stopCLIWakeWord(ctx context.Context, env *tools.Env) {
-	if cliWakeOwner != nil {
-		media.StopListening(cliWakeOwner)
+	if cliWakeOwner != nil && stopWakeListening != nil {
+		stopWakeListening(cliWakeOwner)
 	}
 }
 

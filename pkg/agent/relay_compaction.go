@@ -35,7 +35,7 @@ func relayCompactionTurnTarget(ctx context.Context, sessionID string) (*relayCom
 	handle := turn.Handle
 	if handle == nil {
 		if session == nil {
-			return nil, errors.New("'NoneType' object has no attribute 'handle'")
+			return nil, errors.New("relay compaction found neither a turn handle nor a session")
 		}
 		handle = session.Handle
 	}

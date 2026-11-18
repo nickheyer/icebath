@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
@@ -391,7 +392,7 @@ func auxTryAnthropic(ctx context.Context, explicitAPIKey any, explicitBaseURL st
 	}
 	tokenStr, isStr := token.(string)
 	if !isStr {
-		return nil, "", &auxAttributeError{typeName: pyrepr.TypeName(token), attr: "startswith"}
+		return nil, "", &auxAttributeError{msg: "the API key is " + errchain.Kind(token) + ", expected text"}
 	}
 	isOAuth := isOAuthToken(tokenStr)
 	model := auxGetAuxModelForProvider(ctx, "anthropic")

@@ -651,11 +651,11 @@ func xaiOAuthDeviceCodeLogin(env PoolEnv, out io.Writer, timeout time.Duration, 
 	}
 	interval, ok := pyInt(deviceData["interval"])
 	if !ok {
-		return nil, fmt.Errorf("invalid literal for int(): %s", pyStr(deviceData["interval"]))
+		return nil, fmt.Errorf("the device code interval %s is not a whole number", pyStr(deviceData["interval"]))
 	}
 	expiresIn, ok := pyInt(deviceData["expires_in"])
 	if !ok {
-		return nil, fmt.Errorf("invalid literal for int(): %s", pyStr(deviceData["expires_in"]))
+		return nil, fmt.Errorf("the device code lifetime %s is not a whole number", pyStr(deviceData["expires_in"]))
 	}
 	verificationURL := pyOrStr(deviceData["verification_uri_complete"])
 	if verificationURL == "" {

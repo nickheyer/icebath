@@ -12,7 +12,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
-	"github.com/nickheyer/icebath/pkg/media"
 	"github.com/nickheyer/icebath/pkg/memory"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
@@ -401,7 +400,7 @@ func promptSubmit(ctx context.Context, rid any, params map[string]any) map[strin
 		return stopped
 	}
 	if truthy(params["interrupted"]) {
-		media.MarkSpeechInterrupted()
+		markSpeechInterrupted()
 	}
 	session, errResp := sessNowait(ctx, params, rid)
 	if errResp != nil {

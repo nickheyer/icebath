@@ -7,6 +7,8 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/google/uuid"
+
+	"github.com/nickheyer/icebath/pkg/tuigateway"
 )
 
 // Queue entry of a text and the display it shows, the text when display is empty
@@ -243,10 +245,10 @@ func (q *composerQueue) getQueue(destination *submissionDestination) (*pendingQu
 }
 
 // Owner's pending rows still waiting on its queue
-func (q *composerQueue) serverRows() []map[string]any {
-	rows := []map[string]any{}
+func (q *composerQueue) serverRows() []pendingRow {
+	rows := []pendingRow{}
 	for _, row := range pendingRowsOf(q.store.ui.Info) {
-		if isServerQueued(row) {
+		if row.serverQueued() {
 			rows = append(rows, row)
 		}
 	}
@@ -268,20 +270,20 @@ func (q *composerQueue) queuedDisplay() ([]string, error) {
 		out = append(out, prefix+item.Display)
 	}
 	for _, row := range q.serverRows() {
-		switch row["status"] {
+		switch row.Status {
 		case "queued":
-			out = append(out, jsTemplate(row, "user"))
+			out = append(out, row.User)
 		case "unknown":
-			out = append(out, tr("canonical.queue.lostRow", jsTemplate(row, "user")))
+			out = append(out, tr("canonical.queue.lostRow", row.User))
 		default:
-			out = append(out, tr("canonical.queue.serverRow", jsTemplate(row, "status"), jsTemplate(row, "user")))
+			out = append(out, tr("canonical.queue.serverRow", row.Status, row.User))
 		}
 	}
 	return out, nil
 }
 
 // Owner row at a panel index past the local entries, nil for a local index
-func (q *composerQueue) serverRowAt(index int) (map[string]any, error) {
+func (q *composerQueue) serverRowAt(index int) (*pendingRow, error) {
 	queue, err := q.getQueue(nil)
 	if err != nil {
 		return nil, err
@@ -291,7 +293,7 @@ func (q *composerQueue) serverRowAt(index int) (map[string]any, error) {
 	if index < local || index-local >= len(rows) {
 		return nil, nil
 	}
-	return rows[index-local], nil
+	return &rows[index-local], nil
 }
 
 // Text an entry puts back in the composer for editing
@@ -300,8 +302,8 @@ func (q *composerQueue) queueDraft(index int) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if row != nil && row["user"] != nil {
-		return jsValueString(row["user"]), nil
+	if row != nil {
+		return row.User, nil
 	}
 	queue, err := q.getQueue(nil)
 	if err != nil {
@@ -314,22 +316,21 @@ func (q *composerQueue) queueDraft(index int) (string, error) {
 }
 
 // Cancels an owner row, an unknown one resolved instead, reporting a failure while its session is current
-func (q *composerQueue) cancelServerRow(row map[string]any, then func(err error) tea.Cmd) tea.Cmd {
-	var sid any
-	if q.store.ui.Sid != "" {
-		sid = q.store.ui.Sid
-	}
-	unknown := row["status"] == "unknown"
-	method, params := "prompt.cancel", map[string]any{"session_id": sid, "admission_id": row["admission_id"]}
-	if unknown {
-		method, params["execution_generation"] = "prompt.resolve_unknown", row["execution_generation"]
-	}
-	return gatewayCall(q.gw, method, params, func(_ any, err error) tea.Cmd {
-		if err != nil && jsStrictEqual(sid, nilIfEmpty(q.store.ui.Sid)) {
+func (q *composerQueue) cancelServerRow(row *pendingRow, then func(err error) tea.Cmd) tea.Cmd {
+	sid := q.store.ui.Sid
+	settled := func(_ *tuigateway.AdmissionReceipt, err error) tea.Cmd {
+		if err != nil && sid == q.store.ui.Sid {
 			q.store.ui.Status = tr("canonical.queue.discardFailed", err.Error())
 		}
 		return then(err)
-	})
+	}
+	if row.Status != "unknown" {
+		return call(q.gw, tuigateway.CanonicalPromptCancel, tuigateway.PromptCancelParams{SessionID: sid, AdmissionID: row.AdmissionID}, settled)
+	}
+	if row.ExecutionGeneration == nil {
+		return resolved(func() tea.Cmd { return settled(nil, tuigateway.MissingParam(tuigateway.CanonicalPromptResolveUnknown.Name(), "execution_generation")) })
+	}
+	return call(q.gw, tuigateway.CanonicalPromptResolveUnknown, tuigateway.PromptResolveUnknownParams{SessionID: sid, AdmissionID: row.AdmissionID, ExecutionGeneration: *row.ExecutionGeneration}, settled)
 }
 
 // Session id as JavaScript holds it, null when empty
@@ -477,20 +478,12 @@ func (q *composerQueue) reconcileReceipts() error {
 		return err
 	}
 	for _, receipt := range pendingRowsOf(q.store.ui.Info) {
-		id := receipt["input_id"]
-		if id == nil {
-			id = receipt["admission_id"]
-		}
 		at := slices.IndexFunc(queue.items, func(item *queueItem) bool {
 			d := item.Destination
-			if d == nil || d.StoredSid == "" || !jsStrictEqual(id, item.SubmissionID) || receipt["target_session_id"] != d.StoredSid {
+			if d == nil || d.StoredSid == "" || receipt.submissionID() != item.SubmissionID || receipt.TargetSessionID != d.StoredSid {
 				return false
 			}
-			ownerHome := d.OwnerHome
-			if ownerHome == "" {
-				ownerHome = d.ProfileHome
-			}
-			return receipt["target_profile_home"] == ownerHome
+			return receipt.TargetProfileHome == firstText(d.OwnerHome, d.ProfileHome)
 		})
 		if at < 0 {
 			continue
@@ -558,11 +551,11 @@ func (q *composerQueue) takeQ(i int, editedDisplay *string, then func(*queueItem
 		return nil, err
 	}
 	if server != nil {
-		if server["status"] == "unknown" {
+		if server.Status == "unknown" {
 			q.store.ui.Status = tr("canonical.queue.unknownExecution")
 			return then(nil), nil
 		}
-		text := jsTemplate(server, "user")
+		text := server.User
 		if editedDisplay != nil {
 			text = *editedDisplay
 		}

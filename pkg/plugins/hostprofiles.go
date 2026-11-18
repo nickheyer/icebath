@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 )
 
 const (
@@ -34,7 +35,7 @@ type HostedProfileCall struct {
 }
 
 func (p *HostedProfile) String() string {
-	return fmt.Sprintf("<plugin-host profile %s>", config.PyRepr(p.Name))
+	return fmt.Sprintf("<plugin-host profile %s>", errchain.Show(p.Name))
 }
 
 // Runs one overridden method or callable field in the plugin host of the active profile

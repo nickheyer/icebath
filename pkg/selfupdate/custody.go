@@ -1,3 +1,5 @@
+//go:build !icebath_core && !icebath_noextras
+
 package selfupdate
 
 import (
@@ -17,7 +19,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
@@ -89,32 +90,6 @@ type CalledProcessError struct {
 
 func (e *CalledProcessError) Error() string {
 	return (&pm.CalledProcessError{Argv: e.Cmd, Code: e.ReturnCode}).Error()
-}
-
-func init() {
-	pm.SetUpdateLockHooks(pm.UpdateLockHooks{
-		BindChild: func(cmd *exec.Cmd) (string, bool) {
-			if err := updaterecord.BindChildToUpdateTree(cmd.Process.Pid); err != nil {
-				return pypath.OSErrorText(err), true
-			}
-			return "", false
-		},
-		ResumeSuspended: func(cmd *exec.Cmd) error {
-			if err := updaterecord.ResumeSuspendedChild(cmd.Process); err != nil {
-				return &pm.PyError{Class: "OSError", Message: err.Error()}
-			}
-			return nil
-		},
-		Held: updaterecord.CheckoutHeld,
-		CheckoutLockFDs: func(root string) ([]int, error) {
-			files, err := updaterecord.CheckoutLockFiles(root)
-			fds := make([]int, 0, len(files))
-			for _, f := range files {
-				fds = append(fds, int(f.Fd()))
-			}
-			return fds, err
-		},
-	})
 }
 
 // Runs a custody launcher and exits when argv carries its entry, otherwise records that this binary handles them

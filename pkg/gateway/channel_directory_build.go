@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
 	"github.com/nickheyer/icebath/pkg/internal/pydict"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -222,12 +223,12 @@ func slackGet(v any, key string) (any, bool, error) {
 		return got, ok, nil
 	case *pyjson.Object:
 		if m == nil {
-			return nil, false, fmt.Errorf("'NoneType' object has no attribute 'get'")
+			return nil, false, fmt.Errorf("a Slack directory entry is missing")
 		}
 		got, ok := m.Get(key)
 		return got, ok, nil
 	}
-	return nil, false, fmt.Errorf("'%s' object has no attribute 'get'", pyrepr.TypeName(v))
+	return nil, false, fmt.Errorf("a Slack directory entry is %s, expected a mapping", errchain.Kind(v))
 }
 
 // Value of key in a decoded Slack mapping, def when absent
@@ -286,7 +287,7 @@ func normalizeAdapterChannels(raw any) []any {
 func slackBaseID(entryID any) (string, error) {
 	s, ok := entryID.(string)
 	if !ok {
-		return "", fmt.Errorf("'%s' object has no attribute 'split'", pyrepr.TypeName(entryID))
+		return "", fmt.Errorf("a Slack channel id is %s, expected text", errchain.Kind(entryID))
 	}
 	base, _, _ := strings.Cut(s, ":")
 	return base, nil
@@ -297,7 +298,7 @@ func slackHasRawName(entry *pyjson.Object) (bool, error) {
 	name := entry.GetOr("name", "")
 	s, ok := name.(string)
 	if !ok {
-		return false, fmt.Errorf("'%s' object has no attribute 'startswith'", pyrepr.TypeName(name))
+		return false, fmt.Errorf("a Slack channel name is %s, expected text", errchain.Kind(name))
 	}
 	for _, p := range slackRawIDPrefixes {
 		if strings.HasPrefix(s, p) {
@@ -323,7 +324,7 @@ func slackSetKey(v any) (any, error) {
 		return nil, nil
 	}
 	if !reflect.TypeOf(v).Comparable() {
-		return nil, fmt.Errorf("unhashable type: '%s'", pyrepr.TypeName(v))
+		return nil, fmt.Errorf("a Slack channel key is %s, expected text", errchain.Kind(v))
 	}
 	return v, nil
 }
@@ -349,7 +350,7 @@ func slackTeamChannels(ctx context.Context, teamID string, client SlackDirectory
 			}
 			list, isList := raw.([]any)
 			if !isList {
-				return fmt.Errorf("'%s' object is not iterable", pyrepr.TypeName(raw))
+				return fmt.Errorf("the Slack team channels are %s, expected a list", errchain.Kind(raw))
 			}
 			for _, ch := range list {
 				cid, err := slackGetOr(ch, "id", nil)

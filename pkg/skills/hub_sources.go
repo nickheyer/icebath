@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
@@ -36,7 +37,7 @@ func hubRecover(err *error) {
 func pyGet(v any, key string, def any) any {
 	o, ok := v.(*pyjson.Object)
 	if !ok {
-		hubRaise(fmt.Errorf("'%s' object has no attribute 'get'", pyrepr.TypeName(v)))
+		hubRaise(fmt.Errorf("expected a mapping holding %s, got %s", key, errchain.Kind(v)))
 	}
 	if x, found := o.Get(key); found {
 		return x
@@ -48,7 +49,7 @@ func pyGet(v any, key string, def any) any {
 func pyStrOf(v any) string {
 	s, ok := v.(string)
 	if !ok {
-		hubRaise(fmt.Errorf("'%s' object is not a str", pyrepr.TypeName(v)))
+		hubRaise(fmt.Errorf("expected text, got %s", errchain.Kind(v)))
 	}
 	return s
 }
@@ -208,7 +209,7 @@ func (w *WellKnownSkillSource) Fetch(ctx context.Context, identifier string) (b 
 		}
 		safe, verr := validateBundleRelPath(rel)
 		if verr != nil {
-			w.h.S.logger().Warn(fmt.Sprintf("Well-known skill %s advertised unsafe file path: %s", identifier, pyrepr.Repr(rel)))
+			w.h.S.logger().Warn(fmt.Sprintf("Well-known skill %s advertised unsafe file path: %s", identifier, errchain.Show(rel)))
 			return nil, nil
 		}
 		text, ok := w.h.fetchText(ctx, p.skillURL+"/"+safe)
@@ -442,7 +443,7 @@ func (u *UrlSource) Fetch(ctx context.Context, identifier string) (b *SkillBundl
 		content, ok := u.h.fetchBytes(ctx, supportURL)
 		if !ok {
 			u.h.S.logger().Warn(fmt.Sprintf("URL skill %s: referenced support file %s could not be fetched from %s; skipping it",
-				l.url, pyrepr.Repr(rel), supportURL))
+				l.url, errchain.Show(rel), supportURL))
 			continue
 		}
 		files = append(files, BundleFile{Path: rel, Data: content, Binary: true})
@@ -450,7 +451,7 @@ func (u *UrlSource) Fetch(ctx context.Context, identifier string) (b *SkillBundl
 	skillName := ""
 	if l.name != nil {
 		if skillName, err = validateHubSkillName(*l.name); err != nil {
-			u.h.S.logger().Warn(fmt.Sprintf("URL skill %s produced unsafe skill name: %s", l.url, pyrepr.Repr(*l.name)))
+			u.h.S.logger().Warn(fmt.Sprintf("URL skill %s produced unsafe skill name: %s", l.url, errchain.Show(*l.name)))
 			return nil, nil
 		}
 	}
@@ -654,7 +655,7 @@ func (b *BrowseShSource) catalog(ctx context.Context) []any {
 	}
 	list, ok := v.([]any)
 	if !ok {
-		hubRaise(fmt.Errorf("'%s' object is not a catalog list", pyrepr.TypeName(v)))
+		hubRaise(fmt.Errorf("skills catalog is %s where a list was expected", errchain.Kind(v)))
 	}
 	return list
 }

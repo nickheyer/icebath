@@ -4,6 +4,7 @@ import (
 	"context"
 	"math"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
@@ -620,7 +621,7 @@ func migrateWorkerAutomation(d *SessionDB, ctx context.Context, conn SQLiteConn,
 		}
 		text, ok := raw.(string)
 		if !ok {
-			return &stateTypedError{"TypeError", "the JSON object must be str, bytes or bytearray, not " + pyTypeName(raw)}
+			return &stateTypedError{"TypeError", "the stored worker automation is " + errchain.Kind(raw) + ", expected JSON text"}
 		}
 		state, err := codec(text)
 		if err != nil {
@@ -639,7 +640,7 @@ func migrateWorkerAutomation(d *SessionDB, ctx context.Context, conn SQLiteConn,
 			}
 			priorText, ok := prior.(string)
 			if !ok {
-				return &stateTypedError{"TypeError", "the JSON object must be str, bytes or bytearray, not " + pyTypeName(prior)}
+				return &stateTypedError{"TypeError", "the prior worker automation is " + errchain.Kind(prior) + ", expected JSON text"}
 			}
 			priorState, err := codec(priorText)
 			if err != nil {
@@ -860,7 +861,7 @@ func (d *SessionDB) WorkerRetryTarget(ctx context.Context, params *pyjson.Object
 	}
 	target, ok := sessionID.(string)
 	if !ok {
-		return nil, &stateTypedError{"TypeError", "session_id must be str, not " + pyTypeName(sessionID)}
+		return nil, &stateTypedError{"TypeError", "session_id is " + errchain.Kind(sessionID) + ", expected text"}
 	}
 	operation, _ := params.Get("operation")
 	payload, _ := params.Get("payload")

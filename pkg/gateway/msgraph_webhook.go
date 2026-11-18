@@ -14,6 +14,7 @@ import (
 	"sync"
 	"unicode/utf8"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyipaddress"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -99,7 +100,7 @@ func msgraphIterate(value any) ([]any, error) {
 	if !pyrepr.Truthy(value) {
 		return nil, nil
 	}
-	return nil, &PyError{Kind: "TypeError", Msg: fmt.Sprintf("'%s' object is not iterable", pyrepr.TypeName(value))}
+	return nil, &PyError{Kind: "TypeError", Msg: fmt.Sprintf("a Microsoft Graph notification field is %s, expected a list", errchain.Kind(value))}
 }
 
 // Optional CIDR allowlist, empty allowing every source and an invalid entry skipped with a warning
@@ -587,7 +588,7 @@ func (a *MSGraphWebhookAdapter) verifyClientState(notification *pyjson.Object) (
 	}
 	for _, text := range []string{*provided, *expected} {
 		if !utf8.ValidString(text) {
-			return false, &PyError{Kind: "UnicodeEncodeError", Msg: "'utf-8' codec can't encode character: surrogates not allowed"}
+			return false, &PyError{Kind: "UnicodeEncodeError", Msg: "the client state holds a lone surrogate, which UTF-8 cannot encode"}
 		}
 	}
 	return subtle.ConstantTimeCompare([]byte(*provided), []byte(*expected)) == 1, nil
@@ -641,7 +642,7 @@ func (a *MSGraphWebhookAdapter) renderPrompt(notification *pyjson.Object) (strin
 	if pyrepr.Truthy(template) {
 		text, isText := template.(string)
 		if !isText {
-			return "", &PyError{Kind: "TypeError", Msg: fmt.Sprintf("expected string or bytes-like object, got '%s'", pyrepr.TypeName(template))}
+			return "", &PyError{Kind: "TypeError", Msg: fmt.Sprintf("the prompt template is %s, expected text", errchain.Kind(template))}
 		}
 		return msgraphRenderTemplate(text, pyjson.ObjectOf("notification", notification,
 			"resource", notification.GetOr("resource", ""), "change_type", notification.GetOr("changeType", ""),

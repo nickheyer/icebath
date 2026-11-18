@@ -4,10 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/nickheyer/icebath/pkg/errchain"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 
@@ -39,7 +41,7 @@ func valueError(msg string) error { return &pyError{class: "ValueError", msg: ms
 // Source, global index, and fingerprint of a memory node id, the fingerprint empty for legacy ids
 func parseMemoryID(nodeID string) (string, int, string, error) {
 	parts := strings.Split(nodeID, ":")
-	bad := valueError(fmt.Sprintf("bad memory node id: %s", pyRepr(nodeID)))
+	bad := valueError(fmt.Sprintf("bad memory node id: %s", errchain.Show(nodeID)))
 	if (len(parts) != 3 && len(parts) != 4) || parts[0] != "memory" {
 		return "", 0, "", bad
 	}
@@ -243,7 +245,7 @@ func NodeDetail(ctx context.Context, env *tools.Env, nodeID string) (map[string]
 		body := pyStrip(chunks[local])
 		lines := pystr.Splitlines(body, false)
 		if len(lines) == 0 {
-			return nil, &pyError{class: "IndexError", msg: "list index out of range"}
+			return nil, &pyError{class: "IndexError", msg: "memory node " + nodeID + " has an empty entry"}
 		}
 		return map[string]any{"ok": true, "kind": "memory", "id": id, "label": runePrefix(lines[0], 80), "content": body}, nil
 	}, func(id string) (map[string]any, error) {

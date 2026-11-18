@@ -38,7 +38,7 @@ type modelsHTTPError struct {
 }
 
 func (e *modelsHTTPError) Error() string {
-	return fmt.Sprintf("HTTP Error %d for %s", e.Status, e.URL)
+	return fmt.Sprintf("HTTP %d for %s", e.Status, e.URL)
 }
 
 // GET a catalog URL through open_credentialed_url and parse its JSON body, headers sent in their recorded order

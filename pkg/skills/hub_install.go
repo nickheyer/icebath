@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyfs"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
@@ -293,7 +294,7 @@ func (h *Hub) UninstallSkill(ctx context.Context, skillName string) (bool, strin
 	}
 	entry, ok := raw.(*pyjson.Object)
 	if !ok {
-		return false, "", fmt.Errorf("'%s' object has no attribute 'get'", pyrepr.TypeName(raw))
+		return false, "", fmt.Errorf("skills hub lock entry is %s where a mapping was expected", errchain.Kind(raw))
 	}
 	ip, ok := entry.Get("install_path")
 	if !ok {

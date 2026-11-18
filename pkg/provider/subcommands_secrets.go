@@ -60,7 +60,7 @@ func (p *secretsCommandParser) printHelp(w io.Writer) {
 	}
 	choices := "{" + strings.Join(names, ",") + "}"
 	var b strings.Builder
-	fmt.Fprintf(&b, "usage: icebath secrets [-h] %s ...\n\n%s\n\npositional arguments:\n  %s\n", choices, p.Description, choices)
+	fmt.Fprintf(&b, "usage: icebath secrets [-h] %s ...\n\n%s\n\narguments:\n  %s\n", choices, p.Description, choices)
 	for _, integration := range p.Integrations {
 		label := integration.Name
 		if len(integration.Aliases) > 0 {
@@ -80,7 +80,7 @@ func (p *secretsParser) printHelp(w io.Writer) {
 	}
 	choices := "{" + strings.Join(names, ",") + "}"
 	var b strings.Builder
-	fmt.Fprintf(&b, "usage: icebath secrets %s [-h] %s ...\n\npositional arguments:\n  %s\n", p.Name, choices, choices)
+	fmt.Fprintf(&b, "usage: icebath secrets %s [-h] %s ...\n\narguments:\n  %s\n", p.Name, choices, choices)
 	for _, cmd := range p.Commands {
 		fmt.Fprintf(&b, "    %-20s%s\n", cmd.Name, cmd.Help)
 	}

@@ -142,8 +142,8 @@ func TestParallelKeylessExtractPythonPayloadSemantics(t *testing.T) {
 	}
 	for text, want := range map[string]string{
 		`{"results":[],"errors":[{"url":"https://t.test/a","http_status_code":Infinity}]}`: "cannot convert float infinity to integer",
-		`[1, 2]`:                           "'list' object has no attribute 'get'",
-		`{"results":["https://t.test/a"]}`: "'str' object has no attribute 'get'",
+		`[1, 2]`:                           "expected a mapping, got a list",
+		`{"results":["https://t.test/a"]}`: "expected a mapping, got text",
 		`{"results":[{"excerpts":[1]}]}`:   "sequence item 0: expected str instance, int found",
 	} {
 		payload.set(text)
@@ -186,7 +186,7 @@ func TestExaKeylessExtractCrawlStatusBranch(t *testing.T) {
 		t.Fatalf("an undecodable envelope is skipped into the unrecognized shape KeylessMCPError: %+v %v", out, err)
 	}
 	reply.set(`{"jsonrpc":"2.0","id":1,"error":"denied"}`)
-	if _, err = exaExtractKeyless(context.Background(), []string{"https://t.test/a"}); err == nil || isKeylessMCPError(err) || err.Error() != "'str' object has no attribute 'get'" {
+	if _, err = exaExtractKeyless(context.Background(), []string{"https://t.test/a"}); err == nil || isKeylessMCPError(err) || err.Error() != "expected a mapping, got text" {
 		t.Fatalf("an AttributeError is not a KeylessMCPError and escapes the per url catch: %v", err)
 	}
 	reply.set(`{"jsonrpc":"2.0","id":1,"result":{"isError":true,"content":[{"text":7}]}}`)

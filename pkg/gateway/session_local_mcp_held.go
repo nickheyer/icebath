@@ -74,7 +74,7 @@ func frozenEditorNames(data map[string]any, specs []map[string]any) (map[int]str
 		for key, name := range raw {
 			i, err := strconv.Atoi(key)
 			if err != nil {
-				return nil, &PyError{Kind: "ValueError", Msg: "invalid literal for int() with base 10: " + pyrepr.Repr(key)}
+				return nil, &PyError{Kind: "ValueError", Msg: "the editor MCP key " + key + " is not a whole number"}
 			}
 			names[i] = pyrepr.Str(name)
 		}
@@ -513,7 +513,7 @@ func prepareEditorMCP(ctx context.Context, a *SessionAuthority, live *LiveSessio
 	for key := range names {
 		i, err := strconv.Atoi(key)
 		if err != nil {
-			return nil, &PyError{Kind: "ValueError", Msg: "invalid literal for int() with base 10: " + pyrepr.Repr(key)}
+			return nil, &PyError{Kind: "ValueError", Msg: "the editor MCP key " + key + " is not a whole number"}
 		}
 		indexes = append(indexes, i)
 	}

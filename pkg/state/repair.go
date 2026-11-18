@@ -174,7 +174,7 @@ func releaseAutoMaintenanceLock(handle *os.File) { releaseLockHandle(handle, fal
 func bumpSchemaCookie(ctx context.Context, conn SQLiteConn) {
 	row, err := fetchOne(ctx, conn, "PRAGMA schema_version")
 	if err == nil && row == nil {
-		err = errors.New("'NoneType' object is not subscriptable")
+		err = errors.New("the schema cookie row is missing")
 	}
 	if err == nil {
 		var current *big.Int

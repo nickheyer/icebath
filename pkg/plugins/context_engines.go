@@ -174,7 +174,7 @@ func (e *engineCollector) serve(ctx context.Context, h *PluginHost, c *Context, 
 	case "register_tool", "register_hook", "register_cli_command", "register_memory_provider":
 		return nil, nil
 	}
-	return nil, &HostBuiltinError{Type: "AttributeError", Message: fmt.Sprintf("'_EngineCollector' object has no attribute %s", config.PyRepr(method))}
+	return nil, &HostBuiltinError{Type: "AttributeError", Message: fmt.Sprintf("context engine registration has no %s", method)}
 }
 
 // Registers an engine slash command unless its name is empty, built in or taken by a plugin

@@ -110,7 +110,7 @@ func readGGMLDevices(directory, backend string) ([]GGMLDevice, error) {
 		callNativeOut(fns[4], device, &free, &total)
 		description := callNative(fns[2], device)
 		if description == 0 {
-			return nil, errors.New("'NoneType' object has no attribute 'decode'")
+			return nil, errors.New("the device listing printed nothing")
 		}
 		devices = append(devices, GGMLDevice{
 			Description: loadDecodeReplace(cStringAt(description)),

@@ -14,6 +14,7 @@ import (
 	"github.com/dlclark/regexp2/v2"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -392,7 +393,7 @@ func (s *Store) loadCronSkillParts(ctx context.Context, job *Job, skillNames []s
 		}
 		loaded, ok := decoded.(map[string]any)
 		if !ok {
-			return nil, fmt.Errorf("'%s' object has no attribute 'get'", pyTypeName(decoded))
+			return nil, fmt.Errorf("skill %s returned %s, expected a mapping", name, errchain.Kind(decoded))
 		}
 		if ambiguous, ok := skills.AmbiguousSkillLabel(name, loaded); ok {
 			skip(ambiguous, ambiguous+" \u2014 skipping")
@@ -423,23 +424,6 @@ func (s *Store) loadCronSkillParts(ctx context.Context, job *Job, skillNames []s
 		parts = append([]string{notice}, parts...)
 	}
 	return parts, nil
-}
-
-// Python type name of a decoded JSON value for the AttributeError text
-func pyTypeName(v any) string {
-	switch v.(type) {
-	case []any:
-		return "list"
-	case string:
-		return "str"
-	case float64:
-		return "float"
-	case bool:
-		return "bool"
-	case nil:
-		return "NoneType"
-	}
-	return "dict"
 }
 
 // Wall clock line of this fire in the configured zone with its UTC offset
@@ -556,7 +540,7 @@ func (s *Store) guardJobCredentialExfil(job *Job) error {
 	if err != nil {
 		msg = ""
 		if job.BaseURL != nil && *job.BaseURL != "" {
-			msg = fmt.Sprintf("could not validate provider/base_url pair (%s: %v); refusing to run a job with an unverified base_url override", cronExceptionName(err), err)
+			msg = fmt.Sprintf("could not validate provider/base_url pair (%v); refusing to run a job with an unverified base_url override", err)
 		}
 	}
 	if msg == "" {

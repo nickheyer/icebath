@@ -81,7 +81,7 @@ func resetInTransaction(d *SessionDB, ctx context.Context, conn SQLiteConn, sess
 		return nil, nil, err
 	}
 	if parent == nil {
-		return nil, nil, &stateTypedError{"TypeError", "'NoneType' object is not subscriptable"}
+		return nil, nil, &stateTypedError{"TypeError", "the reset parent session is missing"}
 	}
 	source, err := receiptItem(policy, "source")
 	if err != nil {

@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
@@ -119,7 +120,7 @@ func resolveGuardSettings(raw any) (bool, guardDecimal) {
 				sign, err = candidate.sign()
 			}
 			if err != nil {
-				pkgLog().Debug(fmt.Sprintf("empty-guard: invalid cost_threshold_usd %s, using default", pyrepr.Repr(thresholdRaw)))
+				pkgLog().Debug(fmt.Sprintf("empty-guard: invalid cost_threshold_usd %s, using default", errchain.Show(thresholdRaw)))
 			} else if sign > 0 {
 				threshold = candidate
 			}

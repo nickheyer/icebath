@@ -30,7 +30,7 @@ type queueItem struct {
 	Failed              bool
 	Attachments         []imageAttachment
 	ControlMethod       string
-	ExecutionGeneration *float64
+	ExecutionGeneration *int64
 	PreparedText        *string
 	LegacyAttempted     *bool
 	Settle              func(accepted bool)
@@ -309,7 +309,10 @@ func (p *pendingInputs) load(destination submissionDestination, durableResume bo
 				item.Attachments = append(item.Attachments, imageAttachment{Path: paramStr(a["path"]), Mime: paramStr(a["mime"])})
 			}
 		}
-		item.ExecutionGeneration, item.CreatedAt = optionalNumber(record, "executionGeneration"), optionalNumber(record, "createdAt")
+		item.CreatedAt = optionalNumber(record, "createdAt")
+		if generation := optionalNumber(record, "executionGeneration"); generation != nil {
+			item.ExecutionGeneration = ptr(int64(*generation))
+		}
 		if v, isBool := record["legacyAttempted"].(bool); isBool {
 			item.LegacyAttempted = &v
 		}

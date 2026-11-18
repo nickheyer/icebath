@@ -1187,10 +1187,10 @@ func TestRelayStreamCurrentInsideManagedCallbackReturnsRaw(t *testing.T) {
 
 func TestAnthropicStreamAccumulatorRejectsUnhashableEventType(t *testing.T) {
 	acc := NewAnthropicStreamAccumulator()
-	if err := acc.Observe(map[string]any{"type": map[string]any{}}); err == nil || err.Error() != "unhashable type: 'dict'" {
+	if err := acc.Observe(map[string]any{"type": map[string]any{}}); err == nil || err.Error() != "a value to remember is a mapping, expected text or a number" {
 		t.Fatalf("dict event type error %v", err)
 	}
-	if err := acc.Observe(map[string]any{"type": []any{"message_start"}}); err == nil || err.Error() != "unhashable type: 'list'" {
+	if err := acc.Observe(map[string]any{"type": []any{"message_start"}}); err == nil || err.Error() != "a value to remember is a list, expected text or a number" {
 		t.Fatalf("list event type error %v", err)
 	}
 	if err := acc.Observe(map[string]any{"type": "message_start", "message": map[string]any{"id": "msg_1", "extra": true}}); err != nil {

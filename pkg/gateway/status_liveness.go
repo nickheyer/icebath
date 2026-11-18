@@ -48,7 +48,7 @@ func recordStartAndCheckStorm(ctx context.Context, h string, maxStarts int, wind
 	if data, err := os.ReadFile(path); err == nil {
 		data = bytes.TrimPrefix(data, []byte("\xef\xbb\xbf"))
 		if !utf8.Valid(data) {
-			return nil, errors.New("UnicodeDecodeError: 'utf-8' codec can't decode gateway-starts.log")
+			return nil, errors.New("gateway-starts.log is not valid UTF-8")
 		}
 		for _, line := range pystr.Splitlines(string(data), false) {
 			line = pystr.Strip(line)

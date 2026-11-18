@@ -42,7 +42,7 @@ func TestRestoreFollowsDeclaredHints(t *testing.T) {
 		}
 	}
 	var builtin *HostBuiltinError
-	if _, err := restoreHinted([]any{[]any{"x"}}, parsePyHint("frozenset[str]")); !errors.As(err, &builtin) || builtin.Message != "unhashable type: 'list'" {
+	if _, err := restoreHinted([]any{[]any{"x"}}, parsePyHint("frozenset[str]")); !errors.As(err, &builtin) || builtin.Message != "a set cannot hold a list" {
 		t.Fatalf("unhashable set element error = %v", err)
 	}
 }
@@ -75,7 +75,7 @@ func TestIsolationModeAndRefusal(t *testing.T) {
 		}
 	}
 	logs := captureLogs(t)
-	if got := IsolationMode(ctx, cfg("sandbox")); got != IsolationInProcess || !strings.Contains(logs.String(), "plugins.isolation='sandbox' is not one of host, in_process; loading plugins in-process") {
+	if got := IsolationMode(ctx, cfg("sandbox")); got != IsolationInProcess || !strings.Contains(logs.String(), "plugins.isolation=sandbox is not one of host, in_process; loading plugins in-process") {
 		t.Fatalf("unknown mode = %q, log %q", got, logs.String())
 	}
 	if r := InProcessImportRefusal(ctx, "memory provider 'x'", "user", cfg("host")); !strings.HasPrefix(r, "memory provider 'x' runs only in-process, and plugins.isolation is 'host'") {

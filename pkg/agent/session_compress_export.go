@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -142,11 +143,11 @@ func thresholdFloat(v any) (float64, error) {
 	case string:
 		f, err := strconv.ParseFloat(strings.TrimSpace(x), 64)
 		if err != nil {
-			return 0, fmt.Errorf("could not convert string to float: %s", pyrepr.Repr(x))
+			return 0, fmt.Errorf("compression threshold %s is not a number", errchain.Show(x))
 		}
 		return f, nil
 	}
-	return 0, fmt.Errorf("float() argument must be a string or a real number, not '%s'", pyrepr.TypeName(v))
+	return 0, fmt.Errorf("compression threshold is %s where a number was expected", errchain.Kind(v))
 }
 
 // Deep copy of message rows through JSON

@@ -269,7 +269,7 @@ func TestRebuildStatusPayload(t *testing.T) {
 		t.Fatalf("a zero high water is not pending: %v %v", st, err)
 	}
 	set("fts_cjk_rebuild_high_water", "x")
-	if _, err := s.FTSCJKRebuildStatus(ctx); err == nil || !strings.Contains(err.Error(), "invalid literal for int()") {
+	if _, err := s.FTSCJKRebuildStatus(ctx); err == nil || !strings.Contains(err.Error(), "the fts_cjk_rebuild_high_water marker x is not a whole number") {
 		t.Fatalf("a corrupt marker raises int's ValueError: %v", err)
 	}
 }

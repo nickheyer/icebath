@@ -527,7 +527,7 @@ func referencePair(row any) (secretPath, any, error) {
 		return nil, nil, referenceFault("TypeError")
 	}
 	if len(path) == 0 {
-		return nil, nil, &PyError{Kind: "IndexError", Msg: "list index out of range"}
+		return nil, nil, &PyError{Kind: "IndexError", Msg: "a credential reference has an empty path"}
 	}
 	return secretPath(path), pair[1], nil
 }

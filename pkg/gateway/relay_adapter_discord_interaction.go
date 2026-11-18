@@ -7,6 +7,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
@@ -200,7 +201,7 @@ func (a *RelayAdapter) passthroughDiscord(ctx context.Context, forward *Passthro
 func relayDictGet(v any, key string) (any, error) {
 	m, ok := v.(map[string]any)
 	if !ok {
-		return nil, &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("'%s' object has no attribute 'get'", pyrepr.TypeName(v))}
+		return nil, &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("a Discord interaction field is %s, expected a mapping", errchain.Kind(v))}
 	}
 	return m[key], nil
 }
@@ -411,7 +412,7 @@ func relayListOf(v any) ([]any, error) {
 		}
 		return out, nil
 	}
-	return nil, &PyError{Kind: "TypeError", Msg: fmt.Sprintf("'%s' object is not reversible", pyrepr.TypeName(v))}
+	return nil, &PyError{Kind: "TypeError", Msg: fmt.Sprintf("a Discord interaction field is %s, expected a list or a mapping", errchain.Kind(v))}
 }
 
 func relayReversed(list []any) []any {

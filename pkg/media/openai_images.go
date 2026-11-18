@@ -180,7 +180,7 @@ func openAIBody(method string, params []string, req map[string]any) ([]string, e
 	}
 	for k := range req {
 		if !known[k] {
-			return nil, &openAIError{Class: "TypeError", Message: fmt.Sprintf("Images.%s() got an unexpected keyword argument '%s'", method, k)}
+			return nil, &openAIError{Class: "TypeError", Message: fmt.Sprintf("image %s request has an unknown option %s", method, k)}
 		}
 	}
 	var keys []string

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
@@ -120,7 +121,7 @@ func prepareResult(row *pyjson.Object, response any, outcome string, captured *p
 	}
 	value, ok := raw.(*pyjson.Object)
 	if !ok {
-		return nil, errors.New("'" + pyrepr.TypeName(raw) + "' object has no attribute 'get'")
+		return nil, errors.New("the stored turn result is " + errchain.Kind(raw) + ", expected a mapping")
 	}
 	interrupted, _ := value.Get("interrupted")
 	failed, _ := value.Get("failed")
@@ -233,7 +234,7 @@ func closeDiscardedTail(ctx context.Context, db *state.SessionDB, conn state.SQL
 		return false, err
 	}
 	if len(chain) == 0 {
-		return false, errors.New("list index out of range")
+		return false, errors.New("the session has no canonical chain to close")
 	}
 	target := chain[len(chain)-1]
 	var role string

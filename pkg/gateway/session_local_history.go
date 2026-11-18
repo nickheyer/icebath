@@ -204,7 +204,7 @@ func mergeLiveInStoredOrder(display, live []map[string]any) ([]map[string]any, e
 		id, _ := historyRowID(row)
 		if shownIDs[id] {
 			if seen >= len(groups) {
-				return nil, &PyError{Kind: "IndexError", Msg: "list index out of range"}
+				return nil, &PyError{Kind: "IndexError", Msg: "the live history has more shown rows than message groups"}
 			}
 			rows = append(rows, groups[seen]...)
 			seen++

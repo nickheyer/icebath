@@ -15,6 +15,8 @@ import (
 	"strings"
 	"unicode"
 	"unicode/utf8"
+
+	"github.com/nickheyer/icebath/pkg/errchain"
 )
 
 var ggufMagic = []byte("GGUF")
@@ -106,25 +108,6 @@ type GGUFHeader struct {
 	RecurrentBlocks    map[int]bool
 }
 
-// Python type name of a metadata value for exception messages
-func ggufTypeName(v any) string {
-	switch v.(type) {
-	case nil:
-		return "NoneType"
-	case bool:
-		return "bool"
-	case int64, uint64:
-		return "int"
-	case float64:
-		return "float"
-	case string:
-		return "str"
-	case []any:
-		return "list"
-	}
-	return fmt.Sprintf("%T", v)
-}
-
 // Value of a Unicode decimal digit rune, or -1 when it is not one
 func ggufDigitValue(r rune) int {
 	if r >= '0' && r <= '9' {
@@ -142,7 +125,7 @@ func ggufDigitValue(r rune) int {
 
 // Python int of a decimal string with sign, underscores and Unicode digits
 func ggufParseIntString(s string) (int64, error) {
-	bad := &GGUFError{"ValueError", "invalid literal for int() with base 10: " + pyStringRepr(s)}
+	bad := &GGUFError{"ValueError", "GGUF value " + pyStringRepr(s) + " is not a whole number"}
 	t := strings.TrimFunc(s, unicode.IsSpace)
 	neg := false
 	if t != "" && (t[0] == '+' || t[0] == '-') {
@@ -222,7 +205,7 @@ func ggufInt(v any) (int64, error) {
 	case string:
 		return ggufParseIntString(t)
 	}
-	return 0, &GGUFError{"TypeError", "int() argument must be a string, a bytes-like object or a real number, not '" + ggufTypeName(v) + "'"}
+	return 0, &GGUFError{"TypeError", "a GGUF value is " + errchain.Kind(v) + ", expected a whole number"}
 }
 
 // Python int(v or 0) of a metadata value
@@ -469,7 +452,7 @@ func ggufGreater(a, b any) (bool, error) {
 	if aStr && bStr {
 		return as > bs, nil
 	}
-	return false, &GGUFError{"TypeError", "'>' not supported between instances of '" + ggufTypeName(a) + "' and '" + ggufTypeName(b) + "'"}
+	return false, &GGUFError{"TypeError", "cannot compare GGUF values that are " + errchain.Kind(a) + " and " + errchain.Kind(b)}
 }
 
 // Exact integer used to compare int64 and large uint64 metadata values

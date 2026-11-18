@@ -22,12 +22,12 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 
 	"github.com/google/uuid"
 	"github.com/nickheyer/icebath/pkg/internal/msalruntime"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
@@ -114,7 +114,7 @@ func loadVSCodeAuthRecord() (*entraAuthRecord, error) {
 		}
 		raw, err := os.ReadFile(path)
 		if err != nil {
-			return nil, errors.New(pypath.OSErrorText(err) + ": " + pyrepr.StrRepr(path))
+			return nil, errors.New(errchain.OSText(err) + ": " + pyrepr.StrRepr(path))
 		}
 		text := string(raw)
 		if !utf8.Valid(raw) {
@@ -140,21 +140,9 @@ func loadVSCodeAuthRecord() (*entraAuthRecord, error) {
 	return nil, nil
 }
 
-// TypeError text Python raises for indexing a non dict JSON value with a string key
+// Refusal of a broker record value that is no mapping
 func entraSubscriptTypeError(v any) string {
-	switch v.(type) {
-	case []any:
-		return "list indices must be integers or slices, not str"
-	case string:
-		return "string indices must be integers, not 'str'"
-	case bool:
-		return "'bool' object is not subscriptable"
-	case float64:
-		return "'float' object is not subscriptable"
-	case nil:
-		return "'NoneType' object is not subscriptable"
-	}
-	return "'int' object is not subscriptable"
+	return "a broker record value is " + errchain.Kind(v) + ", expected a mapping"
 }
 
 // Schema and value checks of the record, every failure joined into one ValueError

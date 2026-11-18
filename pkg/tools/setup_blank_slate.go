@@ -7,7 +7,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 // Writes the Blank Slate toolset state, only file, terminal, vision and skills left on through both suppression layers
@@ -63,7 +62,7 @@ func BlankSlateMinimalToolsets(ctx context.Context, cfg config.Tree) error {
 		cfg["agent"] = agent
 	}
 	if !ok {
-		toolsConfigLogger().Debug(fmt.Sprintf("blank-slate disabled_toolsets computation skipped: '%s' object does not support item assignment", pyrepr.TypeName(cfg["agent"])))
+		toolsConfigLogger().Debug(fmt.Sprintf("blank-slate disabled_toolsets computation skipped: the platform toolsets setting is %s, expected a mapping", errchain.Kind(cfg["agent"])))
 		return nil
 	}
 	agent["disabled_toolsets"] = disabled

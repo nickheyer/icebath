@@ -62,7 +62,7 @@ func anthWireParams(body map[string]any, op anthOperation) (*pyjson.Object, *pyj
 	}
 	for k := range body {
 		if k != "extra_body" && !known[k] {
-			return nil, nil, &pyjson.TypeError{Msg: fmt.Sprintf("%s got an unexpected keyword argument '%s'", method, k)}
+			return nil, nil, &pyjson.TypeError{Msg: fmt.Sprintf("%s takes no argument named %s", method, k)}
 		}
 	}
 	out := pyjson.NewObject()

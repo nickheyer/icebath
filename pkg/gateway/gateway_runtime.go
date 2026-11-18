@@ -9,6 +9,7 @@ import (
 	"runtime"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -109,7 +110,7 @@ func endpointFromPayload(payload *pyjson.Object, home, controlHome string) (Obse
 	drainReason, _ := recGet(payload, "drain_reason").(string)
 	restartWait := state == "draining" && drainReason == RestartWaitReason
 	if unhashable(state) {
-		return ObservedEndpoint{}, fmt.Errorf("unhashable type: '%s'", pyTypeName(state))
+		return ObservedEndpoint{}, fmt.Errorf("the endpoint state is %s, expected text", errchain.Kind(state))
 	}
 	if s, _ := state.(string); (s == "starting" || s == "draining" || s == "conflict") && !restartWait {
 		reason := ""
@@ -146,7 +147,7 @@ func endpointFromPayload(payload *pyjson.Object, home, controlHome string) (Obse
 	}
 	supervisor := recGet(payload, "supervisor")
 	if unhashable(supervisor) {
-		return ObservedEndpoint{}, fmt.Errorf("unhashable type: '%s'", pyTypeName(supervisor))
+		return ObservedEndpoint{}, fmt.Errorf("the endpoint supervisor is %s, expected text", errchain.Kind(supervisor))
 	}
 	sup, _ := supervisor.(string)
 	if !validSupervisors[sup] {
@@ -161,14 +162,6 @@ func endpointFromPayload(payload *pyjson.Object, home, controlHome string) (Obse
 		return ObservedEndpoint{State: "draining", Endpoint: endpoint, ReasonCode: RestartWaitReason}, nil
 	}
 	return ObservedEndpoint{State: "ready", Endpoint: endpoint}, nil
-}
-
-func pyTypeName(v any) string {
-	switch v.(type) {
-	case []any:
-		return "list"
-	}
-	return "dict"
 }
 
 // Whether origin is a bare http or https loopback origin with a port and no credentials

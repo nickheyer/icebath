@@ -13,12 +13,12 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pycodecs"
 	"github.com/nickheyer/icebath/pkg/internal/pyfs"
 	"github.com/nickheyer/icebath/pkg/internal/pyipaddress"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -620,7 +620,7 @@ func discoverPortableMCP(root, dataRoot string, diags *[]AgentPluginDiagnostic, 
 		} else {
 			switch kind := server["type"].(type) {
 			case []any, map[string]any:
-				return nil, &HostBuiltinError{Type: "TypeError", Message: fmt.Sprintf("unhashable type: '%s'", pyTypeName(kind))}
+				return nil, &HostBuiltinError{Type: "TypeError", Message: fmt.Sprintf("MCP server type is %s where text was expected", errchain.Kind(kind))}
 			default:
 				switch kind {
 				case "stdio":
@@ -651,7 +651,7 @@ func vendorServers(manifest map[string]any) (any, error) {
 	}
 	ext, ok := extensions.(map[string]any)
 	if !ok {
-		return nil, &HostBuiltinError{Type: "AttributeError", Message: fmt.Sprintf("'%s' object has no attribute 'get'", pyTypeName(extensions))}
+		return nil, &HostBuiltinError{Type: "AttributeError", Message: fmt.Sprintf("plugin manifest extensions are %s where a mapping was expected", errchain.Kind(extensions))}
 	}
 	namespace, present := ext[PortableExtension]
 	if !present {
@@ -659,7 +659,7 @@ func vendorServers(manifest map[string]any) (any, error) {
 	}
 	ns, ok := namespace.(map[string]any)
 	if !ok {
-		return nil, &HostBuiltinError{Type: "AttributeError", Message: fmt.Sprintf("'%s' object has no attribute 'get'", pyTypeName(namespace))}
+		return nil, &HostBuiltinError{Type: "AttributeError", Message: fmt.Sprintf("plugin manifest vendor extension is %s where a mapping was expected", errchain.Kind(namespace))}
 	}
 	servers, present := ns["servers"]
 	if !present {
@@ -696,7 +696,7 @@ func portableServerDeclarations(manifest map[string]any, servers map[string]map[
 		if len(unknown) > 0 {
 			if diags != nil {
 				*diags = append(*diags, AgentPluginDiagnostic{"server:" + name,
-					fmt.Sprintf("ignored unknown keys %s (needs a newer Icebath)", pyrepr.Repr(stringsAny(unknown)))})
+					fmt.Sprintf("ignored unknown keys %s (needs a newer Icebath)", errchain.Show(stringsAny(unknown)))})
 			}
 			kept := map[string]any{}
 			for k, v := range decl {
@@ -724,7 +724,7 @@ func portableServerDeclarations(manifest map[string]any, servers map[string]map[
 		if len(decl) > 0 && policyOnly {
 			continue
 		}
-		if _, err := tools.ParsePlatformDeclaration(name, decl["app"], decl["requires"], "plugin.json extension server "+pyrepr.Repr(name)); err != nil {
+		if _, err := tools.ParsePlatformDeclaration(name, decl["app"], decl["requires"], "plugin.json extension server "+errchain.Show(name)); err != nil {
 			return nil, agentErr("%s", err.Error())
 		}
 		var live map[string]any
@@ -781,7 +781,7 @@ func portableServerTrust(manifest map[string]any, servers map[string]map[string]
 		case "untrusted":
 			out[name] = "untrusted"
 		default:
-			return nil, agentErr("server declaration '%s' trust must be 'untrusted' or 'full', not %s", name, pyrepr.Repr(value))
+			return nil, agentErr("server declaration '%s' trust must be 'untrusted' or 'full', not %s", name, errchain.Show(value))
 		}
 	}
 	return out, nil

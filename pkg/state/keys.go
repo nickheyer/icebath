@@ -22,7 +22,7 @@ func CronRequestID(jobID, executionID any) string {
 	return CronRequestPrefix + pyFormat(jobID) + ":" + pyFormat(executionID)
 }
 
-var errEmptyPrefix = errors.New("string index out of range")
+var errEmptyPrefix = errors.New("a key prefix cannot be empty")
 
 // Returns half open bounds covering every key that starts with the prefix
 func PrefixRange(prefix string) (string, string, error) {

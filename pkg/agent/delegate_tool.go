@@ -12,8 +12,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -129,7 +129,7 @@ func normalizeDelegateRole(r any) string {
 		norm = strings.ToLower(pystr.Strip(s))
 	}
 	if !delegateRoles[norm] {
-		pkgLog().Warn(fmt.Sprintf("Unknown delegate_task role=%s, coercing to 'leaf'", pyrepr.Repr(r)))
+		pkgLog().Warn(fmt.Sprintf("Unknown delegate_task role=%s, coercing to 'leaf'", errchain.Show(r)))
 		return "leaf"
 	}
 	return norm
@@ -146,7 +146,7 @@ func applyChildCacheTTL(child *AIAgent) {
 func childCompressionCapTokens(raw any) (*int, error) {
 	invalid := func() (*int, error) {
 		pkgLog().Warn(fmt.Sprintf("delegation.compression_threshold_tokens=%s is not a token count >= %d; ignoring it "+
-			"(children keep the ratio trigger).", pyrepr.Repr(raw), childCompressionCapMin))
+			"(children keep the ratio trigger).", errchain.Show(raw), childCompressionCapMin))
 		return nil, nil
 	}
 	var n int
@@ -361,7 +361,7 @@ func delegateTask(ctx context.Context, parent *AIAgent, kwargs map[string]any) (
 	if action != nil {
 		s, ok := action.(string)
 		if !ok {
-			return "", fmt.Errorf("'%s' object has no attribute 'strip'", pyrepr.TypeName(action))
+			return "", fmt.Errorf("delegate action is %s where text was expected", errchain.Kind(action))
 		}
 		actionText = s
 	}

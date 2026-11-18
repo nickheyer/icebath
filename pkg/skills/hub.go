@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
 	"github.com/nickheyer/icebath/pkg/internal/pyfs"
 	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
@@ -361,7 +362,7 @@ func (f *jsonStateFile) readObject() (*pyjson.Object, error) {
 	}
 	o, ok := v.(*pyjson.Object)
 	if !ok {
-		return nil, fmt.Errorf("'%s' object has no attribute 'get'", pyrepr.TypeName(v))
+		return nil, fmt.Errorf("%s holds %s where a mapping was expected", f.Path, errchain.Kind(v))
 	}
 	return o, nil
 }
@@ -436,7 +437,7 @@ func lockInstalled(data *pyjson.Object, create bool) (*pyjson.Object, error) {
 	}
 	o, isObj := v.(*pyjson.Object)
 	if !isObj {
-		return nil, fmt.Errorf("'%s' object has no attribute 'get'", pyrepr.TypeName(v))
+		return nil, fmt.Errorf("skills hub lock installed table is %s where a mapping was expected", errchain.Kind(v))
 	}
 	return o, nil
 }
@@ -521,7 +522,7 @@ func (l *HubLockFile) ListInstalled() ([]*pyjson.Object, error) {
 	for _, name := range installed.Keys {
 		entry, ok := installed.Vals[name].(*pyjson.Object)
 		if !ok {
-			return nil, fmt.Errorf("'%s' object is not a mapping", pyrepr.TypeName(installed.Vals[name]))
+			return nil, fmt.Errorf("skills hub lock entry %s is %s where a mapping was expected", name, errchain.Kind(installed.Vals[name]))
 		}
 		row := pyjson.NewObject()
 		row.Set("name", name)
@@ -589,7 +590,7 @@ func tapsList(data *pyjson.Object, create bool) ([]any, error) {
 	}
 	list, isList := v.([]any)
 	if !isList {
-		return nil, fmt.Errorf("'%s' object is not a list of taps", pyrepr.TypeName(v))
+		return nil, fmt.Errorf("skills taps are %s where a list was expected", errchain.Kind(v))
 	}
 	return list, nil
 }
@@ -597,7 +598,7 @@ func tapsList(data *pyjson.Object, create bool) ([]any, error) {
 func tapRepo(t any) (any, error) {
 	o, ok := t.(*pyjson.Object)
 	if !ok {
-		return nil, fmt.Errorf("'%s' object is not subscriptable", pyrepr.TypeName(t))
+		return nil, fmt.Errorf("skills tap is %s where a mapping was expected", errchain.Kind(t))
 	}
 	v, ok := o.Get("repo")
 	if !ok {

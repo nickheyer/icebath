@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
@@ -27,7 +28,7 @@ type LocalCreateReceipt struct {
 func isoTimestamp(value any) (float64, error) {
 	text, ok := value.(string)
 	if !ok {
-		return 0, &stateTypedError{"TypeError", "fromisoformat: argument must be str"}
+		return 0, &stateTypedError{"TypeError", "the timestamp is not ISO 8601 text"}
 	}
 	t, aware, err := pydatetime.ParseISOFormat(text)
 	if err != nil {
@@ -77,7 +78,7 @@ func (d *SessionDB) CommitLocalSession(ctx context.Context, epoch int64, staged 
 		}
 		policyObj, ok := policy.(*pyjson.Object)
 		if !ok {
-			return nil, &stateTypedError{"TypeError", "'" + pyTypeName(policy) + "' object has no attribute 'get'"}
+			return nil, &stateTypedError{"TypeError", "the commit policy is " + errchain.Kind(policy) + ", expected a mapping"}
 		}
 		if clientEnv, _ := policyObj.Get("client_env_json"); clientEnv != nil {
 			return nil, runtimeRefusal("invalid_params")
@@ -250,7 +251,7 @@ func (d *SessionDB) CommitLocalSession(ctx context.Context, epoch int64, staged 
 func sameLocalCreate(old any, receipt, request *pyjson.Object) (*pyjson.Object, bool, error) {
 	text, ok := old.(string)
 	if !ok {
-		return nil, false, &stateTypedError{"TypeError", "the JSON object must be str, bytes or bytearray, not " + pyTypeName(old)}
+		return nil, false, &stateTypedError{"TypeError", "the stored create request is " + errchain.Kind(old) + ", expected JSON text"}
 	}
 	decoded, err := pyjson.Loads(text)
 	if err != nil {
@@ -287,7 +288,7 @@ func sameLocalCreate(old any, receipt, request *pyjson.Object) (*pyjson.Object, 
 	}
 	retryText, ok := retryJSON.(string)
 	if !ok {
-		return nil, false, &stateTypedError{"TypeError", "the JSON object must be str, bytes or bytearray, not " + pyTypeName(retryJSON)}
+		return nil, false, &stateTypedError{"TypeError", "the retried create request is " + errchain.Kind(retryJSON) + ", expected JSON text"}
 	}
 	same, err := SameCreateRetry(savedPolicyObj, retryText, request)
 	if err != nil {

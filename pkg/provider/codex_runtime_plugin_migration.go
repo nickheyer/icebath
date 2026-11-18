@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pycodecs"
 	"github.com/nickheyer/icebath/pkg/internal/pyfs"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
@@ -131,7 +132,7 @@ func codexDictKeys(v any) ([]string, bool) {
 func codexMigrationStrMap(d any) (*pyjson.Object, error) {
 	keys, ok := codexDictKeys(d)
 	if !ok {
-		return nil, fmt.Errorf("'%s' object has no attribute 'items'", pyrepr.TypeName(d))
+		return nil, fmt.Errorf("expected a mapping, got %s", errchain.Kind(d))
 	}
 	out := pyjson.NewObject()
 	for _, k := range keys {
@@ -159,7 +160,7 @@ func codexMigrationStrList(v any) ([]any, error) {
 	default:
 		keys, ok := codexDictKeys(v)
 		if !ok {
-			return nil, fmt.Errorf("'%s' object is not iterable", pyrepr.TypeName(v))
+			return nil, fmt.Errorf("expected a list, got %s", errchain.Kind(v))
 		}
 		for _, k := range keys {
 			out = append(out, k)
@@ -297,7 +298,7 @@ func codexFormatTOMLValue(value any) (string, error) {
 		}
 		return "{ " + strings.Join(items, ", ") + " }", nil
 	}
-	return "", fmt.Errorf("Unsupported TOML value type: %s", pyrepr.TypeName(value))
+	return "", fmt.Errorf("cannot write %s as a TOML value", errchain.Kind(value))
 }
 
 // Elements of a list value as any, a string slice widened
@@ -510,7 +511,7 @@ var codexQueryCodexPlugins = func(codexHome string, timeout float64, codexBin st
 		return []map[string]any{}, "plugin/list query failed: " + err.Error(), nil
 	}
 	if !cxIsObject(resp) {
-		return nil, "", fmt.Errorf("'%s' object has no attribute 'get'", pyrepr.TypeName(resp))
+		return nil, "", fmt.Errorf("the Codex plugin reply is %s, expected a mapping", errchain.Kind(resp))
 	}
 	marketplaces, ok := cxOr(cxGet(resp, "marketplaces"), []any{}).([]any)
 	if !ok {
@@ -628,7 +629,7 @@ func MigrateCodexRuntimePlugins(ctx context.Context, cfg map[string]any, opts Co
 	icebathServers := cxOr(rawServers, map[string]any{})
 	serverNames, ok := codexDictKeys(icebathServers)
 	if !ok {
-		report.Errors = append(report.Errors, "mcp_servers in Icebath config is not a dict; cannot migrate.")
+		report.Errors = append(report.Errors, "mcp_servers in Icebath config is not a mapping; cannot migrate.")
 		return report, nil
 	}
 	translated := map[string]*pyjson.Object{}
@@ -737,11 +738,11 @@ func MigrateCodexRuntimePlugins(ctx context.Context, cfg map[string]any, opts Co
 		return report, nil
 	}
 	if err := os.MkdirAll(codexHome, 0o777); err != nil {
-		report.Errors = append(report.Errors, fmt.Sprintf("could not write %s: %s", target, pyfs.OSErrorText(err)))
+		report.Errors = append(report.Errors, fmt.Sprintf("could not write %s: %s", target, errchain.OSText(err)))
 		return report, nil
 	}
 	if err := codexWriteAtomic(ctx, target, newText); err != nil {
-		report.Errors = append(report.Errors, fmt.Sprintf("could not write %s: %s", target, pyfs.OSErrorText(err)))
+		report.Errors = append(report.Errors, fmt.Sprintf("could not write %s: %s", target, errchain.OSText(err)))
 		return report, nil
 	}
 	report.Written = true
@@ -752,7 +753,7 @@ func MigrateCodexRuntimePlugins(ctx context.Context, cfg map[string]any, opts Co
 func codexReadConfigText(target string) (string, error) {
 	data, err := os.ReadFile(target)
 	if err != nil {
-		return "", errors.New(pyfs.OSErrorText(err))
+		return "", errors.New(errchain.OSText(err))
 	}
 	text, err := pycodecs.Decode(data, "utf-8-sig")
 	if err != nil {

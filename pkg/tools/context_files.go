@@ -81,7 +81,7 @@ func readTextFile(path string) (string, error) {
 			}
 			pos += size
 		}
-		return "", fmt.Errorf("'utf-8' codec can't decode byte 0x%02x in position %d: invalid start byte", data[pos], pos)
+		return "", fmt.Errorf("the file is not valid UTF-8 at byte %d (0x%02x)", pos, data[pos])
 	}
 	text := strings.ReplaceAll(string(data), "\r\n", "\n")
 	return strings.ReplaceAll(text, "\r", "\n"), nil

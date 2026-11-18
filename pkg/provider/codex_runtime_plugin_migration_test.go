@@ -119,10 +119,10 @@ func TestCodexMigrationTranslateOneServer(t *testing.T) {
 		if out, skipped, _ := codexTranslateOneServer("s", []any{"x"}); out != nil || len(skipped) != 0 {
 			t.Fatalf("non dict %v %v", out, skipped)
 		}
-		if _, _, err := codexTranslateOneServer("s", map[string]any{"command": "c", "env": []any{"A=1"}}); err == nil || err.Error() != "'list' object has no attribute 'items'" {
+		if _, _, err := codexTranslateOneServer("s", map[string]any{"command": "c", "env": []any{"A=1"}}); err == nil || err.Error() != "expected a mapping, got a list" {
 			t.Fatalf("env list error %v", err)
 		}
-		if _, _, err := codexTranslateOneServer("s", map[string]any{"command": "c", "args": 3}); err == nil || err.Error() != "'int' object is not iterable" {
+		if _, _, err := codexTranslateOneServer("s", map[string]any{"command": "c", "args": 3}); err == nil || err.Error() != "expected a list, got a number" {
 			t.Fatalf("args int error %v", err)
 		}
 	})
@@ -158,7 +158,7 @@ func TestCodexMigrationTOMLValueFormatter(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if report.Written || !slices.ContainsFunc(report.Errors, func(e string) bool { return strings.Contains(e, "Permission denied") }) {
+		if report.Written || !slices.ContainsFunc(report.Errors, func(e string) bool { return strings.Contains(e, "permission denied") }) {
 			t.Fatalf("rename failure not surfaced %+v", report)
 		}
 		if left := codexMigrationLeftovers(t, home, locked); len(left) != 0 {
@@ -175,7 +175,7 @@ func TestCodexMigrationTOMLValueFormatter(t *testing.T) {
 				t.Fatalf("format %#v = %q %v, want %q", value, got, err, want)
 			}
 		}
-		if _, err := codexFormatTOMLValue(nil); err == nil || err.Error() != "Unsupported TOML value type: NoneType" {
+		if _, err := codexFormatTOMLValue(nil); err == nil || err.Error() != "cannot write nothing as a TOML value" {
 			t.Fatalf("None error %v", err)
 		}
 		if codexQuoteTOMLKey("") != `""` || codexQuoteTOMLKey("é1") != "é1" || codexQuoteTOMLKey("a@b") != `"a@b"` {
@@ -338,7 +338,7 @@ func TestCodexMigrationMigrate(t *testing.T) {
 	t.Run("report errors and refusals", func(t *testing.T) {
 		home := t.TempDir()
 		report := codexMigrateNoExtras(t, map[string]any{"mcp_servers": []any{"x"}}, home)
-		if !slices.Equal(report.Errors, []string{"mcp_servers in Icebath config is not a dict; cannot migrate."}) {
+		if !slices.Equal(report.Errors, []string{"mcp_servers in Icebath config is not a mapping; cannot migrate."}) {
 			t.Fatalf("not a dict %v", report.Errors)
 		}
 		report = codexMigrateNoExtras(t, map[string]any{"mcp_servers": map[string]any{"a": "", "b": 5, "c": map[string]any{"cwd": "/"}, "d": map[string]any{"command": "x\x01"}}}, home)
@@ -360,7 +360,7 @@ func TestCodexMigrationMigrate(t *testing.T) {
 		os.Remove(filepath.Join(home, "config.toml"))
 		os.Mkdir(filepath.Join(home, "config.toml"), 0o755)
 		report = codexMigrateNoExtras(t, nil, home)
-		if len(report.Errors) != 1 || !strings.HasPrefix(report.Errors[0], "could not read "+filepath.Join(home, "config.toml")+": [Errno 21] Is a directory") {
+		if len(report.Errors) != 1 || !strings.HasPrefix(report.Errors[0], "could not read "+filepath.Join(home, "config.toml")+": is a directory: "+filepath.Join(home, "config.toml")) {
 			t.Fatalf("read error %q", report.Errors)
 		}
 	})
@@ -472,7 +472,7 @@ func TestCodexMigrationPluginQuery(t *testing.T) {
 		t.Fatalf("reason %q", reason)
 	}
 	fake.handler = func(string, any) (any, error) { return nil, nil }
-	if _, _, err = codexQueryCodexPlugins("", 8, "codex"); err == nil || err.Error() != "'NoneType' object has no attribute 'get'" {
+	if _, _, err = codexQueryCodexPlugins("", 8, "codex"); err == nil || err.Error() != "the Codex plugin reply is nothing, expected a mapping" {
 		t.Fatalf("non object err %v", err)
 	}
 	codexPluginQueryClient = func(CodexAppServerOptions) (CodexRPCClient, error) { return nil, errors.New("no such binary") }
@@ -626,9 +626,9 @@ func TestCodexRuntimeCommandPrintsTheSummaryAndExitsOneOnErrors(t *testing.T) {
 		{"summary", good, map[string]any{"dry_run": true, "json": false}, 0,
 			"(dry run) Would write " + target + "\nMigrated 2 MCP server(s):\n  - other\n  - " + CodexToolsMCPServerName + "\nWrote default_permissions = ':workspace'\nKept 1 user-owned MCP server(s) already in config.toml (Icebath projection skipped): gbrain\n"},
 		{"errors as json", bad, map[string]any{"dry_run": true, "json": true}, 1,
-			"{\n  \"dry_run\": true,\n  \"errors\": [\n    \"mcp_servers in Icebath config is not a dict; cannot migrate.\"\n  ],\n  \"migrated\": [],\n  \"migrated_plugins\": [],\n  \"plugin_query_error\": null,\n  \"preserved_user_servers\": [],\n  \"skipped_keys_per_server\": {},\n  \"target_path\": \"" + target + "\",\n  \"written\": false,\n  \"wrote_permissions_default\": null\n}\n"},
+			"{\n  \"dry_run\": true,\n  \"errors\": [\n    \"mcp_servers in Icebath config is not a mapping; cannot migrate.\"\n  ],\n  \"migrated\": [],\n  \"migrated_plugins\": [],\n  \"plugin_query_error\": null,\n  \"preserved_user_servers\": [],\n  \"skipped_keys_per_server\": {},\n  \"target_path\": \"" + target + "\",\n  \"written\": false,\n  \"wrote_permissions_default\": null\n}\n"},
 		{"errors as summary", bad, map[string]any{"dry_run": true, "json": false}, 1,
-			"(dry run) Would write " + target + "\nNo MCP servers found in Icebath config.\n⚠ mcp_servers in Icebath config is not a dict; cannot migrate.\n"},
+			"(dry run) Would write " + target + "\nNo MCP servers found in Icebath config.\n⚠ mcp_servers in Icebath config is not a mapping; cannot migrate.\n"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

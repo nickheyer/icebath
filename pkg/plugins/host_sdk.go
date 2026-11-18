@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -43,11 +44,11 @@ func (h *PluginHost) serveSDK(ctx context.Context, params map[string]any) (any, 
 	} else if hostSDKServiceOps[op] {
 		s := installedServices()
 		if s == nil || s.PluginSDK == nil {
-			return nil, &PluginHostUnsupported{Msg: fmt.Sprintf("plugin SDK call %s is not served by this Icebath process", config.PyRepr(op))}
+			return nil, &PluginHostUnsupported{Msg: fmt.Sprintf("plugin SDK call %s is not served by this Icebath process", errchain.Show(op))}
 		}
 		result, err = s.PluginSDK(ctx, h.home, op, args.([]any), kwargs.(map[string]any))
 	} else {
-		return nil, &HostBuiltinError{Type: "ValueError", Message: fmt.Sprintf("unknown plugin SDK call %s", config.PyRepr(op))}
+		return nil, &HostBuiltinError{Type: "ValueError", Message: fmt.Sprintf("unknown plugin SDK call %s", errchain.Show(op))}
 	}
 	if err != nil {
 		return nil, err
@@ -64,7 +65,7 @@ func sdkRedactSensitiveText(_ context.Context, h *PluginHost, args []any, kwargs
 	}
 	text, ok := a["text"].(string)
 	if !ok {
-		return nil, &HostBuiltinError{Type: "TypeError", Message: fmt.Sprintf("expected string or bytes-like object, got '%s'", pyTypeName(a["text"]))}
+		return nil, &HostBuiltinError{Type: "TypeError", Message: fmt.Sprintf("redact_sensitive_text needs text, got %s", errchain.Kind(a["text"]))}
 	}
 	return tools.RedactSensitiveTextWith(&tools.Env{Home: h.home}, text, tools.RedactOptions{Force: config.PyTruthy(a["force"]),
 		CodeFile: config.PyTruthy(a["code_file"]), FileRead: config.PyTruthy(a["file_read"]), SecretFile: config.PyTruthy(a["secret_file"]),

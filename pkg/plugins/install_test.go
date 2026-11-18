@@ -1,3 +1,5 @@
+//go:build !icebath_core && !icebath_noextras
+
 package plugins
 
 import (
@@ -165,7 +167,7 @@ func TestFeedParsingAndHTTPSOnlyFetch(t *testing.T) {
 	if got, err := httpsUpdateURL(" https://x/f.yml "); err != nil || got != "https://x/f.yml" {
 		t.Fatalf("https: %q %v", got, err)
 	}
-	if _, err := httpsUpdateURL("http://x"); err == nil || err.Error() != "update_url must be an https:// URL, got 'http://x'" {
+	if _, err := httpsUpdateURL("http://x"); err == nil || err.Error() != "update_url must be an https:// URL, got http://x" {
 		t.Fatalf("http: %v", err)
 	}
 	plain := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("version: '1'")) }))
@@ -213,7 +215,7 @@ func TestProvenanceClassesAndLocalCheck(t *testing.T) {
 		got["drift"].Class != ProvenanceDrift || got["manual"].Class != ProvenanceManual || got["git"].SavedUpdateURL != "https://a/f.yml" {
 		t.Fatalf("classes %+v", got)
 	}
-	if r := checkLocalProvenance(got["git"]); r.NeedsFixing != "update_url mismatch: saved 'https://a/f.yml', manifest declares 'https://b/f.yml'; run `icebath plugins trust-update-url` after review" {
+	if r := checkLocalProvenance(got["git"]); r.NeedsFixing != "update_url mismatch: saved https://a/f.yml, manifest declares https://b/f.yml; run `icebath plugins trust-update-url` after review" {
 		t.Fatalf("mismatch %q", r.NeedsFixing)
 	}
 	if r := checkLocalProvenance(got["pinned"]); r.Reason != "pinned @ cccccccccccc" || r.UpdateAvailable == nil || *r.UpdateAvailable {

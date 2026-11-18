@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
@@ -92,7 +92,7 @@ func RemoveLegacyLaunchers(ctx context.Context) error {
 	for _, a := range artifacts {
 		if a.Kind == "file" {
 			if err := os.Remove(a.Target); err != nil {
-				winPrintln(fmt.Sprintf("⚠ Could not remove %s %s: %s", a.Label, a.Target, pypath.OSErrorText(err)))
+				winPrintln(fmt.Sprintf("⚠ Could not remove %s %s: %s", a.Label, a.Target, errchain.OSText(err)))
 			} else {
 				winPrintln(fmt.Sprintf("✓ Removed %s: %s", a.Label, a.Target))
 			}

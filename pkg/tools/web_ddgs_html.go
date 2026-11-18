@@ -66,7 +66,7 @@ func lxmlTail(n *html.Node) string {
 func lxmlFromString(text string) (*lxmlTree, error) {
 	doc := lxmlParseHTML(text)
 	if doc == nil {
-		return nil, verbatim("ParserError: Document is empty")
+		return nil, verbatim("the page is empty")
 	}
 	t := &lxmlTree{doc: doc, order: map[*html.Node]int{}}
 	var number func(n *html.Node)
@@ -209,14 +209,14 @@ func compileXPath(src string) (xpExpr, error) {
 	for rest := src; strings.TrimSpace(rest) != ""; {
 		m := xpTokenRe.FindStringSubmatchIndex(rest)
 		if m == nil {
-			return nil, fmt.Errorf("XPathEvalError: Invalid expression")
+			return nil, fmt.Errorf("invalid XPath expression")
 		}
 		p.toks = append(p.toks, rest[m[2]:m[3]])
 		rest = rest[m[1]:]
 	}
 	e, err := p.or()
 	if err == nil && p.i < len(p.toks) {
-		err = fmt.Errorf("XPathEvalError: Invalid expression")
+		err = fmt.Errorf("invalid XPath expression")
 	}
 	return e, err
 }
@@ -350,12 +350,12 @@ func (p *xpParser) step() (xpStep, error) {
 		t = p.next()
 	}
 	if t == "" || t == "]" || t == ")" {
-		return step, fmt.Errorf("XPathEvalError: Invalid expression")
+		return step, fmt.Errorf("invalid XPath expression")
 	}
 	if p.peek() == "(" && slices.Contains([]string{"text", "node", "comment", "processing-instruction"}, t) {
 		p.next()
 		if p.next() != ")" {
-			return step, fmt.Errorf("XPathEvalError: Invalid expression")
+			return step, fmt.Errorf("invalid XPath expression")
 		}
 		t += "()"
 	}
@@ -367,7 +367,7 @@ func (p *xpParser) step() (xpStep, error) {
 			return step, err
 		}
 		if p.next() != "]" {
-			return step, fmt.Errorf("XPathEvalError: Invalid predicate")
+			return step, fmt.Errorf("invalid XPath predicate")
 		}
 		step.preds = append(step.preds, e)
 	}
@@ -384,7 +384,7 @@ func (p *xpParser) primary() (xpExpr, error) {
 			return nil, err
 		}
 		if p.next() != ")" {
-			return nil, fmt.Errorf("XPathEvalError: Invalid expression")
+			return nil, fmt.Errorf("invalid XPath expression")
 		}
 		prim = e
 	case strings.HasPrefix(t, `"`) || strings.HasPrefix(t, "'"):
@@ -404,7 +404,7 @@ func (p *xpParser) primary() (xpExpr, error) {
 			if p.peek() == "," {
 				p.next()
 			} else if p.peek() != ")" {
-				return nil, fmt.Errorf("XPathEvalError: Invalid expression")
+				return nil, fmt.Errorf("invalid XPath expression")
 			}
 		}
 		p.next()
@@ -418,7 +418,7 @@ func (p *xpParser) primary() (xpExpr, error) {
 			return nil, err
 		}
 		if p.next() != "]" {
-			return nil, fmt.Errorf("XPathEvalError: Invalid predicate")
+			return nil, fmt.Errorf("invalid XPath predicate")
 		}
 		preds = append(preds, e)
 	}
@@ -491,7 +491,7 @@ func axisNodes(x xpNode, axis string) ([]xpNode, error) {
 			return axisNodes(xpNode{n: x.n, attr: -1}, axis)
 		case "child", "descendant", "attribute", "following-sibling", "preceding-sibling":
 		default:
-			return nil, fmt.Errorf("XPathEvalError: Unsupported axis %s", axis)
+			return nil, fmt.Errorf("unsupported XPath axis %s", axis)
 		}
 		return out, nil
 	}
@@ -552,7 +552,7 @@ func axisNodes(x xpNode, axis string) ([]xpNode, error) {
 			}
 		}
 	default:
-		return nil, fmt.Errorf("XPathEvalError: Unsupported axis %s", axis)
+		return nil, fmt.Errorf("unsupported XPath axis %s", axis)
 	}
 	return out, nil
 }
@@ -612,7 +612,7 @@ func (p *xpPath) eval(t *lxmlTree, ctx xpContext) (any, error) {
 		}
 		set, ok := v.([]xpNode)
 		if !ok {
-			return nil, fmt.Errorf("XPathEvalError: Invalid type")
+			return nil, fmt.Errorf("an XPath value has the wrong type")
 		}
 		cur = set
 	case p.absolute:
@@ -651,7 +651,7 @@ func (f *xpFiltered) eval(t *lxmlTree, ctx xpContext) (any, error) {
 	}
 	set, ok := v.([]xpNode)
 	if !ok {
-		return nil, fmt.Errorf("XPathEvalError: Invalid type")
+		return nil, fmt.Errorf("an XPath value has the wrong type")
 	}
 	return t.applyPreds(t.docOrder(set), f.preds)
 }
@@ -678,7 +678,7 @@ func (b *xpBinary) eval(t *lxmlTree, ctx xpContext) (any, error) {
 		ls, ok1 := l.([]xpNode)
 		rs, ok2 := r.([]xpNode)
 		if !ok1 || !ok2 {
-			return nil, fmt.Errorf("XPathEvalError: Invalid type")
+			return nil, fmt.Errorf("an XPath value has the wrong type")
 		}
 		return t.docOrder(append(append([]xpNode{}, ls...), rs...)), nil
 	}
@@ -806,7 +806,7 @@ func (c *xpCall) eval(t *lxmlTree, ctx xpContext) (any, error) {
 	}
 	argc := func(n int) error {
 		if len(args) != n {
-			return fmt.Errorf("XPathEvalError: Invalid number of arguments")
+			return fmt.Errorf("an XPath function got the wrong number of arguments")
 		}
 		return nil
 	}
@@ -839,7 +839,7 @@ func (c *xpCall) eval(t *lxmlTree, ctx xpContext) (any, error) {
 		return strings.HasPrefix(xpString(args[0]), xpString(args[1])), nil
 	case "string", "normalize-space", "string-length", "number":
 		if len(args) > 1 {
-			return nil, fmt.Errorf("XPathEvalError: Invalid number of arguments")
+			return nil, fmt.Errorf("an XPath function got the wrong number of arguments")
 		}
 		v := any([]xpNode{ctx.node})
 		if len(args) == 1 {
@@ -856,7 +856,7 @@ func (c *xpCall) eval(t *lxmlTree, ctx xpContext) (any, error) {
 		return strings.Join(strings.FieldsFunc(xpString(v), func(r rune) bool { return r == ' ' || r == '\t' || r == '\n' || r == '\r' }), " "), nil
 	case "concat":
 		if len(args) < 2 {
-			return nil, fmt.Errorf("XPathEvalError: Invalid number of arguments")
+			return nil, fmt.Errorf("an XPath function got the wrong number of arguments")
 		}
 		var b strings.Builder
 		for _, a := range args {
@@ -869,11 +869,11 @@ func (c *xpCall) eval(t *lxmlTree, ctx xpContext) (any, error) {
 		}
 		set, ok := args[0].([]xpNode)
 		if !ok {
-			return nil, fmt.Errorf("XPathEvalError: Invalid type")
+			return nil, fmt.Errorf("an XPath value has the wrong type")
 		}
 		return float64(len(set)), nil
 	}
-	return nil, fmt.Errorf("XPathEvalError: Unregistered function")
+	return nil, fmt.Errorf("unknown XPath function")
 }
 
 // Runs an XPath against a context node, the string results lxml returns for text and attribute nodes
@@ -888,7 +888,7 @@ func (t *lxmlTree) xpath(ctx *html.Node, expr string) ([]xpNode, error) {
 	}
 	set, ok := v.([]xpNode)
 	if !ok {
-		return nil, fmt.Errorf("XPathEvalError: result is not a node set")
+		return nil, fmt.Errorf("the XPath result is not a node set")
 	}
 	return set, nil
 }

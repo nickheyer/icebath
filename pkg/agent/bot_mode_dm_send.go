@@ -14,6 +14,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/botmode"
 	"github.com/nickheyer/icebath/pkg/botmode/dmdelivery"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -178,7 +179,7 @@ func messageAgentTool(ctx context.Context, a *AIAgent, target, message, taskID s
 
 	resolved, found := resolveLocalName(rawTarget, roster, &root)
 	if !found && !botLocalTargetRE.MatchString(rawTarget) {
-		return rosterErr(fmt.Sprintf("Invalid target: %s.", pyrepr.StrRepr(rawTarget))), nil
+		return rosterErr(fmt.Sprintf("Invalid target: %s.", errchain.Show(rawTarget))), nil
 	}
 	if !found || resolved == me {
 		if found {
@@ -314,7 +315,7 @@ func spawnDelivery(ctx context.Context, command, label, dmFile, deliveryID, task
 	if decoded, err := pyjson.Loads(raw); err == nil {
 		obj, isObject := decoded.(*pyjson.Object)
 		if !isObject {
-			panic(fmt.Sprintf("'%s' object has no attribute 'get'", pyrepr.TypeName(decoded)))
+			panic(fmt.Sprintf("the terminal tool replied with %s where a mapping was expected", errchain.Kind(decoded)))
 		}
 		parsed = obj
 	}

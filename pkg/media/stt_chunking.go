@@ -98,7 +98,7 @@ func silenceMidpoints(ffmpeg, path string) ([]float64, error) {
 		for _, m := range re.FindAllStringSubmatch(stderr, -1) {
 			f, err := strconv.ParseFloat(m[1], 64)
 			if err != nil {
-				return nil, fmt.Errorf("could not convert string to float: %s", pyrepr.StrRepr(m[1]))
+				return nil, fmt.Errorf("ffmpeg printed %s where a silence time was expected", m[1])
 			}
 			out = append(out, f)
 		}

@@ -22,6 +22,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pybase64"
 	"github.com/nickheyer/icebath/pkg/internal/pycodecs"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
@@ -90,7 +91,7 @@ func (b *streamerBase) sectionMap() (map[string]any, error) {
 	if m, ok := asStrMap(b.section); ok {
 		return m, nil
 	}
-	return nil, &ttsAttributeError{msg: fmt.Sprintf("'%s' object has no attribute 'get'", pyrepr.TypeName(b.section))}
+	return nil, &ttsAttributeError{msg: fmt.Sprintf("TTS provider config section is %s where a mapping was expected", errchain.Kind(b.section))}
 }
 
 var (
@@ -474,7 +475,7 @@ func newOpenAIStreamer(env *tools.Env, ttsConfig map[string]any, section any) (S
 	if valid {
 		n, ok := pyint.Parse(text)
 		if !ok {
-			return nil, &ttsValueError{msg: fmt.Sprintf("invalid literal for int() with base 10: %s", pyrepr.Repr(text))}
+			return nil, &ttsValueError{msg: fmt.Sprintf("%s is not a whole number", text)}
 		}
 		if n.Sign() > 0 {
 			s.sampleRate.Store(int64(saturatedInt(n)))
@@ -567,7 +568,7 @@ func requestsEncodingFromHeaders(headers http.Header) (string, error) {
 		}
 	}
 	if charsetFlag {
-		return "", &ttsAttributeError{msg: "'bool' object has no attribute 'strip'"}
+		return "", &ttsAttributeError{msg: "Content-Type charset parameter has no value"}
 	}
 	if charsetSet {
 		return pystr.StripChars(charset, "'\""), nil
@@ -627,7 +628,7 @@ func responseLines(resp *http.Response) iter.Seq2[string, error] {
 			}
 			return true
 		}
-		bytesLineError := &ttsTypeError{msg: "startswith first arg must be bytes or a tuple of bytes, not str"}
+		bytesLineError := &ttsTypeError{msg: "the response names no text encoding, so its lines cannot be read as text"}
 		for chunk, err := range bodyChunks(resp.Body, 512, false) {
 			if err != nil {
 				yield("", err)
@@ -727,14 +728,14 @@ func pyIterJSON(v any) ([]any, error) {
 		}
 		return out, nil
 	}
-	return nil, &ttsTypeError{msg: fmt.Sprintf("'%s' object is not iterable", pyrepr.TypeName(v))}
+	return nil, &ttsTypeError{msg: fmt.Sprintf("TTS stream value is %s where a list was expected", errchain.Kind(v))}
 }
 
 // Python dict.get of a decoded JSON value, a non mapping failing like the attribute lookup
 func pyJSONGet(v any, key string) (any, error) {
 	obj, ok := v.(*pyjson.Object)
 	if !ok {
-		return nil, &ttsAttributeError{msg: fmt.Sprintf("'%s' object has no attribute 'get'", pyrepr.TypeName(v))}
+		return nil, &ttsAttributeError{msg: fmt.Sprintf("TTS stream event is %s where a mapping holding %s was expected", errchain.Kind(v), key)}
 	}
 	out, _ := obj.Get(key)
 	return out, nil
@@ -801,7 +802,7 @@ func (s *geminiStreamer) sseChunks(ctx context.Context, endpoint, apiKey string,
 				if pyTruthy(inline) {
 					obj, isObj := inline.(*pyjson.Object)
 					if !isObj {
-						yield(nil, &ttsAttributeError{msg: fmt.Sprintf("'%s' object has no attribute 'get'", pyrepr.TypeName(inline))})
+						yield(nil, &ttsAttributeError{msg: fmt.Sprintf("Gemini TTS inline data is %s where a mapping was expected", errchain.Kind(inline))})
 						return
 					}
 					b64 = obj.GetOr("data", "")

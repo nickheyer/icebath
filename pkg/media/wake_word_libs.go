@@ -1,3 +1,5 @@
+//go:build !icebath_core && !icebath_noextras
+
 package media
 
 import (
@@ -168,9 +170,6 @@ func LoadPorcupineLibrary(ctx context.Context) error {
 	}
 	return module.LoadLibrary()
 }
-
-// Whether the speech engine behind the sherpa wake word publishes a library for this platform
-func SherpaOnnxAvailable() bool { return wakeSpeechSupported() }
 
 // Loads the tensorflowlite_c library from the pyopen_wakeword package in the runtime environment
 func LoadOpenWakeWordLibrary(ctx context.Context) error {

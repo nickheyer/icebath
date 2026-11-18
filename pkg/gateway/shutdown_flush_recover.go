@@ -13,6 +13,7 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -123,7 +124,7 @@ func DrainTranscriptSpool(ctx context.Context, sessionID string, replay func(mes
 		if pyTruthy(data) {
 			obj, ok := data.(*pyjson.Object)
 			if !ok {
-				return 0, 0, &PyError{Kind: "AttributeError", Msg: "'" + jsonValueTypeName(data) + "' object has no attribute 'get'"}
+				return 0, 0, &PyError{Kind: "AttributeError", Msg: "the transcript spool is " + errchain.Kind(data) + ", expected a mapping"}
 			}
 			message, _ = obj.Get("message")
 		}
@@ -371,7 +372,7 @@ func recoverFlushFile(ctx context.Context, sessionDB TranscriptAppender, path st
 	}
 	payload, isObject := parsed.(*pyjson.Object)
 	if !isObject {
-		return false, "", &PyError{Kind: "AttributeError", Msg: "'" + jsonValueTypeName(parsed) + "' object has no attribute 'get'"}
+		return false, "", &PyError{Kind: "AttributeError", Msg: "the flush file is " + errchain.Kind(parsed) + ", expected a mapping"}
 	}
 	if reason, _ := payload.Get("reason"); reason == AgentHistoryReason {
 		return false, "", nil
@@ -392,7 +393,7 @@ func payloadDict(value any) (*pyjson.Object, error) {
 	if obj, ok := value.(*pyjson.Object); ok {
 		return obj, nil
 	}
-	return nil, &PyError{Kind: "AttributeError", Msg: "'" + jsonValueTypeName(value) + "' object has no attribute 'get'"}
+	return nil, &PyError{Kind: "AttributeError", Msg: "a flush payload is " + errchain.Kind(value) + ", expected a mapping"}
 }
 
 // Appends one flush payload, false when it was kept or quarantined instead of replayed

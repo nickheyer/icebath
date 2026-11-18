@@ -12,7 +12,6 @@ import (
 	"syscall"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
@@ -149,7 +148,7 @@ func sdkStreamReadError(err error, resp *http.Response) error {
 	if errors.As(err, &ne) && ne.Timeout() {
 		out.Class, out.Message = "ReadTimeout", "timed out"
 	} else if errors.Is(err, syscall.ECONNRESET) || errors.Is(err, syscall.EPIPE) || errors.Is(err, syscall.ECONNABORTED) {
-		text := pyhttpx.OSErrorText(err)
+		text := errchain.OSText(err)
 		out.Class, out.Message = "ReadError", text
 		out.Err = &AuxTransportError{Class: "ReadError", Message: text, Err: newOSConnectionError(err, text)}
 	}

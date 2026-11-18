@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -53,23 +54,20 @@ func reviewGet(m map[string]any, key string, def any) any {
 	return def
 }
 
-// String of a value the summary slices or lowers, raising the Python error for anything else
-func reviewStr(v any, op string) string {
+// Text of a review field, a review failure naming the field for anything else
+func reviewStr(v any, what string) string {
 	s, ok := v.(string)
 	if ok {
 		return s
 	}
-	if op == "__getitem__" {
-		panic(reviewSummaryError{fmt.Sprintf("'%s' object is not subscriptable", pyrepr.TypeName(v))})
-	}
-	panic(reviewSummaryError{fmt.Sprintf("'%s' object has no attribute '%s'", pyrepr.TypeName(v), op)})
+	panic(reviewSummaryError{fmt.Sprintf("review %s is %s where text was expected", what, errchain.Kind(v))})
 }
 
-// Hashable key of a value placed in a set, raising the Python TypeError for unhashable values
+// Key of an id placed in a set, a review failure for a list or mapping id
 func reviewHashKey(v any) any {
 	switch v.(type) {
 	case map[string]any, []any, *pyjson.Object, []map[string]any:
-		panic(reviewSummaryError{fmt.Sprintf("unhashable type: '%s'", pyrepr.TypeName(v))})
+		panic(reviewSummaryError{fmt.Sprintf("review id is %s where text or a number was expected", errchain.Kind(v))})
 	}
 	return v
 }
@@ -99,7 +97,7 @@ func memoryOpLine(ctx context.Context, label any, action any, fields map[string]
 	if !ok || !pyTruthy(reviewGet(fields, format.field, nil)) {
 		return "", false
 	}
-	text := reviewStr(fields[format.field], "__getitem__")
+	text := reviewStr(fields[format.field], format.field)
 	return i18n.T(ctx, "display.review.memory_op_line", "", map[string]any{"label": label, "glyph": format.glyph,
 		"preview": preview(text, format.limit)}), true
 }
@@ -127,8 +125,8 @@ func verboseSkillLine(ctx context.Context, data, detail map[string]any, message 
 		newString = reviewGet(detail, "new_string", "")
 	}
 	if action == "patch" && (pyTruthy(oldString) || pyTruthy(newString)) {
-		oldPreview := strings.ReplaceAll(preview(reviewStr(oldString, "__getitem__"), 80), "\n", " ")
-		newPreview := strings.ReplaceAll(preview(reviewStr(newString, "__getitem__"), 80), "\n", " ")
+		oldPreview := strings.ReplaceAll(preview(reviewStr(oldString, "old_string"), 80), "\n", " ")
+		newPreview := strings.ReplaceAll(preview(reviewStr(newString, "new_string"), 80), "\n", " ")
 		return i18n.T(ctx, "display.review.skill_patched_verbose", "", map[string]any{"name": skillName, "old": oldPreview, "new": newPreview})
 	}
 	verbKey := map[string]string{"create": "created", "edit": "rewritten"}[pyKeyString(action)]
@@ -183,7 +181,7 @@ func collectReviewCallDetails(reviewMessages []map[string]any) (map[any]bool, ma
 			if _, isStr := calls.(string); isStr {
 				continue
 			}
-			panic(reviewSummaryError{fmt.Sprintf("'%s' object is not iterable", pyrepr.TypeName(calls))})
+			panic(reviewSummaryError{fmt.Sprintf("review tool_calls is %s where a list was expected", errchain.Kind(calls))})
 		}
 		for _, raw := range list {
 			tc, ok := reviewDict(raw)
@@ -196,7 +194,7 @@ func collectReviewCallDetails(reviewMessages []map[string]any) (map[any]bool, ma
 			}
 			fn, ok := reviewDict(fnRaw)
 			if !ok {
-				panic(reviewSummaryError{fmt.Sprintf("'%s' object has no attribute 'get'", pyrepr.TypeName(fnRaw))})
+				panic(reviewSummaryError{fmt.Sprintf("review tool call function is %s where a mapping was expected", errchain.Kind(fnRaw))})
 			}
 			fnName, tcid := reviewGet(fn, "name", ""), tc["id"]
 			if pyTruthy(tcid) {
@@ -211,7 +209,7 @@ func collectReviewCallDetails(reviewMessages []map[string]any) (map[any]bool, ma
 				if parsed, err := pyjson.Loads(text); err == nil {
 					d, ok := reviewDict(parsed)
 					if !ok {
-						panic(reviewSummaryError{fmt.Sprintf("'%s' object has no attribute 'get'", pyrepr.TypeName(parsed))})
+						panic(reviewSummaryError{fmt.Sprintf("review tool call arguments are %s where a mapping was expected", errchain.Kind(parsed))})
 					}
 					args = d
 				}
@@ -294,7 +292,7 @@ func actionLines(ctx context.Context, data, detail map[string]any, verbose bool)
 		}
 		return lines
 	}
-	lower := pystr.Lower(reviewStr(message, "lower"))
+	lower := pystr.Lower(reviewStr(message, "message"))
 	if !verbose && (strings.Contains(lower, "created") || strings.Contains(lower, "updated") ||
 		(isSkill && (strings.Contains(lower, "patched") || strings.Contains(lower, "deleted") || strings.Contains(lower, "written")))) {
 		return []string{message.(string)}

@@ -350,7 +350,7 @@ func (h *PluginMessage) HostAttr(_ context.Context, name string) (any, bool, boo
 	case "aedit":
 		return nil, true, true, nil
 	}
-	return nil, false, false, &HostBuiltinError{Type: "AttributeError", Message: fmt.Sprintf("'PluginMessage' object has no attribute %s", pyrepr.Repr(name))}
+	return nil, false, false, &HostBuiltinError{Type: "AttributeError", Message: fmt.Sprintf("plugin message has no %s", name)}
 }
 
 // Runs edit or aedit for a hosted plugin with the text argument bound as Python binds it
@@ -366,5 +366,5 @@ func (h *PluginMessage) HostCall(ctx context.Context, method string, args []any,
 	case "aedit":
 		return h.AEdit(ctx, text)
 	}
-	return nil, &HostBuiltinError{Type: "AttributeError", Message: fmt.Sprintf("'PluginMessage' object has no attribute %s", pyrepr.Repr(method))}
+	return nil, &HostBuiltinError{Type: "AttributeError", Message: fmt.Sprintf("plugin message has no %s", method)}
 }

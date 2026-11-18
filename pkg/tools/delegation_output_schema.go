@@ -205,7 +205,7 @@ func comparePaths(a, b []any) (int, error) {
 				return c, nil
 			}
 		default:
-			return 0, errors.New("'<' not supported between instances of 'int' and 'str'")
+			return 0, errors.New("cannot order a list position against a field name")
 		}
 	}
 	return cmp.Compare(len(a), len(b)), nil

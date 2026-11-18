@@ -19,40 +19,6 @@ var AdmissionStatus = pydantic.NewModel("AdmissionStatus", ClosedConfig,
 	pydantic.Req("execution_generation", pydantic.Nullable(pydantic.Int)),
 ).Described("``gateway/session_contract.py::AdmissionReceipt`` as ``dataclasses.asdict`` sends it.")
 
-var PromptReceiptParams = pydantic.NewModel("PromptReceiptParams", ParamsConfig,
-	pydantic.Req("session_id", pydantic.Str),
-	pydantic.Req("admission_id", pydantic.Str),
-	pydantic.Def("include_result", pydantic.Nullable(pydantic.Bool), nil),
-)
-
-var PromptReceiptResult = pydantic.Extend(AdmissionStatus, "PromptReceiptResult", ClosedConfig,
-	pydantic.Def("result", pydantic.Nullable(pydantic.Any), nil),
-	pydantic.Def("usage", pydantic.Nullable(pydantic.Dict(pydantic.Any)), nil),
-).Described("``result`` / ``usage``: the structured turn result committed at settlement, only with\n``include_result`` on a terminal admission that saved one.")
-
-var _ = CanonicalMethod("prompt.receipt", PromptReceiptParams, PromptReceiptResult, "Current receipt of one admission the caller submitted (or controls).")
-
-var PromptCancelParams = pydantic.NewModel("PromptCancelParams", ParamsConfig,
-	pydantic.Req("session_id", pydantic.Str),
-	pydantic.Req("admission_id", pydantic.Str),
-)
-
-var _ = CanonicalMethod("prompt.cancel", PromptCancelParams, AdmissionStatus, "Retire a queued admission; a started one is interrupted in the same call.")
-
-var PromptResolveUnknownParams = pydantic.NewModel("PromptResolveUnknownParams", ParamsConfig,
-	pydantic.Req("session_id", pydantic.Str),
-	pydantic.Req("admission_id", pydantic.Str),
-	pydantic.Req("execution_generation", pydantic.Int),
-)
-
-var _ = CanonicalMethod("prompt.resolve_unknown", PromptResolveUnknownParams, AdmissionStatus, "Acknowledge a turn lost across an owner restart; the FIFO behind it resumes. Never requeues the lost input.")
-
-
-
-
-
-
-
 var CommandObserveParams = pydantic.NewModel("CommandObserveParams", ParamsConfig,
 	pydantic.Req("session_id", pydantic.Str),
 	pydantic.Req("name", pydantic.Str),
@@ -65,13 +31,6 @@ var CommandObserveResult = pydantic.NewModel("CommandObserveResult", ClosedConfi
 )
 
 var _ = CanonicalMethod("command.observe", CommandObserveParams, CommandObserveResult, "Fire-only: a recognized command the terminal UI or the headless chat runs itself; the gateway fires `pre_command` for it in the session's profile after replying (`queued` false: not fired).")
-
-
-
-
-
-
-
 
 var RollbackSessionDiffParams = pydantic.NewModel("RollbackSessionDiffParams", ParamsConfig,
 	pydantic.Req("session_id", pydantic.Str),
@@ -89,35 +48,6 @@ var RollbackSessionDiffResult = pydantic.NewModel("RollbackSessionDiffResult", C
 ).Described("``gateway/session_tui_ops.py::_session_diff``: ``CheckpointManager.session_diff`` under the\nsession's frozen checkpoint policy (``enabled: false`` when that policy does not checkpoint).\n``diff`` is bounded to fit one frame; ``diff_lines`` counts the whole body.")
 
 var _ = CanonicalMethod("rollback.session_diff", RollbackSessionDiffParams, RollbackSessionDiffResult, "/diff session: everything changed since the session's earliest retained checkpoint, as data for a terminal renderer.")
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-var ClarifyRespondParams = pydantic.NewModel("ClarifyRespondParams", ParamsConfig,
-	pydantic.Req("session_id", pydantic.Str),
-	pydantic.Req("execution_generation", pydantic.Int),
-	pydantic.Req("prompt_id", pydantic.Str),
-	pydantic.Req("answer", pydantic.Str),
-)
-
-var PromptResponseResult = pydantic.NewModel("PromptResponseResult", ClosedConfig,
-	pydantic.Req("status", pydantic.Literal("resolved", "already_resolved")),
-	pydantic.Req("prompt_id", pydantic.Str),
-)
-
-var _ = CanonicalMethod("clarify.respond", ClarifyRespondParams, PromptResponseResult, "Generation-fenced answer to a pending clarify prompt (empty answer = skipped).")
-
-var _ = CanonicalMethod("clarify.lock", ClarifyLockParams, ClarifyLockResult, "Lock one answer of the owner's batch clarify request (editable until every question is locked); only a viewer attached to that session with session:respond may lock.")
 
 var CronRunParams = pydantic.NewModel("CronRunParams", ParamsConfig,
 	pydantic.Req("job_id", pydantic.Str),
@@ -224,95 +154,3 @@ var WorkerPersistResult = pydantic.NewModel("WorkerPersistResult", OpenConfig).D
 
 var _ = CanonicalMethod("worker.persist", WorkerPersistParams, WorkerPersistResult, "Sequence-fenced typed persistence write from an adopted worker.")
 
-var GroupsAttachmentUploadParams = pydantic.Extend(RoomParams, "GroupsAttachmentUploadParams", ParamsConfig,
-	pydantic.Req("upload_id", pydantic.Str),
-	pydantic.Req("kind", pydantic.Str),
-	pydantic.Req("name", pydantic.Str),
-	pydantic.Req("mime", pydantic.Str),
-	pydantic.Req("data_base64", pydantic.Str),
-)
-
-var RoomAttachment = pydantic.NewModel("RoomAttachment", OpenConfig,
-	pydantic.Req("attachment_id", pydantic.Str),
-	pydantic.Req("kind", pydantic.Str),
-	pydantic.Req("name", pydantic.Str),
-	pydantic.Req("size", pydantic.Int),
-	pydantic.Req("mime", pydantic.Str),
-	pydantic.Req("sha256", pydantic.Str),
-	pydantic.Req("state", pydantic.Str),
-	pydantic.Req("created_at", pydantic.Float),
-	pydantic.Req("idempotent", pydantic.Bool),
-	pydantic.Def("event_id", pydantic.Nullable(pydantic.Str), nil),
-)
-
-var _ = CanonicalMethod("groups.attachment.upload", GroupsAttachmentUploadParams, RoomAttachment, "Store one attachment for a later groups.send manifest (idempotent per upload_id).")
-
-var _ = Method("groups.attachment.upload", GroupsAttachmentUploadParams, RoomAttachment, "Store one attachment for a later groups.send manifest (idempotent per upload_id).")
-
-var GroupsAttachmentDownloadParams = pydantic.Extend(RoomParams, "GroupsAttachmentDownloadParams", ParamsConfig,
-	pydantic.Req("event_id", pydantic.Str),
-	pydantic.Req("attachment_id", pydantic.Str),
-)
-
-var RoomAttachmentBytes = pydantic.Extend(RoomAttachment, "RoomAttachmentBytes", OpenConfig,
-	pydantic.Req("data_base64", pydantic.Str),
-)
-
-var _ = CanonicalMethod("groups.attachment.download", GroupsAttachmentDownloadParams, RoomAttachmentBytes, "Read one committed attachment for a live room viewer.")
-
-var _ = Method("groups.attachment.download", GroupsAttachmentDownloadParams, RoomAttachmentBytes, "Read one committed attachment for a live room viewer.")
-
-var GroupsDiscardParams = pydantic.Extend(RoomParams, "GroupsDiscardParams", ParamsConfig,
-	pydantic.Req("member_id", pydantic.Str),
-	pydantic.Req("task_id", pydantic.Str),
-	pydantic.Req("execution_generation", pydantic.Int),
-)
-
-var GroupsDiscardResult = pydantic.NewModel("GroupsDiscardResult", ClosedConfig,
-	pydantic.Def("discarded", pydantic.Bool, true),
-	pydantic.Def("task", pydantic.Nullable(RoomTaskReceipt), nil),
-	pydantic.Def("queued", pydantic.Nullable(pydantic.Bool), nil),
-)
-
-var RoomPeer = pydantic.NewModel("RoomPeer", ClosedConfig,
-	pydantic.Req("name", pydantic.Str),
-	pydantic.Req("url", pydantic.Str),
-	pydantic.Req("key", pydantic.Bool),
-	pydantic.Def("note", pydantic.Nullable(pydantic.Str), nil),
-).Described("One gateway of the icebath peer registry; ``key`` tells whether its API key is set.")
-
-var RoomShare = pydantic.NewModel("RoomShare", ClosedConfig,
-	pydantic.Req("room_id", pydantic.Str),
-	pydantic.Req("peer", pydantic.Str),
-	pydantic.Def("pushed_seq", pydantic.Nullable(pydantic.Int), nil),
-	pydantic.Req("state", pydantic.Literal("active", "removing")),
-	pydantic.Def("error", pydantic.Nullable(pydantic.Str), nil),
-	pydantic.Def("synced_at", pydantic.Nullable(pydantic.Float), nil),
-).Described("A hosted room shared with a peer gateway: the home pushes its log and status and pulls what the peer's users queued.")
-
-var GroupsPeersParams = pydantic.Extend(ProfileParams, "GroupsPeersParams", ParamsConfig,
-	pydantic.Def("room_id", pydantic.Nullable(pydantic.Str), nil),
-)
-
-var GroupsPeersResult = pydantic.NewModel("GroupsPeersResult", ClosedConfig,
-	pydantic.Req("peers", pydantic.List(RoomPeer)),
-	pydantic.Req("shares", pydantic.List(RoomShare)),
-)
-
-var _ = CanonicalMethod("groups.peers", GroupsPeersParams, GroupsPeersResult, "Registered peer gateways and the peers one room is shared with.")
-
-var GroupsShareParams = pydantic.Extend(RoomParams, "GroupsShareParams", ParamsConfig,
-	pydantic.Req("peer", pydantic.Str),
-)
-
-var GroupsShareResult = pydantic.NewModel("GroupsShareResult", ClosedConfig,
-	pydantic.Req("share", RoomShare),
-)
-
-var _ = CanonicalMethod("groups.share", GroupsShareParams, GroupsShareResult, "Share a room this gateway hosts with a registered peer gateway.")
-
-var _ = CanonicalMethod("groups.unshare", GroupsShareParams, GroupsShareResult, "Stop sharing a room with a peer, which drops its replica on the next sync.")
-
-var _ = CanonicalMethod("groups.discard", GroupsDiscardParams, GroupsDiscardResult, "Discard one indeterminate room task after explicit user confirmation.")
-
-var _ = Method("groups.discard", GroupsDiscardParams, GroupsDiscardResult, "Discard one indeterminate room task after explicit user confirmation.")

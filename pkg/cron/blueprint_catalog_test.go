@@ -235,9 +235,9 @@ func TestBuildPluginBlueprintRejectsMalformedInput(t *testing.T) {
 		{func(s *plugins.BlueprintSpec) { s.ScheduleTemplate = "not a schedule" }, "schedule"},
 		{func(s *plugins.BlueprintSpec) { s.ScheduleTemplate = "{minute} {hour} * * *" }, "needs a slot named 'time'"},
 		{func(s *plugins.BlueprintSpec) { s.Title = "" }, "title must be a non-empty string"},
-		{func(s *plugins.BlueprintSpec) { s.Slots = []any{map[string]any{"name": "x", "type": "text"}} }, "slot 'x': BlueprintSlot.__init__() missing 1 required positional argument: 'label'"},
+		{func(s *plugins.BlueprintSpec) { s.Slots = []any{map[string]any{"name": "x", "type": "text"}} }, "slot x is missing label"},
 		{func(s *plugins.BlueprintSpec) { s.Slots = []any{map[string]any{"name": "x", "colour": 1}} }, "unknown slot field(s): colour"},
-		{func(s *plugins.BlueprintSpec) { s.Slots = []any{"x"} }, "slot must be a mapping, got str"},
+		{func(s *plugins.BlueprintSpec) { s.Slots = []any{"x"} }, "slot must be a mapping, got text"},
 		{func(s *plugins.BlueprintSpec) {
 			s.Slots = []any{map[string]any{"name": "1x", "type": "text", "label": "X"}}
 		}, "invalid slot name '1x'"},

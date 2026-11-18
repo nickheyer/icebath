@@ -7,6 +7,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -273,7 +274,7 @@ func SteerSubagent(subagentID, text string, ownerSessionID *string, ownerTranspo
 	}
 	steerable, ok := agent.(interface{ Steer(text string) bool })
 	if !ok {
-		pkgLog().Debug(fmt.Sprintf("steer_subagent(%s) failed: '%s' object has no attribute 'steer'", subagentID, pyrepr.TypeName(agent)))
+		pkgLog().Debug(fmt.Sprintf("steering subagent %s failed: it cannot take steering messages", subagentID))
 		return false
 	}
 	return steerQuietly(subagentID, steerable, text)
@@ -479,14 +480,14 @@ var controlOutcomes = map[string][3]string{
 	},
 }
 
-// Text of an optional string argument, an error for a value without a strip method
-func controlText(v any) (string, error) {
+// Text of an optional string argument, an error naming the argument for any other value
+func controlText(name string, v any) (string, error) {
 	if !pyTruthy(v) {
 		return "", nil
 	}
 	s, ok := v.(string)
 	if !ok {
-		return "", fmt.Errorf("'%s' object has no attribute 'strip'", pyrepr.TypeName(v))
+		return "", fmt.Errorf("%s must be text, got %s", name, errchain.Kind(v))
 	}
 	return s, nil
 }
@@ -496,7 +497,7 @@ func handleDelegateControlAction(action string, subagentID, message any, parent 
 	if action == "list" {
 		return pyjson.Dumps(listSubagentsPayload(parent), pyjson.EnsureASCII(false))
 	}
-	rawID, err := controlText(subagentID)
+	rawID, err := controlText("subagent_id", subagentID)
 	if err != nil {
 		return "", err
 	}
@@ -519,7 +520,7 @@ func handleDelegateControlAction(action string, subagentID, message any, parent 
 			"may have already finished (its result arrives as a normal "+
 			"completion message). Use action='list' to see live children.", sid)), nil
 	}
-	text, err := controlText(message)
+	text, err := controlText("message", message)
 	if err != nil && action == "steer" {
 		return "", err
 	}

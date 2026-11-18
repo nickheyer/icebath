@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -276,7 +277,7 @@ func warnInvalidCustomProviderContextLength(ctx context.Context, a *AIAgent, cus
 			cpCtx = m["context_length"]
 		}
 		if cpCtx != nil && configPositiveInt(cpCtx, false) == nil {
-			warnInvalidConfigInt(ctx, fmt.Sprintf("context_length for model %s in custom_providers", pyrepr.Repr(a.model)),
+			warnInvalidConfigInt(ctx, fmt.Sprintf("context_length for model %s in custom_providers", errchain.Show(a.model)),
 				cpCtx, ctxLenRequirement, "auto-detection", "auto-detected context window", a)
 		}
 		return

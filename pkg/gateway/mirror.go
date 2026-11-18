@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -120,7 +121,7 @@ func findMirrorSessionID(ctx context.Context, platform, chatID string, threadID,
 	}
 	data, isObj := parsed.(*pyjson.Object)
 	if !isObj {
-		return "", mirrorAttributeError(parsed, "items")
+		return "", mirrorShapeError("the sessions index", parsed, "a mapping")
 	}
 	var candidates []*pyjson.Object
 	for _, k := range data.Keys {
@@ -176,9 +177,9 @@ func findMirrorSessionID(ctx context.Context, platform, chatID string, threadID,
 	return mirrorSessionIDText(best.Vals["session_id"])
 }
 
-// AttributeError Python raises reading a missing attribute of a decoded JSON value
-func mirrorAttributeError(v any, attr string) error {
-	return fmt.Errorf("'%s' object has no attribute '%s'", pyrepr.TypeName(v), attr)
+// Refusal of a decoded mirror value of the wrong kind
+func mirrorShapeError(what string, v any, want string) error {
+	return fmt.Errorf("%s is %s, expected %s", what, errchain.Kind(v), want)
 }
 
 // Whether an index entry's origin names the platform, chat and thread, with the AttributeError a non mapping origin raises
@@ -189,7 +190,7 @@ func mirrorEntryMatches(entry *pyjson.Object, platform, chatID string, threadID 
 	}
 	origin, isObj := originValue.(*pyjson.Object)
 	if !isObj {
-		return false, mirrorAttributeError(originValue, "get")
+		return false, mirrorShapeError("a session origin", originValue, "a mapping")
 	}
 	plat := origin.Vals["platform"]
 	if !pyrepr.Truthy(plat) {
@@ -200,7 +201,7 @@ func mirrorEntryMatches(entry *pyjson.Object, platform, chatID string, threadID 
 	}
 	platText, isStr := plat.(string)
 	if !isStr {
-		return false, mirrorAttributeError(plat, "lower")
+		return false, mirrorShapeError("a session platform", plat, "text")
 	}
 	if pystr.Lower(platText) != pystr.Lower(platform) {
 		return false, nil
@@ -252,7 +253,7 @@ func mirrorPyGreater(a, b any) (bool, error) {
 			return len(la) > len(lb), nil
 		}
 	}
-	return false, fmt.Errorf("'>' not supported between instances of '%s' and '%s'", pyrepr.TypeName(a), pyrepr.TypeName(b))
+	return false, fmt.Errorf("cannot compare %s with %s", errchain.Kind(a), errchain.Kind(b))
 }
 
 // Numeric value of a Python bool, int or float, nil standing for NaN which orders against nothing
@@ -289,7 +290,7 @@ func mirrorSessionIDText(v any) (string, error) {
 	case bool:
 		return "1", nil
 	case []any, *pyjson.Object, map[string]any:
-		return "", fmt.Errorf("Error binding parameter 1: type '%s' is not supported", pyrepr.TypeName(n))
+		return "", fmt.Errorf("the mirror lookup value is %s, which the database cannot match", errchain.Kind(n))
 	}
 	return pyrepr.Str(v), nil
 }

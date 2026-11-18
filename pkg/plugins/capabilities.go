@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
@@ -55,19 +56,19 @@ func ParseDeclaredCapabilities(raw any, pluginName string) []string {
 	}
 	items, ok := raw.([]any)
 	if !ok {
-		pkgLog().Warn(fmt.Sprintf("Plugin %s: manifest 'capabilities' must be a list, got %s — ignoring", pluginName, pyrepr.TypeName(raw)))
+		pkgLog().Warn(fmt.Sprintf("Plugin %s: manifest 'capabilities' must be a list, got %s — ignoring", pluginName, errchain.Kind(raw)))
 		return nil
 	}
 	var out []string
 	for _, item := range items {
 		s, ok := item.(string)
 		if !ok {
-			pkgLog().Warn(fmt.Sprintf("Plugin %s: ignoring non-string capability entry %s", pluginName, pyrepr.Repr(item)))
+			pkgLog().Warn(fmt.Sprintf("Plugin %s: ignoring non-string capability entry %s", pluginName, errchain.Show(item)))
 			continue
 		}
 		cap := pystr.Strip(s)
 		if _, known := CapabilityRegistry[cap]; !known {
-			pkgLog().Warn(fmt.Sprintf("Plugin %s: unknown capability %s (known: %s) — ignoring", pluginName, pyrepr.Repr(cap), strings.Join(ValidCapabilityIDs(), ", ")))
+			pkgLog().Warn(fmt.Sprintf("Plugin %s: unknown capability %s (known: %s) — ignoring", pluginName, errchain.Show(cap), strings.Join(ValidCapabilityIDs(), ", ")))
 			continue
 		}
 		out = appendUnique(out, cap)
@@ -149,7 +150,7 @@ func legacyGateSet(entry map[string]any, spec CapabilitySpec) bool {
 func CapabilityGranted(cfg map[string]any, pluginID, capability string) bool {
 	spec, ok := CapabilityRegistry[capability]
 	if !ok {
-		pkgLog().Debug(fmt.Sprintf("capability check for unknown id %s (plugin %s) — denied", pyrepr.Repr(capability), pluginID))
+		pkgLog().Debug(fmt.Sprintf("capability check for unknown id %s (plugin %s) — denied", errchain.Show(capability), pluginID))
 		return false
 	}
 	entry := pluginEntry(cfg, pluginID)

@@ -18,6 +18,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/pm"
 )
 
@@ -676,11 +677,11 @@ func pluginOAuthInt(v any) (int64, error) {
 	case string:
 		n, err := strconv.ParseInt(strings.TrimSpace(strings.ReplaceAll(t, "_", "")), 10, 64)
 		if err != nil {
-			return 0, fmt.Errorf("invalid literal for int() with base 10: %s", pyRepr(t))
+			return 0, fmt.Errorf("%s is not a whole number", pyRepr(t))
 		}
 		return n, nil
 	}
-	return 0, fmt.Errorf("int() argument must be a string, a bytes-like object or a real number, not '%s'", pyTypeName(v))
+	return 0, fmt.Errorf("expected a whole number, got %s", errchain.Kind(v))
 }
 
 // Access token while it outlives the expiry margin, empty otherwise

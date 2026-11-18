@@ -8,6 +8,7 @@ import (
 	"errors"
 	"strings"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pybase64"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
@@ -65,7 +66,7 @@ func apiPartImageURL(part any) (string, error) {
 	}
 	image, ok := raw.(*pyjson.Object)
 	if !ok {
-		return "", &PyError{Kind: "AttributeError", Msg: "'" + jsonValueTypeName(raw) + "' object has no attribute 'get'"}
+		return "", &PyError{Kind: "AttributeError", Msg: "an API image part is " + errchain.Kind(raw) + ", expected a mapping"}
 	}
 	url, found := image.Get("url")
 	if !found {
@@ -73,7 +74,7 @@ func apiPartImageURL(part any) (string, error) {
 	}
 	text, ok := url.(string)
 	if !ok {
-		return "", &PyError{Kind: "AttributeError", Msg: "'" + jsonValueTypeName(url) + "' object has no attribute 'partition'"}
+		return "", &PyError{Kind: "AttributeError", Msg: "an API image URL is " + errchain.Kind(url) + ", expected text"}
 	}
 	return text, nil
 }
@@ -103,7 +104,7 @@ func apiCompacted(content, media any) ([]any, error) {
 			reference, isObj := references[next].(*pyjson.Object)
 			next++
 			if !isObj {
-				return nil, &PyError{Kind: "TypeError", Msg: "'" + jsonValueTypeName(references[next-1]) + "' object is not subscriptable"}
+				return nil, &PyError{Kind: "TypeError", Msg: "an API media reference is " + errchain.Kind(references[next-1]) + ", expected a mapping"}
 			}
 			value, found := reference.Get("sha256")
 			if !found {
@@ -199,7 +200,7 @@ func compactAPIPayload(payloadJSON, requestID string) (bool, *pyjson.Object, err
 	}
 	payload, ok := decoded.(*pyjson.Object)
 	if !ok {
-		return false, nil, &PyError{Kind: "TypeError", Msg: "'" + jsonValueTypeName(decoded) + "' object is not subscriptable"}
+		return false, nil, &PyError{Kind: "TypeError", Msg: "the API payload is " + errchain.Kind(decoded) + ", expected a mapping"}
 	}
 	rawData, found := payload.Get("api_turn_v1")
 	if !found {
@@ -207,7 +208,7 @@ func compactAPIPayload(payloadJSON, requestID string) (bool, *pyjson.Object, err
 	}
 	data, ok := rawData.(*pyjson.Object)
 	if !ok {
-		return false, nil, &PyError{Kind: "AttributeError", Msg: "'" + jsonValueTypeName(rawData) + "' object has no attribute 'get'"}
+		return false, nil, &PyError{Kind: "AttributeError", Msg: "the API payload data is " + errchain.Kind(rawData) + ", expected a mapping"}
 	}
 	content, _ := payload.Get("text")
 	media, _ := data.Get("media")

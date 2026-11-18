@@ -3,6 +3,7 @@ package gateway
 import (
 	"strings"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -18,7 +19,7 @@ func BindTurnWorkspace(env *tools.Env, policy *LocalSessionPolicy, taskID string
 	}
 	obj, isDict := decoded.(*pyjson.Object)
 	if !isDict {
-		return &PyError{Kind: "AttributeError", Msg: "'" + pyTypeName(decoded) + "' object has no attribute 'get'"}
+		return &PyError{Kind: "AttributeError", Msg: "the turn workspace record is " + errchain.Kind(decoded) + ", expected a mapping"}
 	}
 	terminal := pyjson.Plain(obj).(map[string]any)
 	if strings.ToLower(strings.TrimSpace(routeStr(terminal["TERMINAL_ENV"]))) != "docker" || !terminalUsesHostCwd(terminal) {

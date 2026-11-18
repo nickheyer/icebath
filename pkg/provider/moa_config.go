@@ -12,6 +12,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 )
 
 const (
@@ -743,7 +744,7 @@ func DecodeMoATurn(message string) (string, map[string]any, error) {
 	}
 	payload, ok := decoded.(map[string]any)
 	if !ok {
-		return "", nil, fmt.Errorf("'%s' object has no attribute 'get'", config.PyTypeName(decoded))
+		return "", nil, fmt.Errorf("the mixture of agents turn is %s, expected a mapping", errchain.Kind(decoded))
 	}
 	cfg := payload["config"]
 	if !config.PyTruthy(cfg) {

@@ -598,7 +598,7 @@ func refreshBotChatTools(ctx context.Context, a *AIAgent) {
 		launch, ok := policy.(*gateway.LocalSessionPolicy)
 		if !ok {
 			pkgLog().Warn(fmt.Sprintf("Bot Chat capability refresh kept the previous tools for session %s: %s",
-				a.sessionID, fmt.Sprintf("'%T' object has no attribute 'toolsets'", policy)))
+				a.sessionID, "the session policy cannot list toolsets"))
 			return
 		}
 		loopRefreshAgentMCPTools(ctx, a, mcp.RefreshOptions{EnabledOverride: append([]string{}, launch.Toolsets...), Quiet: true, ContentAware: true})

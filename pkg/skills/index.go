@@ -13,6 +13,7 @@ import (
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -190,7 +191,7 @@ func requiresAppsList(fm map[string]any) []any {
 func buildSnapshotEntry(skillFile, skillsDir string, fm map[string]any, description string) (*pyjson.Object, error) {
 	rel, err := filepath.Rel(skillsDir, skillFile)
 	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-		return nil, fmt.Errorf("%s is not in the subpath of %s", pyrepr.StrRepr(skillFile), pyrepr.StrRepr(skillsDir))
+		return nil, fmt.Errorf("%s is not in the subpath of %s", errchain.Show(skillFile), errchain.Show(skillsDir))
 	}
 	parts := strings.Split(rel, string(filepath.Separator))
 	skillName := filepath.Base(filepath.Dir(skillFile))
@@ -307,7 +308,7 @@ func (s *Scope) pluginSkillPromptRows(ctx context.Context, disabled, availableTo
 		if raw := meta["frontmatter"]; pyrepr.Truthy(raw) {
 			m, ok := raw.(map[string]any)
 			if !ok {
-				s.logger().Debug("Plugin skill prompt rows unavailable", "error", fmt.Sprintf("'%s' object has no attribute 'get'", pyrepr.TypeName(raw)))
+				s.logger().Debug("Plugin skill prompt rows unavailable", "error", fmt.Sprintf("plugin skill row is %s where a mapping was expected", errchain.Kind(raw)))
 				return rows
 			}
 			fm = m
@@ -411,7 +412,7 @@ func snapshotSkills(snap *pyjson.Object) ([]*pyjson.Object, error) {
 		items = t
 	case *pyjson.Object, string:
 	default:
-		return nil, fmt.Errorf("'%s' object is not iterable", pyrepr.TypeName(raw))
+		return nil, fmt.Errorf("skills snapshot list is %s where a list was expected", errchain.Kind(raw))
 	}
 	var out []*pyjson.Object
 	for _, it := range items {
@@ -563,7 +564,7 @@ func (s *Scope) buildSkillsSystemPromptInner(ctx context.Context, skillsDir stri
 			if _, present := r.entry.Get("rel"); !present {
 				return "", errors.New("a skill index entry has no rel")
 			}
-			return "", fmt.Errorf("unsupported operand type(s) for /: 'PosixPath' and '%s'", pyrepr.TypeName(entryGet(r.entry, "rel")))
+			return "", fmt.Errorf("a skill index entry rel is %s where a path was expected", errchain.Kind(entryGet(r.entry, "rel")))
 		}
 		conds := entryConditions(r.entry)
 		category := pyStrTruthy(entryGet(r.entry, "category"))

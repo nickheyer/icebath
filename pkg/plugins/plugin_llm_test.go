@@ -319,13 +319,13 @@ func TestPluginLlmCheckTask(t *testing.T) {
 	}
 	logs := captureLogs(t)
 	if _, err := checkTask(ctx, pol, "my-plugin", sp("classifier")); !isTrustErr(err, "'my-plugin'") || !isTrustErr(err, "'classifier'") ||
-		!strings.Contains(logs.String(), "plugin 'my-plugin' requested auxiliary task 'classifier' it did not register") {
+		!strings.Contains(logs.String(), "plugin my-plugin requested auxiliary task classifier it did not register") {
 		t.Fatalf("foreign %v %s", err, logs)
 	}
 	if _, err := checkTask(ctx, pol, "my-plugin", sp("nope")); !isTrustErr(err, "nope") {
 		t.Fatalf("unknown %v", err)
 	}
-	if _, err := checkTask(ctx, pol, "my-plugin", sp("vision")); !isTrustErr(err, "allow_task_override") || !strings.Contains(logs.String(), "built-in auxiliary task 'vision'") {
+	if _, err := checkTask(ctx, pol, "my-plugin", sp("vision")); !isTrustErr(err, "allow_task_override") || !strings.Contains(logs.String(), "built-in auxiliary task vision") {
 		t.Fatalf("builtin denied %v", err)
 	}
 	if got, err := checkTask(ctx, trustPolicy{pluginID: "my-plugin", allowTaskOverride: true}, "my-plugin", sp("vision")); err != nil || *got != "vision" {
@@ -428,7 +428,7 @@ func TestPluginFacadeConstructionAndHelpers(t *testing.T) {
 		t.Fatalf("async %+v %v", r, err)
 	}
 	_, err = llm.Complete(context.Background(), msgs, PluginLlmOptions{Provider: sp("openai")})
-	if err == nil || err.Error() != "Plugin 'my-plugin' cannot override the provider (set plugins.entries.my-plugin.llm.allow_provider_override to true to allow)." {
+	if err == nil || err.Error() != "Plugin my-plugin cannot override the provider (set plugins.entries.my-plugin.llm.allow_provider_override to true to allow)." {
 		t.Fatalf("provider gate %v", err)
 	}
 	if p, m, resp := attributed(pluginLlmCall{ProviderOverride: sp("p1")}, "raw", map[string]string{"provider": "p2", "model": "m2"}); p != "p2" || m != "m2" || resp != "raw" {

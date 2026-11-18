@@ -39,7 +39,7 @@ func TestValidateEditor(t *testing.T) {
 		field, detail string
 	}{
 		{"cli", map[string]any{}, "editor", "an editor policy is only accepted from an ACP launch, not cli"},
-		{"acp", []any{}, "editor", "must be a mapping, got list"},
+		{"acp", []any{}, "editor", "must be a mapping, got a list"},
 		{"acp", map[string]any{"zeta": 1, "alpha": 2}, "editor.alpha", "unknown editor key"},
 		{"acp", map[string]any{"edit_approval_policy": "auto"}, "editor.edit_approval_policy", "must be 'ask': every edit is approved one at a time"},
 		{"acp", map[string]any{"mcp_servers": "x"}, "editor.mcp_servers", "must be a list, got text"},

@@ -6,7 +6,7 @@ import (
 	"fmt"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -76,7 +76,7 @@ func (h hostedWebSearchProvider) Search(ctx context.Context, _ *tools.Env, query
 	}
 	row, ok := v.(map[string]any)
 	if !ok {
-		return nil, fmt.Errorf("web provider %s search() returned %s, not a mapping", pyrepr.StrRepr(h.Name()), pyrepr.TypeName(v))
+		return nil, fmt.Errorf("web provider %s search returned %s where a mapping was expected", h.Name(), errchain.Kind(v))
 	}
 	raw, err := json.Marshal(row)
 	if err != nil {
@@ -105,13 +105,13 @@ func (h hostedWebSearchProvider) Extract(ctx context.Context, _ *tools.Env, urls
 	}
 	rows, ok := v.([]any)
 	if !ok {
-		return nil, fmt.Errorf("web provider %s extract() returned %s, not a list", pyrepr.StrRepr(h.Name()), pyrepr.TypeName(v))
+		return nil, fmt.Errorf("web provider %s extract returned %s where a list was expected", h.Name(), errchain.Kind(v))
 	}
 	out := make([]*tools.WebPage, 0, len(rows))
 	for _, r := range rows {
 		row, ok := r.(map[string]any)
 		if !ok {
-			return nil, fmt.Errorf("web provider %s extract() returned a %s entry, not a mapping", pyrepr.StrRepr(h.Name()), pyrepr.TypeName(r))
+			return nil, fmt.Errorf("web provider %s extract returned an entry that is %s where a mapping was expected", h.Name(), errchain.Kind(r))
 		}
 		out = append(out, hostedWebPage(row))
 	}

@@ -307,10 +307,10 @@ func TestCodexAdapterExplicitCancellationIsNeverATimeout(t *testing.T) {
 func TestAuxKwargDictsFollowsPythonIteration(t *testing.T) {
 	var attr *auxAttributeError
 	var typeErr *auxTypeError
-	if _, err := auxKwargDicts(map[string]any{"messages": []any{"hi"}}, "messages", false); !errors.As(err, &attr) || err.Error() != "'str' object has no attribute 'get'" {
+	if _, err := auxKwargDicts(map[string]any{"messages": []any{"hi"}}, "messages", false); !errors.As(err, &attr) || err.Error() != "an item of the messages argument is text, expected a mapping" {
 		t.Fatalf("non dict item %v", err)
 	}
-	if _, err := auxKwargDicts(map[string]any{"messages": nil}, "messages", false); !errors.As(err, &typeErr) || err.Error() != "'NoneType' object is not iterable" {
+	if _, err := auxKwargDicts(map[string]any{"messages": nil}, "messages", false); !errors.As(err, &typeErr) || err.Error() != "the messages argument is nothing, expected a list" {
 		t.Fatalf("None messages %v", err)
 	}
 	if got, err := auxKwargDicts(map[string]any{"tools": nil}, "tools", true); got != nil || err != nil {

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"iter"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/plugins"
@@ -305,5 +306,5 @@ func hostedIterator(ctx context.Context, v any) (func() (any, bool, error), erro
 			return it[i-1], true, nil
 		}, nil
 	}
-	return nil, fmt.Errorf("'%s' object is not iterable", pyrepr.TypeName(v))
+	return nil, fmt.Errorf("TTS plugin stream is %s where a list or iterator was expected", errchain.Kind(v))
 }

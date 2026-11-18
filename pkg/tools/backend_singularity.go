@@ -19,6 +19,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyfs"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
@@ -449,7 +450,7 @@ func singularityLimit(v any) (bool, string, error) {
 	if f, ok := v.(float64); ok {
 		return f > 0, pyrepr.Str(f), nil
 	}
-	return false, "", fmt.Errorf("'>' not supported between instances of '%s' and 'int'", pyrepr.TypeName(v))
+	return false, "", fmt.Errorf("a Singularity limit is %s, expected a number", errchain.Kind(v))
 }
 
 // Read only bind args for registered credential files and skills directories

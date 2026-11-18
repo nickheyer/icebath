@@ -12,11 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/browser"
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/gateway/platforms/matrix"
-	"github.com/nickheyer/icebath/pkg/gateway/platforms/whatsapp"
 	"github.com/nickheyer/icebath/pkg/hostinfo"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -50,10 +46,13 @@ var (
 	doctorDescribeVercelAuth    = func() tools.VercelAuthStatus { return tools.DescribeVercelAuth(nil) }
 	doctorActiveSearchProvider  = tools.ActiveSearchProvider
 	doctorActiveExtractProvider = tools.ActiveExtractProvider
-	doctorUsingLightpandaEngine = browser.UsingLightpandaEngine
-	doctorLightpandaStatus      = browser.LightpandaEngineStatus
-	doctorFindLightpandaBinary  = browser.FindLightpandaBinary
-	doctorChromiumExecutable    = func(env *tools.Env) string { return browser.ChromiumExecutable(env, true) }
+	// Browser tool reads of the Chromium and Lightpanda rows, set by the browser tier and nil in a build without it
+	doctorUsingLightpandaEngine func(env *tools.Env) bool
+	doctorLightpandaStatus      func(env *tools.Env) (bool, string)
+	doctorFindLightpandaBinary  func(env *tools.Env) string
+	doctorChromiumExecutable    func(env *tools.Env) string
+	doctorChromiumMissingHint   func(env *tools.Env) string
+	doctorLightpandaInstallHint string
 	doctorPMEnsure              = func(ctx context.Context, name string) error {
 		_, err := pm.Ensure(ctx, name, pm.EnsureOptions{Explicit: true})
 		return err
@@ -135,8 +134,10 @@ var doctorRunOK = func(ctx context.Context, cmd []string, timeout time.Duration)
 // Termux fallback notes, the Matrix line present only when this binary was built without the goolm tag
 func doctorTermuxInstallAllFallbackNotes() []string {
 	notes := []string{"Termux runs icebath in a Debian userland: " + config.TermuxInstallCommand}
-	if !matrix.E2EEBuiltIn {
-		notes = append(notes, "Matrix E2EE is excluded from this binary (built without the goolm tag).")
+	if doctorMatrixE2EE != nil {
+		if builtIn, _ := doctorMatrixE2EE(); !builtIn {
+			notes = append(notes, "Matrix E2EE is excluded from this binary (built without the goolm tag).")
+		}
 	}
 	return append(notes,
 		"Local faster-whisper extra is excluded on Termux (ctranslate2/av build path unavailable).",
@@ -560,7 +561,7 @@ func doctorCheckChromium(ctx context.Context, d *Doctor, shouldFix bool) error {
 		return nil
 	}
 	doctorCheckWarn(d.W, "Chromium not installed", "(browser_exec cannot start a local browser)")
-	doctorCheckInfo(d.W, browser.ChromiumMissingHint(env))
+	doctorCheckInfo(d.W, doctorChromiumMissingHint(env))
 	return nil
 }
 
@@ -585,11 +586,11 @@ func doctorCheckLightpanda(ctx context.Context, d *Doctor) {
 	}
 	if !doctorCheckBool(d.W, doctorFindLightpandaBinary(env) != "", doctorRow{"Lightpanda", "(" + reason + ")"},
 		doctorRow{"Lightpanda selected but binary not found", "(browser tools will fail until it is installed)"}, false) {
-		doctorCheckInfo(d.W, browser.LightpandaInstallHint)
+		doctorCheckInfo(d.W, doctorLightpandaInstallHint)
 	}
 }
 
-// Reports Node.js, the Chromium a local browser session launches and the Lightpanda engine
+// Reports Node.js, then the Chromium and Lightpanda rows where the browser tools are linked
 func checkNodeAndBrowser(ctx context.Context, d *Doctor, shouldFix bool) (*Finding, error) {
 	return doctorCheck(func(f *Finding) error {
 		switch {
@@ -600,6 +601,9 @@ func checkNodeAndBrowser(ctx context.Context, d *Doctor, shouldFix bool) (*Findi
 		default:
 			doctorCheckWarn(d.W, "Node.js not found", "(optional; run: icebath pm install node)")
 		}
+		if doctorChromiumExecutable == nil {
+			return nil
+		}
 		if err := doctorCheckChromium(ctx, d, shouldFix); err != nil {
 			return err
 		}
@@ -608,21 +612,14 @@ func checkNodeAndBrowser(ctx context.Context, d *Doctor, shouldFix bool) (*Findi
 	})
 }
 
-// Session directory, store presence and pairing of the in process WhatsApp adapter for the configured session path
-var doctorWhatsAppSession = func(ctx context.Context) (string, bool, bool, error) {
-	var extra map[string]any
-	if cfg, err := gateway.LoadGatewayConfig(ctx); err == nil {
-		if wa := cfg.Platforms[gateway.PlatformWhatsApp]; wa != nil {
-			extra = wa.Extra
-		}
-	} else {
-		return "", false, false, err
-	}
-	return whatsapp.SessionStatus(ctx, extra)
-}
+// Session directory, store presence and pairing of the WhatsApp adapter, set by its tier and nil in a build without it
+var doctorWhatsAppSession func(ctx context.Context) (string, bool, bool, error)
 
 // Reports the WhatsApp session store once one exists, paired or awaiting a QR pairing
 func doctorCheckWhatsAppSession(ctx context.Context, d *Doctor, f *Finding) {
+	if doctorWhatsAppSession == nil {
+		return
+	}
 	dir, present, paired, err := doctorWhatsAppSession(ctx)
 	switch {
 	case err != nil:

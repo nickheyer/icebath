@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyfs"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
@@ -94,7 +95,7 @@ func DescribeStoreError(err error) string {
 		text = pypath.Strerror(errno)
 	}
 	if text == "" {
-		text = pypath.OSErrorText(err)
+		text = errchain.OSText(err)
 	}
 	if code != "" {
 		return code + ": " + text
@@ -185,10 +186,10 @@ func noteUnwritableAt(log *slog.Logger, cronDir string, err error, consequence, 
 	switch {
 	case entered:
 		log.Warn(fmt.Sprintf("Cron store %s is unwritable (%s); %s. Scheduled jobs are skipped until it accepts writes "+
-			"again, then each due job fires once. Fix: %s.", store, pypath.OSErrorText(err), consequence, fmt.Sprintf(storeFixHint, store)))
+			"again, then each due job fires once. Fix: %s.", store, errchain.OSText(err), consequence, fmt.Sprintf(storeFixHint, store)))
 		notifyStoreTransition(log, "unwritable", snap)
 	case newSite:
-		log.Info(fmt.Sprintf("Cron store %s still unwritable (%s); %s", store, pypath.OSErrorText(err), consequence))
+		log.Info(fmt.Sprintf("Cron store %s still unwritable (%s); %s", store, errchain.OSText(err), consequence))
 	}
 }
 

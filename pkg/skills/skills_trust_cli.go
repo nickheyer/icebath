@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
@@ -35,7 +36,7 @@ func SkillsTrustCommand(ctx context.Context, h, action, rawPath string, out io.W
 	}
 	skillsCfg, ok := cfg["skills"].(map[string]any)
 	if !ok {
-		return fmt.Errorf("'%s' object has no attribute 'get'", pyrepr.TypeName(cfg["skills"]))
+		return fmt.Errorf("config skills section is %s where a mapping was expected", errchain.Kind(cfg["skills"]))
 	}
 	var trusted []string
 	switch raw := skillsCfg["trusted_project_dirs"].(type) {

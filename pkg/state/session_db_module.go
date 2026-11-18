@@ -11,6 +11,7 @@ import (
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -200,7 +201,7 @@ var reviewHarnessPrefixes = []string{
 func roleIn(role any, roles ...string) (bool, error) {
 	switch r := role.(type) {
 	case []any, *pyjson.Object, map[string]any:
-		return false, &pyint.Error{Kind: "TypeError", Msg: fmt.Sprintf("unhashable type: '%s'", pyrepr.TypeName(r))}
+		return false, &pyint.Error{Kind: "TypeError", Msg: fmt.Sprintf("the message role is %s, expected text", errchain.Kind(r))}
 	case string:
 		for _, want := range roles {
 			if r == want {

@@ -18,6 +18,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyfs"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -216,9 +217,9 @@ type copyTreeError struct{ errs [][3]string }
 func (e *copyTreeError) Error() string {
 	items := make([]string, len(e.errs))
 	for i, x := range e.errs {
-		items[i] = "(" + pyrepr.Repr(x[0]) + ", " + pyrepr.Repr(x[1]) + ", " + pyrepr.Repr(x[2]) + ")"
+		items[i] = x[0] + " -> " + x[1] + ": " + x[2]
 	}
-	return "[" + strings.Join(items, ", ") + "]"
+	return "could not copy " + strings.Join(items, "; ")
 }
 
 // Copies a tree directory like shutil.copytree with the runtime cache filter, keeping existing files when asked
@@ -326,7 +327,7 @@ func readUTF8Sig(p string) (string, error) {
 	for pos := 0; pos < len(data); {
 		r, n := utf8.DecodeRune(data[pos:])
 		if r == utf8.RuneError && n <= 1 {
-			return "", pystr.UTF8DecodeError(data, pos)
+			return "", errchain.Reword(pystr.UTF8DecodeError(data, pos), "%s is not valid UTF-8 at byte %d", p, pos)
 		}
 		pos += n
 	}
@@ -820,7 +821,7 @@ func (s *Scope) rmtreeWritable(p string) error {
 	target := resolvePath(p)
 	root := resolvePath(s.SkillsDir())
 	if target == root || !isRelativeTo(target, root) {
-		return fmt.Errorf("refusing to rmtree %s: not strictly under %s (scope guard — see #48200)", pathRepr(target), pathRepr(root))
+		return fmt.Errorf("refusing to rmtree %s: not strictly under %s (scope guard — see #48200)", target, root)
 	}
 	return pyfs.RmTree(p, func(op pyfs.RmTreeOp, fpath string, _ error) error {
 		os.Chmod(filepath.Dir(fpath), 0o700)
@@ -873,7 +874,7 @@ func hubLockInstalledEntries(data any) ([]*pyjson.Object, error) {
 	obj, ok := data.(*pyjson.Object)
 	if !ok {
 		if pyTruthyJSON(data) {
-			return nil, fmt.Errorf("'%s' object has no attribute 'get'", pyjsonTypeName(data))
+			return nil, fmt.Errorf("skills hub lock is %s where a mapping was expected", errchain.Kind(data))
 		}
 		return nil, nil
 	}
@@ -883,7 +884,7 @@ func hubLockInstalledEntries(data any) ([]*pyjson.Object, error) {
 	}
 	table, ok := installed.(*pyjson.Object)
 	if !ok {
-		return nil, fmt.Errorf("'%s' object has no attribute 'values'", pyjsonTypeName(installed))
+		return nil, fmt.Errorf("skills hub lock installed table is %s where a mapping was expected", errchain.Kind(installed))
 	}
 	var out []*pyjson.Object
 	for _, k := range table.Keys {
@@ -911,23 +912,6 @@ func pyTruthyJSON(v any) bool {
 		return x != 0
 	}
 	return pyrepr.Str(v) != "0"
-}
-
-// Python type name of a decoded JSON value
-func pyjsonTypeName(v any) string {
-	switch v.(type) {
-	case []any:
-		return "list"
-	case string:
-		return "str"
-	case bool:
-		return "bool"
-	case float64:
-		return "float"
-	case *pyjson.Object:
-		return "dict"
-	}
-	return "int"
 }
 
 // Hub lock install paths as slash strings stripped of surrounding slashes
@@ -1130,7 +1114,7 @@ func (s *Scope) backfillOptionalProvenance(ctx context.Context, quiet bool) ([]s
 	}
 	data, ok := raw.(*pyjson.Object)
 	if !ok {
-		return nil, fmt.Errorf("'%s' object has no attribute 'setdefault'", pyjsonTypeName(raw))
+		return nil, fmt.Errorf("skills hub lock is %s where a mapping was expected", errchain.Kind(raw))
 	}
 	if _, present := data.Get("installed"); !present {
 		data.Set("installed", pyjson.NewObject())
@@ -1138,7 +1122,7 @@ func (s *Scope) backfillOptionalProvenance(ctx context.Context, quiet bool) ([]s
 	instAny, _ := data.Get("installed")
 	installed, ok := instAny.(*pyjson.Object)
 	if !ok {
-		return nil, fmt.Errorf("argument of type '%s' is not iterable", pyjsonTypeName(instAny))
+		return nil, fmt.Errorf("skills hub lock installed table is %s where a mapping was expected", errchain.Kind(instAny))
 	}
 	entries, err := hubLockInstalledEntries(data)
 	if err != nil {
@@ -1526,14 +1510,6 @@ func (s *Scope) RemovePristineBundledSkills(ctx context.Context, dryRun bool) (m
 	}
 	return map[string]any{"ok": true, "removed": removed, "skipped": skipped, "dry_run": dryRun,
 		"message": fmt.Sprintf("%s %d pristine bundled skill(s); kept %d.", verb, len(removed), len(skipped))}, nil
-}
-
-// Repr of a pathlib path on this host
-func pathRepr(p string) string {
-	if filepath.Separator == '\\' {
-		return "WindowsPath(" + pyrepr.StrRepr(p) + ")"
-	}
-	return "PosixPath(" + pyrepr.StrRepr(p) + ")"
 }
 
 // Script entry that syncs the home of ctx loudly and prints the new, updated and unchanged summary line

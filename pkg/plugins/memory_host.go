@@ -10,6 +10,7 @@ import (
 	"weak"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 )
 
 const (
@@ -104,7 +105,7 @@ func (mc *memoryCollector) serve(ctx context.Context, h *PluginHost, c *Context,
 func hostCtxCall(ctx context.Context, h *PluginHost, c *Context, method string, args []any, kwargs map[string]any) (any, error) {
 	fn, ok := hostCtxDispatch[method]
 	if !ok {
-		return nil, &HostBuiltinError{Type: "AttributeError", Message: fmt.Sprintf("'PluginContext' object has no attribute %s", config.PyRepr(method))}
+		return nil, &HostBuiltinError{Type: "AttributeError", Message: fmt.Sprintf("plugin context has no %s", method)}
 	}
 	return fn(ctx, h, c, args, kwargs)
 }
@@ -116,7 +117,7 @@ func (h *PluginHost) serveCollectSource(ctx context.Context, params map[string]a
 		return nil, err
 	}
 	if c.collector == nil {
-		return nil, &HostBuiltinError{Type: "LookupError", Message: fmt.Sprintf("plugin %s does not collect a memory provider", config.PyRepr(params["plugin"]))}
+		return nil, &HostBuiltinError{Type: "LookupError", Message: fmt.Sprintf("plugin %s does not collect a memory provider", errchain.Show(params["plugin"]))}
 	}
 	var src *hookSource
 	if file, ok := params["source"].(string); ok {

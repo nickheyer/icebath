@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyjsonschema"
@@ -140,7 +141,7 @@ type PluginLlmTrustError struct{ Message string }
 func (e *PluginLlmTrustError) Error() string { return e.Message }
 
 func trustDenied(pluginID, what, flag string) *PluginLlmTrustError {
-	return &PluginLlmTrustError{Message: fmt.Sprintf("Plugin %s cannot %s (set plugins.entries.%s.llm.%s to true to allow).", pyrepr.Repr(pluginID), what, pluginID, flag)}
+	return &PluginLlmTrustError{Message: fmt.Sprintf("Plugin %s cannot %s (set plugins.entries.%s.llm.%s to true to allow).", errchain.Show(pluginID), what, pluginID, flag)}
 }
 
 // Provider or model override gated by its trust flag then its allowlist
@@ -154,7 +155,7 @@ func gateRefOverride(p trustPolicy, kind, requested string) (string, error) {
 	}
 	if !anyOK && allowed != nil && !allowed[strings.ToLower(pyStrip(requested))] {
 		return "", &PluginLlmTrustError{Message: fmt.Sprintf("Plugin %s %s override %s is not in plugins.entries.%s.llm.allowed_%ss.",
-			pyrepr.Repr(p.pluginID), kind, pyrepr.Repr(requested), p.pluginID, kind)}
+			errchain.Show(p.pluginID), kind, errchain.Show(requested), p.pluginID, kind)}
 	}
 	return pyStrip(requested), nil
 }
@@ -227,12 +228,12 @@ func checkTask(ctx context.Context, p trustPolicy, pluginID string, requested *s
 	}
 	if builtin[task] {
 		pkgLog().Warn(fmt.Sprintf("plugin_llm task routing denied: plugin %s requested built-in auxiliary task %s without plugins.entries.%s.llm.allow_task_override",
-			pyrepr.Repr(pluginID), pyrepr.Repr(task), pluginID))
-		return nil, trustDenied(pluginID, "route through the built-in auxiliary task "+pyrepr.Repr(task), "allow_task_override")
+			errchain.Show(pluginID), errchain.Show(task), pluginID))
+		return nil, trustDenied(pluginID, "route through the built-in auxiliary task "+errchain.Show(task), "allow_task_override")
 	}
-	pkgLog().Warn(fmt.Sprintf("plugin_llm task routing denied: plugin %s requested auxiliary task %s it did not register", pyrepr.Repr(pluginID), pyrepr.Repr(task)))
+	pkgLog().Warn(fmt.Sprintf("plugin_llm task routing denied: plugin %s requested auxiliary task %s it did not register", errchain.Show(pluginID), errchain.Show(task)))
 	return nil, &PluginLlmTrustError{Message: fmt.Sprintf("Plugin %s cannot route through auxiliary task %s — a plugin may only pass a task key it registered itself via "+
-		"ctx.register_auxiliary_task() (or a built-in key when plugins.entries.%s.llm.allow_task_override is true).", pyrepr.Repr(pluginID), pyrepr.Repr(task), pluginID)}
+		"ctx.register_auxiliary_task() (or a built-in key when plugins.entries.%s.llm.allow_task_override is true).", errchain.Show(pluginID), errchain.Show(task), pluginID)}
 }
 
 func llmValueError(msg string) error { return &HostBuiltinError{Type: "ValueError", Message: msg} }
@@ -280,7 +281,7 @@ func normalizeInputBlock(block any) (map[string]any, error) {
 		}
 		return map[string]any{"type": "image", "data": m["data"], "url": m["url"], "mime_type": mime, "file_name": name}, nil
 	default:
-		return nil, llmValueError("Unknown input block type: " + pyrepr.Repr(kind))
+		return nil, llmValueError("Unknown input block type: " + errchain.Show(kind))
 	}
 }
 
@@ -800,7 +801,7 @@ func (l *PluginLlm) HostAttr(_ context.Context, name string) (any, bool, bool, e
 	if async, ok := pluginLlmMethods[name]; ok {
 		return nil, true, async, nil
 	}
-	return nil, false, false, &HostBuiltinError{Type: "AttributeError", Message: fmt.Sprintf("'PluginLlm' object has no attribute %s", pyrepr.Repr(name))}
+	return nil, false, false, &HostBuiltinError{Type: "AttributeError", Message: fmt.Sprintf("plugin LLM has no %s", name)}
 }
 
 var pluginLlmOptionParams = []pyParam{kwo("provider", nil), kwo("model", nil), kwo("temperature", nil), kwo("max_tokens", nil),
@@ -810,7 +811,7 @@ var pluginLlmOptionParams = []pyParam{kwo("provider", nil), kwo("model", nil), k
 func (l *PluginLlm) HostCall(ctx context.Context, method string, args []any, kwargs map[string]any) (any, error) {
 	async, ok := pluginLlmMethods[method]
 	if !ok {
-		return nil, &HostBuiltinError{Type: "AttributeError", Message: fmt.Sprintf("'PluginLlm' object has no attribute %s", pyrepr.Repr(method))}
+		return nil, &HostBuiltinError{Type: "AttributeError", Message: fmt.Sprintf("plugin LLM has no %s", method)}
 	}
 	structured := strings.HasSuffix(method, "_structured")
 	params := append([]pyParam{req("messages")}, pluginLlmOptionParams...)
@@ -864,7 +865,7 @@ func hostOptStr(v any) (*string, error) {
 	if !pyrepr.Truthy(v) {
 		return nil, nil
 	}
-	return nil, &HostBuiltinError{Type: "AttributeError", Message: fmt.Sprintf("'%s' object has no attribute 'strip'", pyTypeName(v))}
+	return nil, &HostBuiltinError{Type: "AttributeError", Message: fmt.Sprintf("expected text, got %s", errchain.Kind(v))}
 }
 
 // Input blocks of a hosted call, records and dicts both reaching the dict normalization
@@ -875,7 +876,7 @@ func hostInputList(v any) ([]any, error) {
 	case []any:
 		return l, nil
 	}
-	return nil, &HostBuiltinError{Type: "TypeError", Message: fmt.Sprintf("'%s' object is not iterable", pyTypeName(v))}
+	return nil, &HostBuiltinError{Type: "TypeError", Message: fmt.Sprintf("input is %s where a list was expected", errchain.Kind(v))}
 }
 
 // Keyword options of a hosted call converted from wire values
@@ -898,7 +899,7 @@ func hostLlmOptions(a map[string]any) (PluginLlmOptions, error) {
 		if a[name] != nil {
 			f, ok := pyNumber(a[name])
 			if !ok {
-				return o, &HostBuiltinError{Type: "TypeError", Message: fmt.Sprintf("%s must be a number, not %s", name, pyTypeName(a[name]))}
+				return o, &HostBuiltinError{Type: "TypeError", Message: fmt.Sprintf("%s must be a number, got %s", name, errchain.Kind(a[name]))}
 			}
 			*dst = &f
 		}
@@ -906,7 +907,7 @@ func hostLlmOptions(a map[string]any) (PluginLlmOptions, error) {
 	if a["max_tokens"] != nil {
 		n, ok := pyrepr.Int(a["max_tokens"])
 		if !ok || !n.IsInt64() {
-			return o, &HostBuiltinError{Type: "TypeError", Message: fmt.Sprintf("max_tokens must be an integer, not %s", pyTypeName(a["max_tokens"]))}
+			return o, &HostBuiltinError{Type: "TypeError", Message: fmt.Sprintf("max_tokens must be a whole number, got %s", errchain.Kind(a["max_tokens"]))}
 		}
 		v := int(n.Int64())
 		o.MaxTokens = &v

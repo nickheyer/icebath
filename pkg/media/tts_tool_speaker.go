@@ -1,3 +1,5 @@
+//go:build !icebath_core && !icebath_noextras
+
 package media
 
 import (
@@ -13,9 +15,9 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pysounddevice"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -731,7 +733,7 @@ func StreamTTSToSpeaker(ctx context.Context, textQueue TextQueue, stopEvent, tts
 			case string:
 				sentences = chunker.Feed(delta)
 			default:
-				return &ttsTypeError{msg: fmt.Sprintf("can only concatenate str (not \"%s\") to str", pyrepr.TypeName(item))}
+				return &ttsTypeError{msg: fmt.Sprintf("TTS text queue item is %s where text was expected", errchain.Kind(item))}
 			}
 			for _, sentence := range sentences {
 				speakSentence(sentence)

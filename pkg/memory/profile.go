@@ -71,7 +71,7 @@ type copyTreeError struct {
 }
 
 func (e *copyTreeError) Error() string {
-	return "[" + strings.Join(e.failures, ", ") + "]"
+	return "could not copy " + strings.Join(e.failures, "; ")
 }
 
 // Recursive copy following symlinks into an existing or new destination, file metadata kept like copy2
@@ -89,7 +89,7 @@ func copyTree(src, dst string) error {
 		to := filepath.Join(dst, entry.Name())
 		st, err := os.Stat(from)
 		if err != nil {
-			failures = append(failures, fmt.Sprintf("(%s, %s, %s)", pyRepr(from), pyRepr(to), pyRepr(osErrorText(err))))
+			failures = append(failures, fmt.Sprintf("%s -> %s: %s", from, to, osErrorText(err)))
 			continue
 		}
 		if st.IsDir() {
@@ -98,20 +98,20 @@ func copyTree(src, dst string) error {
 				if errors.As(err, &tree) {
 					failures = append(failures, tree.failures...)
 				} else {
-					failures = append(failures, fmt.Sprintf("(%s, %s, %s)", pyRepr(from), pyRepr(to), pyRepr(osErrorText(err))))
+					failures = append(failures, fmt.Sprintf("%s -> %s: %s", from, to, osErrorText(err)))
 				}
 			}
 			continue
 		}
 		if err := copyFileWithStat(from, to); err != nil {
-			failures = append(failures, fmt.Sprintf("(%s, %s, %s)", pyRepr(from), pyRepr(to), pyRepr(osErrorText(err))))
+			failures = append(failures, fmt.Sprintf("%s -> %s: %s", from, to, osErrorText(err)))
 		}
 	}
 	if st, err := os.Stat(src); err == nil {
 		if err := os.Chmod(dst, st.Mode().Perm()); err == nil {
 			_ = os.Chtimes(dst, st.ModTime(), st.ModTime())
 		} else {
-			failures = append(failures, fmt.Sprintf("(%s, %s, %s)", pyRepr(src), pyRepr(dst), pyRepr(osErrorText(err))))
+			failures = append(failures, fmt.Sprintf("%s -> %s: %s", src, dst, osErrorText(err)))
 		}
 	}
 	if len(failures) > 0 {

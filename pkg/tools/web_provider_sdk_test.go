@@ -195,8 +195,8 @@ func TestExaFailuresKeepTheSDKMessages(t *testing.T) {
 		{200, "<html>\n  oops </html>", "Expected a JSON response but received a non-JSON body (status 200): <html> oops </html>"},
 		{200, "", "Expected a JSON response but received an empty body (status 200)."},
 		{200, `{"statuses":[]}`, "Exa search failed: 'results'"},
-		{200, `[1]`, "Exa search failed: 'list' object has no attribute 'get'"},
-		{200, `{"results":["x"]}`, "Exa search failed: 'str' object has no attribute 'get'"},
+		{200, `[1]`, "Exa search failed: expected a mapping, got a list"},
+		{200, `{"results":["x"]}`, "Exa search failed: expected a mapping, got text"},
 		{200, `{"results":[{"highlights":[1]}]}`, "Exa search failed: sequence item 0: expected str instance, int found"},
 	}
 	for _, c := range cases {
@@ -394,10 +394,10 @@ func TestParallelStatusAndPayloadErrors(t *testing.T) {
 		{403, "text/plain", "  denied ", "Parallel search failed: denied"},
 		{404, "text/plain", "", "Parallel search failed: Error code: 404"},
 		{200, "application/json", "nope", "Expecting value: line 1 column 1 (char 0)"},
-		{200, "text/html", "<html>", "Parallel search failed: 'str' object has no attribute 'results'"},
-		{200, "application/json", "null", "Parallel search failed: 'NoneType' object has no attribute 'results'"},
-		{200, "application/json", `{"search_id":"s"}`, "Parallel search failed: 'SearchResult' object has no attribute 'results'"},
-		{200, "application/json", `{"results":[{"title":"t"}]}`, "Parallel search failed: 'WebSearchResult' object has no attribute 'url'"},
+		{200, "text/html", "<html>", "Parallel search failed: expected a mapping with results, got text"},
+		{200, "application/json", "null", "Parallel search failed: expected a mapping with results, got nothing"},
+		{200, "application/json", `{"search_id":"s"}`, "Parallel search failed: the SearchResult reply has no results field"},
+		{200, "application/json", `{"results":[{"title":"t"}]}`, "Parallel search failed: the WebSearchResult reply has no url field"},
 	}
 	for _, c := range cases {
 		status, ctype, answer = c.status, c.ctype, c.answer
@@ -408,7 +408,7 @@ func TestParallelStatusAndPayloadErrors(t *testing.T) {
 	}
 	status, ctype, answer = 200, "application/json", `{"extract_id":"e","results":[]}`
 	pages, _ := parallelP().Extract(context.Background(), env, []string{"https://a"}, "")
-	if pages[0].Error != "Parallel extract failed: 'ExtractResponse' object has no attribute 'errors'" {
+	if pages[0].Error != "Parallel extract failed: the ExtractResponse reply has no errors field" {
 		t.Fatalf("%+v", pages[0])
 	}
 }

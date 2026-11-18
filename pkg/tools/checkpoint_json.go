@@ -84,7 +84,7 @@ func checkpointEncodeValue(b *strings.Builder, v any) error {
 		}
 		b.WriteByte('}')
 	default:
-		return &checkpointValueError{msg: fmt.Sprintf("Object of type %T is not JSON serializable", v)}
+		return &checkpointValueError{msg: fmt.Sprintf("cannot write %T as JSON", v)}
 	}
 	return nil
 }
@@ -111,7 +111,7 @@ func checkpointJSONDecode(text string) (any, error) {
 }
 
 func (p *checkpointJSONParser) fail(msg string) error {
-	return &checkpointValueError{msg: fmt.Sprintf("%s: char %d", msg, p.i)}
+	return &checkpointValueError{msg: fmt.Sprintf("invalid JSON at character %d: %s", p.i, msg)}
 }
 
 func (p *checkpointJSONParser) ws() {
@@ -131,7 +131,7 @@ func (p *checkpointJSONParser) word(w string) bool {
 
 func (p *checkpointJSONParser) value() (any, error) {
 	if p.i >= len(p.s) {
-		return nil, p.fail("Expecting value")
+		return nil, p.fail("expected a value")
 	}
 	switch c := p.s[p.i]; {
 	case c == '{':
@@ -156,7 +156,7 @@ func (p *checkpointJSONParser) value() (any, error) {
 	case c == '-' || (c >= '0' && c <= '9'):
 		return p.number()
 	}
-	return nil, p.fail("Expecting value")
+	return nil, p.fail("expected a value")
 }
 
 // Number token kept as text in the json.Number form
@@ -177,7 +177,7 @@ func (p *checkpointJSONParser) number() (any, error) {
 		p.i++
 	} else if digits() == 0 {
 		p.i = start
-		return nil, p.fail("Expecting value")
+		return nil, p.fail("expected a value")
 	}
 	if p.i < len(p.s) && p.s[p.i] == '.' {
 		save := p.i
@@ -290,7 +290,7 @@ func (p *checkpointJSONParser) array() (any, error) {
 			return out, nil
 		}
 		if p.i >= len(p.s) || p.s[p.i] != ',' {
-			return nil, p.fail("Expecting ',' delimiter")
+			return nil, p.fail("expected ',' between items")
 		}
 		p.i++
 	}
@@ -307,7 +307,7 @@ func (p *checkpointJSONParser) object() (any, error) {
 	for {
 		p.ws()
 		if p.i >= len(p.s) || p.s[p.i] != '"' {
-			return nil, p.fail("Expecting property name enclosed in double quotes")
+			return nil, p.fail("expected a key in double quotes")
 		}
 		p.i++
 		key, err := p.str()
@@ -331,7 +331,7 @@ func (p *checkpointJSONParser) object() (any, error) {
 			return out, nil
 		}
 		if p.i >= len(p.s) || p.s[p.i] != ',' {
-			return nil, p.fail("Expecting ',' delimiter")
+			return nil, p.fail("expected ',' between items")
 		}
 		p.i++
 	}

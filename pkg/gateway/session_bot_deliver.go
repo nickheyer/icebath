@@ -14,6 +14,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/activesessions"
 	"github.com/nickheyer/icebath/pkg/botmode"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -210,7 +211,7 @@ func botMigrate(ctx context.Context, a *SessionAuthority, actor Principal, home 
 		record := item.Record
 		owner, ok := hostedMapping(record["owner"])
 		if !ok {
-			return &PyError{Kind: "TypeError", Msg: "'" + jsonValueTypeName(record["owner"]) + "' object is not subscriptable"}
+			return &PyError{Kind: "TypeError", Msg: "the bot chat owner is " + errchain.Kind(record["owner"]) + ", expected a mapping"}
 		}
 		if !pyjson.Equal(owner["profile_home"], home) {
 			continue

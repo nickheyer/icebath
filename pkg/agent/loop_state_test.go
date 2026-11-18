@@ -176,7 +176,7 @@ func TestStateRowsMatchPythonJSONLayout(t *testing.T) {
 	if err != nil || loop.MaxTicks != 0 || loop.Times != 7 || !loop.AwaitingResponse {
 		t.Fatalf("loop coercion %#v %v", loop, err)
 	}
-	if _, err := HeartbeatStateFromJSON(`[]`); err == nil || err.Error() != "'list' object has no attribute 'get'" {
+	if _, err := HeartbeatStateFromJSON(`[]`); err == nil || err.Error() != "stored heartbeat state is not a JSON mapping" {
 		t.Fatalf("list row error %v", err)
 	}
 }

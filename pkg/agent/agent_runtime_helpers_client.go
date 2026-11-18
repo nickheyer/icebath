@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/provider"
 )
 
@@ -119,7 +119,7 @@ func providerSuppliedClient(ctx context.Context, a *AIAgent, clientKwargs map[st
 		if name == "" {
 			name = "?"
 		}
-		pkgLog().Warn(fmt.Sprintf("Provider profile %s failed to create a client; falling back to the standard client path", pyrepr.Repr(name)), "error", detail)
+		pkgLog().Warn(fmt.Sprintf("Provider profile %s failed to create a client; falling back to the standard client path", errchain.Show(name)), "error", detail)
 	}
 	defer func() {
 		if r := recover(); r != nil {

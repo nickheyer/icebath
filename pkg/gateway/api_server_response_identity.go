@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
@@ -27,7 +28,7 @@ func APIDurableResponseID(requestKey string) string {
 func apiNextItemID(responseID string, counters map[apiItemCounterKey]int, kind string, callID any, commentary bool) (string, error) {
 	switch callID.(type) {
 	case *pyjson.Object, map[string]any, []any:
-		return "", &PyError{Kind: "TypeError", Msg: "unhashable type: '" + pyrepr.TypeName(callID) + "'"}
+		return "", &PyError{Kind: "TypeError", Msg: "the tool call id is " + errchain.Kind(callID) + ", expected text"}
 	}
 	key := apiItemCounterKey{Kind: kind, CallID: callID, Commentary: commentary}
 	occurrence := counters[key]

@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/nickheyer/icebath/pkg/media"
 	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
@@ -36,7 +35,7 @@ func releaseWakeForTransport(transport tuihost.Transport) bool {
 				pkgLog().Debug(fmt.Sprintf("wake stop failed: %s", panicMessage(r)))
 			}
 		}()
-		media.StopListening(transport)
+		stopWakeListening(transport)
 	}()
 	return true
 }

@@ -12,6 +12,7 @@ import (
 	xterm "github.com/charmbracelet/x/term"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyfs"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
@@ -149,7 +150,7 @@ func AckAdvisory(ctx context.Context, advisoryID string) bool {
 	}
 	sec, ok := cfg["security"].(map[string]any)
 	if !ok {
-		return fail(fmt.Errorf("'%s' object has no attribute 'get'", pyrepr.TypeName(cfg["security"])))
+		return fail(fmt.Errorf("config security section is %s where a mapping was expected", errchain.Kind(cfg["security"])))
 	}
 	existing, _ := sec["acked_advisories"].([]any)
 	for _, x := range existing {

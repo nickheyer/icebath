@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -106,7 +107,7 @@ func checkLanguagePacks(report *ValidationReport, manifest map[string]any, plugi
 			}
 		}
 		if !core {
-			report.add("locale "+lang, false, fmt.Sprintf("provides_locales declares %s but locales/%s.yaml is missing", pyrepr.Repr(lang), lang))
+			report.add("locale "+lang, false, fmt.Sprintf("provides_locales declares %s but locales/%s.yaml is missing", errchain.Show(lang), lang))
 			continue
 		}
 		for _, f := range files {
@@ -155,7 +156,7 @@ func checkLocaleFile(report *ValidationReport, lang, surface, path string) {
 	}
 	mapping, ok := document.(map[string]any)
 	if !ok {
-		report.add(label, false, fmt.Sprintf("%s must be a mapping, got %s", name, pyrepr.TypeName(document)))
+		report.add(label, false, fmt.Sprintf("%s must be a mapping, got %s", name, errchain.Kind(document)))
 		return
 	}
 	if bad := i18n.NonTextLeaves(mapping, ""); len(bad) > 0 {

@@ -108,7 +108,7 @@ func TestReadWriteManifestReadsV1LinesBlanksAndMixedFormats(t *testing.T) {
 		t.Fatal(got)
 	}
 	os.WriteFile(s.manifestFile(), []byte("a\x80b\n"), 0o644)
-	if _, err := s.readManifest(); err == nil || !strings.Contains(err.Error(), "codec can't decode byte 0x80") {
+	if _, err := s.readManifest(); err == nil || !strings.Contains(err.Error(), "is not valid UTF-8 at byte 1") {
 		t.Fatal(err)
 	}
 }

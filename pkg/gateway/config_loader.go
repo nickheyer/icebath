@@ -12,6 +12,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
@@ -39,7 +40,7 @@ func readLegacyJSON(path string) (any, error) {
 		return nil, err
 	}
 	if !utf8.Valid(raw) {
-		return nil, errors.New("'utf-8' codec can't decode the file")
+		return nil, errors.New("the file is not valid UTF-8")
 	}
 	v, err := pyjson.Loads(strings.TrimPrefix(string(raw), "\xef\xbb\xbf"))
 	if err != nil {
@@ -103,7 +104,7 @@ func quickCommandsOK(value any) bool {
 	if _, ok := value.(map[string]any); ok {
 		return true
 	}
-	pkgLog().Warn(fmt.Sprintf("Ignoring invalid quick_commands in config.yaml (expected mapping, got %s)", pyrepr.TypeName(value)))
+	pkgLog().Warn(fmt.Sprintf("Ignoring invalid quick_commands in config.yaml (expected a mapping, got %s)", errchain.Kind(value)))
 	return false
 }
 

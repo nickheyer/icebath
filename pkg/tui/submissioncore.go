@@ -12,7 +12,6 @@ import (
 
 var (
 	sessionBusyRe        = regexp.MustCompile(`(?i)session busy|waiting for model response`)
-	submissionIDRe       = regexp.MustCompile(`submission_id`)
 	imagePathLeadRe      = regexp.MustCompile(`^(?:["']?(?:[/.~]|[A-Za-z]:[/\\])|file://)`)
 	imagePathExtensionRe = regexp.MustCompile(`(?i)\.(?:png|jpe?g|gif|webp)(?:["']?)(?:[` + jsWS + `]|$)`)
 	undeliveredReasons   = map[string]bool{"execution_not_ready": true, "stale_generation": true, "unsupported_control": true}
@@ -29,20 +28,6 @@ func isUndeliveredCorrectionRefusal(err error) bool {
 	}
 	reason, isStr := rerr.Data["reason"].(string)
 	return isStr && undeliveredReasons[reason]
-}
-
-// Code of a gateway error, false when it carries none
-func errorCode(err error) (int64, bool) {
-	var rerr *rpcError
-	if errors.As(err, &rerr) && rerr.HasCode {
-		return rerr.Code, true
-	}
-	return 0, false
-}
-
-// Error JavaScript raises reading a property of a null answer
-func nullPropertyError(property string) error {
-	return errors.New("Cannot read properties of null (reading '" + property + "')")
 }
 
 // Gateway surface of a prompt submission, the gateway client in production
@@ -122,42 +107,20 @@ func (p *promptSubmitter) prepareQueueItem(item *queueItem, submitText string, o
 	return pendingJournal.save(*item)
 }
 
-// Params of a prompt.submit or a correction
-func submitParams(sid string, item *queueItem, submitText string, attachments []imageAttachment, voice, clarifyBatch bool) map[string]any {
-	params := map[string]any{"session_id": sid, "text": submitText}
+// Text and images a submission sends, the journaled entry's own when it has them
+func submissionBody(item *queueItem, submitText string, attachments []imageAttachment) (string, []tuigateway.CanonicalAttachment) {
+	text, sent := submitText, attachments
 	if item != nil && item.PreparedText != nil {
-		params["text"] = *item.PreparedText
+		text = *item.PreparedText
 	}
-	sent := attachments
 	if item != nil && item.Attachments != nil {
 		sent = item.Attachments
 	}
-	if len(sent) > 0 {
-		list := make([]map[string]any, len(sent))
-		for i, a := range sent {
-			list[i] = map[string]any{"path": a.Path, "mime": a.Mime}
-		}
-		params["attachments"] = list
+	var wire []tuigateway.CanonicalAttachment
+	for _, a := range sent {
+		wire = append(wire, tuigateway.CanonicalAttachment{Path: a.Path, Mime: a.Mime})
 	}
-	control := item != nil && item.ControlMethod != ""
-	if control {
-		var generation any
-		if item.ExecutionGeneration != nil {
-			generation = *item.ExecutionGeneration
-		}
-		params["execution_generation"] = generation
-	}
-	if item != nil && !control {
-		params["submission_id"] = item.SubmissionID
-		params["queued"] = item.Queued == nil || *item.Queued
-	}
-	if !control && voice {
-		params["voice_turn"] = true
-	}
-	if !control && clarifyBatch {
-		params["clarify_batch"] = true
-	}
-	return params
+	return text, wire
 }
 
 // Turns a refused correction back into a queued prompt
@@ -168,53 +131,36 @@ func readmitAsPrompt(item *queueItem) error {
 	return pendingJournal.save(*item)
 }
 
-// Settles a correction answer, false when the owner refused it undelivered so it goes again as a prompt
-func (p *promptSubmitter) settleControlReply(item *queueItem, r map[string]any, focused func() bool, sid string) (bool, error) {
-	if r["voice_stopped"] == true {
-		item.settle(true)
-		if p.gw.canonical() {
-			p.gw.publishLocalEvent(gatewayEventMsg{Type: "voice.transcript", SessionID: sid, Payload: map[string]any{"stop_phrase": true, "typed": true}})
-		}
-		return true, nil
+// Settles a correction verdict, false when the owner refused it undelivered so it goes again as a prompt
+func (p *promptSubmitter) settleCorrection(item *queueItem, status tuigateway.CorrectionStatus, current, undelivered bool, focused func() bool) bool {
+	if undelivered {
+		return false
 	}
-	generation := any(nil)
-	if item.ExecutionGeneration != nil {
-		generation = *item.ExecutionGeneration
-	}
-	if r["status"] == "rejected" && r["delivered"] == false && jsStrictEqual(r["execution_generation"], generation) {
-		return false, nil
-	}
-	if r == nil {
-		return false, nullPropertyError("execution_generation")
-	}
-	status := paramStr(r["status"])
-	accepted := jsStrictEqual(r["execution_generation"], generation) && (status == "queued" || status == "redirected")
+	accepted := current && (status == "queued" || status == "redirected")
 	item.settle(accepted)
 	if focused() {
 		if accepted {
-			p.deps.sys(tr("canonical.submit.correction", r["status"]))
+			p.deps.sys(tr("canonical.submit.correction", string(status)))
 		} else {
 			p.deps.sys(tr("canonical.submit.correctionRejected"))
 		}
 	}
-	return true, nil
+	return true
 }
 
-// Settles an admission answer against the destination it was sent for
-func (p *promptSubmitter) settleAdmissionReply(item *queueItem, r map[string]any, destination submissionDestination, focused func() bool, owner submissionDestination, sid string) tea.Cmd {
-	id := r["input_id"]
-	if id == nil {
-		id = r["admission_id"]
+// Ends the voice chat a typed stop phrase closed, the canonical owner's transcript event raised here
+func (p *promptSubmitter) voiceStopped(sid string) {
+	if p.gw.canonical() {
+		p.gw.publishLocalEvent(gatewayEventMsg{Type: "voice.transcript", SessionID: sid, Payload: map[string]any{"stop_phrase": true, "typed": true}})
 	}
-	ownerHome := destination.OwnerHome
-	if ownerHome == "" {
-		ownerHome = destination.ProfileHome
-	}
-	status := paramStr(r["status"])
-	accepted := jsStrictEqual(id, item.SubmissionID) && destination.StoredSid != "" && r["target_session_id"] == destination.StoredSid && r["target_profile_home"] == ownerHome && slices.Contains([]string{"queued", "started", "terminal", "unknown"}, status)
+}
+
+// Settles an admission receipt against the destination it was sent for
+func (p *promptSubmitter) settleAdmissionReply(item *queueItem, receipt *tuigateway.AdmissionReceipt, destination submissionDestination, focused func() bool, owner submissionDestination, sid string) tea.Cmd {
+	accepted := receipt != nil && destination.StoredSid != "" && receipt.Ref.SessionID == destination.StoredSid && receipt.Ref.ProfileID == firstText(destination.OwnerHome, destination.ProfileHome)
 	item.settle(accepted)
 	var cmd tea.Cmd
-	if accepted && focused() && (status == "terminal" || status == "unknown") {
+	if accepted && focused() && (receipt.Status == "terminal" || receipt.Status == "unknown") {
 		cmd = p.refreshExecutionStatus(focused, owner, sid)
 	}
 	if !accepted && focused() {
@@ -271,7 +217,7 @@ func (p *promptSubmitter) refreshExecutionStatus(focused func() bool, owner subm
 	})
 }
 
-// Delivers a queue entry on the legacy wire after the owner refused it before admission
+// Delivers a queue entry on the method table route, which takes no submission id so the entry is never resent
 func (p *promptSubmitter) submitLegacy(item *queueItem, sid, submitText string, focused func() bool) tea.Cmd {
 	if focused() {
 		p.deps.sys(tr("canonical.submit.legacyDelivery"))
@@ -289,20 +235,17 @@ func (p *promptSubmitter) submitLegacy(item *queueItem, sid, submitText string, 
 	if err := pendingJournal.save(*item); err != nil {
 		return resolved(func() tea.Cmd { return unconfirmed(err) })
 	}
-	text := submitText
-	if item.PreparedText != nil {
-		text = *item.PreparedText
-	}
-	return gatewayCall(p.gw, "prompt.submit", map[string]any{"session_id": sid, "text": text, "queued": item.Queued == nil || *item.Queued}, func(v any, err error) tea.Cmd {
+	text, _ := submissionBody(item, submitText, nil)
+	queued := item.Queued == nil || *item.Queued
+	return call(p.gw, tuigateway.PromptSubmit, tuigateway.PromptSubmitParams{SessionID: sid, Text: text, Queued: &queued}, func(r *tuigateway.PromptSubmitResult, err error) tea.Cmd {
 		if err != nil {
 			return unconfirmed(err)
 		}
-		r := asRPCResult(v)
-		status := paramStr(r["status"])
-		accepted := truthyJS(r["voice_stopped"]) || slices.Contains([]string{"streaming", "queued", "steered", "redirected"}, status)
+		stopped := val(r.VoiceStopped)
+		accepted := stopped || r.Status != nil
 		item.settle(accepted)
 		if focused() {
-			if truthyJS(r["voice_stopped"]) {
+			if stopped {
 				p.store.ui.Busy, p.store.ui.Status = false, "ready"
 			} else if !accepted {
 				p.deps.sys(tr("canonical.submit.legacyUnconfirmed"))
@@ -373,17 +316,9 @@ func (p *promptSubmitter) submitPrompt(text string, showUserMessage bool, displa
 			return nil, nil
 		}
 		p.store.retireCanonicalControls(sid, "")
-		method := "prompt.submit"
-		if item != nil && item.ControlMethod != "" {
-			method = item.ControlMethod
-		}
 		voice := voiceTranscript != nil && *voiceTranscript == strings.TrimFunc(submitText, isJSSpace)
 		fail := func(err error) tea.Cmd {
-			code, hasCode := errorCode(err)
-			preAdmission := hasCode && (code == 4094 || (code == 4000 && submissionIDRe.MatchString(err.Error())))
 			switch {
-			case item != nil && preAdmission && !p.gw.canonical() && len(item.Attachments) == 0:
-				return p.submitLegacy(item, sid, submitText, focused)
 			case item != nil && item.ControlMethod != "" && isUndeliveredCorrectionRefusal(err):
 				cmd, rerr := readmit(item)
 				if rerr != nil {
@@ -416,43 +351,97 @@ func (p *promptSubmitter) submitPrompt(text string, showUserMessage bool, displa
 			p.store.ui.Busy, p.store.ui.Status = false, "ready"
 			return nil
 		}
-		return gatewayCall(p.gw, method, submitParams(sid, item, submitText, opts.Attachments, voice, p.gw.clarifyBatch()), func(v any, err error) tea.Cmd {
-			if err != nil {
-				return fail(err)
-			}
-			r := asRPCResult(v)
-			if item != nil && item.ControlMethod != "" {
-				settled, serr := p.settleControlReply(item, r, focused, sid)
-				if serr != nil {
-					return fail(serr)
-				}
-				if !settled {
-					cmd, rerr := readmit(item)
-					if rerr != nil {
-						return fail(rerr)
-					}
-					return cmd
-				}
+		readmitOr := func(settled bool) tea.Cmd {
+			if settled {
 				return nil
 			}
-			if r["voice_stopped"] == true {
-				if item != nil {
-					item.settle(true)
-				}
-				if p.gw.canonical() {
-					p.gw.publishLocalEvent(gatewayEventMsg{Type: "voice.transcript", SessionID: sid, Payload: map[string]any{"stop_phrase": true, "typed": true}})
-				}
-				if ownsTurn() {
-					p.store.ui.Busy, p.store.ui.Status = false, "ready"
-				}
-				return nil
+			cmd, rerr := readmit(item)
+			if rerr != nil {
+				return fail(rerr)
 			}
+			return cmd
+		}
+		stopped := func() tea.Cmd {
 			if item != nil {
-				return p.settleAdmissionReply(item, r, *destination, focused, owner, sid)
+				item.settle(true)
+			}
+			p.voiceStopped(sid)
+			if ownsTurn() {
+				p.store.ui.Busy, p.store.ui.Status = false, "ready"
+			}
+			return nil
+		}
+		text, attachments := submissionBody(item, submitText, opts.Attachments)
+		canonical := p.gw.canonical()
+		switch {
+		case item != nil && item.ControlMethod != "" && canonical:
+			if item.ExecutionGeneration == nil {
+				return resolved(func() tea.Cmd { return fail(tuigateway.MissingParam(item.ControlMethod, "execution_generation")) }), nil
+			}
+			generation := *item.ExecutionGeneration
+			correction := tuigateway.CanonicalSessionSteer
+			if item.ControlMethod == tuigateway.CanonicalSessionRedirect.Name() {
+				correction = tuigateway.CanonicalSessionRedirect
+			}
+			return call(p.gw, correction, tuigateway.CanonicalCorrectionParams{SessionID: sid, ExecutionGeneration: generation, Text: text}, func(r *tuigateway.CorrectionAnswer, err error) tea.Cmd {
+				if err != nil {
+					return fail(err)
+				}
+				if r.VoiceStopped {
+					item.settle(true)
+					p.voiceStopped(sid)
+					return nil
+				}
+				ack := r.CorrectionAck
+				current := ack.ExecutionGeneration == generation
+				return readmitOr(p.settleCorrection(item, ack.Status, current, current && ack.Status == "rejected" && ack.Delivered != nil && !*ack.Delivered, focused))
+			}), nil
+		case item != nil && item.ControlMethod != "":
+			correction := tuigateway.SessionSteer
+			if item.ControlMethod == tuigateway.SessionRedirect.Name() {
+				correction = tuigateway.SessionRedirect
+			}
+			return call(p.gw, correction, tuigateway.SessionCorrectionParams{SessionID: sid, Text: text}, func(r *tuigateway.SessionCorrectionResult, err error) tea.Cmd {
+				if err != nil {
+					return fail(err)
+				}
+				return readmitOr(p.settleCorrection(item, r.Status, true, false, focused))
+			}), nil
+		case canonical:
+			params := tuigateway.CanonicalSubmitParams{SessionID: sid, Text: text, Attachments: attachments, VoiceTurn: voice, ClarifyBatch: p.gw.clarifyBatch()}
+			if item != nil {
+				params.InputID, params.Queued = &item.SubmissionID, item.Queued == nil || *item.Queued
+			}
+			return call(p.gw, tuigateway.CanonicalPromptSubmit, params, func(r *tuigateway.SubmitAnswer, err error) tea.Cmd {
+				switch {
+				case err != nil:
+					return fail(err)
+				case r.VoiceStopped:
+					return stopped()
+				case item != nil:
+					return p.settleAdmissionReply(item, r.AdmissionReceipt, *destination, focused, owner, sid)
+				}
+				return nil
+			}), nil
+		case len(attachments) > 0:
+			return resolved(func() tea.Cmd { return fail(tuigateway.UnknownParam(tuigateway.PromptSubmit.Name(), "attachments")) }), nil
+		case item != nil:
+			return p.submitLegacy(item, sid, submitText, focused), nil
+		}
+		params := tuigateway.PromptSubmitParams{SessionID: sid, Text: text}
+		if voice {
+			params.VoiceTurn = &voice
+		}
+		return call(p.gw, tuigateway.PromptSubmit, params, func(r *tuigateway.PromptSubmitResult, err error) tea.Cmd {
+			switch {
+			case err != nil:
+				return fail(err)
+			case val(r.VoiceStopped):
+				return stopped()
 			}
 			return nil
 		}), nil
-	}
+		}
 	direct := func(displayText, submitText string) tea.Cmd {
 		cmd, err := startSubmit(displayText, submitText, showUserMessage)
 		if err != nil {

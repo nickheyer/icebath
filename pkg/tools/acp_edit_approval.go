@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -71,7 +72,7 @@ func readEditTextIfExists(path string) (*string, error) {
 	}
 	data, err := os.ReadFile(expanded)
 	if err != nil {
-		return nil, errors.New(pypath.OSErrorText(err))
+		return nil, errors.New(errchain.OSText(err))
 	}
 	text := pystr.TranslateNewlines(pystr.DecodeUTF8SigReplace(data))
 	return &text, nil

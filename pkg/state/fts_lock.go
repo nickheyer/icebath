@@ -170,7 +170,7 @@ func lockHolderProvablyDead(record pyObject) (bool, error) {
 		return false, nil
 	}
 	if pid.Cmp(big.NewInt(math.MaxInt32)) > 0 {
-		return false, &pyConvError{"OverflowError", "signed integer is greater than maximum"}
+		return false, &pyConvError{"OverflowError", "the recorded process id is larger than a process id can be"}
 	}
 	alive, gone := signalZero(int(pid.Int64()))
 	if gone {

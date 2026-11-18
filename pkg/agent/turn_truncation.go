@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
@@ -264,7 +265,7 @@ func (a *AIAgent) truncationAbortReason(content any, hasToolCalls bool) (*[3]str
 	}
 	text, isStr := content.(string)
 	if !isStr && pyrepr.Truthy(content) {
-		return nil, false, fmt.Errorf("expected string or bytes-like object, got '%T'", content)
+		return nil, false, fmt.Errorf("response content is %s where text was expected", errchain.Kind(content))
 	}
 	if text != "" && thinkTagRE.MatchString(text) && !a.hasContentAfterThinkBlock(text) {
 		return &thinkingExhausted, true, nil
@@ -612,7 +613,7 @@ func pyStrOrEmpty(v any) (string, error) {
 	if s, ok := v.(string); ok {
 		return s, nil
 	}
-	return "", fmt.Errorf("'%T' object has no attribute 'strip'", v)
+	return "", fmt.Errorf("message content is %s where text was expected", errchain.Kind(v))
 }
 
 func orEmptyString(v any) any {

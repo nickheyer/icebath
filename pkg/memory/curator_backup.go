@@ -18,6 +18,7 @@ import (
 
 	"github.com/dlclark/regexp2/v2"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
 	"github.com/nickheyer/icebath/pkg/internal/pyfs"
@@ -92,7 +93,7 @@ func curatorReadUTF8Sig(p string) (string, error) {
 		return "", err
 	}
 	if !utf8.Valid(raw) {
-		return "", fmt.Errorf("'utf-8' codec can't decode %s", p)
+		return "", fmt.Errorf("%s is not valid UTF-8", p)
 	}
 	return strings.TrimPrefix(string(raw), "\ufeff"), nil
 }
@@ -112,7 +113,7 @@ func curatorBackupCronJobsInto(ctx context.Context, dest string) (*pyjson.Object
 		return info, nil
 	}
 	if !utf8.Valid(raw) {
-		return nil, fmt.Errorf("'utf-8' codec can't decode %s", src)
+		return nil, fmt.Errorf("%s is not valid UTF-8", src)
 	}
 	text := strings.TrimPrefix(string(raw), "\ufeff")
 	if parsed, err := pyjson.Loads(text); err == nil {
@@ -418,7 +419,7 @@ func ListCuratorBackups(ctx context.Context) ([]*pyjson.Object, error) {
 		}
 		obj, ok := manifest.(*pyjson.Object)
 		if !ok {
-			return nil, fmt.Errorf("'%s' object is not a mapping", pyrepr.TypeName(manifest))
+			return nil, fmt.Errorf("backup manifest is %s where a mapping was expected", errchain.Kind(manifest))
 		}
 		for _, k := range obj.Keys {
 			mf.Set(k, obj.Vals[k])
@@ -693,7 +694,7 @@ func curatorCheckArchiveMembers(archive string) error {
 			}
 		}
 		if unsafe {
-			return fmt.Errorf("refusing to extract unsafe path: %s", pyrepr.Repr(n))
+			return fmt.Errorf("refusing to extract unsafe path: %s", errchain.Show(n))
 		}
 	}
 	return nil
@@ -779,7 +780,7 @@ func RollbackCuratorSnapshot(ctx context.Context, backupID string) (bool, string
 	}
 	os.RemoveAll(staged)
 	cronReport := curatorRestoreCronSkillLinks(ctx, target)
-	pkgLog().Info(fmt.Sprintf("Curator rollback: restored from %s (cron_report=%s)", filepath.Base(target), pyrepr.Repr(cronReport)))
+	pkgLog().Info(fmt.Sprintf("Curator rollback: restored from %s (cron_report=%s)", filepath.Base(target), errchain.Show(cronReport)))
 	msg := "restored from snapshot " + filepath.Base(target)
 	if s := curatorCronSummary(cronReport); s != "" {
 		msg += "; " + s

@@ -185,7 +185,7 @@ func (a *AIAgent) rebuildPrimaryTransport(ctx context.Context, errorType string,
 	}
 	rt := a.primaryRuntime
 	if rt == nil {
-		return fmt.Errorf("'NoneType' object is not subscriptable")
+		return errors.New("no primary runtime is recorded to rebuild the transport from")
 	}
 	if err := applyPrimaryRuntimeFields(a, rt); err != nil {
 		return err

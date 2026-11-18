@@ -20,9 +20,9 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
@@ -234,17 +234,17 @@ func writeToSpillover(env *Env, content, filename string) string {
 	data := []byte(content)
 	dir := SpilloverDir(env)
 	if err := mkdirParentsExistOK(dir); err != nil {
-		envLog(env).Warn(fmt.Sprintf("Spillover write failed for %s: %s", filename, pypath.OSErrorText(err)))
+		envLog(env).Warn(fmt.Sprintf("Spillover write failed for %s: %s", filename, errchain.OSText(err)))
 		return ""
 	}
 	path := filepath.Join(dir, filename)
 	if err := os.WriteFile(path, data, 0o666); err != nil {
-		envLog(env).Warn(fmt.Sprintf("Spillover write failed for %s: %s", filename, pypath.OSErrorText(err)))
+		envLog(env).Warn(fmt.Sprintf("Spillover write failed for %s: %s", filename, errchain.OSText(err)))
 		return ""
 	}
 	st, err := os.Stat(path)
 	if err != nil {
-		envLog(env).Warn(fmt.Sprintf("Spillover write failed for %s: %s", filename, pypath.OSErrorText(err)))
+		envLog(env).Warn(fmt.Sprintf("Spillover write failed for %s: %s", filename, errchain.OSText(err)))
 		return ""
 	}
 	if st.Size() != int64(len(data)) {

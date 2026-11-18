@@ -21,6 +21,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
@@ -92,32 +93,13 @@ type copilotHTTPError struct {
 	Reason string
 }
 
-func (e *copilotHTTPError) Error() string { return fmt.Sprintf("HTTP Error %d: %s", e.Code, e.Reason) }
+func (e *copilotHTTPError) Error() string { return fmt.Sprintf("HTTP %d %s", e.Code, e.Reason) }
 
-// Reply whose JSON is not an object, the AttributeError Python raises reading it with get
+// Reply whose JSON is not an object, its plain kind
 type copilotNotDictError struct{ Type string }
 
 func (e *copilotNotDictError) Error() string {
-	return fmt.Sprintf("'%s' object has no attribute 'get'", e.Type)
-}
-
-// Python type name of a decoded JSON value
-func copilotJSONTypeName(v any) string {
-	switch v.(type) {
-	case nil:
-		return "NoneType"
-	case []any:
-		return "list"
-	case string:
-		return "str"
-	case bool:
-		return "bool"
-	case int64, *big.Int:
-		return "int"
-	case float64:
-		return "float"
-	}
-	return "dict"
+	return fmt.Sprintf("the Copilot reply is %s, expected a mapping", e.Type)
 }
 
 // Python truth of a decoded JSON or config value, empty objects and zero big ints false
@@ -278,7 +260,7 @@ func copilotDoJSON(client *http.Client, req *http.Request) (any, error) {
 		}
 		var ue *url.Error
 		if errors.As(err, &ue) && ue.Err != nil {
-			return nil, fmt.Errorf("<urlopen error %v>", ue.Err)
+			return nil, fmt.Errorf("could not reach GitHub: %v", ue.Err)
 		}
 		return nil, err
 	}
@@ -291,7 +273,7 @@ func copilotDoJSON(client *http.Client, req *http.Request) (any, error) {
 		return nil, err
 	}
 	if !utf8.Valid(body) {
-		return nil, errors.New("'utf-8' codec can't decode the response body")
+		return nil, errors.New("the Copilot reply is not valid UTF-8")
 	}
 	return pyjson.Loads(string(body))
 }
@@ -314,7 +296,7 @@ func copilotPostForm(ctx context.Context, rawURL string, fields [][2]string, tim
 		return nil, err
 	}
 	if !cpIsDict(data) {
-		return nil, &copilotNotDictError{Type: copilotJSONTypeName(data)}
+		return nil, &copilotNotDictError{Type: errchain.Kind(data)}
 	}
 	return data, nil
 }
@@ -389,7 +371,7 @@ func copilotStartInterval(data any) (float64, error) {
 	}
 	f, isNum := cpFloat(raw)
 	if _, isStr := raw.(string); isStr || !isNum {
-		return 0, fmt.Errorf("'>' not supported between instances of 'int' and '%s'", copilotJSONTypeName(raw))
+		return 0, fmt.Errorf("the device code interval is %s, expected a number", errchain.Kind(raw))
 	}
 	return math.Max(f, 1), nil
 }
@@ -726,7 +708,7 @@ func exchangeCopilotTokenLocked(ctx context.Context, raw, fp string, timeout tim
 		return copilotJWT{}, err
 	}
 	if !cpIsDict(data) {
-		return copilotJWT{}, &copilotNotDictError{Type: copilotJSONTypeName(data)}
+		return copilotJWT{}, &copilotNotDictError{Type: errchain.Kind(data)}
 	}
 	tokenValue := cpGetOr(data, "token", "")
 	if !cpTruthy(tokenValue) {
@@ -735,7 +717,7 @@ func exchangeCopilotTokenLocked(ctx context.Context, raw, fp string, timeout tim
 	apiToken := pyStr(tokenValue)
 	expiresAt, okFloat := cpFloatOrZero(cpGetOr(data, "expires_at", nil))
 	if !okFloat {
-		return copilotJWT{}, fmt.Errorf("could not convert string to float: %s", pyStr(cpGetOr(data, "expires_at", nil)))
+		return copilotJWT{}, fmt.Errorf("the Copilot token expiry %s is not a number", pyStr(cpGetOr(data, "expires_at", nil)))
 	}
 	if expiresAt == 0 {
 		expiresAt = copilotNow() + 1800

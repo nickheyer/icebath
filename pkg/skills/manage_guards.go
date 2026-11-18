@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"runtime"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -169,7 +170,7 @@ func (s *Scope) backgroundReviewDeleteGuard(name, skillDir string) *pyjson.Objec
 		detail := "no usage record"
 		if obj, ok := rec.(*pyjson.Object); ok {
 			createdBy, _ := obj.Get("created_by")
-			detail = "created_by=" + pyrepr.Repr(createdBy)
+			detail = "created_by=" + errchain.Show(createdBy)
 		}
 		return refusal(fmt.Sprintf("%s skill '%s': the skill is not curator-managed (%s). Only curator-managed skills may be archived autonomously. Run `icebath curator adopt %s` to opt it in.", refuse, name, detail, name))
 	}

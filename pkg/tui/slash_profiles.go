@@ -8,6 +8,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/nickheyer/icebath/pkg/i18n"
+	"github.com/nickheyer/icebath/pkg/tuigateway"
 )
 
 // Catalog line of the shared command texts the terminal UI prints for a slash command
@@ -40,14 +41,6 @@ func absolutePath(path string) string {
 	return path
 }
 
-// Value of a param that is null when empty
-func nullable(text string) any {
-	if text == "" {
-		return nil
-	}
-	return text
-}
-
 // Shows the lines of a profile archive command, its failure as the shared error line
 func (a *app) archiveOutput(name string, err error, lines func() []string) tea.Cmd {
 	if err != nil {
@@ -66,10 +59,10 @@ func (a *app) exportProfile(arg string) tea.Cmd {
 	if len(parts) > 0 {
 		name = parts[0]
 	}
-	return gatewayCall(a.gw, "profiles.export", map[string]any{"name": nullable(name), "output": nullable(absolutePath(output))}, func(v any, err error) tea.Cmd {
-		res := asRPCResult(v)
+	params := tuigateway.ProfilesExportParams{Name: name, Output: absolutePath(output)}
+	return call(a.gw, tuigateway.ProfilesExport, params, func(res *tuigateway.ProfilesExportResult, err error) tea.Cmd {
 		return a.archiveOutput("export", err, func() []string {
-			return []string{commandText(a.ctx, "export.exported", map[string]any{"name": jsValueString(res["name"]), "path": jsValueString(res["path"])}),
+			return []string{commandText(a.ctx, "export.exported", map[string]any{"name": res.Name, "path": res.Path}),
 				commandText(a.ctx, "export.share_hint", nil)}
 		})
 	})
@@ -81,13 +74,12 @@ func (a *app) importProfile(arg string) tea.Cmd {
 	if !ok || len(parts) == 0 {
 		return a.showOutput(commandText(a.ctx, "import.usage", nil), "import")
 	}
-	params := map[string]any{"archive": absolutePath(strings.Join(parts, " ")), "name": nullable(name)}
-	return gatewayCall(a.gw, "profiles.import", params, func(v any, err error) tea.Cmd {
-		res := asRPCResult(v)
+	params := tuigateway.ProfilesImportParams{Archive: absolutePath(strings.Join(parts, " ")), Name: name}
+	return call(a.gw, tuigateway.ProfilesImport, params, func(res *tuigateway.ProfilesImportResult, err error) tea.Cmd {
 		return a.archiveOutput("import", err, func() []string {
-			imported := jsValueString(res["name"])
-			lines := []string{commandText(a.ctx, "import.imported", map[string]any{"name": imported, "path": jsValueString(res["path"])})}
-			if wrapper, made := res["wrapper"].(string); made && wrapper != "" {
+			imported := res.Name
+			lines := []string{commandText(a.ctx, "import.imported", map[string]any{"name": imported, "path": res.Path})}
+			if wrapper := val(res.Wrapper); wrapper != "" {
 				lines = append(lines, commandText(a.ctx, "import.wrapper_created", map[string]any{"path": wrapper}))
 			}
 			return append(lines, commandText(a.ctx, "import.use_it", map[string]any{"name": imported}))

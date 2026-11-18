@@ -55,16 +55,16 @@ func TestRetainsPreparedIdentityAndRejectsUnsupportedTUILaunchPolicy(t *testing.
 	if _, _, err := canonicalRequest("session.create", map[string]any{"yolo": true}, contract); err == nil || !strings.Contains(err.Error(), "yolo") {
 		t.Fatalf("yolo err %v", err)
 	}
-	_, submit, _ := canonicalRequest("prompt.submit", map[string]any{"session_id": "sid", "submission_id": "prepared-id", "text": "hello", "queued": true}, contract)
+	submit := wireParams(tuigateway.CanonicalSubmitParams{SessionID: "sid", InputID: ptr("prepared-id"), Text: "hello", Queued: true})
 	if !reflect.DeepEqual(submit, map[string]any{"session_id": "sid", "input_id": "prepared-id", "text": "hello", "queued": true}) {
 		t.Fatalf("submit %v", submit)
 	}
-	if got := sharedControlParams(&sharedControl{SessionID: "sid", ExecutionGeneration: 9, PromptID: "approval-9"}); !reflect.DeepEqual(got, map[string]any{"session_id": "sid", "execution_generation": int64(9), "prompt_id": "approval-9"}) {
+	if got := wireParams(tuigateway.CanonicalApprovalParams{SessionID: "sid", ExecutionGeneration: 9, PromptID: "approval-9", Choice: "once"}); !reflect.DeepEqual(got, map[string]any{"session_id": "sid", "execution_generation": int64(9), "prompt_id": "approval-9", "choice": "once"}) {
 		t.Fatalf("shared control %v", got)
 	}
-	receipt := canonicalResult("prompt.submit", map[string]any{"admission_id": "server-admission", "ref": map[string]any{"profile_id": "/tmp/profile", "session_id": "sid"}, "status": "queued"}, map[string]any{"input_id": "prepared-id"}).(map[string]any)
-	if receipt["admission_id"] != "server-admission" || receipt["input_id"] != "prepared-id" || receipt["target_profile_home"] != "/tmp/profile" || receipt["target_session_id"] != "sid" {
-		t.Fatalf("receipt %v", receipt)
+	answer, err := tuigateway.CanonicalPromptSubmit.Result(map[string]any{"admission_id": "server-admission", "ref": map[string]any{"profile_id": "/tmp/profile", "session_id": "sid"}, "status": "queued"})
+	if receipt := answer.AdmissionReceipt; err != nil || receipt == nil || receipt.AdmissionID != "server-admission" || receipt.Ref.ProfileID != "/tmp/profile" || receipt.Ref.SessionID != "sid" {
+		t.Fatalf("receipt %#v %v", answer, err)
 	}
 }
 

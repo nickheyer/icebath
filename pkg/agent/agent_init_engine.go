@@ -8,8 +8,8 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/memory"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/provider"
@@ -216,7 +216,7 @@ func injectContextEngineTools(ctx context.Context, a *AIAgent) {
 		for _, raw := range a.contextCompressor.GetToolSchemas() {
 			schema, ok := memory.NormalizeToolSchema(raw)
 			if !ok {
-				pkgLog().Warn("Context engine returned a tool schema with no resolvable name; skipping to avoid poisoning the request (" + pyrepr.Repr(raw) + ")")
+				pkgLog().Warn("Context engine returned a tool schema with no resolvable name; skipping to avoid poisoning the request (" + errchain.Show(raw) + ")")
 				continue
 			}
 			name, _ := schema["name"].(string)

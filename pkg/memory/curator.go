@@ -18,6 +18,7 @@ import (
 	"github.com/dlclark/regexp2/v2"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/fnmatch"
 	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
@@ -92,7 +93,7 @@ var CuratorHooks struct {
 	RunReview            func(ctx context.Context, req CuratorReviewRequest) (*CuratorReviewResult, error)
 }
 
-var errCronNotLinked = errors.New("No module named 'cron'")
+var errCronNotLinked = errors.New("cron is not built into this icebath")
 
 // Skills scope and tool env bound to the home the context resolves to
 func curatorScope(ctx context.Context) (*skills.Scope, *tools.Env, string) {
@@ -121,7 +122,7 @@ func LoadCuratorState(ctx context.Context) (*pyjson.Object, error) {
 		return base, nil
 	}
 	if !utf8.Valid(raw) {
-		return nil, fmt.Errorf("'utf-8' codec can't decode curator state %s", curatorStateFile(ctx))
+		return nil, fmt.Errorf("curator state %s is not valid UTF-8", curatorStateFile(ctx))
 	}
 	data, err := pyjson.Loads(strings.TrimPrefix(string(raw), "\ufeff"))
 	if err != nil {
@@ -1438,7 +1439,7 @@ func curatorStripOrEmpty(v any) (string, error) {
 	}
 	s, ok := v.(string)
 	if !ok {
-		return "", fmt.Errorf("'%s' object has no attribute 'strip'", pyrepr.TypeName(v))
+		return "", fmt.Errorf("expected text, got %s", errchain.Kind(v))
 	}
 	return pyStrip(s), nil
 }
@@ -1526,7 +1527,7 @@ func curatorResolveReviewProvider(ctx context.Context) (*provider.Runtime, strin
 func curatorRunLLMReview(ctx context.Context, prompt string) *pyjson.Object {
 	meta := curatorLLMMeta("", nil)
 	if CuratorHooks.RunReview == nil {
-		msg := "AIAgent import failed: No module named 'run_agent'"
+		msg := "the review agent is not built into this icebath"
 		meta.Set("error", msg)
 		meta.Set("summary", msg)
 		return meta

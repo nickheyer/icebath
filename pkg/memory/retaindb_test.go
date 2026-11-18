@@ -335,10 +335,10 @@ func TestRetainDBBuildOverlay(t *testing.T) {
 			t.Fatalf("line of %d characters", len(line))
 		}
 	}
-	if _, err := buildRetainDBOverlay([]any{"x"}, nil, nil); err == nil || err.Error() != "'list' object has no attribute 'get'" {
+	if _, err := buildRetainDBOverlay([]any{"x"}, nil, nil); err == nil || err.Error() != "RetainDB returned a list where a mapping was expected" {
 		t.Fatalf("list profile error %v", err)
 	}
-	if _, err := buildRetainDBOverlay(map[string]any{"memories": []any{"text"}}, nil, nil); err == nil || err.Error() != "'str' object has no attribute 'get'" {
+	if _, err := buildRetainDBOverlay(map[string]any{"memories": []any{"text"}}, nil, nil); err == nil || err.Error() != "RetainDB returned text where a mapping was expected" {
 		t.Fatalf("string item error %v", err)
 	}
 }
@@ -570,7 +570,7 @@ func TestRetainDBToolDispatch(t *testing.T) {
 	call("retaindb_search", map[string]any{"query": "q", "top_k": "50"})
 	call("retaindb_remember", map[string]any{"content": "fact", "importance": "0.9", "memory_type": "goal"})
 	call("retaindb_list_files", map[string]any{"limit": 3.0})
-	if got := call("retaindb_search", map[string]any{"query": "q", "top_k": "x"}); got["error"] != "invalid literal for int() with base 10: 'x'" {
+	if got := call("retaindb_search", map[string]any{"query": "q", "top_k": "x"}); got["error"] != "x is not a whole number" {
 		t.Fatalf("bad top_k %v", got)
 	}
 	if got := call("retaindb_forget", map[string]any{"memory_id": 7}); got["error"] != "quote() doesn't support 'int' objects" {

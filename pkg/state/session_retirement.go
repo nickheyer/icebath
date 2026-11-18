@@ -12,6 +12,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
@@ -208,17 +209,17 @@ func retireMedia(ctx context.Context, conn SQLiteConn, payload *pyjson.Object, r
 	if turn, has := payload.Get("api_turn_v1"); has {
 		tobj, ok := turn.(*pyjson.Object)
 		if !ok {
-			return fmt.Errorf("'%s' object has no attribute 'get'", pyTypeName(turn))
+			return fmt.Errorf("a retired turn is %s, expected a mapping", errchain.Kind(turn))
 		}
 		if media, has := tobj.Get("media"); has {
 			list, ok := media.([]any)
 			if !ok {
-				return fmt.Errorf("'%s' object is not iterable", pyTypeName(media))
+				return fmt.Errorf("the media of a retired turn is %s, expected a list", errchain.Kind(media))
 			}
 			for _, m := range list {
 				mo, ok := m.(*pyjson.Object)
 				if !ok {
-					return fmt.Errorf("'%s' object is not subscriptable", pyTypeName(m))
+					return fmt.Errorf("a media entry of a retired turn is %s, expected a mapping", errchain.Kind(m))
 				}
 				refs = append(refs, mo)
 			}
@@ -321,7 +322,7 @@ func (d *SessionDB) collectRetiredSpillover(ctx context.Context) error {
 		}
 		ns, ok := name.(string)
 		if !ok {
-			return fmt.Errorf("unsupported operand type(s) for /: 'PosixPath' and '%s'", pyTypeName(name))
+			return fmt.Errorf("a retired spillover file name is %s, expected text", errchain.Kind(name))
 		}
 		if !referenced[ns] {
 			if err := os.Remove(filepath.Join(spillDir, ns)); err != nil && !errors.Is(err, os.ErrNotExist) {
@@ -362,7 +363,7 @@ func (d *SessionDB) CollectRetiredMedia(ctx context.Context) error {
 		}
 		o, ok := v.(*pyjson.Object)
 		if !ok {
-			return fmt.Errorf("'%s' object is not subscriptable", pyTypeName(v))
+			return fmt.Errorf("a retired media record is %s, expected a mapping", errchain.Kind(v))
 		}
 		path, has := o.Get("path")
 		if !has {
@@ -370,7 +371,7 @@ func (d *SessionDB) CollectRetiredMedia(ctx context.Context) error {
 		}
 		ps, ok := path.(string)
 		if !ok {
-			return fmt.Errorf("expected str, bytes or os.PathLike object, not %s", pyTypeName(path))
+			return fmt.Errorf("a retired media path is %s, expected text", errchain.Kind(path))
 		}
 		if ps == "" {
 			ps = "."
@@ -406,7 +407,7 @@ func entrySessionID(raw any) any {
 func hashableIn(v any, set map[string]bool) (bool, error) {
 	switch x := v.(type) {
 	case []any, *pyjson.Object:
-		return false, fmt.Errorf("unhashable type: '%s'", pyTypeName(x))
+		return false, fmt.Errorf("a retirement key is %s, expected text", errchain.Kind(x))
 	case string:
 		return set[x], nil
 	}
@@ -425,7 +426,7 @@ func compactTerminalResult(ctx context.Context, conn SQLiteConn, admissionID str
 	}
 	obj, ok := value.(*pyjson.Object)
 	if !ok {
-		return fmt.Errorf("'%s' object has no attribute 'get'", pyTypeName(value))
+		return fmt.Errorf("a terminal result is %s, expected a mapping", errchain.Kind(value))
 	}
 	if result, _ := obj.Get("result"); result != nil {
 		if ro, ok := result.(*pyjson.Object); ok {
@@ -478,7 +479,7 @@ func retireTerminalReceipts(ctx context.Context, conn SQLiteConn, sessionIDs []s
 			}
 			po, ok := payload.(*pyjson.Object)
 			if !ok {
-				return fmt.Errorf("'%s' object has no attribute 'get'", pyTypeName(payload))
+				return fmt.Errorf("a terminal receipt payload is %s, expected a mapping", errchain.Kind(payload))
 			}
 			if err := retireMedia(ctx, conn, po, pyStr(rowValue(row, "request_id"))); err != nil {
 				return err
@@ -591,7 +592,7 @@ func retireMutationReceipts(ctx context.Context, conn SQLiteConn, sessionIDs []s
 		}
 		ro, ok := receipt.(*pyjson.Object)
 		if !ok {
-			return fmt.Errorf("'%s' object has no attribute 'get'", pyTypeName(receipt))
+			return fmt.Errorf("a mutation receipt is %s, expected a mapping", errchain.Kind(receipt))
 		}
 		result, _ := ro.Get("result")
 		res, ok := result.(*pyjson.Object)
@@ -996,7 +997,7 @@ func pruneRetiredTombstones(ctx context.Context, conn SQLiteConn, olderThan floa
 		row, _ := decoded.(*pyjson.Object)
 		field := func(name string) (any, error) {
 			if row == nil {
-				return nil, &pyint.Error{Kind: "TypeError", Msg: "list indices must be integers or slices, not str"}
+				return nil, &pyint.Error{Kind: "TypeError", Msg: "a retired tombstone is not a mapping"}
 			}
 			v, ok := row.Get(name)
 			if !ok {
@@ -1010,7 +1011,7 @@ func pruneRetiredTombstones(ctx context.Context, conn SQLiteConn, olderThan floa
 		}
 		admissionID, isStr := admission.(string)
 		if !isStr {
-			return &pyint.Error{Kind: "TypeError", Msg: "can only concatenate str (not \"" + pyTypeName(admission) + "\") to str"}
+			return &pyint.Error{Kind: "TypeError", Msg: "a retired tombstone admission id is " + errchain.Kind(admission) + ", expected text"}
 		}
 		var parts [3]any
 		for i, name := range []string{"principal_id", "target_session_id", "request_id"} {

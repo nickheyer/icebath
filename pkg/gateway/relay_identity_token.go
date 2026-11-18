@@ -15,6 +15,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -38,12 +39,12 @@ type RelayHTTPError struct {
 	Body   []byte
 }
 
-func (e *RelayHTTPError) Error() string { return fmt.Sprintf("HTTP Error %d: %s", e.Code, e.Reason) }
+func (e *RelayHTTPError) Error() string { return fmt.Sprintf("HTTP %d %s", e.Code, e.Reason) }
 
-// RelayURLError is the urllib URLError of a relay request carrying the transport failure reason
+// RelayURLError is a relay request failure before any HTTP reply, carrying the transport reason
 type RelayURLError struct{ Reason string }
 
-func (e *RelayURLError) Error() string { return "<urlopen error " + e.Reason + ">" }
+func (e *RelayURLError) Error() string { return "could not reach the relay: " + e.Reason }
 
 // urllib client with environment proxies, a per operation socket timeout and urllib redirect rules
 func relayURLOpenClient(timeout time.Duration) *http.Client {
@@ -175,7 +176,7 @@ func ResolveRelayIdentityToken(ctx context.Context) (string, error) {
 	if pyrepr.Truthy(payload) {
 		obj, ok := payload.(*pyjson.Object)
 		if !ok {
-			return "", fmt.Errorf("'%s' object has no attribute 'get'", pyrepr.TypeName(payload))
+			return "", fmt.Errorf("the relay identity token reply is %s, expected a mapping", errchain.Kind(payload))
 		}
 		accessToken = obj.GetOr("access_token", nil)
 	}

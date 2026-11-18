@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -23,7 +24,7 @@ func OneshotToolSchemas(schemas []map[string]any) ([]map[string]any, error) {
 		raw := tool["function"]
 		fn, isMap := pyjson.AsObject(raw)
 		if !isMap && pyrepr.Truthy(raw) {
-			return nil, fmt.Errorf("'%s' object has no attribute 'get'", pyrepr.TypeName(raw))
+			return nil, fmt.Errorf("tool schema function is %s where a mapping was expected", errchain.Kind(raw))
 		}
 		if !isMap {
 			fn = pyjson.NewObject()

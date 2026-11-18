@@ -13,6 +13,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pydict"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
@@ -897,7 +898,7 @@ func GatewayConfigFromDict(ctx context.Context, raw any) (*GatewayConfig, error)
 	if v, ok := data["sessions_dir"]; ok {
 		s, isStr := v.(string)
 		if !isStr {
-			return nil, &PyError{"TypeError", "argument should be a str or an os.PathLike object where __fspath__ returns a str, not " + pyrepr.Repr(pyrepr.TypeName(v))}
+			return nil, &PyError{"TypeError", "sessions_dir is " + errchain.Kind(v) + ", expected a path"}
 		}
 		sessionsDir = pypath.PosixPath(s)
 	}
@@ -1037,7 +1038,7 @@ func validateGatewayConfig(cfg *GatewayConfig) error {
 		}
 		s, isStr := pc.Token.(string)
 		if !isStr {
-			return &PyError{"AttributeError", "'" + pyrepr.TypeName(pc.Token) + "' object has no attribute 'strip'"}
+			return &PyError{"AttributeError", "a platform token is " + errchain.Kind(pc.Token) + ", expected text"}
 		}
 		rows = append(rows, tokenPlatform{p, pc, env, s})
 	}

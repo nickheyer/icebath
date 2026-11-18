@@ -47,7 +47,7 @@ func readChannelJSON(path string) (any, error) {
 	}
 	raw = bytes.TrimPrefix(raw, []byte("\xef\xbb\xbf"))
 	if !utf8.Valid(raw) {
-		return nil, fmt.Errorf("UnicodeDecodeError: 'utf-8' codec can't decode %s", path)
+		return nil, fmt.Errorf("%s is not valid UTF-8", path)
 	}
 	return pyjson.Loads(string(raw))
 }

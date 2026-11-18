@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"strings"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -67,52 +67,15 @@ func recordObject(v any) (*pyjson.Object, error) {
 	return nil, recordShapeFailure(decoded)
 }
 
-// Python error of a non dict record reaching the membership test, the field lookup or the get call
+// Refusal of a job definition record that is no mapping
 func recordShapeFailure(v any) error {
-	switch x := v.(type) {
-	case string:
-		for _, key := range JobDefinitionFields {
-			if strings.Contains(x, key) {
-				return &recordShapeError{"string indices must be integers, not 'str'"}
-			}
-		}
-	case []any:
-		for _, item := range x {
-			for _, key := range JobDefinitionFields {
-				if pyrepr.Equal(item, key) {
-					return &recordShapeError{"list indices must be integers or slices, not str"}
-				}
-			}
-		}
-	default:
-		return &recordShapeError{fmt.Sprintf("argument of type '%s' is not iterable", jsonTypeName(v))}
-	}
-	return &recordShapeError{fmt.Sprintf("'%s' object has no attribute 'get'", jsonTypeName(v))}
+	return &recordShapeError{fmt.Sprintf("a job definition is %s, expected a mapping of job fields", errchain.Kind(v))}
 }
 
-// TypeError or AttributeError of a malformed record, never labelled with the job name
+// Malformed record refusal, never labelled with the job name
 type recordShapeError struct{ msg string }
 
 func (e *recordShapeError) Error() string { return e.msg }
-
-// Python type name of a decoded JSON value
-func jsonTypeName(v any) string {
-	switch v.(type) {
-	case nil:
-		return "NoneType"
-	case bool:
-		return "bool"
-	case string:
-		return "str"
-	case float64:
-		return "float"
-	case []any:
-		return "list"
-	case *pyjson.Object:
-		return "dict"
-	}
-	return "int"
-}
 
 // Key order independent text of one record value, absent and null alike, for dict equality
 func canonicalValue(v any, present bool) (string, error) {
@@ -131,14 +94,14 @@ func canonicalValue(v any, present bool) (string, error) {
 	return string(out), err
 }
 
-// Dict get of a falsy-defaulted record value, the Python AttributeError for a truthy non dict
+// Value of key in a falsy defaulted repeat record, a refusal for a truthy non mapping
 func objectGet(v any, key string) (any, error) {
 	if !pyrepr.Truthy(v) {
 		return nil, nil
 	}
 	obj, ok := v.(*pyjson.Object)
 	if !ok {
-		return nil, &recordShapeError{fmt.Sprintf("'%s' object has no attribute 'get'", jsonTypeName(v))}
+		return nil, &recordShapeError{fmt.Sprintf("the repeat field of a job definition is %s, expected a mapping holding %s", errchain.Kind(v), key)}
 	}
 	got, _ := obj.Get(key)
 	return got, nil

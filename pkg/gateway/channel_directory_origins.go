@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -125,7 +126,7 @@ func buildFromSessionsJSON(ctx context.Context, platformName string) []*pyjson.O
 		}
 		sessions, ok := raw.(*pyjson.Object)
 		if !ok || sessions == nil {
-			return fmt.Errorf("'%s' object has no attribute 'items'", pyrepr.TypeName(raw))
+			return fmt.Errorf("the sessions index is %s, expected a mapping", errchain.Kind(raw))
 		}
 		for _, key := range append([]string(nil), sessions.Keys...) {
 			v, _ := sessions.Get(key)
@@ -137,7 +138,7 @@ func buildFromSessionsJSON(ctx context.Context, platformName string) []*pyjson.O
 			if o, _ := session.Get("origin"); pyrepr.Truthy(o) {
 				obj, isObj := o.(*pyjson.Object)
 				if !isObj {
-					return fmt.Errorf("'%s' object has no attribute 'get'", pyrepr.TypeName(o))
+					return fmt.Errorf("a session origin is %s, expected a mapping", errchain.Kind(o))
 				}
 				origin = obj
 			} else {
@@ -187,7 +188,7 @@ func pyLess(a, b any) (bool, error) {
 			return na.Cmp(nb) < 0, nil
 		}
 	}
-	return false, fmt.Errorf("'<' not supported between instances of '%s' and '%s'", pyrepr.TypeName(a), pyrepr.TypeName(b))
+	return false, fmt.Errorf("cannot order %s against %s", errchain.Kind(a), errchain.Kind(b))
 }
 
 // Stable sort by Python ordering of the keys, the first comparison error returned
@@ -218,13 +219,13 @@ func directoryChannelDicts(channels any) ([]*pyjson.Object, error) {
 			items = append(items, string(r))
 		}
 	default:
-		return nil, fmt.Errorf("'%s' object is not iterable", pyrepr.TypeName(channels))
+		return nil, fmt.Errorf("the directory channels are %s, expected a list", errchain.Kind(channels))
 	}
 	out := make([]*pyjson.Object, 0, len(items))
 	for _, it := range items {
 		obj, ok := it.(*pyjson.Object)
 		if !ok || obj == nil {
-			return nil, fmt.Errorf("'%s' object has no attribute 'get'", pyrepr.TypeName(it))
+			return nil, fmt.Errorf("a directory channel is %s, expected a mapping", errchain.Kind(it))
 		}
 		out = append(out, obj)
 	}
@@ -245,7 +246,7 @@ func FormatDirectoryForDisplay(ctx context.Context, platforms *pyjson.Object) (s
 	}
 	pobj, ok := src.(*pyjson.Object)
 	if !ok {
-		return "", fmt.Errorf("'%s' object has no attribute 'items'", pyrepr.TypeName(src))
+		return "", fmt.Errorf("the channel directory is %s, expected a mapping", errchain.Kind(src))
 	}
 	names := append([]string(nil), pobj.Keys...)
 	sort.Strings(names)

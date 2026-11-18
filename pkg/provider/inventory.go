@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 )
 
@@ -136,7 +137,7 @@ func loadPickerContext(ctx context.Context) (PickerConfigContext, error) {
 	}
 	catalogMap, ok := catalog.(map[string]any)
 	if !ok {
-		return PickerConfigContext{}, fmt.Errorf("'%s' object has no attribute 'get'", pyTypeName(catalog))
+		return PickerConfigContext{}, fmt.Errorf("the model catalog is %s, expected a mapping", errchain.Kind(catalog))
 	}
 	if excluded, ok := catalogMap["excluded_providers"].([]any); ok {
 		for _, p := range excluded {

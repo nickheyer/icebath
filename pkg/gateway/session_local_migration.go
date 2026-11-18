@@ -11,6 +11,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/activesessions"
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
@@ -345,7 +346,7 @@ func adoptLegacySession(ctx context.Context, a *SessionAuthority, actor Principa
 		}
 		model, ok := raw.(*pyjson.Object)
 		if !ok {
-			return SessionRef{}, &PyError{Kind: "TypeError", Msg: "'" + jsonValueTypeName(raw) + "' object does not support item assignment"}
+			return SessionRef{}, &PyError{Kind: "TypeError", Msg: "the legacy session record is " + errchain.Kind(raw) + ", expected a mapping"}
 		}
 		model.Set("api_mode", apiMode)
 		text, err := pyjson.Dumps(frozen)
@@ -388,7 +389,7 @@ func adoptLegacySession(ctx context.Context, a *SessionAuthority, actor Principa
 	}
 	started, ok := pyFloatOf(rowField(row, "started_at"))
 	if !ok {
-		return SessionRef{}, &PyError{Kind: "TypeError", Msg: "'" + pyTypeName(rowField(row, "started_at")) + "' object cannot be interpreted as a timestamp"}
+		return SessionRef{}, &PyError{Kind: "TypeError", Msg: "the legacy session start time is " + errchain.Kind(rowField(row, "started_at")) + ", expected a timestamp"}
 	}
 	now := pyDatetime{T: time.Unix(0, int64(started*1e9))}
 	entry := NewSessionEntry(route, sid, now, now)

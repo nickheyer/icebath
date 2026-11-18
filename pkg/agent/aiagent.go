@@ -495,9 +495,9 @@ type RunConversationOptions struct {
 	Prelude                    Prelude
 }
 
-// Python DeprecationWarning channel, recorded on the warnings logger below the default level so it stays silent
+// Deprecation notice, recorded below the default level so it stays silent
 var warnDeprecation = func(message string) {
-	pkgLog().Debug("DeprecationWarning: " + message)
+	pkgLog().Debug("deprecated: " + message)
 }
 
 // Builds an agent through the init_agent forwarder, runtime fields filling the route keywords like cron does

@@ -95,7 +95,7 @@ func admitFinite(params map[string]any) (*pyjson.Object, error) {
 func mayRunUnattended(ctx context.Context, connection any, ref SessionRef) (bool, error) {
 	submitter, ok := connection.(unattendedConnection)
 	if !ok {
-		return false, &PyError{Kind: "AttributeError", Msg: "'" + pyTypeName(connection) + "' object has no attribute 'authority'"}
+		return false, &PyError{Kind: "AttributeError", Msg: "the session connection has no authority"}
 	}
 	authority := submitter.ConnectionAuthority()
 	live, ok := authority.live(ref.SessionID)

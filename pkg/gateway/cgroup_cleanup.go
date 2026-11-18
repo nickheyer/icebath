@@ -31,7 +31,7 @@ func cgroupReadText(path string) (string, bool, error) {
 		return "", false, nil
 	}
 	if !utf8.Valid(raw) {
-		return "", false, fmt.Errorf("UnicodeDecodeError: 'utf-8' codec can't decode %s", path)
+		return "", false, fmt.Errorf("%s is not valid UTF-8", path)
 	}
 	return string(raw), true, nil
 }
@@ -61,7 +61,7 @@ func readCgroupPids(cgroupPath string) ([]int, error) {
 			continue
 		}
 		if !n.IsInt64() || n.Int64() != int64(int(n.Int64())) {
-			return nil, fmt.Errorf("OverflowError: Python int too large to convert to C int")
+			return nil, fmt.Errorf("a cgroup process id is too large")
 		}
 		pids = append(pids, int(n.Int64()))
 	}

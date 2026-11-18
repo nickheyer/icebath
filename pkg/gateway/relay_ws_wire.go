@@ -6,6 +6,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pybase64"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -218,7 +219,7 @@ func relayWireMapping(v any) (*pyjson.Object, error) {
 	if obj, ok := pyjson.AsObject(v); ok {
 		return obj, nil
 	}
-	return nil, &PyError{"AttributeError", "'" + pyrepr.TypeName(v) + "' object has no attribute 'get'"}
+	return nil, &PyError{"AttributeError", "a relay wire value is " + errchain.Kind(v) + ", expected a mapping"}
 }
 
 // Message event rebuilt from the connector inbound payload, unknown platforms as relay and unknown types as text

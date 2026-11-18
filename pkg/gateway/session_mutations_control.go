@@ -436,11 +436,11 @@ type chatModelRunner interface {
 func chatRunner(a *SessionAuthority, operation string) (chatModelRunner, error) {
 	runner, ok := a.Runner.(chatModelRunner)
 	if !ok {
-		attribute := "_model_switch_lock"
+		capability := "switch the session model"
 		if operation == "reasoning" {
-			attribute = "_apply_reasoning_selection"
+			capability = "apply a reasoning selection"
 		}
-		return nil, &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("'%T' object has no attribute '%s'", a.Runner, attribute)}
+		return nil, &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("the gateway runner (%T) cannot %s", a.Runner, capability)}
 	}
 	return runner, nil
 }

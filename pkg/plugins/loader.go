@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -234,13 +235,17 @@ func icebathFitError(mf *Manifest) string {
 	return coreRequirementError(mf.Path)
 }
 
-// Applicable core requirement refusal of a plugin directory, empty when its declaration cannot be read
+// Core requirement refusal of a plugin directory, the absent package manager line for declared Python packages
 func coreRequirementError(pluginDir string) string {
 	declaration, err := pm.ReadPythonDeclaration(pluginDir)
 	if err != nil {
 		return ""
 	}
 	reason, err := pm.CoreRequirementError(context.Background(), declaration)
+	var absent *pm.ManagerAbsentError
+	if errors.As(err, &absent) && !declaration.External() && (len(declaration.Requirements) > 0 || declaration.Pyproject != "") {
+		return absent.Line
+	}
 	if err != nil {
 		return ""
 	}
@@ -461,7 +466,7 @@ func (m *Manager) registerDeclaredLocales(mf *Manifest, pctx *Context) {
 	}
 	for _, lang := range mf.ProvidesLocales {
 		if !registered[lang] {
-			pkgLog().Warn(fmt.Sprintf("Plugin '%s' declares provides_locales %s but %s has no %s.yaml", mf.Name, config.PyRepr(lang), dir, lang))
+			pkgLog().Warn(fmt.Sprintf("Plugin '%s' declares provides_locales %s but %s has no %s.yaml", mf.Name, errchain.Show(lang), dir, lang))
 		}
 	}
 }
@@ -782,7 +787,7 @@ func (m *Manager) registerDeferredPlatformTools(ctx context.Context, mf *Manifes
 		return
 	}
 	key := mf.ID()
-	declared := config.PyRepr(anyList(mf.ProvidesTools))
+	declared := errchain.Show(anyList(mf.ProvidesTools))
 	plugin, compiled := bundledPlugin(key)
 	if mf.Path != "" || !compiled {
 		if mf.Path == "" || !isFile(filepath.Join(mf.Path, "tools.py")) {
@@ -843,7 +848,7 @@ func (m *Manager) registerDeferredPlatformTools(ctx context.Context, mf *Manifes
 			}
 		}
 		registered := credit()
-		pkgLog().Debug(fmt.Sprintf("Deferred platform '%s': pre-registered %d client tool(s) %s", key, len(registered), config.PyRepr(anyList(registered))))
+		pkgLog().Debug(fmt.Sprintf("Deferred platform '%s': pre-registered %d client tool(s) %s", key, len(registered), errchain.Show(anyList(registered))))
 		return nil
 	})
 	if err == nil {

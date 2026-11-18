@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
@@ -79,7 +80,7 @@ func recoverAPISession(ctx context.Context, a *SessionAuthority, sid string) err
 		}
 		payload, isDict := raw.(*pyjson.Object)
 		if !isDict {
-			return &PyError{Kind: "AttributeError", Msg: "'" + jsonValueTypeName(raw) + "' object has no attribute 'get'"}
+			return &PyError{Kind: "AttributeError", Msg: "the API session to recover is " + errchain.Kind(raw) + ", expected a mapping"}
 		}
 		if _, err := checkAPITurn(ctx, a, ref, payload); err != nil {
 			return err

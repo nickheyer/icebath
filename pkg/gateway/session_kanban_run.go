@@ -190,7 +190,7 @@ func buildKanbanPolicy(ctx context.Context, c *AuthorityConnection, params *pyjs
 	case int64:
 		runID = value
 	case *big.Int:
-		return nil, nil, fmt.Errorf("OverflowError: Python int too large to convert to SQLite INTEGER")
+		return nil, nil, fmt.Errorf("a kanban number is too large for the database")
 	default:
 		return nil, nil, runtimeRefusal("invalid_params")
 	}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
@@ -126,7 +127,7 @@ func (s *RuntimeSessionStore) GetSession(ctx context.Context, sessionID string) 
 	}
 	obj, ok := row.(*pyjson.Object)
 	if !ok {
-		return nil, &workerStoreError{"TypeError", fmt.Sprintf("session receipt is a %s, not a dict", pyrepr.TypeName(row))}
+		return nil, &workerStoreError{"TypeError", fmt.Sprintf("session receipt is %s where a mapping was expected", errchain.Kind(row))}
 	}
 	return obj, nil
 }
@@ -135,7 +136,7 @@ func (s *RuntimeSessionStore) GetSession(ctx context.Context, sessionID string) 
 func receiptStrings(raw any) ([]string, error) {
 	list, ok := raw.([]any)
 	if !ok {
-		return nil, &workerStoreError{"TypeError", fmt.Sprintf("'%s' object is not a list", pyrepr.TypeName(raw))}
+		return nil, &workerStoreError{"TypeError", fmt.Sprintf("receipt items are %s where a list was expected", errchain.Kind(raw))}
 	}
 	out := make([]string, 0, len(list))
 	for _, item := range list {

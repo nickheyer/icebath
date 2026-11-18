@@ -9,6 +9,7 @@ import (
 	"sort"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
@@ -127,7 +128,7 @@ func stagedCreationFollows(ctx context.Context, a *SessionAuthority, actor Princ
 		}
 		policy, isObject := rawPolicy.(*pyjson.Object)
 		if !isObject {
-			return nil, &PyError{Kind: "TypeError", Msg: "'" + jsonValueTypeName(rawPolicy) + "' object is not subscriptable"}
+			return nil, &PyError{Kind: "TypeError", Msg: "the staged session policy is " + errchain.Kind(rawPolicy) + ", expected a mapping"}
 		}
 		rawRequest, err := receiptField(policy, "request_json")
 		if err != nil {
@@ -135,7 +136,7 @@ func stagedCreationFollows(ctx context.Context, a *SessionAuthority, actor Princ
 		}
 		requestJSON, isText := rawRequest.(string)
 		if !isText {
-			return nil, &PyError{Kind: "TypeError", Msg: "the JSON object must be str, bytes or bytearray, not " + jsonValueTypeName(rawRequest)}
+			return nil, &PyError{Kind: "TypeError", Msg: "the staged creation request is " + errchain.Kind(rawRequest) + ", expected JSON text"}
 		}
 		return pyjson.Loads(requestJSON)
 	}()
@@ -297,7 +298,7 @@ func stageLocalSession(ctx context.Context, a *SessionAuthority, actor Principal
 		}
 		savedPolicy, isObject := rawPolicy.(*pyjson.Object)
 		if !isObject {
-			return nil, nil, &PyError{Kind: "TypeError", Msg: "'" + jsonValueTypeName(rawPolicy) + "' object is not subscriptable"}
+			return nil, nil, &PyError{Kind: "TypeError", Msg: "the staged session policy is " + errchain.Kind(rawPolicy) + ", expected a mapping"}
 		}
 		same, err := state.SameCreateRetry(savedPolicy, policy.RequestJSON, paramsObject(params))
 		if err != nil {
@@ -323,7 +324,7 @@ func stageLocalSession(ctx context.Context, a *SessionAuthority, actor Principal
 			if raw := params["api_key"]; pyTruthy(raw) {
 				text, isText := raw.(string)
 				if !isText {
-					return nil, nil, &PyError{Kind: "TypeError", Msg: "unsupported operand types(s) or combination of types: 'str' and '" + jsonValueTypeName(raw) + "'"}
+					return nil, nil, &PyError{Kind: "TypeError", Msg: "a staged session value is " + errchain.Kind(raw) + ", expected text"}
 				}
 				offered = text
 			}
@@ -399,7 +400,7 @@ func publishLocalPolicy(ctx context.Context, a *SessionAuthority, sessionID stri
 	}
 	local, isLocal := adapter.(*LocalSessionAdapter)
 	if !isLocal {
-		return &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("'%T' object has no attribute 'policies'", adapter)}
+		return &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("the local adapter (%T) keeps no session policies", adapter)}
 	}
 	receipt, err := a.DB.LocalReceipt(ctx, sessionID)
 	if err != nil {
@@ -414,7 +415,7 @@ func publishLocalPolicy(ctx context.Context, a *SessionAuthority, sessionID stri
 		return err
 	}
 	if live.Source == nil {
-		return &PyError{Kind: "AttributeError", Msg: "'NoneType' object has no attribute 'chat_id'"}
+		return &PyError{Kind: "AttributeError", Msg: "the local session has no source to publish its policy to"}
 	}
 	local.setPolicy(live.Source.ChatID, policy)
 	if !evict {
@@ -422,7 +423,7 @@ func publishLocalPolicy(ctx context.Context, a *SessionAuthority, sessionID stri
 	}
 	evicting, can := a.Runner.(agentEvictingRunner)
 	if !can {
-		return &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("'%T' object has no attribute '_evict_cached_agent'", a.Runner)}
+		return &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("the gateway runner (%T) cannot evict a cached agent", a.Runner)}
 	}
 	evicting.EvictCachedAgent(live.Route)
 	return nil

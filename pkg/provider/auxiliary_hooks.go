@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/plugins"
@@ -166,11 +167,11 @@ func auxPyInt(v any) (int, error) {
 	case string:
 		n, err := strconv.Atoi(pystr.Strip(x))
 		if err != nil {
-			return 0, fmt.Errorf("invalid literal for int() with base 10: %s", pyrepr.Repr(x))
+			return 0, fmt.Errorf("%v is not a whole number", x)
 		}
 		return n, nil
 	}
-	return 0, fmt.Errorf("int() argument must be a string, a bytes-like object or a real number, not '%s'", pyrepr.TypeName(v))
+	return 0, fmt.Errorf("expected a whole number, got %s", errchain.Kind(v))
 }
 
 // Python exception class name of an auxiliary call error

@@ -172,7 +172,7 @@ func runPluginBackendSetup(ctx context.Context, env *Env, backend string, header
 	}()
 	provider := GetTerminalBackend(backend)
 	if provider == nil {
-		return errors.New("'NoneType' object has no attribute 'display_name'")
+		return errors.New("the terminal backend plugin is not registered")
 	}
 	header("Terminal backend: " + provider.DisplayName())
 	for _, text := range provider.SetupInstructions(env) {

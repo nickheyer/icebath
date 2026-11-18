@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyemail"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -166,7 +167,7 @@ func (c *RelayMediaClient) postMedia(url string, data []byte, contentType, name 
 	}
 	obj, ok := pyjson.AsObject(parsed)
 	if !ok {
-		return "", "", false, fmt.Errorf("'%s' object has no attribute 'get'", pyrepr.TypeName(parsed))
+		return "", "", false, fmt.Errorf("the relay media reply is %s, expected a mapping", errchain.Kind(parsed))
 	}
 	if mediaID := obj.Vals["id"]; pyrepr.Truthy(mediaID) {
 		return c.baseURL + "/relay/media/" + pyrepr.Str(mediaID), "", false, nil
@@ -228,7 +229,7 @@ func (c *RelayMediaClient) fetchMedia(url string, headers http.Header, suggested
 	if raw := resp.Header.Get("Content-Length"); raw != "" {
 		n, ok := pyint.Parse(raw)
 		if !ok {
-			return "", "", fmt.Errorf("invalid literal for int() with base 10: %s", pyrepr.Repr(raw))
+			return "", "", fmt.Errorf("the relay media size %v is not a whole number", raw)
 		}
 		if n.Int64() > RelayMediaMaxBytes || !n.IsInt64() {
 			pkgLog().Warn(fmt.Sprintf("relay media download too large: %s", url))

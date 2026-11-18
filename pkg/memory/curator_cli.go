@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -874,7 +875,7 @@ func (c *CuratorCLI) cmdRollback(ctx context.Context, a CuratorArgs) (int, error
 		} else {
 			query := "your query"
 			if a.BackupID != "" {
-				query = "id " + pyrepr.Repr(a.BackupID)
+				query = "id " + errchain.Show(a.BackupID)
 			}
 			c.printf("curator: no snapshot matching %s.\n", query)
 			c.println("Available:")

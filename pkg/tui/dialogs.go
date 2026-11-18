@@ -9,6 +9,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"github.com/nickheyer/icebath/pkg/ui/keys"
 	"github.com/nickheyer/icebath/pkg/ui/wm"
 )
@@ -405,9 +406,9 @@ func (a *app) activeClarifyQuestion() string {
 	return ""
 }
 
-// Answers a server request, the status back to running while a turn runs and to ready otherwise
-func (a *app) respondPrompt(key, requestID string, result map[string]any) tea.Cmd {
-	a.store.respondToServerRequest(requestID, result)
+// Answers a one value server request, the status back to running while a turn runs and to ready otherwise
+func (a *app) respondPrompt(key, requestID, value string) tea.Cmd {
+	a.store.respondToServerRequest(requestID, tuigateway.ValueAnswer{Value: value})
 	a.store.overlay.closePrompt(key)
 	a.store.ui.Status = "ready"
 	if a.store.ui.Busy {
@@ -428,9 +429,9 @@ func (a *app) buildDialog(kind, id string) *dialogCard {
 			if plain {
 				value = trimJS(value)
 			}
-			return a.respondPrompt(key, requestID, map[string]any{"value": value})
+			return a.respondPrompt(key, requestID, value)
 		}
-		d.onCancel = func() tea.Cmd { return a.respondPrompt(key, requestID, map[string]any{"value": ""}) }
+		d.onCancel = func() tea.Cmd { return a.respondPrompt(key, requestID, "") }
 		return d
 	}
 	switch kind {
@@ -480,10 +481,10 @@ func (a *app) buildDialog(kind, id string) *dialogCard {
 				raw, _ := json.Marshal(map[string]string{"identifier": fields[0], "password": fields[1]})
 				value = string(raw)
 			}
-			return a.respondPrompt("vaultSaveLogin", requestID, map[string]any{"value": value})
+			return a.respondPrompt("vaultSaveLogin", requestID, value)
 		}
 		d.onCancel = func() tea.Cmd {
-			return a.respondPrompt("vaultSaveLogin", requestID, map[string]any{"value": ""})
+			return a.respondPrompt("vaultSaveLogin", requestID, "")
 		}
 	case "clarify":
 		req := o.Clarify
@@ -715,16 +716,15 @@ func (a *app) answerApproval(req *approvalReq, choice string) tea.Cmd {
 		a.store.ui.Status = "running…"
 	}
 	if req.Shared != nil {
-		params := sharedControlParams(req.Shared)
-		params["choice"] = choice
-		return a.events.rpc("approval.respond", params, func(r map[string]any) tea.Cmd {
+		params := tuigateway.CanonicalApprovalParams{SessionID: req.Shared.SessionID, ExecutionGeneration: req.Shared.ExecutionGeneration, PromptID: req.Shared.PromptID, Choice: tuigateway.ApprovalChoice(choice)}
+		return ask(a.events.rpc, a.sys, tuigateway.CanonicalApprovalRespond, params, func(r *tuigateway.PromptResponseResult) tea.Cmd {
 			if r != nil {
 				settle()
 			}
 			return nil
 		})
 	}
-	a.store.respondToServerRequest(req.RequestID, map[string]any{"choice": choice})
+	a.store.respondToServerRequest(req.RequestID, tuigateway.ApprovalAnswer{Choice: tuigateway.ApprovalChoice(choice)})
 	settle()
 	return nil
 }
@@ -760,24 +760,23 @@ func (a *app) settleClarify(req *clarifyReq, answers map[string]string) {
 // Answers one clarify question, a single shared prompt at once and a batch by locking each answer
 func (a *app) answerClarifyQuestion(req *clarifyReq, q clarifyQuestion, answer string) tea.Cmd {
 	if req.Shared != nil && len(req.Questions) == 1 {
-		params := sharedControlParams(req.Shared)
-		params["answer"] = answer
-		return a.events.rpc("clarify.respond", params, func(r map[string]any) tea.Cmd {
-			if r != nil && a.store.overlay.Clarify == req {
+		params := tuigateway.CanonicalClarifyParams{SessionID: req.Shared.SessionID, ExecutionGeneration: req.Shared.ExecutionGeneration, PromptID: req.Shared.PromptID, Answer: answer}
+		return ask(a.events.rpc, a.sys, tuigateway.CanonicalClarifyRespond, params, func(r *tuigateway.PromptResponseResult) tea.Cmd {
+			if r != nil && r.Status == "resolved" {
 				a.settleClarify(req, map[string]string{q.QID: answer})
 			}
 			return nil
 		})
 	}
-	var locked any
+	params := tuigateway.ClarifyLockParams{RequestID: req.RequestID, QuestionID: q.QID}
 	if trimJS(answer) != "" {
-		locked = answer
+		params.Answer = &answer
 	}
-	return a.events.rpc("clarify.lock", map[string]any{"answer": locked, "question_id": q.QID, "request_id": req.RequestID}, func(r map[string]any) tea.Cmd {
+	return ask(a.events.rpc, a.sys, tuigateway.ClarifyLock, params, func(r *tuigateway.ClarifyLockResult) tea.Cmd {
 		if r == nil || a.store.overlay.Clarify != req {
 			return nil
 		}
-		if r["status"] == "expired" {
+		if r.Status == "expired" {
 			a.store.overlay.Clarify = nil
 			return nil
 		}
@@ -785,7 +784,7 @@ func (a *app) answerClarifyQuestion(req *clarifyReq, q clarifyQuestion, answer s
 			req.Answers = map[string]string{}
 		}
 		req.Answers[q.QID] = answer
-		if remaining, _ := r["remaining"].([]any); len(remaining) > 0 {
+		if len(r.Remaining) > 0 {
 			return nil
 		}
 		a.settleClarify(req, req.Answers)

@@ -52,10 +52,10 @@ func TestRunErrorPersistsRedactedCauseButReturnsSummary(t *testing.T) {
 	}
 	raw, _ := os.ReadFile(path)
 	saved := string(raw)
-	if out.Success || out.FinalResponse != "" || out.Error == nil || *out.Error != "RuntimeError: Connection error." {
+	if out.Success || out.FinalResponse != "" || out.Error == nil || *out.Error != "Connection error." {
 		t.Fatalf("outcome %+v", out)
 	}
-	for _, want := range []string{"RuntimeError: Connection error.", "caused by ConnectionError", "localhost"} {
+	for _, want := range []string{"Connection error.", "caused by https://", "localhost"} {
 		if !strings.Contains(saved, want) {
 			t.Fatalf("saved output lacks %q:\n%s", want, saved)
 		}

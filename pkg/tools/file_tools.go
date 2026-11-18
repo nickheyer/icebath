@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
@@ -1427,9 +1428,9 @@ type searchPatternErrorKey struct{}
 // Panic value unwinding a search to the error a non str pattern raises
 type searchPatternRaise struct{ msg string }
 
-// Python TypeError text pathlib raises for a non str path
+// Refusal of a path argument that is no text
 func pathlibTypeError(v any) string {
-	return "argument should be a str or an os.PathLike object where __fspath__ returns a str, not '" + pyrepr.TypeName(v) + "'"
+	return "the path is " + errchain.Kind(v) + ", expected text"
 }
 
 // Scalar JSON value, the Python types an in test rejects as not a container
@@ -1466,29 +1467,20 @@ func tildePathTypeError(v any) string {
 		return ""
 	}
 	if pyContainsStr(v, "~") {
-		return "expected str, bytes or os.PathLike object, not " + pyrepr.TypeName(v)
+		return "the path is " + errchain.Kind(v) + ", expected text"
 	}
 	if pyScalarArg(v) && pyrepr.Truthy(v) {
-		return "argument of type '" + pyrepr.TypeName(v) + "' is not a container or iterable"
+		return "the path is " + errchain.Kind(v) + ", expected text"
 	}
 	return pathlibTypeError(v)
 }
 
-// Python error text a non str search pattern raises for the target, empty for a str
+// Refusal of a search pattern that is no text, empty for text
 func searchPatternTypeError(v any, target string) string {
 	if _, ok := v.(string); ok {
 		return ""
 	}
-	name := pyrepr.TypeName(v)
-	switch {
-	case target == "files":
-		return "'" + name + "' object has no attribute 'startswith'"
-	case pyScalarArg(v):
-		return "argument of type '" + name + "' is not a container or iterable"
-	case pyContainsStr(v, "\n"):
-		return "'" + name + "' object has no attribute 'replace'"
-	}
-	return "expected string or bytes-like object, got '" + name + "'"
+	return "the search pattern is " + errchain.Kind(v) + ", expected text"
 }
 
 // Repeated search key part of a pattern, a non str value kept apart from every str
@@ -1792,7 +1784,7 @@ func handleWriteFile(ctx context.Context, call *Call) string {
 	}
 	content, isString := raw.(string)
 	if !isString {
-		return fileToolError("write_file: 'content' must be a string, got " + pyJSONTypeNameOf(raw) + ".")
+		return fileToolError("write_file: 'content' must be text, got " + errchain.Kind(raw) + ".")
 	}
 	crossProfile := truthy(call.Args["cross_profile"])
 	return owned(ctx, call, func(ctx context.Context) string {
@@ -1845,7 +1837,7 @@ func handlePatch(ctx context.Context, call *Call) string {
 	if p, ok := pyArgs["patch"].(string); ok {
 		a.patch = p
 	} else if mode == "patch" && pyrepr.Truthy(pyArgs["patch"]) {
-		panic(&pyTypeError{msg: "expected string or bytes-like object, got '" + pyrepr.TypeName(pyArgs["patch"]) + "'"})
+		panic(&pyTypeError{msg: "the patch is " + errchain.Kind(pyArgs["patch"]) + ", expected text"})
 	}
 	if p, ok := pyArgs["path"].(string); ok {
 		a.path = p

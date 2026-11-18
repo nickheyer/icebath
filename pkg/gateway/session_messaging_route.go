@@ -26,7 +26,7 @@ func messagingRouteInfo(ctx context.Context, runner AuthorityRunner, live *LiveS
 	model, providerName, baseURL := any(resolveGatewayModel(ctx, cfg)), block["provider"], block["base_url"]
 	resolver, ok := runner.(messagingRouteRunner)
 	if !ok {
-		return nil, &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("'%T' object has no attribute '_channel_override_for'", runner)}
+		return nil, &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("the gateway runner (%T) cannot look up a channel override", runner)}
 	}
 	if channel := resolver.ChannelOverrideFor(live.Source); channel != nil {
 		model, providerName = pyrepr.Or(channel.Model, model), pyrepr.Or(channel.Provider, providerName)

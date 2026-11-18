@@ -10,6 +10,7 @@ import (
 	"sync/atomic"
 
 	"github.com/dlclark/regexp2/v2"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
@@ -261,7 +262,7 @@ func iterPatterns(patterns any) ([]any, error) {
 		}
 		return out, nil
 	}
-	return nil, fmt.Errorf("'%s' object is not iterable", pyrepr.TypeName(patterns))
+	return nil, fmt.Errorf("expected a list, got %s", errchain.Kind(patterns))
 }
 
 // RegisterRedactionPatterns additively registers credential token regexes and returns how many were accepted

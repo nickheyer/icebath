@@ -227,7 +227,7 @@ func (a *SessionAuthority) claimNext(ctx context.Context, ref SessionRef, live *
 	source, route := live.Source, live.Route
 	a.mu.Unlock()
 	if source == nil {
-		return claimAttempt{}, errors.New("'NoneType' object has no attribute 'platform'")
+		return claimAttempt{}, errors.New("the claimed delivery has no source")
 	}
 	platform := source.Platform
 	if platform == PlatformLocal {
@@ -661,7 +661,7 @@ func (a *SessionAuthority) settleClaimed(ctx context.Context, ref SessionRef, li
 		return settleDeliver, err
 	}
 	if current == nil {
-		return settleDeliver, errors.New("'NoneType' object is not subscriptable")
+		return settleDeliver, errors.New("the claimed delivery row is missing")
 	}
 	if rowString(current, "status") == AdmissionUnknown {
 		retainUnsettledDelivery(a, admissionID)

@@ -230,7 +230,7 @@ func archiveWriteRaw(dest string, env map[string]string) error {
 		headerEnd := pos + rel
 		fields := strings.Fields(string(out[pos:headerEnd]))
 		if len(fields) < 3 {
-			return errors.New("list index out of range")
+			return errors.New("a git archive header has fewer than three fields")
 		}
 		size, err := strconv.Atoi(fields[2])
 		if err != nil {

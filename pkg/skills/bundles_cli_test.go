@@ -98,7 +98,7 @@ func TestBundlesCLICreateReadsSkillsInteractively(t *testing.T) {
 
 func TestBundlesCLICreateReportsValueErrors(t *testing.T) {
 	b, out, _ := bundlesCLIEnv(t)
-	if code, got := runBundles(t, b, out, BundlesArgs{Action: "create", Name: "!!!", Skill: []string{"a"}}); code != 1 || got != "Bundle name '!!!' normalizes to an empty slug|" {
+	if code, got := runBundles(t, b, out, BundlesArgs{Action: "create", Name: "!!!", Skill: []string{"a"}}); code != 1 || got != "Bundle name !!! normalizes to an empty slug|" {
 		t.Fatalf("%d %q", code, got)
 	}
 	if code, got := runBundles(t, b, out, BundlesArgs{Action: "create", Name: "x", Skill: []string{" "}}); code != 1 || got != "Bundle must reference at least one skill|" {
@@ -129,7 +129,7 @@ func TestBundlesCLIListShowDeleteAndReload(t *testing.T) {
 	if code != 0 || got != want {
 		t.Fatalf("%d %q", code, got)
 	}
-	if code, got = runBundles(t, b, out, BundlesArgs{Action: "show", Name: "nope"}); code != 1 || got != "Bundle 'nope' not found.|" {
+	if code, got = runBundles(t, b, out, BundlesArgs{Action: "show", Name: "nope"}); code != 1 || got != "Bundle nope not found.|" {
 		t.Fatalf("%d %q", code, got)
 	}
 	if code, got = runBundles(t, b, out, BundlesArgs{Action: "reload"}); code != 0 || got != "No changes. 2 bundle(s) loaded.|" {

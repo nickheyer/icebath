@@ -146,7 +146,7 @@ func (e *RelayPluginConfigurationLoadError) Error() string { return e.Message }
 func (e *RelayPluginConfigurationLoadError) Unwrap() error { return e.Err }
 
 func relayAttributeError(object, name string) error {
-	return fmt.Errorf("'%s' object has no attribute '%s'", object, name)
+	return fmt.Errorf("the %s has no %s", object, name)
 }
 
 var (

@@ -1,4 +1,4 @@
-//go:build linux || darwin
+//go:build (linux || darwin) && !icebath_core && !icebath_noextras
 
 package pm
 

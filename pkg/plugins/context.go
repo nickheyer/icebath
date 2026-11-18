@@ -7,7 +7,7 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 )
 
@@ -66,7 +66,7 @@ func (c *Context) HasPlugin(pluginID string) bool {
 func (c *Context) segments(key string) ([]string, error) {
 	segments, err := PluginRelativeSegments(key)
 	if err != nil {
-		pkgLog().Warn(fmt.Sprintf("Rejected config path %s from plugin %s", config.PyRepr(key), c.PluginID()))
+		pkgLog().Warn(fmt.Sprintf("Rejected config path %s from plugin %s", errchain.Show(key), c.PluginID()))
 	}
 	return segments, err
 }

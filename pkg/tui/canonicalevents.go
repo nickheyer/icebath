@@ -7,12 +7,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/tuigateway"
 )
 
-// Field of a payload and whether the payload carries it at all
-func field(m map[string]any, k string) (any, bool) {
-	v, has := m[k]
-	return v, has
-}
-
 // Error event with no execution stamp, a build or request failure rather than a turn settlement
 func isGenericErrorEvent(ev gatewayEventMsg) bool {
 	if ev.Type != "error" {
@@ -42,12 +36,12 @@ func (s *tuiStore) settleSharedPrompt(ev gatewayEventMsg) bool {
 	if ev.Type != "approval.settled" && ev.Type != "clarify.settled" {
 		return false
 	}
-	promptID, named := field(ev.Payload, "prompt_id")
+	settled, _ := tuigateway.ApprovalSettledEvent.Payload(ev.Payload)
 	matches := func(shared *sharedControl) bool {
 		if shared == nil {
-			return !named
+			return settled.PromptID == ""
 		}
-		return named && jsStrictEqual(shared.PromptID, promptID)
+		return settled.PromptID != "" && shared.PromptID == settled.PromptID
 	}
 	if ev.Type == "approval.settled" {
 		if s.overlay.Approval == nil || matches(s.overlay.Approval.Shared) {
@@ -59,71 +53,27 @@ func (s *tuiStore) settleSharedPrompt(ev gatewayEventMsg) bool {
 	return true
 }
 
-// Owner stamp of a shared prompt event, nil when the event lacks its prompt id, session or generation
-func sharedControlOf(ev gatewayEventMsg) *sharedControl {
-	promptID, _ := ev.Payload["prompt_id"].(string)
-	generation, isNum := ev.Payload["execution_generation"].(float64)
-	if ev.Payload == nil || promptID == "" || ev.SessionID == "" || !isNum {
+// Owner stamp of a shared prompt, nil when the event lacks its prompt id or session
+func sharedControlOf(ev gatewayEventMsg, prompt tuigateway.CanonicalPendingPrompt) *sharedControl {
+	if prompt.PromptID == "" || ev.SessionID == "" {
 		return nil
 	}
-	return &sharedControl{SessionID: ev.SessionID, ExecutionGeneration: int64(generation), PromptID: promptID}
+	return &sharedControl{SessionID: ev.SessionID, ExecutionGeneration: prompt.ExecutionGeneration, PromptID: prompt.PromptID}
 }
 
-// Text of each entry of a non empty list, nil otherwise
-func choicesOf(v any) []string {
-	list, isList := v.([]any)
-	if !isList || len(list) == 0 {
-		return nil
-	}
-	out := make([]string, len(list))
-	for i, item := range list {
-		out[i] = jsString(item)
-	}
-	return out
-}
-
-// Locked answers of a shared clarify keyed by question id
-func sharedAnswersOf(v any) map[string]string {
-	raw, _ := v.(map[string]any)
-	out := make(map[string]string, len(raw))
-	for qid, answer := range raw {
-		if answer == nil {
-			out[qid] = ""
-			continue
-		}
-		out[qid] = jsString(answer)
-	}
-	return out
-}
-
-// Opens the shared clarify card of the owner's prompt, a batch or its single question
+// Opens the shared clarify card of the owner's question
 func (s *tuiStore) openCanonicalClarify(ev gatewayEventMsg, sink promptSink) {
-	shared := sharedControlOf(ev)
-	if shared == nil {
+	prompt, err := tuigateway.ClarifyRequestEvent.Payload(ev.Payload)
+	if err != nil {
+		sink.misfit(tuigateway.ClarifyRequestEvent.Name(), err)
 		return
 	}
-	p := ev.Payload
-	questions := []clarifyQuestion{}
-	list, _ := p["questions"].([]any)
-	for _, raw := range list {
-		q, _ := raw.(map[string]any)
-		qid, _ := q["qid"].(string)
-		question, isStr := q["question"].(string)
-		if qid == "" || !isStr || strings.TrimFunc(question, isJSSpace) == "" {
-			continue
-		}
-		questions = append(questions, clarifyQuestion{Choices: choicesOf(q["choices"]), MultiSelect: q["multi_select"] == true, QID: qid, Question: strings.TrimFunc(question, isJSSpace)})
-	}
-	if len(questions) == 0 {
-		single, _ := p["question"].(string)
-		if single = strings.TrimFunc(single, isJSSpace); single != "" {
-			questions = []clarifyQuestion{{Choices: choicesOf(p["choices"]), MultiSelect: p["multi_select"] == true, QID: shared.PromptID, Question: single}}
-		}
-	}
-	if len(questions) == 0 {
+	shared := sharedControlOf(ev, prompt)
+	question := strings.TrimFunc(val(prompt.Question), isJSSpace)
+	if shared == nil || question == "" {
 		return
 	}
-	s.overlay.Clarify = &clarifyReq{Answers: sharedAnswersOf(p["answers"]), Questions: questions, RequestID: shared.PromptID, Shared: shared}
+	s.overlay.Clarify = &clarifyReq{Answers: map[string]string{}, Questions: []clarifyQuestion{{Choices: prompt.Choices, MultiSelect: val(prompt.MultiSelect), QID: shared.PromptID, Question: question}}, RequestID: shared.PromptID, Shared: shared}
 	sink.setStatus("waiting for input…")
 	sink.ringPromptBell()
 }
@@ -138,20 +88,20 @@ func stringOr(v any, fallback string) string {
 
 // Opens the shared approval card of the owner's prompt
 func (s *tuiStore) openCanonicalApproval(ev gatewayEventMsg, sink promptSink) {
-	shared := sharedControlOf(ev)
+	prompt, err := tuigateway.ApprovalRequestEvent.Payload(ev.Payload)
+	if err != nil {
+		sink.misfit(tuigateway.ApprovalRequestEvent.Name(), err)
+		return
+	}
+	shared := sharedControlOf(ev, prompt)
 	if shared == nil {
 		return
 	}
-	p := ev.Payload
-	s.overlay.Approval = &approvalReq{
-		AllowPermanent: p["allow_permanent"] != false,
-		Choices:        choicesOf(p["choices"]),
-		Command:        stringOr(p["command"], ""),
-		Description:    stringOr(p["description"], "dangerous command"),
-		RequestID:      shared.PromptID,
-		Shared:         shared,
-		SmartDenied:    p["smart_denied"] == true,
+	description := val(prompt.Description)
+	if prompt.Description == nil {
+		description = "dangerous command"
 	}
+	s.overlay.Approval = &approvalReq{AllowPermanent: true, Choices: prompt.Choices, Command: val(prompt.Command), Description: description, RequestID: shared.PromptID, Shared: shared}
 	sink.setStatus("approval needed")
 	sink.ringPromptBell()
 }

@@ -4,10 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/nickheyer/icebath/pkg/errchain"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -263,7 +265,7 @@ func recordValue(r map[string]any, key string, def any) any {
 func recordKey(r map[string]any, key string) (any, error) {
 	v, ok := r[key]
 	if !ok {
-		return nil, &pyError{class: "KeyError", msg: pyRepr(key)}
+		return nil, &pyError{class: "KeyError", msg: "pending memory write has no " + key}
 	}
 	return v, nil
 }
@@ -309,7 +311,7 @@ func fmtPendingList(env *tools.Env, subsystem string) (string, error) {
 func matchedEntryLines(payload any) ([]string, error) {
 	m, ok := payload.(map[string]any)
 	if !ok {
-		return nil, &pyError{class: "AttributeError", msg: fmt.Sprintf("'%s' object has no attribute 'get'", pyTypeName(payload))}
+		return nil, &pyError{class: "AttributeError", msg: fmt.Sprintf("pending memory write payload is %s where a mapping was expected", errchain.Kind(payload))}
 	}
 	ops, err := DestructiveOps(m)
 	if err != nil {
@@ -463,7 +465,7 @@ func applyOnePending(ctx context.Context, subsystem string, rec map[string]any, 
 		return false, "memory store unavailable", map[string]any{}
 	}
 	if !isMap {
-		return false, fmt.Sprintf("'%s' object has no attribute 'get'", pyTypeName(rec["payload"])), map[string]any{}
+		return false, fmt.Sprintf("pending memory write payload is %s where a mapping was expected", errchain.Kind(rec["payload"])), map[string]any{}
 	}
 	if subsystem == tools.WriteApprovalMemory {
 		res, err := ApplyMemoryPending(ctx, payload, opts.MemoryStore)
@@ -479,7 +481,7 @@ func applyOnePending(ctx context.Context, subsystem string, rec map[string]any, 
 		}
 		m, isObject := decoded.(map[string]any)
 		if !isObject {
-			return false, fmt.Sprintf("'%s' object has no attribute 'get'", pyTypeName(decoded)), map[string]any{}
+			return false, fmt.Sprintf("pending memory write payload is %s where a mapping was expected", errchain.Kind(decoded)), map[string]any{}
 		}
 		result = m
 	}

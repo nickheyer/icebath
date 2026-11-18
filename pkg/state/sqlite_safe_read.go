@@ -228,7 +228,7 @@ func ConnectTracked(path string, opts ...TrackedOption) (*TrackedConn, error) {
 		resolved, ok = liveKey(o.trackingPath), true
 	} else {
 		if isNilConn(conn) {
-			return nil, &pyConvError{"AttributeError", "'NoneType' object has no attribute 'execute'"}
+			return nil, &pyConvError{"AttributeError", "the connection to track is closed"}
 		}
 		resolved, ok = canonicalDBPath(conn)
 	}
@@ -274,8 +274,8 @@ func isNilConn(conn SQLiteConn) bool {
 // Gives a connection from any opener the untrack on close behaviour, refusing a missing connection that cannot carry it
 func retrofitTracking(conn SQLiteConn, resolved string) (*TrackedConn, error) {
 	if isNilConn(conn) {
-		return nil, &UntrackableConnectionError{Path: resolved, Factory: "NoneType",
-			Cause: &pyConvError{"TypeError", "__class__ assignment only supported for mutable types or ModuleType subclasses"}}
+		return nil, &UntrackableConnectionError{Path: resolved, Factory: "(none)",
+			Cause: &pyConvError{"TypeError", "the connection type cannot be wrapped for tracking"}}
 	}
 	if tracked, ok := conn.(*TrackedConn); ok {
 		return tracked, nil
@@ -311,10 +311,10 @@ func pragmaFirstValue(conn SQLiteConn, pragma string) (any, error) {
 		if err := rows.Err(); err != nil {
 			return nil, err
 		}
-		return nil, &pyConvError{"TypeError", "'NoneType' object is not subscriptable"}
+		return nil, &pyConvError{"TypeError", "the pragma returned no row"}
 	}
 	if len(cols) == 0 {
-		return nil, &pyConvError{"IndexError", "tuple index out of range"}
+		return nil, &pyConvError{"IndexError", "the pragma returned a row with no columns"}
 	}
 	vals := make([]any, len(cols))
 	ptrs := make([]any, len(cols))
@@ -327,7 +327,7 @@ func pragmaFirstValue(conn SQLiteConn, pragma string) (any, error) {
 	if b, ok := vals[0].([]byte); ok {
 		for _, c := range b {
 			if c >= 0x80 {
-				return nil, &pyConvError{"ValueError", "invalid literal for int() with base 10: " + pyBytesRepr(b)}
+				return nil, &pyConvError{"ValueError", "the pragma value " + pyBytesRepr(b) + " is not a whole number"}
 			}
 		}
 		return string(b), nil

@@ -171,7 +171,7 @@ func wsConnect(ctx context.Context, rawURL string, headers http.Header) (*websoc
 	if v, ok := os.LookupEnv("WEBSOCKETS_MAX_REDIRECTS"); ok {
 		n, err := strconv.Atoi(strings.TrimSpace(v))
 		if err != nil {
-			return nil, &ttsValueError{msg: fmt.Sprintf("invalid literal for int() with base 10: %s", pyrepr.Repr(v))}
+			return nil, &ttsValueError{msg: fmt.Sprintf("WEBSOCKETS_MAX_REDIRECTS is %s, which is not a whole number", v)}
 		}
 		maxRedirects = n
 	}

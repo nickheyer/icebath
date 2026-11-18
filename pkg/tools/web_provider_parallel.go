@@ -300,7 +300,7 @@ func parallelAttr(v any, class, field string, required bool) (any, error) {
 	}
 	val, present := d.Get(field)
 	if !present && required {
-		return nil, fmt.Errorf("'%s' object has no attribute '%s'", class, field)
+		return nil, fmt.Errorf("the %s reply has no %s field", class, field)
 	}
 	return val, nil
 }

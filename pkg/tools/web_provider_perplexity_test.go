@@ -118,7 +118,7 @@ func TestPerplexityErrors(t *testing.T) {
 	if res, _ := perplexityP().Search(context.Background(), env, "x", 5); res.Error != `{"error":"invalid key"}` {
 		t.Fatalf("%+v", res)
 	}
-	if _, err := normalizePerplexitySnippets(decodeAny(`{"results":[{"url":["x"]}]}`), nil); err == nil || err.Error() != "unhashable type: 'list'" {
+	if _, err := normalizePerplexitySnippets(decodeAny(`{"results":[{"url":["x"]}]}`), nil); err == nil || err.Error() != "a Perplexity result URL is a list, expected text" {
 		t.Fatalf("%v", err)
 	}
 }

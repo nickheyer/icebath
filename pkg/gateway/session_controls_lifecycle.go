@@ -148,7 +148,7 @@ func (c *AuthorityConnection) createSession(ctx context.Context, params *pyjson.
 				return nil, err
 			}
 			if receipt == nil {
-				return nil, &PyError{Kind: "TypeError", Msg: "'NoneType' object is not subscriptable"}
+				return nil, &PyError{Kind: "TypeError", Msg: "the created session row is missing"}
 			}
 			raw, err := receiptField(receipt, "policy")
 			if err != nil {

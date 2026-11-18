@@ -319,7 +319,7 @@ func transportClassName(t Transport) string {
 	case *responsesAPITransport:
 		return "ResponsesApiTransport"
 	case nil:
-		return "NoneType"
+		return "No transport"
 	}
 	return fmt.Sprintf("%T", t)
 }

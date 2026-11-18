@@ -134,10 +134,10 @@ func makedevArg(n *big.Int) (uint64, error) {
 		if n.IsInt64() && n.Int64() == -1 {
 			return math.MaxUint64, nil
 		}
-		return 0, &pyConvError{"OverflowError", "can't convert negative int to unsigned"}
+		return 0, &pyConvError{"OverflowError", "a device number cannot be negative"}
 	}
 	if !n.IsUint64() {
-		return 0, &pyConvError{"OverflowError", "int too big to convert"}
+		return 0, &pyConvError{"OverflowError", "a device number is too large"}
 	}
 	return n.Uint64(), nil
 }
@@ -154,7 +154,7 @@ func makedevParts(major, minor *big.Int) (uint32, uint32, error) {
 	}
 	for _, v := range []uint64{maj, mnr} {
 		if v > math.MaxUint32 && v != math.MaxUint64 {
-			return 0, 0, &pyConvError{"OverflowError", "Python int too large to convert to C unsigned int"}
+			return 0, 0, &pyConvError{"OverflowError", "a device number does not fit in 32 bits"}
 		}
 	}
 	return uint32(maj), uint32(mnr), nil

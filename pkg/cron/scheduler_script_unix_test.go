@@ -89,7 +89,7 @@ func TestConfiguredInterpreterKeepsDotDotAndReportsEveryRefusalAsPythonDoes(t *t
 	refusals := []struct{ interpreter, want string }{
 		{d + "//x/./../python3", "Interpreter is not executable: " + d + "/x/../python3"},
 		{" " + d + "/x/../python3  ", "Interpreter is not executable: " + d + "/x/../python3"},
-		{d + "/python3/python3", "Unable to resolve interpreter path " + pyrepr.StrRepr(d+"/python3/python3") + ": [Errno 20] Not a directory: " + pyrepr.StrRepr(d+"/python3/python3")},
+		{d + "/python3/python3", "Unable to resolve interpreter path " + pyrepr.StrRepr(d+"/python3/python3") + ": not a directory: " + d + "/python3/python3"},
 		{"~no_such_user_zz/python3", "Unable to resolve interpreter path '~no_such_user_zz/python3': Could not determine home directory."},
 		{d + "/nope/../python3", "Interpreter not found: " + d + "/nope/../python3"},
 		{"./~/x", "Interpreter not found: ./~/x"},

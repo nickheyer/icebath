@@ -50,7 +50,7 @@ func TestParseIntervalTooSmallIsRejected(t *testing.T) {
 }
 
 func TestParseIntervalRaisesKeyErrorForUnitsOnlyCaseFoldingMatches(t *testing.T) {
-	for text, key := range map[string]string{"10ſ": "'ſ'", "every 5 minuteſ": "'minuteſ'", "3 mın": "'mın'", "3 MİN": "'mi̇n'"} {
+	for text, key := range map[string]string{"10ſ": "unknown interval unit ſ", "every 5 minuteſ": "unknown interval unit minuteſ", "3 mın": "unknown interval unit mın", "3 MİN": "unknown interval unit mi̇n"} {
 		got, err := ParseHeartbeatInterval(text)
 		var raised *pyint.Error
 		if got != nil || !errors.As(err, &raised) || raised.Kind != "KeyError" || raised.Msg != key {
@@ -364,7 +364,7 @@ func TestViewerHeartbeatSetConvertsItsIntervalLikeTheManager(t *testing.T) {
 		t.Fatalf("text interval %v", text)
 	}
 	refused, _ := call("watch", "soon").GetOr("error", nil).(*pyjson.Object)
-	if refused == nil || refused.GetOr("type", nil) != "ValueError" || refused.GetOr("message", nil) != "invalid literal for int() with base 10: 'soon'" {
+	if refused == nil || refused.GetOr("type", nil) != "ValueError" || refused.GetOr("message", nil) != "heartbeat interval must be a whole number of seconds, got soon" {
 		t.Fatalf("refused %v", refused)
 	}
 }

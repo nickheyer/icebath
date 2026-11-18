@@ -8,7 +8,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/state"
 )
@@ -18,7 +18,7 @@ var pluginStorageNameRe = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$`
 // Plugin name the install command accepts, a ValueError for separators, traversal or overlong names
 func validateStorageName(name string) (string, error) {
 	if !pluginStorageNameRe.MatchString(name) || strings.Contains(name, "..") {
-		return "", &HostBuiltinError{Type: "ValueError", Message: fmt.Sprintf("invalid plugin name for storage: %s", config.PyRepr(name))}
+		return "", &HostBuiltinError{Type: "ValueError", Message: fmt.Sprintf("invalid plugin name for storage: %s", errchain.Show(name))}
 	}
 	return name, nil
 }
@@ -40,7 +40,7 @@ func PluginStorageDir(ctx context.Context, name string) (string, error) {
 // Opens a database inside the plugin data directory with the shared journal mode verdict and foreign keys on
 func PluginDB(ctx context.Context, name, filename string) (state.SQLiteConn, error) {
 	if purePathName(filename) != filename || filename == "" {
-		return nil, &HostBuiltinError{Type: "ValueError", Message: fmt.Sprintf("invalid plugin db filename: %s", config.PyRepr(filename))}
+		return nil, &HostBuiltinError{Type: "ValueError", Message: fmt.Sprintf("invalid plugin db filename: %s", errchain.Show(filename))}
 	}
 	dir, err := PluginStorageDir(ctx, name)
 	if err != nil {
@@ -62,7 +62,7 @@ func sdkPluginDBPrepare(ctx context.Context, h *PluginHost, args []any, kwargs m
 		opts = append(opts, state.WithWAL(false))
 	}
 	if purePathName(filename) != filename || filename == "" {
-		return nil, &HostBuiltinError{Type: "ValueError", Message: fmt.Sprintf("invalid plugin db filename: %s", config.PyRepr(filename))}
+		return nil, &HostBuiltinError{Type: "ValueError", Message: fmt.Sprintf("invalid plugin db filename: %s", errchain.Show(filename))}
 	}
 	dir, err := PluginStorageDir(ctx, name)
 	if err != nil {

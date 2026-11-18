@@ -11,6 +11,7 @@ import (
 	xterm "github.com/charmbracelet/x/term"
 
 	"github.com/nickheyer/icebath/pkg/cliui"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
@@ -18,7 +19,7 @@ import (
 )
 
 var (
-	toggleStdinTTY        = func() bool { return xterm.IsTerminal(os.Stdin.Fd()) }
+	toggleStdinTTY         = func() bool { return xterm.IsTerminal(os.Stdin.Fd()) }
 	toggleUI               = cliui.Default
 	toggleContextEngines   = DiscoverContextEngines
 	toggleProviderCategory = providerCategories
@@ -282,10 +283,10 @@ func persistPluginSelection(ctx context.Context, keys []string, chosen, initial 
 	}
 	shownOn, shownOff := "none", "none"
 	if len(on) > 0 {
-		shownOn = pyListRepr(on)
+		shownOn = errchain.Show(on)
 	}
 	if len(off) > 0 {
-		shownOff = pyListRepr(off)
+		shownOff = errchain.Show(off)
 	}
 	pkgLog().Info(fmt.Sprintf("plugins picker: enabled %s; disabled %s", shownOn, shownOff))
 	return on, off, nil

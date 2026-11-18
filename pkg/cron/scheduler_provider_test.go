@@ -676,7 +676,7 @@ func TestMultiplexTickerIsolatesProfileFailures(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(healthy, "cron", "ticker_last_success")); err != nil {
 		t.Fatal("healthy profile missing its success marker")
 	}
-	if msg, ok := openCronStore(failing, nil).TickerLastError(); !ok || msg != "RuntimeError: profile-local failure" {
+	if msg, ok := openCronStore(failing, nil).TickerLastError(); !ok || msg != "profile-local failure" {
 		t.Fatalf("failing error %q %v", msg, ok)
 	}
 	if msg, ok := openCronStore(healthy, nil).TickerLastError(); ok {

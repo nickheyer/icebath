@@ -22,6 +22,7 @@ import (
 
 	"github.com/dlclark/regexp2/v2"
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyipaddress"
 	"github.com/nickheyer/icebath/pkg/internal/pymimetypes"
@@ -551,7 +552,7 @@ func restProvider(filePath, providerName, label string, post func() (*pyrequests
 		}
 		body, ok := decoded.(map[string]any)
 		if !ok {
-			return nil, &sttValueError{msg: fmt.Sprintf("'%s' object has no attribute 'get'", pyrepr.TypeName(decoded))}
+			return nil, &sttValueError{msg: fmt.Sprintf("%s transcription reply is %s where a mapping was expected", label, errchain.Kind(decoded))}
 		}
 		text, err := extractText(body)
 		if err != nil {
@@ -701,7 +702,7 @@ func transcribeXAI(ctx context.Context, filePath, modelName string, h sttHints) 
 		}
 		s, ok := v.(string)
 		if !ok {
-			return "", &sttValueError{msg: fmt.Sprintf("'%s' object has no attribute 'strip'", pyrepr.TypeName(v))}
+			return "", &sttValueError{msg: fmt.Sprintf("xAI transcription text is %s where text was expected", errchain.Kind(v))}
 		}
 		return pystr.Strip(s), nil
 	}

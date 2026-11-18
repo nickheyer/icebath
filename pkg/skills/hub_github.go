@@ -13,6 +13,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gitcred"
 	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
@@ -235,7 +236,7 @@ func (a *GitHubAuth) mintAppToken(appID, keyPath, installationID string) (string
 		return "", err
 	}
 	if !utf8.Valid(raw) {
-		return "", fmt.Errorf("'utf-8' codec can't decode the private key file %s", keyPath)
+		return "", fmt.Errorf("private key file %s is not valid UTF-8", keyPath)
 	}
 	key := strings.TrimPrefix(string(raw), "\xEF\xBB\xBF")
 	now := int64(a.now())
@@ -266,7 +267,7 @@ func (a *GitHubAuth) mintAppToken(appID, keyPath, installationID string) (string
 	}
 	o, ok := data.(*pyjson.Object)
 	if !ok {
-		return "", fmt.Errorf("'%s' object has no attribute 'get'", pyrepr.TypeName(data))
+		return "", fmt.Errorf("GitHub token reply is %s where a mapping was expected", errchain.Kind(data))
 	}
 	tok, _ := o.Get("token")
 	if !pyrepr.Truthy(tok) {
@@ -332,7 +333,7 @@ func pyIterate(v any) []any {
 		}
 		return out
 	}
-	hubRaise(fmt.Errorf("'%s' object is not iterable", pyrepr.TypeName(v)))
+	hubRaise(fmt.Errorf("expected a list, got %s", errchain.Kind(v)))
 	return nil
 }
 
@@ -343,7 +344,7 @@ func treeMembers(entries any, prefix string) []treeMember {
 		itemPath := pyGet(item, "path", "")
 		s, ok := itemPath.(string)
 		if !ok {
-			hubRaise(fmt.Errorf("'%s' object has no attribute 'startswith'", pyrepr.TypeName(itemPath)))
+			hubRaise(fmt.Errorf("GitHub tree entry path is %s where text was expected", errchain.Kind(itemPath)))
 		}
 		if strings.HasPrefix(s, prefix) {
 			out = append(out, treeMember{s[len(prefix):], s, pyGet(item, "type", nil) == "blob" && pyGet(item, "mode", nil) != "120000"})
@@ -377,7 +378,7 @@ func tapsFromList(list []any) []GitHubTap {
 	for _, t := range list {
 		o, ok := t.(*pyjson.Object)
 		if !ok {
-			hubRaise(fmt.Errorf("'%s' object is not subscriptable", pyrepr.TypeName(t)))
+			hubRaise(fmt.Errorf("skills tap is %s where a mapping was expected", errchain.Kind(t)))
 		}
 		repo, found := o.Get("repo")
 		if !found {
@@ -712,7 +713,7 @@ func (g *GitHubSource) listSkillsInRepo(ctx context.Context, repo, path, bucket 
 		}
 		dirName, isStr := nameV.(string)
 		if !isStr {
-			hubRaise(fmt.Errorf("'%s' object has no attribute 'startswith'", pyrepr.TypeName(nameV)))
+			hubRaise(fmt.Errorf("GitHub entry name is %s where text was expected", errchain.Kind(nameV)))
 		}
 		if strings.HasPrefix(dirName, ".") || strings.HasPrefix(dirName, "_") {
 			continue

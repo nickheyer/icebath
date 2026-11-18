@@ -50,7 +50,7 @@ func loadCronJobsDocFile(path string) (any, error) {
 	}
 	raw = bytes.TrimPrefix(raw, []byte("\xef\xbb\xbf"))
 	if !utf8.Valid(raw) {
-		return nil, fmt.Errorf("'utf-8' codec can't decode jobs document %s", path)
+		return nil, fmt.Errorf("jobs document %s is not valid UTF-8", path)
 	}
 	data, err := pyjson.LoadsBytes(raw)
 	if err != nil {

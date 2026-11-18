@@ -10,6 +10,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/dlclark/regexp2/v2"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
@@ -130,7 +131,7 @@ func lintFrontmatter(fm map[string]any, skillDir string) []LintFinding {
 		}
 	}
 	if len(hits) > 0 {
-		out = append(out, LintFinding{LintWarning, "description-marketing", fmt.Sprintf("description contains marketing words %s; state the capability, not adjectives.", pyrepr.Repr(hits))})
+		out = append(out, LintFinding{LintWarning, "description-marketing", fmt.Sprintf("description contains marketing words %s; state the capability, not adjectives.", errchain.Show(hits))})
 	}
 	for _, key := range []string{"version", "author", "license"} {
 		if _, ok := fm[key]; !ok {
@@ -174,7 +175,7 @@ func lintFrontmatter(fm map[string]any, skillDir string) []LintFinding {
 			}
 		}
 		if len(bad) > 0 {
-			out = append(out, LintFinding{LintWarning, "platforms-value", fmt.Sprintf("platforms contains unrecognized value(s) %s; expected a subset of ['darwin', 'linux', 'macos', 'windows'].", pyrepr.Repr(bad))})
+			out = append(out, LintFinding{LintWarning, "platforms-value", fmt.Sprintf("platforms contains unrecognized value(s) %s; expected a subset of darwin, linux, macos, windows.", errchain.Show(bad))})
 		}
 	}
 	return out
@@ -276,7 +277,7 @@ func lintFiles(fm map[string]any, skillDir string) []LintFinding {
 	if len(order) > 0 {
 		parts := make([]string, 0, len(order))
 		for _, k := range order {
-			parts = append(parts, k+": "+pyrepr.Repr(offenders[k]))
+			parts = append(parts, k+": "+errchain.Show(offenders[k]))
 		}
 		out = append(out, LintFinding{LintWarning, "platforms-gating", fmt.Sprintf("scripts use POSIX-only primitives (%s) but no 'platforms:' frontmatter is declared. Fix cross-platform or gate with platforms: [linux, macos].", strings.Join(parts, "; "))})
 	}

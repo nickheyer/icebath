@@ -16,6 +16,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pydeadline"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -137,7 +138,7 @@ func IterConfiguredOutboundWebhooks(ctx context.Context, cfg any) ([]*OutboundWe
 	}
 	list, ok := raw.([]any)
 	if !ok {
-		pkgLog().Warn(fmt.Sprintf("hooks.outbound must be a list of webhook targets; got %s", pyrepr.TypeName(raw)))
+		pkgLog().Warn(fmt.Sprintf("hooks.outbound must be a list of webhook targets; got %s", errchain.Kind(raw)))
 		return nil, nil
 	}
 	var out []*OutboundWebhookTarget
@@ -203,7 +204,7 @@ func parseOutboundWebhookTarget(ctx context.Context, index int, raw any) (*Outbo
 	}
 	entry, ok := raw.(map[string]any)
 	if !ok {
-		warn(" must be a mapping with 'url' and 'events' keys; got %s", pyrepr.TypeName(raw))
+		warn(" must be a mapping with 'url' and 'events' keys; got %s", errchain.Kind(raw))
 		return nil, nil
 	}
 	url, isStr := entry["url"].(string)
@@ -214,7 +215,7 @@ func parseOutboundWebhookTarget(ctx context.Context, index int, raw any) (*Outbo
 	url = strings.TrimSpace(url)
 	lower := strings.ToLower(url)
 	if !strings.HasPrefix(lower, "http://") && !strings.HasPrefix(lower, "https://") {
-		warn(".url must be http(s); got %s — skipped", pyrepr.Repr(url))
+		warn(".url must be http(s); got %s — skipped", errchain.Show(url))
 		return nil, nil
 	}
 	if strings.HasPrefix(lower, "http://") {
@@ -235,7 +236,7 @@ func parseOutboundWebhookTarget(ctx context.Context, index int, raw any) (*Outbo
 	}
 	for _, ev := range eventsRaw {
 		if name, ok := ev.(string); !ok || !validHooks[name] {
-			warn(": unknown event %s ignored (valid: %s)", pyrepr.Repr(ev), validList)
+			warn(": unknown event %s ignored (valid: %s)", errchain.Show(ev), validList)
 		}
 	}
 	if len(events) == 0 {
@@ -258,7 +259,7 @@ func parseOutboundWebhookTarget(ctx context.Context, index int, raw any) (*Outbo
 			}
 		}
 		if !toolScoped {
-			warn(".matcher=%s will be ignored — matcher is only honored for pre_tool_call / post_tool_call.", pyrepr.Repr(matcher))
+			warn(".matcher=%s will be ignored — matcher is only honored for pre_tool_call / post_tool_call.", errchain.Show(matcher))
 			matcher = ""
 		}
 	}
@@ -267,7 +268,7 @@ func parseOutboundWebhookTarget(ctx context.Context, index int, raw any) (*Outbo
 		if n, ok := pyIntOf(rawTimeout); ok {
 			timeout = n
 		} else {
-			warn(".timeout must be an int (got %s); using default %ds", pyrepr.Repr(rawTimeout), OutboundWebhookDefaultTimeoutSeconds)
+			warn(".timeout must be an int (got %s); using default %ds", errchain.Show(rawTimeout), OutboundWebhookDefaultTimeoutSeconds)
 		}
 	}
 	name := ""
@@ -283,7 +284,7 @@ func parseOutboundWebhookTarget(ctx context.Context, index int, raw any) (*Outbo
 		}
 		secret = value
 		if secret == "" {
-			warn(".secret_env=%s is not set in the environment — deliveries will be UNSIGNED", pyrepr.Repr(secretEnv))
+			warn(".secret_env=%s is not set in the environment — deliveries will be UNSIGNED", errchain.Show(secretEnv))
 		}
 	} else if s, ok := entry["secret"].(string); ok {
 		secret = s

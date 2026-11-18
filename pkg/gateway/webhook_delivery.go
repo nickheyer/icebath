@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pybase64"
 	"github.com/nickheyer/icebath/pkg/internal/pycopy"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
@@ -34,12 +35,12 @@ type webhookDeliveryAdapter interface {
 	WebhookDeliveryConfig(ctx context.Context, profile *string) (*GatewayConfig, error)
 }
 
-// Webhook delivery surface of an adapter, the AttributeError a Python call on any other adapter raises
+// Webhook delivery surface of an adapter, a refusal naming the missing capability for any other adapter
 func webhookAdapterOf(adapter PlatformAdapter, attribute string) (webhookDeliveryAdapter, error) {
 	if hook, ok := adapter.(webhookDeliveryAdapter); ok {
 		return hook, nil
 	}
-	return nil, &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("'%T' object has no attribute '%s'", adapter, attribute)}
+	return nil, &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("the platform adapter (%T) has no webhook delivery for %s", adapter, attribute)}
 }
 
 // True for a built in delivery platform or one a plugin registered
@@ -77,7 +78,7 @@ func webhookRouteFromChatID(chatID string) (string, error) {
 	}
 	pieces := strings.SplitN(chatID, ":", 3)
 	if len(pieces) < 2 {
-		return "", &PyError{Kind: "IndexError", Msg: "list index out of range"}
+		return "", &PyError{Kind: "IndexError", Msg: "the webhook chat id " + chatID + " has no route part"}
 	}
 	return pieces[1], nil
 }
@@ -97,7 +98,7 @@ func webhookUnpackThree(decoded any) ([]any, error) {
 			items = append(items, string(r))
 		}
 	default:
-		return nil, &PyError{Kind: "TypeError", Msg: "cannot unpack non-iterable " + jsonValueTypeName(decoded) + " object"}
+		return nil, &PyError{Kind: "TypeError", Msg: "the retained webhook route is " + errchain.Kind(decoded) + ", expected a pair"}
 	}
 	if len(items) < 3 {
 		return nil, &PyError{Kind: "ValueError", Msg: fmt.Sprintf("not enough values to unpack (expected 3, got %d)", len(items))}

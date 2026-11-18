@@ -8,10 +8,10 @@ import (
 )
 
 // Owner rows of turns lost in a gateway restart
-func (a *app) lostRows() []map[string]any {
-	rows := []map[string]any{}
+func (a *app) lostRows() []pendingRow {
+	rows := []pendingRow{}
 	for _, row := range a.queue.serverRows() {
-		if row["status"] == "unknown" {
+		if row.Status == "unknown" {
 			rows = append(rows, row)
 		}
 	}
@@ -24,7 +24,7 @@ func (a *app) recoveryCommands() []slashCommand {
 		{name: "discard", help: "drop a turn lost in a gateway restart without running it again", usage: "<admission_id>", suggest: func(string) []string {
 			ids := []string{}
 			for _, row := range a.lostRows() {
-				ids = append(ids, jsValueString(row["admission_id"]))
+				ids = append(ids, row.AdmissionID)
 			}
 			return ids
 		}, run: func(r *slashRun) tea.Cmd {
@@ -37,10 +37,10 @@ func (a *app) recoveryCommands() []slashCommand {
 				r.sys("/discard: no gateway session is open")
 				return nil
 			}
-			var lost map[string]any
+			var lost *pendingRow
 			for _, row := range a.lostRows() {
-				if jsValueString(row["admission_id"]) == id {
-					lost = row
+				if row.AdmissionID == id {
+					lost = &row
 					break
 				}
 			}
@@ -58,7 +58,7 @@ func (a *app) recoveryCommands() []slashCommand {
 				}
 				left := 0
 				for _, row := range a.lostRows() {
-					if jsValueString(row["admission_id"]) != id {
+					if row.AdmissionID != id {
 						left++
 					}
 				}

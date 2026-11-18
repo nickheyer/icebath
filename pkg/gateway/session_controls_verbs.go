@@ -9,6 +9,7 @@ import (
 	"slices"
 	"sort"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -196,7 +197,7 @@ func (c *AuthorityConnection) cancel(ctx context.Context, ref SessionRef, params
 			return nil, err
 		}
 		if row == nil {
-			return nil, &PyError{Kind: "TypeError", Msg: "'NoneType' object is not subscriptable"}
+			return nil, &PyError{Kind: "TypeError", Msg: "the session to cancel is missing"}
 		}
 		if status, _ := row.GetOr("status", nil).(string); status == "started" {
 			var generation any
@@ -365,7 +366,7 @@ func (c *AuthorityConnection) listSessions(ctx context.Context, ref SessionRef, 
 	scope := params.GetOr("scope", "live")
 	switch scope.(type) {
 	case *pyjson.Object, []any:
-		return nil, &PyError{Kind: "TypeError", Msg: "unhashable type: '" + pyTypeName(scope) + "'"}
+		return nil, &PyError{Kind: "TypeError", Msg: "the session list scope is " + errchain.Kind(scope) + ", expected text"}
 	}
 	_, hasTitle := params.Get("title")
 	_, hasScope := params.Get("scope")

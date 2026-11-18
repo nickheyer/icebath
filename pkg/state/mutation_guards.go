@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"sort"
+
+	"github.com/nickheyer/icebath/pkg/errchain"
 )
 
 // True for a live turn lease or compression lock refusal, the retryable busy verdict of a running admission
@@ -150,12 +152,12 @@ func DeleteTargets(ctx context.Context, conn SQLiteConn, sessionID string) ([]st
 		}
 		items, isList := lineage.([]any)
 		if !isList {
-			return nil, &stateTypedError{"TypeError", "'" + pyTypeName(lineage) + "' object is not iterable"}
+			return nil, &stateTypedError{"TypeError", "the receipt lineage is " + errchain.Kind(lineage) + ", expected a list"}
 		}
 		for _, item := range items {
 			sid, isStr := item.(string)
 			if !isStr {
-				return nil, &stateTypedError{"TypeError", "'<' not supported between instances of '" + pyTypeName(item) + "' and 'str'"}
+				return nil, &stateTypedError{"TypeError", "a receipt lineage entry is " + errchain.Kind(item) + ", expected a session id"}
 			}
 			targets[sid] = true
 		}

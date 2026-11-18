@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"runtime"
+	"sort"
 
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
@@ -56,4 +57,14 @@ func samePath(a, b string) bool {
 		return pystr.Lower(a) == pystr.Lower(b)
 	}
 	return a == b
+}
+
+// Sorts sibling names the way Python sorts their paths, by code point and lowercased on Windows
+func sortPathNames(names []string) {
+	sort.SliceStable(names, func(i, j int) bool {
+		if runtime.GOOS == "windows" {
+			return pystr.Lower(names[i]) < pystr.Lower(names[j])
+		}
+		return tarNameLess(names[i], names[j])
+	})
 }

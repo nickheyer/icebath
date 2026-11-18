@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pydict"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -52,7 +53,7 @@ func servedProfile(a *SessionAuthority) (string, bool) {
 func localAdapterMap(ctx context.Context, a *SessionAuthority) (*pydict.Dict[Platform, PlatformAdapter], error) {
 	runner, ok := a.Runner.(adapterMapRunner)
 	if !ok {
-		return nil, &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("'%T' object has no attribute 'adapters'", a.Runner)}
+		return nil, &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("the gateway runner (%T) keeps no platform adapters", a.Runner)}
 	}
 	if name, served := servedProfile(a); served {
 		return runner.ProfileAdapterMap(name), nil
@@ -275,7 +276,7 @@ func checkedEntry(ctx context.Context, a *SessionAuthority, receipt *pyjson.Obje
 	}
 	entryDict, ok := rawEntry.(*pyjson.Object)
 	if !ok {
-		return nil, failedAt(&PyError{Kind: "TypeError", Msg: "'" + jsonValueTypeName(rawEntry) + "' object is not subscriptable"})
+		return nil, failedAt(&PyError{Kind: "TypeError", Msg: "a local session receipt entry is " + errchain.Kind(rawEntry) + ", expected a mapping"})
 	}
 	entry, err := SessionEntryFromDict(ctx, entryDict)
 	if err != nil {
@@ -287,10 +288,10 @@ func checkedEntry(ctx context.Context, a *SessionAuthority, receipt *pyjson.Obje
 	}
 	origin, ok := rawOrigin.(*pyjson.Object)
 	if !ok {
-		return nil, failedAt(&PyError{Kind: "TypeError", Msg: "argument of type '" + jsonValueTypeName(rawOrigin) + "' is not iterable"})
+		return nil, failedAt(&PyError{Kind: "TypeError", Msg: "a local session origin is " + errchain.Kind(rawOrigin) + ", expected a mapping"})
 	}
 	if entry.Origin == nil {
-		return nil, failedAt(&PyError{Kind: "AttributeError", Msg: "'NoneType' object has no attribute 'profile'"})
+		return nil, failedAt(&PyError{Kind: "AttributeError", Msg: "a local session entry has no origin"})
 	}
 	if _, has := origin.Get("profile"); !has {
 		entry.Origin.Profile = source.Profile
@@ -576,7 +577,7 @@ func receiptEntryTarget(ctx context.Context, db *state.SessionDB, sid string) (s
 	}
 	entry, ok := rawEntry.(*pyjson.Object)
 	if !ok {
-		return "", &PyError{Kind: "TypeError", Msg: "'" + jsonValueTypeName(rawEntry) + "' object is not subscriptable"}
+		return "", &PyError{Kind: "TypeError", Msg: "a local session receipt entry is " + errchain.Kind(rawEntry) + ", expected a mapping"}
 	}
 	target, err := receiptField(entry, "session_id")
 	if err != nil {

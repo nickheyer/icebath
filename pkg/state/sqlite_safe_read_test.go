@@ -520,7 +520,7 @@ func TestOpenerReturningNoConnectionIsRefused(t *testing.T) {
 	for _, opener := range []TrackedOption{none, typedNone} {
 		_, err := ConnectTracked(db, opener, WithTrackingPath(db))
 		var untrackable *UntrackableConnectionError
-		want := "connection to " + liveKey(db) + " uses factory NoneType, which cannot release its tracking entry on close; " +
+		want := "connection to " + liveKey(db) + " uses factory (none), which cannot release its tracking entry on close; " +
 			"byte-probe safety for this database would be silently lost"
 		var cause *pyConvError
 		if !errors.As(err, &untrackable) || err.Error() != want || !errors.As(err, &cause) || cause.Class != "TypeError" {

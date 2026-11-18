@@ -10,6 +10,7 @@ import (
 	"unicode"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -118,17 +119,6 @@ func splitVersionSuffix(rest string) ([]float64, string) {
 	return nums, string(rs[pos:])
 }
 
-// Python name of a sort key element type
-func sortKeyTypeName(v any) string {
-	switch v.(type) {
-	case string:
-		return "str"
-	case int:
-		return "int"
-	}
-	return "float"
-}
-
 // Numeric value of a number element
 func keyNumber(v any) (float64, bool) {
 	switch n := v.(type) {
@@ -157,7 +147,7 @@ func pyTupleLess(a, b []any) (bool, error) {
 				return an < bn, nil
 			}
 		default:
-			return false, fmt.Errorf("'<' not supported between instances of '%s' and '%s'", sortKeyTypeName(a[i]), sortKeyTypeName(b[i]))
+			return false, fmt.Errorf("cannot order %s against %s", errchain.Kind(a[i]), errchain.Kind(b[i]))
 		}
 	}
 	return len(a) < len(b), nil

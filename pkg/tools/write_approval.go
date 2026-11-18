@@ -16,6 +16,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
@@ -195,31 +196,9 @@ func readPendingRecord(p string) (map[string]any, error) {
 	}
 	record, ok := value.(map[string]any)
 	if !ok {
-		return nil, fmt.Errorf("expected a JSON object, got %s", pyJSONTypeNameOf(value))
+		return nil, fmt.Errorf("expected a JSON object, got %s", errchain.Kind(value))
 	}
 	return record, nil
-}
-
-// Python type name of a decoded JSON value, integral numbers reading as int like json.loads
-func pyJSONTypeNameOf(v any) string {
-	switch x := v.(type) {
-	case nil:
-		return "NoneType"
-	case bool:
-		return "bool"
-	case float64:
-		if x == float64(int64(x)) {
-			return "int"
-		}
-		return "float"
-	case int, int64:
-		return "int"
-	case string:
-		return "str"
-	case []any:
-		return "list"
-	}
-	return "dict"
 }
 
 // Every readable pending record of the subsystem, oldest first

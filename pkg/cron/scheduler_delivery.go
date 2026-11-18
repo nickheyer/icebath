@@ -207,10 +207,10 @@ func resultTruthy(v any) bool {
 	return true
 }
 
-// Class name of a send result the way type(x).__name__ prints it
+// Go type name of a send result, a fixed phrase for no result
 func resultTypeName(v any) string {
 	if v == nil {
-		return "NoneType"
+		return "no result"
 	}
 	t := reflect.TypeOf(v)
 	for t.Kind() == reflect.Pointer {
@@ -548,25 +548,25 @@ func (s *Store) sendMediaViaAdapter(ctx context.Context, adapter any, chatID str
 			case gateway.ShouldSendMediaAsAudio(route, ext, isVoice):
 				sender, ok := adapter.(voiceSender)
 				if !ok {
-					return attributeError(adapter, "send_voice")
+					return attributeError(adapter, "voice messages")
 				}
 				call = func(ctx context.Context) (any, error) { return sender.SendVoice(ctx, chatID, path, metadata, isVoice) }
 			case videoExts[ext]:
 				sender, ok := adapter.(videoSender)
 				if !ok {
-					return attributeError(adapter, "send_video")
+					return attributeError(adapter, "videos")
 				}
 				call = func(ctx context.Context) (any, error) { return sender.SendVideo(ctx, chatID, path, metadata) }
 			case imageExts[ext]:
 				sender, ok := adapter.(imageFileSender)
 				if !ok {
-					return attributeError(adapter, "send_image_file")
+					return attributeError(adapter, "image files")
 				}
 				call = func(ctx context.Context) (any, error) { return sender.SendImageFile(ctx, chatID, path, metadata) }
 			default:
 				sender, ok := adapter.(documentSender)
 				if !ok {
-					return attributeError(adapter, "send_document")
+					return attributeError(adapter, "documents")
 				}
 				call = func(ctx context.Context) (any, error) { return sender.SendDocument(ctx, chatID, path, metadata) }
 			}
@@ -598,7 +598,10 @@ func (s *Store) sendMediaViaAdapter(ctx context.Context, adapter any, chatID str
 		if err != nil {
 			text := err.Error()
 			if text == "" {
-				text = pyExceptionName(err)
+				text = "no reason given"
+				if errors.Is(err, errFutureTimeout) {
+					text = "timed out"
+				}
 			}
 			noteTargetError(s, jobRef, fmt.Sprintf("failed to send media %s: %s", path, text), &errs)
 		}
@@ -608,20 +611,9 @@ func (s *Store) sendMediaViaAdapter(ctx context.Context, adapter any, chatID str
 
 var errLoopUnavailable = errors.New("gateway loop unavailable")
 
-// Python exception class name of an error, TimeoutError for the future timeout
-func pyExceptionName(err error) string {
-	if errors.Is(err, errFutureTimeout) {
-		return "TimeoutError"
-	}
-	var named interface{ PyTypeName() string }
-	if errors.As(err, &named) {
-		return named.PyTypeName()
-	}
-	return "Exception"
-}
-
-func attributeError(obj any, attr string) error {
-	return &pyAttributeError{msg: fmt.Sprintf("'%s' object has no attribute '%s'", resultTypeName(obj), attr)}
+// Refusal of a platform adapter that cannot send one kind of media
+func attributeError(obj any, media string) error {
+	return &pyAttributeError{msg: fmt.Sprintf("the %s platform adapter cannot send %s", resultTypeName(obj), media)}
 }
 
 type pyAttributeError struct{ msg string }

@@ -1,3 +1,5 @@
+//go:build !icebath_core && !icebath_noextras
+
 package selfupdate
 
 import (
@@ -6,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
+	"reflect"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/config"
@@ -13,6 +16,17 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/pm"
 )
+
+// Adds the Optional Python Features section of the package manager before the profiles check
+func init() {
+	for i, entry := range doctorChecks {
+		if reflect.ValueOf(entry.Check).Pointer() == reflect.ValueOf(doctorCheckFunc(checkProfiles)).Pointer() {
+			doctorChecks = append(doctorChecks[:i:i], append([]doctorCheckEntry{{"Optional Python Features", checkPythonExtras}}, doctorChecks[i:]...)...)
+			return
+		}
+	}
+	panic("doctor walk has no profiles check to place the Python features section before")
+}
 
 // One switched on feature of the user's config and the extra it runs on
 type extraDemand struct {

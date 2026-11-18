@@ -15,7 +15,6 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/cron"
 	"github.com/nickheyer/icebath/pkg/gatewayrun"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyfs"
@@ -50,8 +49,6 @@ var (
 	doctorCollectStateDBStats               = state.CollectStateDBStats
 	doctorCountDBHolders                    = state.CountDBHolders
 	doctorDeletedSidecarHolders             = state.IterDeletedSQLiteSidecarHolders
-	doctorCronProbeReport                   = cron.ProbeReport
-	doctorCronFreeBytes                     = cron.FreeBytes
 	doctorDuplicateCredentialFindings       = gatewayrun.DuplicateCredentialFindings
 	doctorListProfiles                      = func(ctx context.Context) ([]manage.ProfileInfo, error) { return manage.ListProfiles(ctx, false) }
 	doctorLoadMemoryProvider                = memory.LoadMemoryProvider
@@ -776,9 +773,19 @@ func checkStateDB(ctx context.Context, d *Doctor, shouldFix bool) (*Finding, err
 	})
 }
 
+// Cron store probes, set by the cron tier and nil in a build without it
+var (
+	doctorCronProbeReport  func(dir string) map[string]any
+	doctorCronFreeBytes    func(dir string) (uint64, bool)
+	doctorCronLowFreeBytes uint64
+)
+
 // Reports whether the cron store accepts writes and its filesystem has room left
 func checkCronStore(ctx context.Context, d *Doctor, shouldFix bool) (*Finding, error) {
 	return doctorCheck(func(f *Finding) error {
+		if doctorCronProbeReport == nil {
+			return nil
+		}
 		cronDir := filepath.Join(d.Home, "cron")
 		if report := doctorCronProbeReport(cronDir); report != nil {
 			doctorCheckWarn(d.W, d.DisplayHome+"/cron/ is NOT writable ("+pyrepr.Str(report["error"])+") — scheduled cron jobs are being skipped", "")
@@ -786,7 +793,7 @@ func checkCronStore(ctx context.Context, d *Doctor, shouldFix bool) (*Finding, e
 			return nil
 		}
 		if info, err := os.Stat(cronDir); err == nil && info.IsDir() {
-			if free, ok := doctorCronFreeBytes(cronDir); ok && free < cron.LowFreeBytes {
+			if free, ok := doctorCronFreeBytes(cronDir); ok && free < doctorCronLowFreeBytes {
 				doctorCheckWarn(d.W, d.DisplayHome+"/cron/ filesystem has only "+doctorHumanBytes(free)+" free — cron jobs stop when it fills", "")
 				f.Issues = append(f.Issues, "Free disk space on the filesystem holding "+cronDir)
 				return nil

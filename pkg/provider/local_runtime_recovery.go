@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -294,11 +295,11 @@ func ownerIsDead(state map[string]any) bool {
 	return lrNumGreater(ownerCreated, created)
 }
 
-// Python AttributeError urlsplit raises for a truthy base_url that is not a string
-type lrAttributeError struct{ typeName string }
+// Refusal of a truthy recorded base_url that is not text
+type lrAttributeError struct{ kind string }
 
 func (e *lrAttributeError) Error() string {
-	return fmt.Sprintf("'%s' object has no attribute 'decode'", e.typeName)
+	return fmt.Sprintf("the recorded base_url is %s, expected text", e.kind)
 }
 
 // Legacy record matched to the managed binary and its exact launch arguments, err where Python propagates
@@ -348,7 +349,7 @@ func legacyRecordedProcess(state map[string]any) (localRuntimeProc, error) {
 	baseURL, isStr := rawURL.(string)
 	if !isStr {
 		if pyTruthy(rawURL) {
-			return nil, &lrAttributeError{typeName: lrPyTypeName(rawURL)}
+			return nil, &lrAttributeError{kind: errchain.Kind(rawURL)}
 		}
 		return nil, nil
 	}
@@ -401,23 +402,6 @@ func legacyRecordedProcess(state map[string]any) (localRuntimeProc, error) {
 		return nil, nil
 	}
 	return proc, nil
-}
-
-// Python type name used in the AttributeError text of a decoded JSON value
-func lrPyTypeName(v any) string {
-	switch v.(type) {
-	case bool:
-		return "bool"
-	case int, json.Number:
-		return "int"
-	case float64:
-		return "float"
-	case []any:
-		return "list"
-	case map[string]any:
-		return "dict"
-	}
-	return "NoneType"
 }
 
 // Pathlib comparison key of a path, separators and dot parts collapsed and case folded on Windows

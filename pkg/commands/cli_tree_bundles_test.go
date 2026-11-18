@@ -95,7 +95,7 @@ func TestCLIBundlesDispatchesEverySubcommand(t *testing.T) {
 	if code, out := runBundlesMain(t, dir, []string{"bundles", "delete", "deep-dive"}, nil); code != 0 || out != "Deleted bundle: "+filepath.Join(bundles, "deep-dive.yaml")+"\n" {
 		t.Fatalf("%d %q", code, out)
 	}
-	if code, out := runBundlesMain(t, dir, []string{"bundles", "show", "deep-dive"}, nil); code != 1 || out != "Bundle 'deep-dive' not found.\n" {
+	if code, out := runBundlesMain(t, dir, []string{"bundles", "show", "deep-dive"}, nil); code != 1 || out != "Bundle deep-dive not found.\n" {
 		t.Fatalf("%d %q", code, out)
 	}
 	if code, out := runBundlesMain(t, dir, []string{"bundles", "delete", "deep-dive"}, nil); code != 1 || out != "No bundle at "+filepath.Join(bundles, "deep-dive.yaml")+"\n" {

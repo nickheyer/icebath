@@ -11,6 +11,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -107,7 +108,7 @@ func insightsFunctions(raw any) []any {
 func insightsAttrGet(fn any, key string) (any, error) {
 	obj, ok := fn.(*pyjson.Object)
 	if !ok {
-		return nil, fmt.Errorf("'%s' object has no attribute 'get'", pyrepr.TypeName(fn))
+		return nil, fmt.Errorf("tool call function is %s where a mapping was expected", errchain.Kind(fn))
 	}
 	v, _ := obj.Get(key)
 	return v, nil
@@ -518,7 +519,7 @@ func (e *InsightsEngine) getSkillUsage(ctx context.Context, cutoff float64, sour
 			}
 			switch toolName.(type) {
 			case []any, *pyjson.Object:
-				return nil, fmt.Errorf("unhashable type: '%s'", pyrepr.TypeName(toolName))
+				return nil, fmt.Errorf("skill tool name is %s where text was expected", errchain.Kind(toolName))
 			}
 			if toolName != "skill_view" && toolName != "skill_manage" {
 				continue

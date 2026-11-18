@@ -12,8 +12,8 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/periodic"
 	"github.com/nickheyer/icebath/pkg/state"
@@ -39,7 +39,7 @@ type activitySnapshot struct {
 }
 
 func warnInvalidTurnLivenessValue(key string, raw any, def float64) {
-	pkgLog().Warn(fmt.Sprintf("Invalid %s in config.yaml: %s — falling back to default %.1f.", key, pyrepr.Repr(raw), def))
+	pkgLog().Warn(fmt.Sprintf("Invalid %s in config.yaml: %s — falling back to default %.1f.", key, errchain.Show(raw), def))
 }
 
 // Coerces one duration knob, warning and defaulting on typos, NaN and Inf, erroring only on overflow
@@ -295,7 +295,7 @@ func (w *turnLivenessWatchdog) surfaceStall(snapshot activitySnapshot) {
 		"no progress for %.1fs (last activity: %s). "+
 		"Attempting recovery: force-interrupting the turn and "+
 		"stopping lease renewal if it cannot resume (#95548).",
-		w.currentSessionID(), snapshot.idleSeconds, pyrepr.Repr(desc)))
+		w.currentSessionID(), snapshot.idleSeconds, errchain.Show(desc)))
 	w.emitWarning("⚠️ This turn stopped making progress "+
 		fmt.Sprintf("(%ds without activity); ", int64(snapshot.idleSeconds))+
 		"attempting recovery so the session can continue.",

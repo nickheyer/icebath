@@ -17,6 +17,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -982,7 +983,7 @@ func (c *ClawHubSource) extractZip(zr *zip.Reader, files *[]BundleFile) (bad boo
 		}
 		member := byName[filename]
 		if member.Flags&1 != 0 {
-			hubRaise(fmt.Errorf("File %s is encrypted, password required for extraction", pyrepr.Repr(filename)))
+			hubRaise(fmt.Errorf("File %s is encrypted, password required for extraction", errchain.Show(filename)))
 		}
 		rc, err := member.Open()
 		if errors.Is(err, zip.ErrAlgorithm) {

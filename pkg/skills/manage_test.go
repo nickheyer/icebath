@@ -417,7 +417,7 @@ func TestBackgroundReviewGuards(t *testing.T) {
 		t.Fatalf("read write refused %v", read)
 	}
 	bare := manageCall(t, s, map[string]any{"action": "delete", "name": "user-skill"})
-	if !strings.Contains(bare["error"].(string), "not curator-managed (created_by=None)") {
+	if !strings.Contains(bare["error"].(string), "not curator-managed (created_by=nothing)") {
 		t.Fatalf("unmanaged delete %v", bare)
 	}
 	if ok, msg, err := s.AdoptSkill(context.Background(), "user-skill"); err != nil || !ok {

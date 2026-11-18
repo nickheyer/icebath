@@ -10,6 +10,7 @@ import (
 	"sync"
 	"unicode/utf8"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -265,7 +266,7 @@ func (h *hostedCronScheduler) RecoverInterrupted(ctx context.Context) (int, erro
 		}
 		return 0, nil
 	}
-	return 0, fmt.Errorf("recover_interrupted returned %s, not an int", pyrepr.TypeName(res))
+	return 0, fmt.Errorf("recover_interrupted returned %s, expected a whole number", errchain.Kind(res))
 }
 
 // Registry convergence forwarded to the child

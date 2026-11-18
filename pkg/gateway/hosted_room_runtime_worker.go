@@ -737,7 +737,7 @@ func (r *HostedRoomRuntime) inspectLocalRecoverySession(task map[string]any) (ho
 	}
 	defer release()
 	if r.RPC == nil {
-		return hostedRecoveryInspection{}, errors.New("'NoneType' object has no attribute 'resolve_exact'")
+		return hostedRecoveryInspection{}, errors.New("the local recovery session resolver is not set")
 	}
 	session, err := r.RPC.ResolveExact(r.ctx, profile, RoomSessionTitle(hrTaskIdentity(task).RoomID), RoomSessionSource)
 	if err != nil || session == nil {

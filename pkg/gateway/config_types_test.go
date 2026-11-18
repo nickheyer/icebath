@@ -277,7 +277,7 @@ func TestMergePlatformSectionsOrder(t *testing.T) {
 		t.Fatalf("also and platform names only %v", out)
 	}
 	bad := map[string]any{"platforms": map[string]any{"slack": map[string]any{"extra": nil}}}
-	if _, err := MergePlatformSections(ctx, bad, nil, map[string]any{}, nil); err == nil || err.Error() != "'NoneType' object is not a mapping" {
+	if _, err := MergePlatformSections(ctx, bad, nil, map[string]any{}, nil); err == nil || err.Error() != "expected a mapping, got nothing" {
 		t.Fatalf("extra None %v", err)
 	}
 	if enabled, token := providerPlatformEnabled(map[string]any{"token": 77}); enabled || token != "77" {

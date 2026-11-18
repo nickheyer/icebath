@@ -10,6 +10,7 @@ import (
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -387,7 +388,7 @@ func (m *Manager) RegisterApprovalTransport(ctx context.Context, name string, pr
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if existing := m.approvalTransports[clean]; existing != nil {
-		return fmt.Errorf("approval transport %s is already registered by %s", config.PyRepr(clean), config.PyRepr(existing.PluginID))
+		return fmt.Errorf("approval transport %s is already registered by %s", errchain.Show(clean), errchain.Show(existing.PluginID))
 	}
 	m.approvalTransports[clean] = &tools.RegisteredApprovalTransport{Name: clean, Present: present, PluginID: pluginID, ProfileHome: resolvedHome(ctx)}
 	pkgLog().Info(fmt.Sprintf("Plugin %s registered approval transport: %s", pluginID, clean))

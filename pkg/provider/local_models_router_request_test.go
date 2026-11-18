@@ -19,7 +19,7 @@ func TestSetRuntimeEnabledRefusesAListSectionLikePython(t *testing.T) {
 		t.Fatalf("list section %v", err)
 	}
 	configLoadFn = func(context.Context) (map[string]any, error) { return map[string]any{"local_runtime": nil}, nil }
-	if _, err := lmSetRuntimeEnabled(context.Background(), true); err == nil || err.Error() != "'NoneType' object does not support item assignment" {
+	if _, err := lmSetRuntimeEnabled(context.Background(), true); err == nil || err.Error() != "the local_models section of config.yaml is nothing, expected a mapping" {
 		t.Fatalf("null section %v", err)
 	}
 }
@@ -71,10 +71,10 @@ func TestRouterRequestFollowsRedirectsAsUrllibDoes(t *testing.T) {
 		payload      []byte
 		text         string
 	}{
-		{"/temp", "/models/unload", []byte(`{"model": "m"}`), "HTTP Error 307: Temporary Redirect"},
-		{"/loop", "/models", nil, "HTTP Error 302: " + lmRedirectLoopMsg + "Found"},
-		{"/file", "/models", nil, "HTTP Error 302: Found - Redirection to url 'file:///etc/passwd' is not allowed"},
-		{"/gone", "/models", nil, "HTTP Error 404: Not Found"},
+		{"/temp", "/models/unload", []byte(`{"model": "m"}`), "HTTP 307 Temporary Redirect"},
+		{"/loop", "/models", nil, "HTTP 302 " + lmRedirectLoopMsg + "Found"},
+		{"/file", "/models", nil, "HTTP 302 Found, the redirect to file:///etc/passwd is not allowed"},
+		{"/gone", "/models", nil, "HTTP 404 Not Found"},
 	}
 	for _, c := range cases {
 		_, err := lmRouterRequest(endpoint(c.prefix), c.path, 5*time.Second, c.payload)

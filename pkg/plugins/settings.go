@@ -17,6 +17,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 )
 
 var settingsFieldTypes = map[string]string{
@@ -324,14 +325,14 @@ func SavePluginSettings(ctx context.Context, h, pluginID, pluginDir string, valu
 	for _, kv := range values {
 		spec, ok := schema[kv.Key]
 		if !ok {
-			return nil, &PluginSettingsValueError{Msg: fmt.Sprintf("%s is not declared in the plugin's config_schema", config.PyRepr(kv.Key))}
+			return nil, &PluginSettingsValueError{Msg: fmt.Sprintf("%s is not declared in the plugin's config_schema", errchain.Show(kv.Key))}
 		}
 		kind := settingsFieldType(spec)
 		if kind == "secret" {
-			return nil, &PluginSettingsValueError{Msg: fmt.Sprintf("%s is a secret; it is stored in .env, not config.yaml", config.PyRepr(kv.Key))}
+			return nil, &PluginSettingsValueError{Msg: fmt.Sprintf("%s is a secret; it is stored in .env, not config.yaml", errchain.Show(kv.Key))}
 		}
 		if !settingsValueTyped(kind, kv.Value) {
-			return nil, &PluginSettingsValueError{Msg: fmt.Sprintf("%s should be %s (got %s)", config.PyRepr(kv.Key), kind, config.PyTypeName(kv.Value))}
+			return nil, &PluginSettingsValueError{Msg: fmt.Sprintf("%s should be %s (got %s)", errchain.Show(kv.Key), kind, errchain.Kind(kv.Value))}
 		}
 		if kind == "enum" {
 			allowed := false
@@ -342,7 +343,7 @@ func SavePluginSettings(ctx context.Context, h, pluginID, pluginDir string, valu
 				}
 			}
 			if !allowed {
-				return nil, &PluginSettingsValueError{Msg: fmt.Sprintf("%s must be one of the declared choices", config.PyRepr(kv.Key))}
+				return nil, &PluginSettingsValueError{Msg: fmt.Sprintf("%s must be one of the declared choices", errchain.Show(kv.Key))}
 			}
 		}
 		segments, err := PluginRelativeSegments(kv.Key)

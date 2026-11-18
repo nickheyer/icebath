@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -112,7 +113,7 @@ func projectResult(ctx context.Context, a *SessionAuthority, ref SessionRef, liv
 	if operation == "rewind" && owns {
 		evicting, ok := a.Runner.(agentEvictingRunner)
 		if !ok {
-			return &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("'%T' object has no attribute '_evict_cached_agent'", a.Runner)}
+			return &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("the gateway runner (%T) cannot evict a cached agent", a.Runner)}
 		}
 		evicting.EvictCachedAgent(live.Route)
 	}
@@ -156,7 +157,7 @@ func projectCommitted(ctx context.Context, a *SessionAuthority, ref SessionRef, 
 		}
 		runner, ok := a.Runner.(reasoningOverrideRunner)
 		if !ok {
-			return &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("'%T' object has no attribute '_set_session_reasoning_override'", a.Runner)}
+			return &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("the gateway runner (%T) cannot set a session reasoning override", a.Runner)}
 		}
 		runner.SetSessionReasoningOverride(live.Route, nil)
 		live.PendingReasoning = nil
@@ -216,7 +217,7 @@ func projectBoundary(ctx context.Context, a *SessionAuthority, ref SessionRef) e
 	case agentEvictingRunner:
 		runner.EvictCachedAgent(live.Route)
 	default:
-		return &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("'%T' object has no attribute '_evict_cached_agent'", a.Runner)}
+		return &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("the gateway runner (%T) cannot evict a cached agent", a.Runner)}
 	}
 	receipt, err := a.DB.LocalReceipt(ctx, ref.SessionID)
 	if err != nil {
@@ -228,7 +229,7 @@ func projectBoundary(ctx context.Context, a *SessionAuthority, ref SessionRef) e
 	}
 	data, ok := pyjson.AsObject(raw)
 	if !ok {
-		return &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("'%s' object has no attribute 'get'", pyTypeName(raw))}
+		return &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("the project boundary record is %s, expected a mapping", errchain.Kind(raw))}
 	}
 	entry, err := SessionEntryFromDict(ctx, data)
 	if err != nil {

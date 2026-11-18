@@ -11,9 +11,9 @@ func TestFirstChoiceMessageIndexesChoicesLikePython(t *testing.T) {
 		resp any
 		want string
 	}{
-		{"text", "'str' object has no attribute 'choices'"},
-		{map[string]any{"choices": []any{}}, "list index out of range"},
-		{map[string]any{"choices": []any{map[string]any{}}}, "'dict' object has no attribute 'message'"},
+		{"text", "the auxiliary response is text, expected a chat completion"},
+		{map[string]any{"choices": []any{}}, "the auxiliary response has no choices"},
+		{map[string]any{"choices": []any{map[string]any{}}}, "the first auxiliary choice has no message"},
 	} {
 		if _, err := FirstChoiceMessage(c.resp); err == nil || err.Error() != c.want {
 			t.Fatalf("FirstChoiceMessage(%#v) error %v", c.resp, err)

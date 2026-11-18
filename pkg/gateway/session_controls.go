@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/profiles"
@@ -224,7 +225,7 @@ func pyIterable(value any) ([]any, error) {
 		}
 		return out, nil
 	}
-	return nil, &PyError{Kind: "TypeError", Msg: "'" + pyTypeName(value) + "' object is not iterable"}
+	return nil, &PyError{Kind: "TypeError", Msg: "expected a list, got " + errchain.Kind(value)}
 }
 
 // Authority the connection acts on

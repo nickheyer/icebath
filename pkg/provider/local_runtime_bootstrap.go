@@ -15,6 +15,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/hostinfo"
 )
@@ -413,7 +414,7 @@ func refitIdlePresets(sup *LlamaServerSupervisor) (bool, error) {
 	}
 	current = bytes.TrimPrefix(current, []byte("\xef\xbb\xbf"))
 	if !utf8.Valid(current) {
-		return false, fmt.Errorf("'utf-8' codec can't decode %s", path)
+		return false, fmt.Errorf("%s is not valid UTF-8", path)
 	}
 	if text == string(current) {
 		return false, nil
@@ -483,7 +484,7 @@ func bootSection(cfg map[string]any) (map[string]any, error) {
 	}
 	section, ok := raw.(map[string]any)
 	if !ok {
-		return nil, fmt.Errorf("'%s' object has no attribute 'get'", pyTypeName(raw))
+		return nil, fmt.Errorf("the local_runtime section of config.yaml is %s, expected a mapping", errchain.Kind(raw))
 	}
 	return section, nil
 }
@@ -542,7 +543,7 @@ func bootIntSetting(section map[string]any, key string, def int) (int, error) {
 	}
 	v, ok := pythonInt(raw)
 	if !ok {
-		return 0, fmt.Errorf("invalid literal for int() with base 10: %s", pyRepr(raw))
+		return 0, fmt.Errorf("%s is not a whole number", pyRepr(raw))
 	}
 	return v, nil
 }

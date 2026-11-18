@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -24,13 +25,13 @@ const (
 // Tools whose refused calls render neutrally because the agent replans them itself
 var NeutralFailureTools = map[string]bool{"skill_manage": true}
 
-// Python exception a display renderer raises, recovered by the completion line fallback
-type displayPyError struct{ class, msg string }
+// Failure a display renderer raises, recovered by the completion line fallback
+type displayError struct{ msg string }
 
-func (e displayPyError) Error() string { return e.class + ": " + e.msg }
+func (e displayError) Error() string { return e.msg }
 
-func raiseDisplay(class, format string, args ...any) {
-	panic(displayPyError{class: class, msg: fmt.Sprintf(format, args...)})
+func raiseDisplay(format string, args ...any) {
+	panic(displayError{msg: fmt.Sprintf(format, args...)})
 }
 
 func displayT(ctx context.Context, key string, kwargs map[string]any) string {
@@ -97,7 +98,7 @@ func pyGreaterThanZero(v any) bool {
 	if n, ok := pyrepr.Int(v); ok {
 		return n.Sign() > 0
 	}
-	raiseDisplay("TypeError", "'>' not supported between instances of '%s' and 'int'", pyrepr.TypeName(v))
+	raiseDisplay("expected a number, got %s", errchain.Kind(v))
 	return false
 }
 
@@ -118,7 +119,7 @@ func displayContains(container any, item string) bool {
 		}
 		return false
 	}
-	raiseDisplay("TypeError", "argument of type '%s' is not a container or iterable", pyrepr.TypeName(container))
+	raiseDisplay("expected text, a list or a mapping to search, got %s", errchain.Kind(container))
 	return false
 }
 
@@ -133,7 +134,7 @@ func displayLen(v any) int {
 	if list, ok := anyList(v); ok {
 		return len(list)
 	}
-	raiseDisplay("TypeError", "object of type '%s' has no len()", pyrepr.TypeName(v))
+	raiseDisplay("expected text, a list or a mapping to count, got %s", errchain.Kind(v))
 	return 0
 }
 
@@ -274,7 +275,7 @@ func shapeFailureData(result any, decoded map[string]any) map[string]any {
 func cuteDomain(url any) string {
 	s, ok := url.(string)
 	if !ok {
-		raiseDisplay("AttributeError", "'%s' object has no attribute 'replace'", pyrepr.TypeName(url))
+		raiseDisplay("the url argument is %s, expected text", errchain.Kind(url))
 	}
 	s = strings.ReplaceAll(strings.ReplaceAll(s, "https://", ""), "http://", "")
 	host, _, _ := strings.Cut(s, "/")
@@ -437,9 +438,9 @@ func pyFirstItem(v any) any {
 		return list[0]
 	}
 	if _, ok := v.(map[string]any); ok {
-		raiseDisplay("KeyError", "0")
+		raiseDisplay("expected a list to take the first item of, got a mapping")
 	}
-	raiseDisplay("TypeError", "'%s' object is not subscriptable", pyrepr.TypeName(v))
+	raiseDisplay("expected a list to take the first item of, got %s", errchain.Kind(v))
 	return nil
 }
 
@@ -475,7 +476,7 @@ func cuteExecuteCode(ctx context.Context, _ *Env, a map[string]any, _ any) CuteR
 	raw := getOr(a, "code", "")
 	code, ok := raw.(string)
 	if !ok {
-		raiseDisplay("AttributeError", "'%s' object has no attribute 'strip'", pyrepr.TypeName(raw))
+		raiseDisplay("the code argument is %s, expected text", errchain.Kind(raw))
 	}
 	code = pystr.Strip(code)
 	first, _, _ := strings.Cut(code, "\n")
@@ -518,7 +519,7 @@ func pyHead12(v any) string {
 	if list, ok := v.([]any); ok {
 		return pyrepr.Str(list[:min(12, len(list))])
 	}
-	raiseDisplay("TypeError", "'%s' object is not subscriptable", pyrepr.TypeName(v))
+	raiseDisplay("expected text or a list to take the first items of, got %s", errchain.Kind(v))
 	return ""
 }
 
@@ -536,7 +537,7 @@ func cuteScroll(ctx context.Context, _ *Env, a map[string]any, _ any) CuteRow {
 	direction := getOr(a, "direction", "down")
 	switch direction.(type) {
 	case []any, map[string]any:
-		raiseDisplay("TypeError", "unhashable type: '%s'", pyrepr.TypeName(direction))
+		raiseDisplay("the direction argument is %s, expected text", errchain.Kind(direction))
 	}
 	name, isStr := direction.(string)
 	arrow, known := scrollArrows[name]
@@ -778,7 +779,7 @@ func cuteToolMessage(ctx context.Context, env *Env, toolName string, args map[st
 	rows[len(rows)-1] += "  " + elapsed + "s"
 	prefix, ok := GetSkinToolPrefix(ctx).(string)
 	if !ok {
-		raiseDisplay("TypeError", "replace() argument 2 must be str, not %s", pyrepr.TypeName(GetSkinToolPrefix(ctx)))
+		raiseDisplay("the skin tool prefix is %s, expected text", errchain.Kind(GetSkinToolPrefix(ctx)))
 	}
 	out := make([]string, len(rows))
 	for i, row := range rows {

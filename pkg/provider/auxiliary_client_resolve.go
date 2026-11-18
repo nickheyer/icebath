@@ -325,17 +325,17 @@ func auxIsActualAuxiliaryRoute(ctx context.Context, req auxResolveRequest, baseU
 type auxNoResponsesClient struct{ AuxClient }
 
 func (c auxNoResponsesClient) CreateResponse(context.Context, map[string]any) (any, error) {
-	return nil, &auxAttributeError{typeName: auxTypeName(c.AuxClient), attr: "responses"}
+	return nil, &auxAttributeError{msg: fmt.Sprintf("the auxiliary client %s has no Responses API", auxTypeName(c.AuxClient))}
 }
 
-// Python class name of a client value
+// Go type name of a client value, a fixed phrase for no client
 func auxTypeName(v any) string {
 	t := reflect.TypeOf(v)
 	for t != nil && t.Kind() == reflect.Pointer {
 		t = t.Elem()
 	}
 	if t == nil {
-		return "NoneType"
+		return "(no client)"
 	}
 	return t.Name()
 }

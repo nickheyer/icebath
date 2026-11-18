@@ -12,6 +12,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/cliui"
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/hostinfo"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
@@ -109,7 +110,7 @@ func RecordServiceChoice(ctx context.Context, choice string, cfg map[string]any)
 	}
 	section := gatewaySection(current)
 	if section == nil {
-		return fmt.Errorf("'%T' object does not support item assignment", current["gateway"])
+		return fmt.Errorf("the gateway section of the config is %s, expected a mapping", errchain.Kind(current["gateway"]))
 	}
 	section["service_install_choice"] = choice
 	if err := setupSaveConfig(ctx, current); err != nil {
@@ -118,7 +119,7 @@ func RecordServiceChoice(ctx context.Context, choice string, cfg map[string]any)
 	if cfg != nil {
 		s := gatewaySection(cfg)
 		if s == nil {
-			return fmt.Errorf("'%T' object does not support item assignment", cfg["gateway"])
+			return fmt.Errorf("the gateway section of config.yaml is %s, expected a mapping", errchain.Kind(cfg["gateway"]))
 		}
 		s["service_install_choice"] = choice
 	}

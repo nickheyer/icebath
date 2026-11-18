@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
@@ -156,7 +157,7 @@ func RecreateTUIWorktree(ctx context.Context, cwd, sessionID string) string {
 	log := envLog(nil)
 	worktreeGitQuiet([]string{"worktree", "prune"}, repoRoot, 15*time.Second, "", env)
 	if err := os.MkdirAll(filepath.Dir(tree), 0o777); err != nil {
-		log.Warn(fmt.Sprintf("could not recreate worktree %s: %s", tree, pypath.OSErrorText(err)))
+		log.Warn(fmt.Sprintf("could not recreate worktree %s: %s", tree, errchain.OSText(err)))
 		return ""
 	}
 	args := []string{"worktree", "add", tree, "-b", branch, "HEAD"}

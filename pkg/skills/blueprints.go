@@ -117,7 +117,7 @@ func (s *Scope) BlueprintSpecForInstalled(skillName string) (*BlueprintSpec, err
 			return nil
 		}
 		if !utf8.Valid(data) {
-			parseErr = fmt.Errorf("UnicodeDecodeError: 'utf-8' codec can't decode %s", path)
+			parseErr = fmt.Errorf("%s is not valid UTF-8", path)
 			return fs.SkipAll
 		}
 		spec, perr := ParseBlueprint(strings.TrimPrefix(string(data), "\uFEFF"))

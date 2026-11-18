@@ -13,8 +13,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -309,7 +309,7 @@ func (r *ccManagedRelay) Next() (*sseFrame, error) {
 	}
 	payload, ok := tools.RelayJSONable(chunk).(map[string]any)
 	if !ok {
-		return nil, &ccFinalError{err: fmt.Errorf("'%s' object has no attribute 'choices'", pyrepr.TypeName(chunk))}
+		return nil, &ccFinalError{err: fmt.Errorf("a streamed chunk is %s, expected a chat completion chunk", errchain.Kind(chunk))}
 	}
 	data, err := json.Marshal(payload)
 	if err != nil {

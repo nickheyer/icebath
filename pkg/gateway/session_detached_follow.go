@@ -111,7 +111,7 @@ func followDetachedPin(ctx context.Context, runner AuthorityRunner, evt map[stri
 	}
 	classifier, ok := runner.(completionOwnerRunner)
 	if !ok {
-		return nil, &PyError{Kind: "AttributeError", Msg: "'" + pyTypeName(runner) + "' object has no attribute '_classify_completion_owner'"}
+		return nil, &PyError{Kind: "AttributeError", Msg: "the gateway runner cannot classify a completion owner"}
 	}
 	verdict, _, target, err := classifier.ClassifyCompletionOwner(ctx, pinned, key)
 	if err != nil {

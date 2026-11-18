@@ -15,6 +15,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 
 	"github.com/nickheyer/icebath/pkg/config"
@@ -256,7 +257,7 @@ func (c *Context) RegisterApprovalTransport(ctx context.Context, name string, pr
 	existing := m.approvalTransports[clean]
 	m.mu.RUnlock()
 	if existing != nil {
-		return &HostBuiltinError{Type: "ValueError", Message: fmt.Sprintf("approval transport %s is already registered by %s", config.PyRepr(clean), config.PyRepr(existing.PluginID))}
+		return &HostBuiltinError{Type: "ValueError", Message: fmt.Sprintf("approval transport %s is already registered by %s", errchain.Show(clean), errchain.Show(existing.PluginID))}
 	}
 	entry := &tools.RegisteredApprovalTransport{Name: clean, Present: present, PluginID: c.PluginID(), ProfileHome: resolvedHome(ctx)}
 	pkgLog().Info(fmt.Sprintf("Plugin %s registered approval transport: %s", c.PluginID(), clean))
@@ -294,7 +295,7 @@ func (c *Context) registerTool(ctx context.Context, spec ToolSpec) (*Registratio
 	name := spec.Name
 	if spec.Override && !c.toolOverrideAllowed(name) {
 		return nil, &PluginToolOverrideError{Msg: fmt.Sprintf("Plugin %s cannot override built-in tool %s. Set plugins.entries.%s.allow_tool_override: true in config.yaml to allow this plugin to replace built-in tools.",
-			config.PyRepr(c.manifest.Name), config.PyRepr(name), c.PluginID())}
+			errchain.Show(c.manifest.Name), errchain.Show(name), c.PluginID())}
 	}
 	m := c.manager
 	scope := m.home
@@ -349,7 +350,7 @@ func (c *Context) CallMCP(ctx context.Context, server, tool string, arguments ma
 	}
 	if !allowed {
 		return nil, &PluginPermissionError{Msg: fmt.Sprintf("Plugin %s is not allowed to call MCP server %s. Add it to plugins.entries.%s.mcp_allowlist in config.yaml to grant access (default is no MCP access).",
-			config.PyRepr(c.manifest.Name), config.PyRepr(server), c.PluginID())}
+			errchain.Show(c.manifest.Name), errchain.Show(server), c.PluginID())}
 	}
 	seconds := clampMCPTimeout(timeout)
 	call, err := needService("CallMCPTool", func(s *Services) func(context.Context, string, string, float64, map[string]any) (string, error) {
@@ -990,9 +991,9 @@ func (c *Context) RegisterAuxiliaryTask(rawKey any, opts AuxTaskOptions) (*Regis
 	key, _ := rawKey.(string)
 	switch rawKey.(type) {
 	case []any:
-		return nil, &HostBuiltinError{Type: "TypeError", Message: "unhashable type: 'list'"}
+		return nil, &HostBuiltinError{Type: "TypeError", Message: "auxiliary task key is a list where text was expected"}
 	case map[string]any, Record:
-		return nil, &HostBuiltinError{Type: "TypeError", Message: "unhashable type: 'dict'"}
+		return nil, &HostBuiltinError{Type: "TypeError", Message: "auxiliary task key is a mapping where text was expected"}
 	}
 	var handle *Registration
 	var err error
@@ -1023,11 +1024,11 @@ type auxTask struct{ fields map[string]any }
 func buildAuxiliaryTaskEntry(me, ownerID string, rawKey any, opts AuxTaskOptions, registered map[string]*auxTask) (*auxTask, error) {
 	key, isStr := rawKey.(string)
 	if !isStr || key == "" {
-		return nil, fmt.Errorf("Plugin '%s' tried to register auxiliary task with invalid key %s", me, config.PyRepr(rawKey))
+		return nil, fmt.Errorf("Plugin '%s' tried to register auxiliary task with invalid key %s", me, errchain.Show(rawKey))
 	}
 	for _, r := range key {
 		if !(unicode.IsLetter(r) || unicode.IsNumber(r) || r == '_') {
-			return nil, fmt.Errorf("Plugin '%s' auxiliary task key %s must contain only alphanumeric characters and underscores", me, config.PyRepr(key))
+			return nil, fmt.Errorf("Plugin '%s' auxiliary task key %s must contain only alphanumeric characters and underscores", me, errchain.Show(key))
 		}
 	}
 	builtinKeys, err := needService("BuiltinAuxTaskKeys", func(s *Services) func() []string { return s.BuiltinAuxTaskKeys })
@@ -1036,17 +1037,17 @@ func buildAuxiliaryTaskEntry(me, ownerID string, rawKey any, opts AuxTaskOptions
 	}
 	builtin := toSet(builtinKeys())
 	if builtin[key] {
-		return nil, fmt.Errorf("Plugin '%s' cannot register auxiliary task %s — that key is reserved for a built-in task. Pick a plugin-namespaced key (e.g. '%s_%s').", me, config.PyRepr(key), me, key)
+		return nil, fmt.Errorf("Plugin '%s' cannot register auxiliary task %s — that key is reserved for a built-in task. Pick a plugin-namespaced key (e.g. '%s_%s').", me, errchain.Show(key), me, key)
 	}
 	if existing := registered[key]; existing != nil && existing.fields["plugin"] != ownerID {
-		return nil, fmt.Errorf("Plugin '%s' cannot register auxiliary task %s — already registered by plugin '%s'", me, config.PyRepr(key), config.PyStr(existing.fields["plugin"]))
+		return nil, fmt.Errorf("Plugin '%s' cannot register auxiliary task %s — already registered by plugin '%s'", me, errchain.Show(key), errchain.Show(existing.fields["plugin"]))
 	}
 	inherit := opts.InheritFrom
 	if inherit != nil {
 		base, isStr := inherit.(string)
 		_, known := registered[base]
 		if !isStr || base == key || (!builtin[base] && !known) {
-			pkgLog().Warn(fmt.Sprintf("Plugin '%s' auxiliary task %s: ignoring inherit_from=%s — not a built-in auxiliary task or one already registered by a plugin", me, config.PyRepr(key), config.PyRepr(inherit)))
+			pkgLog().Warn(fmt.Sprintf("Plugin '%s' auxiliary task %s: ignoring inherit_from=%s — not a built-in auxiliary task or one already registered by a plugin", me, errchain.Show(key), errchain.Show(inherit)))
 			inherit = nil
 		}
 	}
@@ -1080,13 +1081,13 @@ func auxTaskOverrides(raw any, inheriting bool) (map[string]any, error) {
 		return map[string]any{}, nil
 	}
 	if !inheriting {
-		return nil, &HostBuiltinError{Type: "TypeError", Message: fmt.Sprintf("'%s' object is not a mapping", pyTypeName(raw))}
+		return nil, &HostBuiltinError{Type: "TypeError", Message: fmt.Sprintf("auxiliary task defaults are %s where a mapping was expected", errchain.Kind(raw))}
 	}
 	items, isList := raw.([]any)
 	if _, isStr := raw.(string); isStr {
-		return nil, &HostBuiltinError{Type: "ValueError", Message: "dictionary update sequence element #0 has length 1; 2 is required"}
+		return nil, &HostBuiltinError{Type: "ValueError", Message: "auxiliary task defaults are text where a mapping or a list of key and value pairs was expected"}
 	} else if !isList {
-		return nil, &HostBuiltinError{Type: "TypeError", Message: fmt.Sprintf("'%s' object is not iterable", pyTypeName(raw))}
+		return nil, &HostBuiltinError{Type: "TypeError", Message: fmt.Sprintf("auxiliary task defaults are %s where a mapping or a list of key and value pairs was expected", errchain.Kind(raw))}
 	}
 	out := map[string]any{}
 	for i, item := range items {
@@ -1099,16 +1100,16 @@ func auxTaskOverrides(raw any, inheriting bool) (map[string]any, error) {
 				pair = append(pair, string(r))
 			}
 		default:
-			return nil, &HostBuiltinError{Type: "TypeError", Message: fmt.Sprintf("cannot convert dictionary update sequence element #%d to a sequence", i)}
+			return nil, &HostBuiltinError{Type: "TypeError", Message: fmt.Sprintf("auxiliary task defaults item %d is not a key and value pair", i)}
 		}
 		if len(pair) != 2 {
-			return nil, &HostBuiltinError{Type: "ValueError", Message: fmt.Sprintf("dictionary update sequence element #%d has length %d; 2 is required", i, len(pair))}
+			return nil, &HostBuiltinError{Type: "ValueError", Message: fmt.Sprintf("auxiliary task defaults item %d has %d parts where a key and a value were expected", i, len(pair))}
 		}
 		switch pair[0].(type) {
 		case []any:
-			return nil, &HostBuiltinError{Type: "TypeError", Message: "unhashable type: 'list'"}
+			return nil, &HostBuiltinError{Type: "TypeError", Message: fmt.Sprintf("auxiliary task defaults item %d has a list as its key", i)}
 		case map[string]any, Record:
-			return nil, &HostBuiltinError{Type: "TypeError", Message: "unhashable type: 'dict'"}
+			return nil, &HostBuiltinError{Type: "TypeError", Message: fmt.Sprintf("auxiliary task defaults item %d has a mapping as its key", i)}
 		}
 		out[config.PyStr(pair[0])] = pair[1]
 	}
@@ -1147,14 +1148,14 @@ func (c *Context) RegisterLocale(lang string, source any, endonym string, rtl bo
 	}
 	langID := i18n.NormalizeLanguageID(lang)
 	if !i18n.IsLanguageID(langID) {
-		return nil, c.refuse(fmt.Sprintf("locale with invalid language id %s (expected e.g. 'pl', 'pt-br')", config.PyRepr(lang)))
+		return nil, c.refuse(fmt.Sprintf("locale with invalid language id %s (expected e.g. 'pl', 'pt-br')", errchain.Show(lang)))
 	}
 	known := false
 	for _, s := range i18n.Surfaces {
 		known = known || s == surface
 	}
 	if !known {
-		return nil, c.refuse(fmt.Sprintf("locale %s for unknown surface %s (one of %s)", config.PyRepr(langID), config.PyRepr(surface), strings.Join(i18n.Surfaces, ", ")))
+		return nil, c.refuse(fmt.Sprintf("locale %s for unknown surface %s (one of %s)", errchain.Show(langID), errchain.Show(surface), strings.Join(i18n.Surfaces, ", ")))
 	}
 	messages, err := i18n.LoadLocaleSource(source)
 	if err != nil {
@@ -1300,7 +1301,7 @@ func (c *Context) RegisterAutomationBlueprint(key any, spec BlueprintSpec) (*Reg
 	}
 	bpKey, blueprint, err := build(c.manifest.Name, key, spec)
 	if err != nil {
-		pkgLog().Warn(fmt.Sprintf("Plugin '%s' automation blueprint %s rejected: %v", c.manifest.Name, config.PyRepr(key), err))
+		pkgLog().Warn(fmt.Sprintf("Plugin '%s' automation blueprint %s rejected: %v", c.manifest.Name, errchain.Show(key), err))
 		return nil, nil
 	}
 	m := c.manager
@@ -1308,7 +1309,7 @@ func (c *Context) RegisterAutomationBlueprint(key any, spec BlueprintSpec) (*Reg
 	_, dup := m.automationBlueprints[bpKey]
 	m.mu.RUnlock()
 	if dup {
-		pkgLog().Warn(fmt.Sprintf("Plugin '%s' automation blueprint %s is already registered", c.manifest.Name, config.PyRepr(bpKey)))
+		pkgLog().Warn(fmt.Sprintf("Plugin '%s' automation blueprint %s is already registered", c.manifest.Name, errchain.Show(bpKey)))
 		return nil, nil
 	}
 	return registerEntry(c, "automation_blueprint", bpKey, m.automationBlueprints, &blueprintEntry{value: blueprint}, nil,

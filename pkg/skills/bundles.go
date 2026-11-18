@@ -15,6 +15,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyfs"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -188,13 +189,13 @@ func orEmpty(v any) any {
 	return ""
 }
 
-// Text of utf-8-sig bytes, the Python UnicodeDecodeError when they are not strict UTF-8
+// Text of utf-8-sig bytes, a decode failure naming the byte when they are not strict UTF-8
 func decodeUTF8Sig(raw []byte) (string, error) {
 	raw = bytes.TrimPrefix(raw, []byte("\xef\xbb\xbf"))
 	for i := 0; i < len(raw); {
 		r, n := utf8.DecodeRune(raw[i:])
 		if r == utf8.RuneError && n <= 1 {
-			return "", pystr.UTF8DecodeError(raw, i)
+			return "", errchain.Reword(pystr.UTF8DecodeError(raw, i), "not valid UTF-8 at byte %d", i)
 		}
 		i += n
 	}
@@ -311,7 +312,7 @@ func (s *Scope) BuildBundleInvocationMessage(ctx context.Context, cmdKey, userIn
 func (s *Scope) BundlePathFor(name string) (string, error) {
 	slug := SlugifySkillName(name)
 	if slug == "" {
-		return "", &BundleError{"ValueError", fmt.Sprintf("Bundle name %s normalizes to an empty slug", pyrepr.StrRepr(name))}
+		return "", &BundleError{"ValueError", fmt.Sprintf("Bundle name %s normalizes to an empty slug", errchain.Show(name))}
 	}
 	return filepath.Join(s.BundlesDir(), slug+".yaml"), nil
 }

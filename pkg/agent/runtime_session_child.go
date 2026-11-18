@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
@@ -82,7 +83,7 @@ func ReserveChildStore(ctx context.Context, parent *RuntimeSessionStore) (*Child
 	}
 	obj, ok := result.(*pyjson.Object)
 	if !ok {
-		return nil, &workerStoreError{"TypeError", "argument of type '" + pyrepr.TypeName(result) + "' is not iterable"}
+		return nil, &workerStoreError{"TypeError", "child store reservation returned " + errchain.Kind(result) + " where a mapping was expected"}
 	}
 	if refused, has := obj.Get("refused"); has {
 		reason := pyrepr.Str(refused)
@@ -98,7 +99,7 @@ func ReserveChildStore(ctx context.Context, parent *RuntimeSessionStore) (*Child
 	}
 	child, ok := childRaw.(*pyjson.Object)
 	if !ok {
-		return nil, &workerStoreError{"TypeError", "'" + pyrepr.TypeName(childRaw) + "' object is not a mapping"}
+		return nil, &workerStoreError{"TypeError", "child store receipt is " + errchain.Kind(childRaw) + " where a mapping was expected"}
 	}
 	scope := parent.Scope()
 	for _, k := range child.Keys {

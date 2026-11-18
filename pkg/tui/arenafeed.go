@@ -10,6 +10,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
+	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"github.com/nickheyer/icebath/pkg/ui/cards"
 	"github.com/nickheyer/icebath/pkg/ui/gfx"
 	"github.com/nickheyer/icebath/pkg/ui/wm"
@@ -122,15 +123,15 @@ func (f *arenaFeed) observe(ev gatewayEventMsg) {
 		log.counts[name]++
 		log.last, log.at = name, f.a.store.now()
 	case "message.complete":
-		if p["status"] == "error" && !truthyJS(p["partial"]) {
-			f.outcome, f.failure = arena.OutcomeFailed, describeTurnFailure(p)
+		if done, _ := tuigateway.MessageCompleteEvent.Payload(p); val(done.Status) == "error" && !val(done.Partial) {
+			f.outcome, f.failure = arena.OutcomeFailed, describeTurnFailure(done)
 		} else {
 			f.outcome, f.failure = arena.OutcomeDone, ""
 		}
 	case "error":
 		stamped := infoOf(f.a.store.ui.Info).ExecutionGeneration != nil
-		if f.a.store.ui.Busy && !(isGenericErrorEvent(ev) && stamped) {
-			f.outcome, f.failure = arena.OutcomeFailed, stringOr(p["message"], "the turn failed")
+		if failure, _ := tuigateway.ErrorEvent.Payload(p); f.a.store.ui.Busy && !(isGenericErrorEvent(ev) && stamped) {
+			f.outcome, f.failure = arena.OutcomeFailed, firstText(failure.Message, "the turn failed")
 		}
 	}
 }

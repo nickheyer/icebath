@@ -13,10 +13,10 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
@@ -142,7 +142,7 @@ func ClearDrainRequest(ctx context.Context, h string) bool {
 		return true
 	}
 	if !errors.Is(err, fs.ErrNotExist) {
-		pkgLog().Warn(fmt.Sprintf("drain-control: failed to remove %s: %s", path, pypath.OSErrorText(err)))
+		pkgLog().Warn(fmt.Sprintf("drain-control: failed to remove %s: %s", path, errchain.OSText(err)))
 	}
 	return false
 }
@@ -210,7 +210,7 @@ func ReadDrainRequest(ctx context.Context, h string) *pyjson.Object {
 	b, err := os.ReadFile(path)
 	if err != nil {
 		if !errors.Is(err, fs.ErrNotExist) {
-			pkgLog().Warn(fmt.Sprintf("drain-control: failed to read %s: %s", path, pypath.OSErrorText(err)))
+			pkgLog().Warn(fmt.Sprintf("drain-control: failed to read %s: %s", path, errchain.OSText(err)))
 		}
 		return nil
 	}

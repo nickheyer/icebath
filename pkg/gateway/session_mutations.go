@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
@@ -72,11 +73,11 @@ func writeMutation(ctx context.Context, a *SessionAuthority, ref SessionRef, par
 		}
 		if _, has := prepared.Get("snapshot"); has {
 			if live == nil && (operation == "model" || operation == "compress") {
-				return nil, &PyError{Kind: "AttributeError", Msg: "'NoneType' object has no attribute 'source'"}
+				return nil, &PyError{Kind: "AttributeError", Msg: "the mutation has no session source"}
 			}
 			payload, ok := pyjson.AsObject(params.Payload)
 			if !ok {
-				return nil, &PyError{Kind: "TypeError", Msg: fmt.Sprintf("'%s' object is not subscriptable", pyTypeName(params.Payload))}
+				return nil, &PyError{Kind: "TypeError", Msg: fmt.Sprintf("the mutation payload is %s, expected a mapping", errchain.Kind(params.Payload))}
 			}
 			if prepared, err = mutationPrepareStep(operation, editorServers)(ctx, a, live, payload, prepared); err != nil {
 				return nil, err
@@ -154,7 +155,7 @@ func commitMutation(ctx context.Context, a *SessionAuthority, ref SessionRef, li
 // Fenced params of an owner mutation on the row's current revision and generation
 func fencedMutation(row *pyjson.Object, sessionID, requestID, operation string, payload any) (mutationParams, error) {
 	if row == nil {
-		return mutationParams{}, &PyError{Kind: "TypeError", Msg: "'NoneType' object is not subscriptable"}
+		return mutationParams{}, &PyError{Kind: "TypeError", Msg: "the fenced mutation row is missing"}
 	}
 	revision, ok := pathIndex(rowValue(row, "runtime_revision"))
 	if !ok {

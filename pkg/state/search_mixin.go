@@ -61,7 +61,7 @@ func newSessionSearch(host searchHost, fts *sessionFTSSetup) *sessionSearch {
 // Sleeps the given seconds between optimize chunks, swapped by tests
 var searchSleep = func(seconds float64) { time.Sleep(time.Duration(seconds * float64(time.Second))) }
 
-var errWriterClosed = errors.New("'NoneType' object has no attribute 'execute'")
+var errWriterClosed = errors.New("the session search writer is closed")
 
 // Writer connection, the AttributeError Python raises once close left it None
 func (s *sessionSearch) writer() (SQLiteConn, error) {
@@ -281,7 +281,7 @@ func (s *sessionSearch) rebuildState(ctx context.Context, prefix string) (*ftsRe
 	}
 	total, err := pyint.Of(highWater)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("the %s_high_water marker %v is not a whole number", prefix, highWater)
 	}
 	if total.Sign() <= 0 {
 		return nil, nil
@@ -290,7 +290,7 @@ func (s *sessionSearch) rebuildState(ctx context.Context, prefix string) (*ftsRe
 	progress := big.NewInt(0)
 	if pyTruthy(progressRaw) {
 		if progress, err = pyint.Of(progressRaw); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("the %s_progress marker %v is not a whole number", prefix, progressRaw)
 		}
 	}
 	return &ftsRebuildState{total: total, indexed: progress}, nil

@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 )
 
 // Counts what one prune scanned, deleted and reclaimed
@@ -130,7 +131,7 @@ func checkpointMetaString(meta map[string]any, key string) (string, error) {
 	if !checkpointTruthy(v) {
 		return "", nil
 	}
-	return "", &checkpointValueError{msg: "expected str, bytes or os.PathLike object, not " + checkpointPyType(v)}
+	return "", &checkpointValueError{msg: "a checkpoint path is " + errchain.Kind(v) + ", expected text"}
 }
 
 // Python truthiness of a decoded metadata value
@@ -140,32 +141,6 @@ func checkpointTruthy(v any) bool {
 		return err != nil || f != 0
 	}
 	return truthy(v)
-}
-
-// Python type name of a decoded metadata or YAML value
-func checkpointPyType(v any) string {
-	switch x := v.(type) {
-	case nil:
-		return "NoneType"
-	case bool:
-		return "bool"
-	case json.Number:
-		if strings.ContainsAny(string(x), ".eE") {
-			return "float"
-		}
-		return "int"
-	case int, int64, uint64:
-		return "int"
-	case float64:
-		return "float"
-	case string:
-		return "str"
-	case []any:
-		return "list"
-	case map[string]any:
-		return "dict"
-	}
-	return fmt.Sprintf("%T", v)
 }
 
 var pyFloatLiteralRe = regexp.MustCompile(`^[+-]?(?:(?:[0-9](?:_?[0-9])*)?\.[0-9](?:_?[0-9])*|[0-9](?:_?[0-9])*\.?)(?:[eE][+-]?[0-9](?:_?[0-9])*)?$`)
@@ -178,7 +153,7 @@ func checkpointParsePyFloat(s string) (float64, error) {
 		return strconv.ParseFloat(strings.ToLower(t), 64)
 	}
 	if !pyFloatLiteralRe.MatchString(t) {
-		return 0, &checkpointValueError{msg: "could not convert string to float: " + pyReprStr(s)}
+		return 0, &checkpointValueError{msg: pyReprStr(s) + " is not a number"}
 	}
 	return strconv.ParseFloat(strings.ReplaceAll(t, "_", ""), 64)
 }
@@ -202,7 +177,7 @@ func checkpointMetaFloat(v any) (float64, error) {
 	case string:
 		return checkpointParsePyFloat(x)
 	}
-	return 0, &checkpointValueError{msg: "float() argument must be a string or a real number, not '" + checkpointPyType(v) + "'"}
+	return 0, &checkpointValueError{msg: "a checkpoint time is " + errchain.Kind(v) + ", expected a number"}
 }
 
 // Modification time in Unix seconds of a stat result
@@ -519,7 +494,7 @@ func checkpointConfigSection(env *Env) (map[string]any, error) {
 	}
 	section, ok := raw.(map[string]any)
 	if !ok {
-		return nil, &checkpointValueError{msg: "'" + checkpointPyType(raw) + "' object has no attribute 'get'"}
+		return nil, &checkpointValueError{msg: "the checkpoints section of config.yaml is " + errchain.Kind(raw) + ", expected a mapping"}
 	}
 	return section, nil
 }
@@ -534,9 +509,9 @@ func checkpointConfigInt(section map[string]any, key string, fallback int) (int,
 		return n, nil
 	}
 	if s, ok := v.(string); ok {
-		return 0, &checkpointValueError{msg: "invalid literal for int() with base 10: " + pyReprStr(s)}
+		return 0, &checkpointValueError{msg: "checkpoint setting " + pyReprStr(s) + " is not a whole number"}
 	}
-	return 0, &checkpointValueError{msg: "int() argument must be a string, a bytes-like object or a real number, not '" + checkpointPyType(v) + "'"}
+	return 0, &checkpointValueError{msg: "a checkpoint setting is " + errchain.Kind(v) + ", expected a whole number"}
 }
 
 // Runs the startup prune from the checkpoints config section, never deleting orphans unattended

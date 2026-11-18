@@ -3,8 +3,6 @@ package plugins
 import (
 	"context"
 	"fmt"
-
-	"github.com/nickheyer/icebath/pkg/config"
 )
 
 // Python attribute of the plugin state store a hosted plugin reads, get and set answering as methods
@@ -19,7 +17,7 @@ func (s *PluginState) HostAttr(_ context.Context, name string) (any, bool, bool,
 	case "get", "set":
 		return nil, true, false, nil
 	}
-	return nil, false, false, &HostBuiltinError{Type: "AttributeError", Message: fmt.Sprintf("'PluginState' object has no attribute %s", config.PyRepr(name))}
+	return nil, false, false, &HostBuiltinError{Type: "AttributeError", Message: fmt.Sprintf("plugin state has no %s", name)}
 }
 
 // Runs get(key, default=None) or set(key, value) of the plugin state store for a hosted plugin
@@ -38,5 +36,5 @@ func (s *PluginState) HostCall(_ context.Context, method string, args []any, kwa
 		}
 		return nil, s.Set(argStr(a["key"]), a["value"])
 	}
-	return nil, &HostBuiltinError{Type: "AttributeError", Message: fmt.Sprintf("'PluginState' object has no attribute %s", config.PyRepr(method))}
+	return nil, &HostBuiltinError{Type: "AttributeError", Message: fmt.Sprintf("plugin state has no %s", method)}
 }

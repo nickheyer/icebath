@@ -5,6 +5,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -49,7 +50,7 @@ func RelayExplicitlyDisabled(ctx context.Context) (bool, error) {
 	}
 	explicit, _, isDict := jsonObjectGet(extra, "_enabled_explicit")
 	if !isDict {
-		return false, &PyError{"AttributeError", "'" + pyrepr.TypeName(extra) + "' object has no attribute 'get'"}
+		return false, &PyError{"AttributeError", "the relay platform extra settings are " + errchain.Kind(extra) + ", expected a mapping"}
 	}
 	if !pyrepr.Truthy(explicit) {
 		return false, nil

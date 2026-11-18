@@ -101,7 +101,7 @@ func TestBaseSendImageFallsBackToCaptionedText(t *testing.T) {
 	if _, ok, _ := a.CreateHandoffThread(context.Background(), "c", "n"); ok {
 		t.Fatal("base handoff thread created")
 	}
-	if _, err := a.SendDraft(context.Background(), "c", 1, "x", nil); err == nil || err.Error() != "NotImplementedError: baseFakeAdapter does not implement send_draft" {
+	if _, err := a.SendDraft(context.Background(), "c", 1, "x", nil); err == nil || err.Error() != "the baseFakeAdapter platform adapter cannot send drafts" {
 		t.Fatal(err)
 	}
 }

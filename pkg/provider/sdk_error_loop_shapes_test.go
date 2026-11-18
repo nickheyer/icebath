@@ -3,7 +3,6 @@ package provider
 import (
 	"bytes"
 	"context"
-	"fmt"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -103,7 +102,7 @@ func TestStreamTransportFollowsTheRaisedClass(t *testing.T) {
 	req, _ := http.NewRequest(http.MethodPost, "http://127.0.0.1:19211/v1/chat/completions", bytes.NewReader(bytes.Repeat([]byte("x"), 45_000)))
 	reset := sdkStreamReadError(&net.OpError{Op: "read", Net: "tcp", Err: os.NewSyscallError("read", syscall.ECONNRESET)}, &http.Response{Request: req})
 	te, ok := reset.(*AuxTransportError)
-	want := fmt.Sprintf("[Errno %d] Connection reset by peer", int(syscall.ECONNRESET))
+	want := "read: connection reset by peer"
 	if !ok || te.Class != "ReadError" || te.Message != want {
 		t.Fatalf("reset read error %#v", reset)
 	}

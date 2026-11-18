@@ -1,3 +1,5 @@
+//go:build !icebath_core && !icebath_noextras
+
 package media
 
 import (
@@ -684,7 +686,7 @@ func TestXaiStreamSocketClosures(t *testing.T) {
 		{"non mapping envelope", func(ws *websocket.Conn) {
 			_ = ws.WriteMessage(websocket.TextMessage, []byte("[1]"))
 			_, _, _ = ws.ReadMessage()
-		}, "'list' object has no attribute 'get'"},
+		}, "TTS stream event is a list where a mapping holding type was expected"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -735,10 +737,10 @@ func TestGeminiSseLineDecoding(t *testing.T) {
 		{"text/event-stream", "caf\xe9\x85tail\n", []string{"café", "tail"}, ""},
 		{"application/json", split, []string{strings.Repeat("a", 511) + "é", "next"}, ""},
 		{"application/octet-stream; charset=\"utf-8\"", "x y", []string{"x", "y"}, ""},
-		{"", "\n\ndata: x\n", nil, "startswith first arg must be bytes or a tuple of bytes, not str"},
+		{"", "\n\ndata: x\n", nil, "the response names no text encoding, so its lines cannot be read as text"},
 		{"", "\r\n\n", nil, ""},
 		{"text/plain; charset=bogus", "x", nil, "unknown encoding: bogus"},
-		{"text/plain; charset", "x", nil, "'bool' object has no attribute 'strip'"},
+		{"text/plain; charset", "x", nil, "Content-Type charset parameter has no value"},
 	}
 	for i, c := range cases {
 		resp := &http.Response{Header: http.Header{}, Body: io.NopCloser(strings.NewReader(c.body))}

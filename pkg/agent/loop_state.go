@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/goals"
 
 	"github.com/nickheyer/icebath/pkg/config"
@@ -122,14 +123,14 @@ func sessionLoopStateFrom(raw any) (*SessionLoopState, error) {
 	case []byte:
 		v, err = pyjson.LoadsBytes(t)
 	default:
-		err = &pyint.Error{Kind: "TypeError", Msg: "the JSON object must be str, bytes or bytearray, not " + pyrepr.TypeName(raw)}
+		return nil, &pyint.Error{Kind: "TypeError", Msg: "stored loop state is " + errchain.Kind(raw) + " where JSON text was expected"}
 	}
 	if err != nil {
-		return nil, err
+		return nil, errchain.Reword(err, "stored loop state is not valid JSON")
 	}
 	d, ok := v.(*pyjson.Object)
 	if !ok {
-		return nil, fmt.Errorf("'%s' object has no attribute 'get'", pyrepr.TypeName(v))
+		return nil, fmt.Errorf("stored loop state is %s where a mapping was expected", errchain.Kind(v))
 	}
 	get := func(k string) any { x, _ := d.Get(k); return x }
 	s := &SessionLoopState{
@@ -388,7 +389,7 @@ func (m *LoopManager) Clear(ctx context.Context) bool {
 func pyStatusIn(v any, members ...string) (bool, error) {
 	switch v.(type) {
 	case []any, *pyjson.Object:
-		return false, &pyint.Error{Kind: "TypeError", Msg: "unhashable type: '" + pyrepr.TypeName(v) + "'"}
+		return false, &pyint.Error{Kind: "TypeError", Msg: "stored loop status is " + errchain.Kind(v) + " where text was expected"}
 	}
 	for _, m := range members {
 		if v == m {

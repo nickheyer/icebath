@@ -280,7 +280,7 @@ func groupControl(ctx context.Context, a *SessionAuthority, actor Principal, met
 			RuntimeStatus() map[string]any
 		})
 		if !ok {
-			return nil, &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("'%T' object has no attribute 'db_path'", hosted)}
+			return nil, &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("the hosted room service (%T) has no database path", hosted)}
 		}
 		serviceDB, err := pypath.Resolve(store.StorePath())
 		if err != nil {
@@ -300,7 +300,7 @@ func groupControl(ctx context.Context, a *SessionAuthority, actor Principal, met
 		if service, ok := hosted.(*CanonicalHostedRoomService); ok {
 			return service, nil
 		}
-		return nil, &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("'%T' object has no attribute '%s'", hosted, attribute)}
+		return nil, &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("the hosted room service (%T) does not provide %s", hosted, attribute)}
 	}
 	if roomID, isText := params["room_id"].(string); isText && method != "groups.create" {
 		replica, err := groupIsReplica(ctx, dbPath, roomID)
@@ -1037,7 +1037,7 @@ func groupProfiles(ctx context.Context, a *SessionAuthority, actor Principal, pr
 			return nil, err
 		}
 		if !utf8.Valid(raw) {
-			return nil, &PyError{Kind: "UnicodeDecodeError", Msg: "'utf-8' codec can't decode " + metaPath}
+			return nil, &PyError{Kind: "UnicodeDecodeError", Msg: metaPath + " is not valid UTF-8"}
 		}
 		loaded, err := config.SafeLoad(string(raw))
 		if err != nil {
@@ -1125,7 +1125,7 @@ func groupProfiles(ctx context.Context, a *SessionAuthority, actor Principal, pr
 	if a.HostedRoomService != nil {
 		service, ok := a.HostedRoomService.(*CanonicalHostedRoomService)
 		if !ok {
-			return nil, &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("'%T' object has no attribute 'profile_homes'", a.HostedRoomService)}
+			return nil, &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("the hosted room service (%T) does not list profile homes", a.HostedRoomService)}
 		}
 		homes, names, err := service.ProfileHomes()
 		if err != nil {
@@ -1255,7 +1255,7 @@ func discoveredProfileMeta(name, metaPath string) any {
 	}
 	var meta any
 	if !utf8.Valid(raw) {
-		pkgLog().Warn(fmt.Sprintf("profiles.list: skipping unreadable profile.yaml for %s (%s): %s", name, metaPath, "'utf-8' codec can't decode"))
+		pkgLog().Warn(fmt.Sprintf("profiles.list: skipping unreadable profile.yaml for %s (%s): %s", name, metaPath, "not valid UTF-8"))
 		meta = map[string]any{}
 	} else if meta, err = config.SafeLoad(string(raw)); err != nil {
 		pkgLog().Warn(fmt.Sprintf("profiles.list: skipping unreadable profile.yaml for %s (%s): %s", name, metaPath, err))

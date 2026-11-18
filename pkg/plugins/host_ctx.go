@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 
 	"github.com/nickheyer/icebath/pkg/config"
@@ -36,18 +37,6 @@ func pyQuoted(names []string) []string {
 	return out
 }
 
-// Python list wording of missing parameter names, a and b or a, b, and c
-func pyMissingList(names []string) string {
-	q := pyQuoted(names)
-	switch len(q) {
-	case 1:
-		return q[0]
-	case 2:
-		return q[0] + " and " + q[1]
-	}
-	return pyNames(q[:len(q)-1]) + ", and " + q[len(q)-1]
-}
-
 // Binds a call the way Python binds arguments to a PluginContext method, raising its TypeError wording
 func bindPy(method string, params []pyParam, args []any, kwargs map[string]any) (map[string]any, map[string]any, error) {
 	return bindPyOn("PluginContext", method, params, args, kwargs)
@@ -55,7 +44,7 @@ func bindPy(method string, params []pyParam, args []any, kwargs map[string]any) 
 
 // Binds a call to a method of the named class the way Python binds arguments, raising its TypeError wording
 func bindPyOn(owner, method string, params []pyParam, args []any, kwargs map[string]any) (map[string]any, map[string]any, error) {
-	fname := owner + "." + method + "()"
+	fname := owner + "." + method
 	typeErr := func(format string, a ...any) error {
 		return &HostBuiltinError{Type: "TypeError", Message: fname + " " + fmt.Sprintf(format, a...)}
 	}
@@ -78,15 +67,14 @@ func bindPyOn(owner, method string, params []pyParam, args []any, kwargs map[str
 				required++
 			}
 		}
-		given := len(args) + 1
 		if required == len(positional) {
 			word := "arguments"
-			if len(positional)+1 == 1 {
+			if len(positional) == 1 {
 				word = "argument"
 			}
-			return nil, nil, typeErr("takes %d positional %s but %d were given", len(positional)+1, word, given)
+			return nil, nil, typeErr("takes %d %s, got %d", len(positional), word, len(args))
 		}
-		return nil, nil, typeErr("takes from %d to %d positional arguments but %d were given", required+1, len(positional)+1, given)
+		return nil, nil, typeErr("takes %d to %d arguments, got %d", required, len(positional), len(args))
 	}
 	for i, v := range args {
 		bound[positional[i].name] = v
@@ -99,14 +87,14 @@ func bindPyOn(owner, method string, params []pyParam, args []any, kwargs map[str
 	}
 	for _, k := range sortedKeys(kwargs) {
 		if _, dup := bound[k]; dup {
-			return nil, nil, typeErr("got multiple values for argument '%s'", k)
+			return nil, nil, typeErr("got %s twice", k)
 		}
 		if _, ok := known[k]; ok {
 			bound[k] = kwargs[k]
 			continue
 		}
 		if !acceptsVarKw {
-			return nil, nil, typeErr("got an unexpected keyword argument '%s'", k)
+			return nil, nil, typeErr("has no option %s", k)
 		}
 		extra[k] = kwargs[k]
 	}
@@ -129,18 +117,10 @@ func bindPyOn(owner, method string, params []pyParam, args []any, kwargs map[str
 		bound[p.name] = p.def
 	}
 	if len(missingPos) > 0 {
-		word := "argument"
-		if len(missingPos) > 1 {
-			word = "arguments"
-		}
-		return nil, nil, typeErr("missing %d required positional %s: %s", len(missingPos), word, pyMissingList(missingPos))
+		return nil, nil, typeErr("needs %s", strings.Join(missingPos, ", "))
 	}
 	if len(missingKw) > 0 {
-		word := "argument"
-		if len(missingKw) > 1 {
-			word = "arguments"
-		}
-		return nil, nil, typeErr("missing %d required keyword-only %s: %s", len(missingKw), word, pyMissingList(missingKw))
+		return nil, nil, typeErr("needs %s", strings.Join(missingKw, ", "))
 	}
 	return bound, extra, nil
 }
@@ -263,7 +243,7 @@ func ArgFloat(v any, def float64) float64 { return argFloat(v, def) }
 func argCallable(method, param string, v any) (*HostedCallable, error) {
 	f, ok := v.(*HostedCallable)
 	if !ok {
-		return nil, &HostBuiltinError{Type: "TypeError", Message: fmt.Sprintf("%s() %s must be callable, got %s", method, param, pyTypeName(v))}
+		return nil, &HostBuiltinError{Type: "TypeError", Message: fmt.Sprintf("%s %s must be a function, got %s", method, param, errchain.Kind(v))}
 	}
 	return f, nil
 }

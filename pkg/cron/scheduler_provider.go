@@ -309,7 +309,7 @@ func claimFireForSource(ctx context.Context, source, jobID string, force, manual
 		if panicked {
 			cause = recoveredError(raised)
 		}
-		reason := fmt.Sprintf("Fire claim failed before dispatch: %s: %v", cronExceptionName(cause), cause)
+		reason := fmt.Sprintf("Fire claim failed before dispatch: %v", cause)
 		if _, err := ledger.Finish(ctx, executionID, false, &reason, nil, false); err != nil {
 			return nil, err
 		}
@@ -426,7 +426,7 @@ func fireOverdueJobs(ctx context.Context, p CronScheduler, o FireOptions, now *t
 		s.log.Warn(fmt.Sprintf("Misfire catch-up: job %s (%s) was due %s (%s min overdue) and no external fire arrived — firing locally.", job.ID, name, *job.NextRunAt, pyFormatFixed0(overdue/60)))
 		claimed, err := schedulerClaimFire(ctx, p, job.ID, false, false)
 		if err != nil {
-			s.log.Warn(fmt.Sprintf("Misfire catch-up failed for job %s: %s: %v", job.ID, cronExceptionName(err), err))
+			s.log.Warn(fmt.Sprintf("Misfire catch-up failed for job %s: %v", job.ID, err))
 			continue
 		}
 		if claimed == nil {
@@ -446,7 +446,7 @@ func runMisfireFire(ctx context.Context, p CronScheduler, claimed *Job, o FireOp
 		}
 	}()
 	if _, err := schedulerFireClaimed(ctx, p, claimed, FireOptions{Adapters: o.Adapters, Loop: o.Loop}); err != nil {
-		threadExceptHook(thread, fmt.Sprintf("%s: %v\n", cronExceptionName(err), err))
+		threadExceptHook(thread, fmt.Sprintf("%v\n", err))
 	}
 }
 
@@ -538,9 +538,9 @@ type InProcessCronScheduler struct{}
 
 func (*InProcessCronScheduler) Name() string { return "builtin" }
 
-// Python class name and text of a tick failure as the ticker error marker records it
+// Text of a tick failure as the ticker error marker records it
 func tickErrorText(err error) string {
-	return fmt.Sprintf("%s: %v", cronExceptionName(err), err)
+	return err.Error()
 }
 
 // Waits until the next tick instant or the stop signal, reporting whether stop arrived

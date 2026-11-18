@@ -4,6 +4,7 @@ import (
 	"context"
 	"sort"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
@@ -116,7 +117,7 @@ func branchInTransaction(d *SessionDB, ctx context.Context, conn SQLiteConn, ses
 	}
 	originObj, ok := origin.(*pyjson.Object)
 	if !ok {
-		return nil, nil, &stateTypedError{"TypeError", "'" + pyTypeName(origin) + "' object has no attribute 'get'"}
+		return nil, nil, &stateTypedError{"TypeError", "the branch origin is " + errchain.Kind(origin) + ", expected a mapping"}
 	}
 	originProfile, _ := originObj.Get("profile")
 	savedRoute, err := receiptItem(saved, "route")
@@ -142,7 +143,7 @@ func branchInTransaction(d *SessionDB, ctx context.Context, conn SQLiteConn, ses
 		return nil, nil, err
 	}
 	if parent == nil {
-		return nil, nil, &stateTypedError{"TypeError", "'NoneType' object is not subscriptable"}
+		return nil, nil, &stateTypedError{"TypeError", "the branch parent session is missing"}
 	}
 	policySource, err := receiptItem(policy, "source")
 	if err != nil {

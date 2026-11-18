@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
@@ -348,7 +349,7 @@ func coerceSubagentRequest(request any) (*SubagentLaunchRequest, error) {
 	}
 	goal, has := values["goal"]
 	if !has {
-		return nil, lifecycleErr("Malformed subagent launch request: SubagentLaunchRequest.__init__() missing 1 required positional argument: 'goal'")
+		return nil, lifecycleErr("Malformed subagent launch request: goal is missing")
 	}
 	r := &SubagentLaunchRequest{Role: "leaf", Metadata: map[string]any{}}
 	r.Goal, has = goal.(string)
@@ -853,14 +854,14 @@ func (s *SubagentLifecycleService) HostAttr(_ context.Context, name string) (any
 	if _, ok := lifecycleMethods[name]; ok {
 		return nil, true, false, nil
 	}
-	return nil, false, false, &HostBuiltinError{Type: "AttributeError", Message: fmt.Sprintf("'SubagentLifecycleService' object has no attribute %s", pyrepr.Repr(name))}
+	return nil, false, false, &HostBuiltinError{Type: "AttributeError", Message: fmt.Sprintf("subagent lifecycle service has no %s", name)}
 }
 
 // Runs a lifecycle method for a hosted plugin with the Python argument binding
 func (s *SubagentLifecycleService) HostCall(ctx context.Context, method string, args []any, kwargs map[string]any) (any, error) {
 	params, ok := lifecycleMethods[method]
 	if !ok {
-		return nil, &HostBuiltinError{Type: "AttributeError", Message: fmt.Sprintf("'SubagentLifecycleService' object has no attribute %s", pyrepr.Repr(method))}
+		return nil, &HostBuiltinError{Type: "AttributeError", Message: fmt.Sprintf("subagent lifecycle service has no %s", method)}
 	}
 	a, _, err := bindPyOn("SubagentLifecycleService", method, params, args, kwargs)
 	if err != nil {
@@ -876,7 +877,7 @@ func (s *SubagentLifecycleService) HostCall(ctx context.Context, method string, 
 		if a["timeout_seconds"] != nil {
 			f, ok := pyNumber(a["timeout_seconds"])
 			if !ok {
-				return nil, &HostBuiltinError{Type: "TypeError", Message: fmt.Sprintf("timeout_seconds must be a number, not %s", pyTypeName(a["timeout_seconds"]))}
+				return nil, &HostBuiltinError{Type: "TypeError", Message: fmt.Sprintf("timeout_seconds must be a number, got %s", errchain.Kind(a["timeout_seconds"]))}
 			}
 			timeout = &f
 		}
@@ -884,7 +885,7 @@ func (s *SubagentLifecycleService) HostCall(ctx context.Context, method string, 
 	case "cancel":
 		reason, ok := a["reason"].(string)
 		if !ok {
-			return nil, &HostBuiltinError{Type: "TypeError", Message: fmt.Sprintf("'%s' object is not subscriptable", pyTypeName(a["reason"]))}
+			return nil, &HostBuiltinError{Type: "TypeError", Message: fmt.Sprintf("cancel reason is %s where text was expected", errchain.Kind(a["reason"]))}
 		}
 		return s.Cancel(ctx, a["handle"], reason), nil
 	case "result":

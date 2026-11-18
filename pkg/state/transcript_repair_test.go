@@ -166,7 +166,7 @@ func TestIsContentBlank(t *testing.T) {
 			t.Fatalf("%v -> %v %v", c.content, got, err)
 		}
 	}
-	if _, err := IsContentBlank([]any{map[string]any{"type": "text", "text": 3}}); err == nil || !strings.Contains(err.Error(), "expected str instance, int found") {
+	if _, err := IsContentBlank([]any{map[string]any{"type": "text", "text": 3}}); err == nil || !strings.Contains(err.Error(), "is a number, expected text") {
 		t.Fatalf("err %v", err)
 	}
 }

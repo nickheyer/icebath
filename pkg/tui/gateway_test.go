@@ -575,7 +575,7 @@ func TestGatewayClientProtocolError(t *testing.T) {
 		s.message(`{"jsonrpc":"2.0","method":"event","params":{"type":"session.info","payload":{}}}`)
 		eventually(t, "the events", func() bool { return len(rec.events("")) == 2 })
 		evs := rec.events("")
-		if evs[0].Type != "gateway.protocol_error" || evs[0].Payload["preview"] != `["x"]` || evs[1].Type != "session.info" {
+		if evs[0].Type != "gateway.protocol_error" || evs[0].Local != (gatewayProtocolError{Preview: `["x"]`}) || evs[1].Type != "session.info" {
 			t.Fatalf("events %#v", evs)
 		}
 		if !strings.Contains(c.logTail(5), `[protocol] malformed websocket frame: ["x"]`) || s.isClosed() {

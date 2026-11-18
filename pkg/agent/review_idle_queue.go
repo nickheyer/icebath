@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
@@ -472,5 +473,5 @@ func pyIterItems(v any) []any {
 		}
 		return out
 	}
-	panic(fmt.Sprintf("'%T' object is not iterable", v))
+	panic(fmt.Sprintf("local model server sent %s where a list was expected", errchain.Kind(v)))
 }

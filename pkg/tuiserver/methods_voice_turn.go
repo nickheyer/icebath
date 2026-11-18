@@ -1,3 +1,5 @@
+//go:build !icebath_core && !icebath_noextras
+
 package tuiserver
 
 import (
@@ -17,12 +19,8 @@ import (
 )
 
 var (
-	voiceSidMu          sync.Mutex
-	voiceEventSID       string
-	voiceWakeOwner      tuihost.Transport
-	voiceEventTransport tuihost.Transport
-	voiceCaptureSID     string
-	voiceCaptureGen     int
+	voiceCaptureSID string
+	voiceCaptureGen int
 
 	wakeResumeRetryMu     sync.Mutex
 	wakeResumeRetryActive bool
@@ -45,15 +43,6 @@ func init() {
 	gateway.RegisterSessionVoiceCaptureStop(func(sessionID string) { stopSessionVoiceCapture(context.Background(), sessionID) })
 }
 
-// Per turn text queue feeding the streaming TTS consumer, a nil item ending the text
-type ttsTurnQueue struct{ items chan any }
-
-// Queues one reply delta
-func (q *ttsTurnQueue) Put(item any) { q.items <- item }
-
-// Queues the end of text sentinel
-func (q *ttsTurnQueue) Finish() { q.items <- nil }
-
 // Next queued item, false when none arrived within the timeout
 func (q *ttsTurnQueue) Get(timeout time.Duration) (any, bool) {
 	select {
@@ -69,17 +58,6 @@ type ttsEvent struct{ *pythread.Event }
 
 func (e ttsEvent) Wait(timeout time.Duration) bool { return e.Event.Wait(timeout.Seconds()) }
 
-// Emits toward the session that last turned voice on through the transport that started its capture
-func voiceEmit(ctx context.Context, event string, payload map[string]any) {
-	voiceSidMu.Lock()
-	sid, transport := voiceEventSID, voiceEventTransport
-	voiceSidMu.Unlock()
-	if transport != nil {
-		ctx = tuihost.BindTransport(ctx, transport)
-	}
-	tuihost.Emit(ctx, event, sid, payload)
-}
-
 // Resumes the wake detector for the transport that yielded it to a voice capture
 func resumeVoiceWake() {
 	voiceSidMu.Lock()
@@ -92,7 +70,7 @@ func resumeVoiceWake() {
 }
 
 // Resumes the wake detector for its owner, retrying in the background while the microphone is still busy
-func wakeResumeIfOwner(owner tuihost.Transport, retry, interval time.Duration) bool {
+func voiceWakeResumeIfOwner(owner tuihost.Transport, retry, interval time.Duration) bool {
 	resumed, err := media.ResumeListening(owner)
 	if err == nil {
 		return resumed
@@ -128,14 +106,8 @@ func wakeResumeIfOwner(owner tuihost.Transport, retry, interval time.Duration) b
 	return false
 }
 
-// Whether the runtime only voice mode flag is on
-func voiceModeEnabled() bool { return pystr.Strip(os.Getenv("ICEBATH_VOICE")) == "1" }
-
-// Whether the runtime only spoken reply flag is on
-func voiceTTSEnabled() bool { return pystr.Strip(os.Getenv("ICEBATH_VOICE_TTS")) == "1" }
-
 // Whether a continuous voice capture is live
-func voiceContinuousActive() bool { return media.IsContinuousActive() }
+func voiceContinuousLoopActive() bool { return media.IsContinuousActive() }
 
 // Turns a shared owner session's own voice mode off, false when no owner here holds it
 func setSessionVoiceOff(sessionID string) bool {
@@ -169,7 +141,7 @@ func endVoiceChat(ctx context.Context, stopLoop, stopTTS bool) {
 }
 
 // Ends a session's voice chat through its own mode when an owner holds it, else through the env flags
-func endSessionVoiceChat(ctx context.Context, sessionID string, stopLoop, stopTTS bool) {
+func voiceEndSessionChat(ctx context.Context, sessionID string, stopLoop, stopTTS bool) {
 	if !setSessionVoiceOff(sessionID) {
 		endVoiceChat(ctx, stopLoop, stopTTS)
 	} else if stopTTS {
@@ -198,8 +170,32 @@ func anySessionRunning() (running bool) {
 	return len(runningSessions()) > 0
 }
 
+// Binds the voice mode operations the turn and session code reaches
+func init() {
+	voiceModeOps.endSessionChat = voiceEndSessionChat
+	voiceModeOps.resumeWakeIfOwner = voiceWakeResumeIfOwner
+	voiceModeOps.stopTTSStream = voiceTTSStreamStop
+	voiceModeOps.armFullDuplex = voiceArmFullDuplex
+	voiceModeOps.beginTTSStream = voiceTTSStreamBegin
+	voiceModeOps.continuousActive = voiceContinuousLoopActive
+	voiceModeOps.speakWithBarge = voiceSpeakWithBarge
+	voiceModeOps.isStopPhrase = media.IsVoiceStopPhrase
+	voiceModeOps.stopListening = func(owner tuihost.Transport) { media.StopListening(owner) }
+	voiceModeOps.startThinkingSound = func(ctx context.Context) bool {
+		return media.StartThinkingSound(ctx, func() bool {
+			if media.IsAudioOutputActive() {
+				return false
+			}
+			return !voiceContinuousActive()
+		})
+	}
+	voiceModeOps.stopThinkingSound = media.StopThinkingSound
+	voiceModeOps.markInterrupted = media.MarkSpeechInterrupted
+	voiceModeOps.takeInterrupted = media.TakeSpeechInterrupted
+}
+
 // Starts the per turn streaming TTS consumer, nil when spoken replies are off or cannot stream
-func ttsStreamBegin(ctx context.Context) *ttsTurnQueue {
+func voiceTTSStreamBegin(ctx context.Context) *ttsTurnQueue {
 	if !voiceTTSEnabled() {
 		return nil
 	}
@@ -220,7 +216,7 @@ func ttsStreamBegin(ctx context.Context) *ttsTurnQueue {
 }
 
 // Cuts in flight streaming TTS, a user barge latching the interruption for the next turn
-func ttsStreamStop(userBarge bool) {
+func voiceTTSStreamStop(userBarge bool) {
 	ttsStreamMu.Lock()
 	state := ttsStreamState
 	ttsStreamState = nil
@@ -237,7 +233,7 @@ func ttsStreamStop(userBarge bool) {
 }
 
 // Arms the process global full duplex listener once, one microphone
-func armFullDuplexListener(ctx context.Context) {
+func voiceArmFullDuplex(ctx context.Context) {
 	fdListenerMu.Lock()
 	if fdListenerActive {
 		fdListenerMu.Unlock()
@@ -385,7 +381,7 @@ func deliverFDTranscript(ctx context.Context, text string) {
 }
 
 // Speaks a whole reply on a pipeline the full duplex listener can cut and waits on
-func speakTextWithBarge(ctx context.Context, text string) {
+func voiceSpeakWithBarge(ctx context.Context, text string) {
 	pipeline := &speakPipeline{stop: &pythread.Event{}, done: &pythread.Event{}}
 	fdListenerMu.Lock()
 	fdSpeakPipelines[pipeline] = true
@@ -400,13 +396,4 @@ func speakTextWithBarge(ctx context.Context, text string) {
 		media.SpeakText(ctx, text, pipeline.stop)
 	}()
 	armBargeListenerIfEnabled(ctx)
-}
-
-// voice section of the config, empty for any non dict shape
-func voiceCfgDict(ctx context.Context) map[string]any {
-	voice, isDict := loadCfg(ctx)["voice"].(map[string]any)
-	if !isDict {
-		return map[string]any{}
-	}
-	return voice
 }

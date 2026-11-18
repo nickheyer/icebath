@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math/big"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/goals"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -23,7 +24,7 @@ type automationParam struct {
 // Values of a call's parameters in declaration order, the TypeError Python raises for a call that does not fit
 func bindAutomationCall(method string, params []automationParam, args []any, kwargs *pyjson.Object) ([]any, error) {
 	typeError := func(format string, a ...any) error {
-		return &pyint.Error{Kind: "TypeError", Msg: method + "() " + fmt.Sprintf(format, a...)}
+		return &pyint.Error{Kind: "TypeError", Msg: method + " " + fmt.Sprintf(format, a...)}
 	}
 	positional := 0
 	for _, p := range params {
@@ -32,7 +33,7 @@ func bindAutomationCall(method string, params []automationParam, args []any, kwa
 		}
 	}
 	if len(args) > positional {
-		return nil, typeError("takes %d positional arguments but %d were given", positional+1, len(args)+1)
+		return nil, typeError("takes at most %d arguments, got %d", positional, len(args))
 	}
 	values := make([]any, len(params))
 	set := make([]bool, len(params))
@@ -48,10 +49,10 @@ func bindAutomationCall(method string, params []automationParam, args []any, kwa
 				}
 			}
 			if index < 0 {
-				return nil, typeError("got an unexpected keyword argument '%s'", key)
+				return nil, typeError("has no option %s", key)
 			}
 			if set[index] {
-				return nil, typeError("got multiple values for argument '%s'", key)
+				return nil, typeError("got %s twice", key)
 			}
 			values[index], set[index] = kwargs.GetOr(key, nil), true
 		}
@@ -61,11 +62,7 @@ func bindAutomationCall(method string, params []automationParam, args []any, kwa
 			continue
 		}
 		if p.required {
-			kind := "positional"
-			if p.kwOnly {
-				kind = "keyword-only"
-			}
-			return nil, typeError("missing 1 required %s argument: '%s'", kind, p.name)
+			return nil, typeError("needs %s", p.name)
 		}
 		values[i] = p.def
 	}
@@ -76,7 +73,7 @@ func bindAutomationCall(method string, params []automationParam, args []any, kwa
 func automationText(method, name string, value any) (string, error) {
 	text, ok := value.(string)
 	if !ok {
-		return "", &pyint.Error{Kind: "TypeError", Msg: fmt.Sprintf("%s() argument '%s' must be str, not %s", method, name, pyrepr.TypeName(value))}
+		return "", &pyint.Error{Kind: "TypeError", Msg: fmt.Sprintf("%s needs %s as text, got %s", method, name, errchain.Kind(value))}
 	}
 	return text, nil
 }
@@ -85,7 +82,7 @@ func automationText(method, name string, value any) (string, error) {
 func automationInt(method, name string, value any) (int64, error) {
 	n, ok := value.(int64)
 	if !ok {
-		return 0, &pyint.Error{Kind: "TypeError", Msg: fmt.Sprintf("%s() argument '%s' must be int, not %s", method, name, pyrepr.TypeName(value))}
+		return 0, &pyint.Error{Kind: "TypeError", Msg: fmt.Sprintf("%s needs %s as a whole number, got %s", method, name, errchain.Kind(value))}
 	}
 	return n, nil
 }
@@ -402,7 +399,7 @@ func invokeGoal(mgr *goals.GoalManager, call string, args []any, kwargs *pyjson.
 		}
 		return mgr.IsWaiting(), nil
 	}
-	return nil, &pyint.Error{Kind: "AttributeError", Msg: fmt.Sprintf("'GoalManager' object has no attribute '%s'", call)}
+	return nil, &pyint.Error{Kind: "AttributeError", Msg: fmt.Sprintf("goals have no action %s", call)}
 }
 
 // Loop manager call with its arguments bound like the Python method
@@ -482,7 +479,7 @@ func invokeLoop(ctx context.Context, mgr *LoopManager, call string, args []any, 
 		decision := mgr.CompleteTick(ctx, last)
 		return pyjson.ObjectOf("status", decision.Status, "stopped", decision.Stopped, "reason", decision.Reason, "message", decision.Message), nil
 	}
-	return nil, &pyint.Error{Kind: "AttributeError", Msg: fmt.Sprintf("'LoopManager' object has no attribute '%s'", call)}
+	return nil, &pyint.Error{Kind: "AttributeError", Msg: fmt.Sprintf("loops have no action %s", call)}
 }
 
 // Heartbeat manager call with its arguments bound like the Python method
@@ -526,14 +523,14 @@ func invokeHeartbeat(mgr *HeartbeatManager, call string, args []any, kwargs *pyj
 			f := float64(t)
 			now = &f
 		default:
-			return nil, &pyint.Error{Kind: "TypeError", Msg: fmt.Sprintf("due_prompt() argument 'now' must be a number, not %s", pyrepr.TypeName(v[0]))}
+			return nil, &pyint.Error{Kind: "TypeError", Msg: fmt.Sprintf("due_prompt needs now as a number, got %s", errchain.Kind(v[0]))}
 		}
 		if prompt, ok := mgr.DuePrompt(now); ok {
 			return prompt, nil
 		}
 		return nil, nil
 	}
-	return nil, &pyint.Error{Kind: "AttributeError", Msg: fmt.Sprintf("'HeartbeatManager' object has no attribute '%s'", call)}
+	return nil, &pyint.Error{Kind: "AttributeError", Msg: fmt.Sprintf("heartbeats have no action %s", call)}
 }
 
 // Runs one viewer automation call against the target's persisted state, the value or the error with the state after

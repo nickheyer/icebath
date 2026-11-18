@@ -12,6 +12,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -914,7 +915,7 @@ func buildTurnContext(ctx context.Context, a *AIAgent, r TurnContextRequest) (*T
 	}
 	line := fmt.Sprintf("conversation turn: session=%s model=%s provider=%s platform=%s history=%d msg=%s",
 		orNone(a.sessionID), a.model, pyStrOr(a.provider, "unknown"), pyStrOr(a.platform, "unknown"), len(conversationHistory),
-		pyrepr.Repr(strings.ReplaceAll(msgPreview, "\n", " ")))
+		errchain.Show(strings.ReplaceAll(msgPreview, "\n", " ")))
 	if a.turnOrigin != "" {
 		line += " origin=" + a.turnOrigin
 	}

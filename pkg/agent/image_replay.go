@@ -10,9 +10,9 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/mediacache"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -56,7 +56,7 @@ func ResolveReplayRecentImages(cfg map[string]any) int {
 		}
 	}
 	pkgLog().Warn(fmt.Sprintf("vision.replay_recent_images=%s is not a non-negative integer (0 = off, default %d); not replaying earlier images",
-		pyrepr.Repr(raw), DefaultReplayRecentImages))
+		errchain.Show(raw), DefaultReplayRecentImages))
 	return 0
 }
 

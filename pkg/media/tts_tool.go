@@ -34,7 +34,7 @@ func (e *ttsImportError) Error() string { return e.msg }
 func ttsSDKImporter(module string) func(ctx context.Context) error {
 	return func(ctx context.Context) error {
 		if !ttsModuleImportable(ctx, module) {
-			return &ttsImportError{msg: fmt.Sprintf("No module named '%s'", module)}
+			return &ttsImportError{msg: fmt.Sprintf("the Python package %s is not installed", module)}
 		}
 		return nil
 	}

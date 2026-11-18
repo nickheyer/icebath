@@ -13,6 +13,7 @@ import (
 	"syscall"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
@@ -169,7 +170,7 @@ func (s *Scope) scanSkillMD(skillMD string, disabled, seen map[string]bool, comm
 	}
 	name, isStr := nameV.(string)
 	if !isStr {
-		return fmt.Errorf("'%s' object has no attribute 'lower'", pyrepr.TypeName(nameV))
+		return fmt.Errorf("skill name in %s is %s where text was expected", skillMD, errchain.Kind(nameV))
 	}
 	if seen[name] || disabled[name] {
 		return nil
@@ -187,12 +188,12 @@ func (s *Scope) scanSkillMD(skillMD string, disabled, seen map[string]bool, comm
 		return nil
 	}
 	if _, collides := SkillCommandCollisionNote(name); collides {
-		s.logger().Warn(fmt.Sprintf("Skill %s generates slash command '/%s' which collides with a core Icebath command; skipping auto-registration. Use '/skill %s' instead.", pyrepr.Repr(name), cmd, name))
+		s.logger().Warn(fmt.Sprintf("Skill %s generates slash command '/%s' which collides with a core Icebath command; skipping auto-registration. Use '/skill %s' instead.", errchain.Show(name), cmd, name))
 		return nil
 	}
 	key := "/" + cmd
 	if existing, ok := commands[key]; ok {
-		s.logger().Warn(fmt.Sprintf("Skill %s maps to slash command %s already claimed by %s; keeping the first and skipping this one.", pyrepr.Repr(name), key, pyrepr.Repr(existing["name"])))
+		s.logger().Warn(fmt.Sprintf("Skill %s maps to slash command %s already claimed by %s; keeping the first and skipping this one.", errchain.Show(name), key, errchain.Show(existing["name"])))
 		return nil
 	}
 	if !fmTruthy(description) {
@@ -422,7 +423,7 @@ func (s *Scope) scanPluginSkillCommands(host PluginSkillHost, metadata []map[str
 		key := "/" + pystr.Lower(qualified)
 		_, collides := SkillCommandCollisionNote(qualified)
 		if _, taken := commands[key]; collides || taken {
-			s.logger().Warn(fmt.Sprintf("Plugin skill %s collides with an existing slash command; skipping", pyrepr.Repr(qualified)))
+			s.logger().Warn(fmt.Sprintf("Plugin skill %s collides with an existing slash command; skipping", errchain.Show(qualified)))
 			continue
 		}
 		desc := parsed["description"]
@@ -455,7 +456,7 @@ func (s *Scope) mergeInteractiveSkillCommands(filesystem, plugin SkillCommands) 
 	sort.Strings(keys)
 	for _, cmd := range keys {
 		if existing, ok := commands[cmd]; ok {
-			s.logger().Warn(fmt.Sprintf("Plugin skill %s collides with %s; keeping the first", pyrepr.Repr(cmd), pyrepr.Repr(existing["name"])))
+			s.logger().Warn(fmt.Sprintf("Plugin skill %s collides with %s; keeping the first", errchain.Show(cmd), errchain.Show(existing["name"])))
 			continue
 		}
 		commands[cmd] = plugin[cmd]

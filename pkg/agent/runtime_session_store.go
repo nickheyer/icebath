@@ -9,6 +9,7 @@ import (
 	"reflect"
 	"sync"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyfs"
@@ -100,7 +101,7 @@ func (s *RuntimeSessionStore) load(ctx context.Context, requested *pyjson.Object
 		}
 		journal, ok := decoded.(*pyjson.Object)
 		if !ok {
-			return &workerStoreError{"TypeError", fmt.Sprintf("%s indices must be integers or slices, not str", pyrepr.TypeName(decoded))}
+			return &workerStoreError{"TypeError", fmt.Sprintf("session journal is %s where a mapping was expected", errchain.Kind(decoded))}
 		}
 		s.journal = journal
 		oldScope, err := journalItem(journal, "scope")
@@ -148,7 +149,7 @@ func isSymlink(path string) bool {
 func journalItem(journal *pyjson.Object, key string) (any, error) {
 	v, ok := journal.Get(key)
 	if !ok {
-		return nil, &workerStoreError{"KeyError", pyrepr.Repr(key)}
+		return nil, &workerStoreError{"KeyError", "session journal has no " + key}
 	}
 	return v, nil
 }
@@ -161,7 +162,7 @@ func journalPending(journal *pyjson.Object) ([]any, error) {
 	}
 	list, ok := raw.([]any)
 	if !ok {
-		return nil, &workerStoreError{"TypeError", fmt.Sprintf("'%s' object is not a list", pyrepr.TypeName(raw))}
+		return nil, &workerStoreError{"TypeError", fmt.Sprintf("pending journal entries are %s where a list was expected", errchain.Kind(raw))}
 	}
 	return list, nil
 }
@@ -245,7 +246,7 @@ func sameKeys(a, b *pyjson.Object) bool {
 func entryItem(entry any, key string) (any, error) {
 	obj, ok := entry.(*pyjson.Object)
 	if !ok {
-		return nil, &workerStoreError{"TypeError", fmt.Sprintf("%s indices must be integers or slices, not str", pyrepr.TypeName(entry))}
+		return nil, &workerStoreError{"TypeError", fmt.Sprintf("pending journal entry is %s where a mapping was expected", errchain.Kind(entry))}
 	}
 	return journalItem(obj, key)
 }
@@ -323,7 +324,7 @@ func (s *RuntimeSessionStore) apply(ctx context.Context, operation string, paylo
 	copied.Set("pending", append(copiedPending, entry))
 	sequence, ok := copied.GetOr("next_sequence", nil).(int64)
 	if !ok {
-		return nil, &workerStoreError{"TypeError", fmt.Sprintf("unsupported operand type(s) for +=: '%s' and 'int'", pyrepr.TypeName(copied.GetOr("next_sequence", nil)))}
+		return nil, &workerStoreError{"TypeError", fmt.Sprintf("journal next_sequence is %s where a number was expected", errchain.Kind(copied.GetOr("next_sequence", nil)))}
 	}
 	copied.Set("next_sequence", sequence+1)
 	if err := s.save(ctx, copied); err != nil {
@@ -364,7 +365,7 @@ func (s *RuntimeSessionStore) retryPendingLocked(ctx context.Context) ([]any, er
 		}
 		entry, ok := pending[0].(*pyjson.Object)
 		if !ok {
-			return fail(&workerStoreError{"TypeError", fmt.Sprintf("%s argument after ** must be a mapping, not %s", callee, pyrepr.TypeName(pending[0]))})
+			return fail(&workerStoreError{"TypeError", fmt.Sprintf("pending journal entry for %s is %s where a mapping was expected", callee, errchain.Kind(pending[0]))})
 		}
 		params := s.scope.Copy()
 		for _, k := range entry.Keys {
@@ -398,7 +399,7 @@ func (s *RuntimeSessionStore) retryPendingLocked(ctx context.Context) ([]any, er
 func (s *RuntimeSessionStore) compressionReceiptJournal(candidate *pyjson.Object, result any) (*pyjson.Object, error) {
 	obj, ok := result.(*pyjson.Object)
 	if !ok {
-		return nil, &workerStoreError{"AttributeError", fmt.Sprintf("'%s' object has no attribute 'get'", pyrepr.TypeName(result))}
+		return nil, &workerStoreError{"AttributeError", fmt.Sprintf("compression receipt is %s where a mapping was expected", errchain.Kind(result))}
 	}
 	assignment := obj.GetOr("worker_assignment", nil)
 	if !pyrepr.Truthy(assignment) {
@@ -444,9 +445,9 @@ func receiptItem(result any, key string) (any, error) {
 	obj, ok := result.(*pyjson.Object)
 	if !ok {
 		if result == nil {
-			return nil, &workerStoreError{"TypeError", "'NoneType' object is not subscriptable"}
+			return nil, &workerStoreError{"TypeError", fmt.Sprintf("store sent no receipt where %s was expected", key)}
 		}
-		return nil, &workerStoreError{"TypeError", fmt.Sprintf("%s indices must be integers or slices, not str", pyrepr.TypeName(result))}
+		return nil, &workerStoreError{"TypeError", fmt.Sprintf("store receipt is %s where a mapping holding %s was expected", errchain.Kind(result), key)}
 	}
 	return journalItem(obj, key)
 }
@@ -520,7 +521,7 @@ func (s *RuntimeSessionStore) Apply(op string, payload map[string]any) (map[stri
 	}
 	plain, ok := pyjson.Plain(result).(map[string]any)
 	if !ok {
-		return nil, &workerStoreError{"TypeError", fmt.Sprintf("receipt is a %s, not a dict", pyrepr.TypeName(result))}
+		return nil, &workerStoreError{"TypeError", fmt.Sprintf("receipt is %s where a mapping was expected", errchain.Kind(result))}
 	}
 	return plain, nil
 }

@@ -87,7 +87,7 @@ func TestMountinfoFstypeEdges(t *testing.T) {
 	if _, err := mountinfoFstype("/data/x", mi); err == nil || !strings.Contains(err.Error(), `truncated \xXX escape`) {
 		t.Fatalf("malformed escape = %v", err)
 	}
-	if _, err := mountinfoFstype("/data", "/proc/self/mount\x00info"); err == nil || !strings.Contains(err.Error(), "embedded null byte") {
+	if _, err := mountinfoFstype("/data", "/proc/self/mount\x00info"); err == nil || !strings.Contains(err.Error(), "the mount path holds a null byte") {
 		t.Fatalf("nul path = %v", err)
 	}
 }
@@ -103,17 +103,17 @@ func TestPyUnicodeEscapeDecode(t *testing.T) {
 		{"x\\\ny", "xy", ""},
 		{"\\x41\\u00e9\\U0001F600", "A\u00e9\U0001F600", ""},
 		{`\N{LATIN SMALL LETTER A}\N{latin small letter b}`, "ab", ""},
-		{`\x4`, "", `'unicodeescape' codec can't decode bytes in position 0-2: truncated \xXX escape`},
-		{`ab\N{bogus}`, "", `'unicodeescape' codec can't decode bytes in position 2-10: unknown Unicode character name`},
-		{`\N{}`, "", `'unicodeescape' codec can't decode bytes in position 0-2: malformed \N character escape`},
-		{`\Nx`, "", `'unicodeescape' codec can't decode bytes in position 0-1: malformed \N character escape`},
-		{`\U00110000`, "", `'unicodeescape' codec can't decode bytes in position 0-9: illegal Unicode character`},
-		{`a\`, "", `'unicodeescape' codec can't decode byte 0x5c in position 1: \ at end of string`},
+		{`\x4`, "", `invalid escape at byte 0 of a mount path: truncated \xXX escape`},
+		{`ab\N{bogus}`, "", `invalid escape at byte 2 of a mount path: unknown Unicode character name`},
+		{`\N{}`, "", `invalid escape at byte 0 of a mount path: malformed \N character escape`},
+		{`\Nx`, "", `invalid escape at byte 0 of a mount path: malformed \N character escape`},
+		{`\U00110000`, "", `invalid escape at byte 0 of a mount path: illegal Unicode character`},
+		{`a\`, "", `invalid escape at byte 1 of a mount path: \ at end of string`},
 	}
 	for _, c := range cases {
 		got, err := pyUnicodeEscapeDecode([]byte(c.in))
 		if c.err != "" {
-			if err == nil || err.Error() != "UnicodeDecodeError: "+c.err {
+			if err == nil || err.Error() != c.err {
 				t.Errorf("%q error = %v want %s", c.in, err, c.err)
 			}
 			continue

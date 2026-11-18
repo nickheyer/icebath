@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -203,7 +204,7 @@ func ExecuteManagedWorker(ctx context.Context, frame *pyjson.Object, channel Wor
 	}
 	adopted, isDict := adoptedRaw.(*pyjson.Object)
 	if !isDict {
-		return &workerStoreError{"TypeError", "'" + pyrepr.TypeName(adoptedRaw) + "' object is not subscriptable"}
+		return &workerStoreError{"TypeError", "adopted session record is " + errchain.Kind(adoptedRaw) + " where a mapping was expected"}
 	}
 	ownerEpoch, present := adopted.Get("owner_epoch")
 	if !present {

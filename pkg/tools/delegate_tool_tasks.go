@@ -7,6 +7,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
@@ -112,7 +113,7 @@ func NormalizeTaskList(goal, context, tasks, outputSchema any, topRole string, m
 		}
 		gs, ok := g.(string)
 		if !ok {
-			return nil, "", fmt.Errorf("'%s' object has no attribute 'strip'", pyrepr.TypeName(g))
+			return nil, "", fmt.Errorf("a task goal is %s, expected text", errchain.Kind(g))
 		}
 		if pystr.Strip(gs) == "" {
 			return nil, fmt.Sprintf("Task %d is missing a 'goal'.", i), nil

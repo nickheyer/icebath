@@ -10,7 +10,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pydict"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
-	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // Authority over a real store whose profile id is the state database's home, as the local source label cases build it
@@ -77,7 +76,7 @@ func TestRuntimeDescribeAdvertisesClarifyBatch(t *testing.T) {
 	if !slices.Contains(capabilities, any("clarify-batch-v1")) {
 		t.Fatalf("capabilities %v", result["capabilities"])
 	}
-	if !slices.Contains(tuihost.CanonicalMethods["prompt.submit"].Params.ModelFields(), "clarify_batch") {
+	if !tuigateway.Lookup(tuigateway.KindCanonical, "prompt.submit").TakesParam("clarify_batch") {
 		t.Fatal("prompt.submit declares no clarify_batch")
 	}
 }

@@ -287,9 +287,9 @@ var (
 	}
 )
 
-// int() of a git count the way Python raises a ValueError the expander reports as a warning
+// Refusal of a git reference count that is not a whole number, which the expander reports as a warning
 func pyIntOrPanic(text string) int {
-	panic(&plugins.HostBuiltinError{Type: "ValueError", Message: fmt.Sprintf("invalid literal for int() with base 10: %s", pyrepr.Repr(text))})
+	panic(&plugins.HostBuiltinError{Type: "ValueError", Message: fmt.Sprintf("git reference count %s is not a whole number", text)})
 }
 
 // One parsed @ reference with its span in the message and the optional line range of a file reference

@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 )
 
@@ -33,7 +34,7 @@ func IsolationMode(ctx context.Context, cfg map[string]any) string {
 	}
 	mode := strings.ReplaceAll(strings.ToLower(strings.TrimSpace(text)), "-", "_")
 	if mode != IsolationInProcess && mode != IsolationHost {
-		pkgLog().Warn(fmt.Sprintf("plugins.isolation=%s is not one of %s; loading plugins in-process", config.PyRepr(raw),
+		pkgLog().Warn(fmt.Sprintf("plugins.isolation=%s is not one of %s; loading plugins in-process", errchain.Show(raw),
 			IsolationHost+", "+IsolationInProcess))
 		return IsolationInProcess
 	}

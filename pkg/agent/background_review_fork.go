@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 
 	"github.com/nickheyer/icebath/pkg/config"
@@ -55,7 +56,7 @@ func reviewUsageInt(v any) (int, error) {
 	}
 	n, ok := pyIntCoerce(v)
 	if !ok {
-		return 0, fmt.Errorf("invalid literal for int() with base 10: %s", pyrepr.Repr(v))
+		return 0, fmt.Errorf("review usage count %s is not a whole number", errchain.Show(v))
 	}
 	return n, nil
 }
@@ -244,7 +245,7 @@ func routedReasoningConfig(ctx context.Context, taskCfg map[string]any) map[stri
 	parsed := config.ParseReasoningEffort(effort)
 	if parsed == nil {
 		pkgLog().Warn(fmt.Sprintf("auxiliary.background_review.reasoning_effort %s is not a valid level (none, %s) — using "+
-			"the routed provider's default", pyrepr.Repr(effort), strings.Join(config.ValidReasoningEfforts, ", ")))
+			"the routed provider's default", errchain.Show(effort), strings.Join(config.ValidReasoningEfforts, ", ")))
 	}
 	return parsed
 }

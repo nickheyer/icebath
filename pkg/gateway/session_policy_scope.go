@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
@@ -69,7 +70,7 @@ func policyScope(ctx context.Context, policy *LocalSessionPolicy, a *SessionAuth
 	}
 	fields, ok := pyjson.AsObject(loaded)
 	if !ok {
-		return &PyError{Kind: "TypeError", Msg: "'" + pyTypeName(loaded) + "' object does not support item assignment"}
+		return &PyError{Kind: "TypeError", Msg: "the session policy scope is " + errchain.Kind(loaded) + ", expected a mapping"}
 	}
 	terminal := tools.TerminalPolicy{}
 	for _, key := range fields.Keys {

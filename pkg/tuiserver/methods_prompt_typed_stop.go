@@ -4,7 +4,6 @@ import (
 	"context"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/media"
 )
 
 // Push to talk gate, a shared owner session's own voice mode when an owner here holds it, else the env flag
@@ -27,7 +26,7 @@ func typedStopPhrase(text string) (stop bool) {
 			stop = false
 		}
 	}()
-	return media.IsVoiceStopPhrase(text)
+	return isVoiceStopPhrase(text)
 }
 
 // Ends the session's voice chat when text is a bare stop phrase typed while its voice mode is on

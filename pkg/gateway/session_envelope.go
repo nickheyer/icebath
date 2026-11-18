@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -281,7 +282,7 @@ func validateNative(ctx context.Context, runner AuthorityRunner, event *MessageE
 	}
 	authz, ok := runner.(nativeAuthorizationRunner)
 	if !ok {
-		return nil, &PyError{Kind: "AttributeError", Msg: "'" + pyTypeName(runner) + "' object has no attribute '_is_user_authorized_for_source'"}
+		return nil, &PyError{Kind: "AttributeError", Msg: "the gateway runner cannot check whether a user is authorized for a source"}
 	}
 	delegated := freshRoles || provenanceBindsRelay(provenance)
 	if !delegated {
@@ -540,7 +541,7 @@ func snapshotNative(ctx context.Context, runner AuthorityRunner, event *MessageE
 			wrapped, _ := legacy.Get("native_text_v1")
 			wrapped.(*pyjson.Object).Delete("provenance")
 			if authority == nil {
-				return nil, &PyError{Kind: "AttributeError", Msg: "'NoneType' object has no attribute 'db'"}
+				return nil, &PyError{Kind: "AttributeError", Msg: "the session store is not open"}
 			}
 			rows, err := authority.DB.ListSessionAdmissions(ctx, entry.SessionID, false)
 			if err != nil {
@@ -565,7 +566,7 @@ func nativeEnvelope(payload *pyjson.Object) (*pyjson.Object, error) {
 	}
 	envelope, isEnvelope := value.(*pyjson.Object)
 	if !isEnvelope || envelope == nil {
-		return nil, &PyError{Kind: "TypeError", Msg: "'" + pyTypeName(value) + "' object is not subscriptable"}
+		return nil, &PyError{Kind: "TypeError", Msg: "the native envelope is " + errchain.Kind(value) + ", expected a mapping"}
 	}
 	return envelope, nil
 }
@@ -582,7 +583,7 @@ func restoreNativeSource(ctx context.Context, payload *pyjson.Object, runner Aut
 	}
 	wire, isWire := attachmentItem(encoded)
 	if !isWire {
-		return nil, &PyError{Kind: "TypeError", Msg: "'" + pyTypeName(encoded) + "' object is not subscriptable"}
+		return nil, &PyError{Kind: "TypeError", Msg: "the encoded native source is " + errchain.Kind(encoded) + ", expected a mapping"}
 	}
 	source, err := SessionSourceFromDict(ctx, wire)
 	if err != nil {
@@ -616,20 +617,20 @@ func eventOptString(name string, value any) (*string, error) {
 	case string:
 		return &v, nil
 	}
-	return nil, &PyError{Kind: "TypeError", Msg: name + " must be str or None, not " + pyTypeName(value)}
+	return nil, &PyError{Kind: "TypeError", Msg: name + " must be text or empty, got " + errchain.Kind(value)}
 }
 
 // List of strings of a committed event field
 func eventStringList(name string, value any) ([]string, error) {
 	items, ok := value.([]any)
 	if !ok {
-		return nil, &PyError{Kind: "TypeError", Msg: name + " must be list, not " + pyTypeName(value)}
+		return nil, &PyError{Kind: "TypeError", Msg: name + " must be a list, got " + errchain.Kind(value)}
 	}
 	out := make([]string, len(items))
 	for i, item := range items {
 		text, isText := item.(string)
 		if !isText {
-			return nil, &PyError{Kind: "TypeError", Msg: name + " items must be str, not " + pyTypeName(item)}
+			return nil, &PyError{Kind: "TypeError", Msg: name + " items must be text, got " + errchain.Kind(item)}
 		}
 		out[i] = text
 	}
@@ -659,7 +660,7 @@ func setEventField(event *MessageEvent, name string, value any) error {
 	case "platform_update_id":
 		event.PlatformUpdateID = rowInt(pyjson.ObjectOf(name, value), name)
 		if value != nil && event.PlatformUpdateID == nil {
-			return &PyError{Kind: "TypeError", Msg: name + " must be int or None, not " + pyTypeName(value)}
+			return &PyError{Kind: "TypeError", Msg: name + " must be a whole number or empty, got " + errchain.Kind(value)}
 		}
 	case "reply_expected":
 		event.ReplyExpected = nil
@@ -682,7 +683,7 @@ func setEventField(event *MessageEvent, name string, value any) error {
 	case "media_text_inlined":
 		items, isList := value.([]any)
 		if !isList {
-			return &PyError{Kind: "TypeError", Msg: name + " must be list, not " + pyTypeName(value)}
+			return &PyError{Kind: "TypeError", Msg: name + " must be a list, got " + errchain.Kind(value)}
 		}
 		event.MediaTextInlined = make([]*bool, len(items))
 		for i, item := range items {
@@ -694,7 +695,7 @@ func setEventField(event *MessageEvent, name string, value any) error {
 	case "text", "source", "timestamp", "message_type", "media_urls":
 		return &PyError{Kind: "TypeError", Msg: "gateway.platforms.event.MessageEvent() got multiple values for keyword argument '" + name + "'"}
 	default:
-		return &PyError{Kind: "TypeError", Msg: "MessageEvent.__init__() got an unexpected keyword argument '" + name + "'"}
+		return &PyError{Kind: "TypeError", Msg: "a message event has no field " + name}
 	}
 	return err
 }
@@ -715,7 +716,7 @@ func restoreNative(ctx context.Context, payload *pyjson.Object, runner Authority
 	}
 	stampText, isText := stamp.(string)
 	if !isText {
-		return nil, &PyError{Kind: "TypeError", Msg: "fromisoformat: argument must be str"}
+		return nil, &PyError{Kind: "TypeError", Msg: "the native event timestamp is not ISO 8601 text"}
 	}
 	timestamp, err := fromISOFormat(stampText)
 	if err != nil {
@@ -731,7 +732,7 @@ func restoreNative(ctx context.Context, payload *pyjson.Object, runner Authority
 	}
 	body, isBody := text.(string)
 	if !isBody {
-		return nil, &PyError{Kind: "TypeError", Msg: "native text must be str, not " + pyTypeName(text)}
+		return nil, &PyError{Kind: "TypeError", Msg: "the native message text is " + errchain.Kind(text) + ", expected text"}
 	}
 	kind := MessageTypeText
 	if named, has := envelope.Get("message_type"); has {
@@ -756,7 +757,7 @@ func restoreNative(ctx context.Context, payload *pyjson.Object, runner Authority
 	}
 	fields, isFields := committed.(*pyjson.Object)
 	if !isFields || fields == nil {
-		return nil, &PyError{Kind: "TypeError", Msg: "gateway.platforms.event.MessageEvent() argument after ** must be a mapping, not " + pyTypeName(committed)}
+		return nil, &PyError{Kind: "TypeError", Msg: "the committed message event is " + errchain.Kind(committed) + ", expected a mapping"}
 	}
 	for _, name := range fields.Keys {
 		value, _ := fields.Get(name)
@@ -770,7 +771,7 @@ func restoreNative(ctx context.Context, payload *pyjson.Object, runner Authority
 	}
 	automation, isAutomation := described.(*pyjson.Object)
 	if !isAutomation || automation == nil {
-		return nil, &PyError{Kind: "AttributeError", Msg: "'" + pyTypeName(described) + "' object has no attribute 'get'"}
+		return nil, &PyError{Kind: "AttributeError", Msg: "the native source description is " + errchain.Kind(described) + ", expected a mapping"}
 	}
 	event.Internal = true
 	if heartbeat, _ := automation.Get("heartbeat"); pyTruthy(heartbeat) {

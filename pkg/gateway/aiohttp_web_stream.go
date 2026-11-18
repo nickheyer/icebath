@@ -41,7 +41,7 @@ func (s *WebStreamResponse) Prepare(request *WebRequest) error {
 // Writes one body part and flushes it, kept in Body when no client is attached, a closed client as ConnectionResetError
 func (s *WebStreamResponse) Write(data []byte) error {
 	if !s.prepared {
-		return errors.New("RuntimeError: Cannot call write() for not prepared StreamResponse")
+		return errors.New("the stream response was written before it was prepared")
 	}
 	if s.writer == nil {
 		s.Body = append(s.Body, data...)

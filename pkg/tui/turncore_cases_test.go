@@ -146,7 +146,7 @@ func TestTurnControllerTurnFlow(t *testing.T) {
 		if c.store.turn.Streaming != "Hello world" {
 			t.Fatalf("streaming %q", c.store.turn.Streaming)
 		}
-		result := c.recordMessageComplete(map[string]any{"text": "Hello world"})
+		result := c.recordMessageComplete(tuigateway.MessageCompletePayload{Text: ptr("Hello world")})
 		last := result.FinalMessages[len(result.FinalMessages)-1]
 		if result.FinalText != "Hello world" || !reflect.DeepEqual(last, msg{Role: "assistant", Text: "Hello world"}) || c.store.ui.Busy {
 			t.Fatalf("result %#v busy %v", result, c.store.ui.Busy)
@@ -167,7 +167,7 @@ func TestTurnControllerTurnFlow(t *testing.T) {
 		if !reflect.DeepEqual(c.store.turn.StreamPendingTools, []string{`Read File("main.go") (0.9s) ✓`}) || !reflect.DeepEqual(c.store.turn.TurnTrail, []string{analyzingToolOutput}) {
 			t.Fatalf("pending %#v trail %#v", c.store.turn.StreamPendingTools, c.store.turn.TurnTrail)
 		}
-		result := c.recordMessageComplete(map[string]any{"text": "done"})
+		result := c.recordMessageComplete(tuigateway.MessageCompletePayload{Text: ptr("done")})
 		if len(result.FinalMessages) != 2 || !reflect.DeepEqual(result.FinalMessages[0].Tools, []string{`Read File("main.go") (0.9s) ✓`}) {
 			t.Fatalf("final %#v", result.FinalMessages)
 		}
@@ -193,7 +193,7 @@ func TestTurnControllerTurnFlow(t *testing.T) {
 		if c.store.ui.Status != "ready" {
 			t.Fatalf("status %q", c.store.ui.Status)
 		}
-		reply := c.recordMessageComplete(map[string]any{"status": "interrupted", "text": "partial answer and more"})
+		reply := c.recordMessageComplete(tuigateway.MessageCompletePayload{Status: ptr(tuigateway.TurnStatus("interrupted")), Text: ptr("partial answer and more")})
 		if !reply.WasInterrupted || reply.InterruptedReply == nil || reply.InterruptedReply.To != "partial answer and more\n\n*[interrupted]*" {
 			t.Fatalf("reply %#v", reply)
 		}
@@ -227,7 +227,7 @@ func TestTurnControllerTurnFlow(t *testing.T) {
 		if c.store.ui.Notice != nil {
 			t.Fatal("notice shown while busy")
 		}
-		c.recordMessageComplete(map[string]any{"text": "ok"})
+		c.recordMessageComplete(tuigateway.MessageCompletePayload{Text: ptr("ok")})
 		if c.store.ui.Notice == nil || c.store.ui.Notice.ID != "n1" {
 			t.Fatalf("notice %#v", c.store.ui.Notice)
 		}
@@ -248,7 +248,7 @@ func TestTurnControllerTurnFlow(t *testing.T) {
 		if len(got) != 2 || got[0].ID != "a" || got[0].ToolCount != 3 || got[0].Status != "completed" || got[1].ID != "b" {
 			t.Fatalf("subagents %#v", got)
 		}
-		result := c.recordMessageComplete(map[string]any{"text": "ok"})
+		result := c.recordMessageComplete(tuigateway.MessageCompletePayload{Text: ptr("ok")})
 		if len(result.FinishedSubagents) != 2 || result.SessionID != "s1" || len(c.store.spawnHistory) != 1 || c.store.spawnHistory[0].Label != "first · second" {
 			t.Fatalf("result %#v history %#v", result, c.store.spawnHistory)
 		}

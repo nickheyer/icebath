@@ -13,11 +13,11 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 
 	"github.com/nickheyer/icebath/pkg/activesessions"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
 )
@@ -171,8 +171,7 @@ func (r *ProcessRegistry) foreignHandoffs(env *Env, path string, known map[strin
 				continue
 			}
 		case []any, *pyjson.Object:
-			name := pyrepr.TypeName(id)
-			return nil, &pyjson.TypeError{Msg: fmt.Sprintf("cannot use '%s' as a set element (unhashable type: '%s')", name, name)}
+			return nil, &pyjson.TypeError{Msg: "a process checkpoint session id is " + errchain.Kind(id) + ", expected text"}
 		}
 		log := adoptableLog(env, entry.Vals["output_log"])
 		if log == "" {
@@ -242,7 +241,7 @@ func checkpointItems(v any) ([]any, error) {
 		}
 		return chars, nil
 	}
-	return nil, &pyjson.TypeError{Msg: fmt.Sprintf("'%s' object is not iterable", pyrepr.TypeName(v))}
+	return nil, &pyjson.TypeError{Msg: fmt.Sprintf("the process checkpoint is %s, expected a list", errchain.Kind(v))}
 }
 
 // RecoverFromCheckpoint probes the checkpointed pids at startup and re adopts the live ones as detached sessions
@@ -265,7 +264,7 @@ func (r *ProcessRegistry) RecoverFromCheckpoint(ctx context.Context, env *Env) (
 	for _, item := range items {
 		entry, ok := item.(*pyjson.Object)
 		if !ok {
-			return 0, &checkpointItemError{fmt.Sprintf("'%s' object has no attribute 'get'", pyrepr.TypeName(item))}
+			return 0, &checkpointItemError{fmt.Sprintf("a process checkpoint entry is %s, expected a mapping", errchain.Kind(item))}
 		}
 		pid, _ := asIntValue(entry.Vals["pid"])
 		pidScope := "host"

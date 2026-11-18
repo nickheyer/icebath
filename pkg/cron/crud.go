@@ -13,6 +13,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
@@ -326,7 +327,7 @@ func normalizeRepeatValue(repeat any) (*int, error) {
 	case float64:
 		n = v
 	default:
-		return nil, fmt.Errorf("'<=' not supported between instances of '%s' and 'int'", pyrepr.TypeName(repeat))
+		return nil, fmt.Errorf("repeat must be a number, 'forever' or 'once', got %s", errchain.Kind(repeat))
 	}
 	if n <= 0 {
 		return nil, nil

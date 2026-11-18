@@ -3,6 +3,7 @@ package tui
 import (
 	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"math"
+	"strconv"
 	"strings"
 )
 
@@ -36,57 +37,49 @@ func userDisplay(text string) string {
 }
 
 // Folded block of an asynchronous delegation batch result, headed by its display text or the finished agent count
-func delegationResultMsg(text string, meta map[string]any, createdAt *float64) msg {
-	count, hasCount := meta["task_count"].(float64)
-	label := tr("libText.messages.backgroundAgentWorkFinished")
-	switch {
-	case hasCount && count == 1:
-		label = tr("libText.messages.backgroundAgentsFinishedOne", count)
-	case hasCount:
-		label = tr("libText.messages.backgroundAgentsFinishedOther", count)
+func delegationResultMsg(text string, meta *tuigateway.DisplayMetadata, createdAt *float64) msg {
+	if meta == nil {
+		meta = &tuigateway.DisplayMetadata{}
 	}
-	if display, isStr := meta["display_text"].(string); isStr && strings.TrimSpace(display) != "" {
+	label := tr("libText.messages.backgroundAgentWorkFinished")
+	switch count := meta.TaskCount; {
+	case count != nil && *count == 1:
+		label = tr("libText.messages.backgroundAgentsFinishedOne", *count)
+	case count != nil:
+		label = tr("libText.messages.backgroundAgentsFinishedOther", *count)
+	}
+	if display := val(meta.DisplayText); strings.TrimSpace(display) != "" {
 		label = display
 	}
 	return msg{Kind: "delegation", Role: "system", Label: label, Text: text, CreatedAt: createdAt}
 }
 
 // Transcript rows of a stored session, tool rows folded into the next reply and display only events projected
-func toTranscriptMessages(rows any) []msg {
-	list, isList := rows.([]any)
-	if !isList {
-		return nil
-	}
+func toTranscriptMessages(rows []tuigateway.TranscriptMessage) []msg {
 	var out []msg
 	var pending []string
-	for _, item := range list {
-		row, isDict := item.(map[string]any)
-		if !isDict {
-			continue
-		}
-		role, _ := row["role"].(string)
+	for _, row := range rows {
 		var createdAt *float64
-		if ts, isNum := row["timestamp"].(float64); isNum && !math.IsInf(ts, 0) && !math.IsNaN(ts) && ts > 0 {
+		if ts := val(row.Timestamp); !math.IsInf(ts, 0) && !math.IsNaN(ts) && ts > 0 {
 			createdAt = &ts
 		}
-		if role == "tool" {
-			name, isStr := row["name"].(string)
-			if !isStr {
-				name = "tool"
+		if row.Role == "tool" {
+			name := "tool"
+			if row.Name != nil {
+				name = *row.Name
 			}
-			context, _ := row["context"].(string)
-			pending = append(pending, buildToolTrailLine(name, context, false, "", nil))
+			pending = append(pending, buildToolTrailLine(name, val(row.Context), false, "", nil))
 			continue
 		}
-		text, isStr := row["text"].(string)
-		if !isStr || strings.TrimFunc(text, isJSSpace) == "" {
+		text := val(row.Text)
+		if row.Text == nil || strings.TrimFunc(text, isJSSpace) == "" {
 			continue
 		}
 		event := func(text string) {
 			out = append(out, msg{Kind: "event", Role: "system", Text: text})
 			pending = nil
 		}
-		switch kind, _ := row["display_kind"].(string); kind {
+		switch val(row.DisplayKind) {
 		case "hidden":
 			continue
 		case "model_switch":
@@ -99,25 +92,23 @@ func toTranscriptMessages(rows any) []msg {
 			event(tr("libText.messages.personalityChanged"))
 			continue
 		case "async_delegation_complete":
-			meta, _ := row["display_metadata"].(map[string]any)
-			out = append(out, delegationResultMsg(text, meta, createdAt))
+			out = append(out, delegationResultMsg(text, row.DisplayMetadata, createdAt))
 			pending = nil
 			continue
 		case "process_complete":
-			meta, _ := row["display_metadata"].(map[string]any)
 			label := tr("libText.messages.backgroundProcessFinished")
-			if display, isStr := meta["display_text"].(string); isStr {
-				label = display
+			if row.DisplayMetadata != nil && row.DisplayMetadata.DisplayText != nil {
+				label = *row.DisplayMetadata.DisplayText
 			}
 			event(label)
 			continue
 		}
-		switch role {
+		switch row.Role {
 		case "assistant":
-			out = append(out, msg{Role: role, Text: text, CreatedAt: createdAt, Tools: pending})
+			out = append(out, msg{Role: row.Role, Text: text, CreatedAt: createdAt, Tools: pending})
 			pending = nil
 		case "user", "system":
-			out = append(out, msg{Role: role, Text: text, CreatedAt: createdAt})
+			out = append(out, msg{Role: row.Role, Text: text, CreatedAt: createdAt})
 			pending = nil
 		}
 	}
@@ -130,11 +121,11 @@ func fmtDuration(ms float64) string {
 	h, m, s := t/3600, (t%3600)/60, t%60
 	switch {
 	case h > 0:
-		return jsString(float64(h)) + "h " + jsString(float64(m)) + "m"
+		return strconv.FormatInt(h, 10) + "h " + strconv.FormatInt(m, 10) + "m"
 	case m > 0:
-		return jsString(float64(m)) + "m " + jsString(float64(s)) + "s"
+		return strconv.FormatInt(m, 10) + "m " + strconv.FormatInt(s, 10) + "s"
 	}
-	return jsString(float64(s)) + "s"
+	return strconv.FormatInt(s, 10) + "s"
 }
 
 // Rows with a message appended, stamped now when it carries no time, tool shelves merged

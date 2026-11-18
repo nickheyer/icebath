@@ -87,21 +87,6 @@ func storeIndexResponse(key string, value any) {
 	}
 }
 
-// Integer a Unicode decimal digit run spells
-func digitsValue(digits string) *big.Int {
-	n := new(big.Int)
-	ten := big.NewInt(10)
-	for _, r := range digits {
-		run := int64(0)
-		for unicode.Is(unicode.Nd, r-rune(run)-1) {
-			run++
-		}
-		n.Mul(n, ten)
-		n.Add(n, big.NewInt(run%10))
-	}
-	return n
-}
-
 // versionKeyPart is one numeric or alphabetic segment of a version sort key
 type versionKeyPart struct {
 	alpha bool

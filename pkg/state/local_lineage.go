@@ -31,13 +31,13 @@ func receiptItem(v any, key string) (any, error) {
 	switch obj := v.(type) {
 	case *pyjson.Object:
 		if obj == nil {
-			return nil, &stateTypedError{"TypeError", "receipt is not subscriptable by key"}
+			return nil, &stateTypedError{"TypeError", "the lineage receipt is not a mapping"}
 		}
 		item, ok = obj.Get(key)
 	case map[string]any:
 		item, ok = obj[key]
 	default:
-		return nil, &stateTypedError{"TypeError", "receipt is not subscriptable by key"}
+		return nil, &stateTypedError{"TypeError", "the lineage receipt is not a mapping"}
 	}
 	if !ok {
 		return nil, &stateTypedError{"KeyError", pyRepr(key)}
@@ -197,7 +197,7 @@ func localPhysicalTarget(ctx context.Context, conn SQLiteConn, sessionID string)
 	}
 	receipt, ok := decoded.(*pyjson.Object)
 	if !ok {
-		return "", &stateTypedError{"TypeError", "receipt is not subscriptable by key"}
+		return "", &stateTypedError{"TypeError", "the lineage receipt is not a mapping"}
 	}
 	owner, err := receiptItem(receipt, "session_id")
 	if err != nil {
@@ -309,7 +309,7 @@ func advancedReceipt(ctx context.Context, conn SQLiteConn, raw any, logicalID st
 	}
 	receipt, ok := decoded.(*pyjson.Object)
 	if !ok {
-		return nil, nil, &stateTypedError{"TypeError", "receipt is not subscriptable by key"}
+		return nil, nil, &stateTypedError{"TypeError", "the lineage receipt is not a mapping"}
 	}
 	checks := []struct {
 		got  func() (any, error)
@@ -357,7 +357,7 @@ func advancedReceipt(ctx context.Context, conn SQLiteConn, raw any, logicalID st
 	if prior, ok := receipt.Get("lineage"); ok {
 		list, ok := prior.([]any)
 		if !ok {
-			return nil, nil, &stateTypedError{"TypeError", "lineage is not iterable"}
+			return nil, nil, &stateTypedError{"TypeError", "the receipt lineage is not a list"}
 		}
 		lineage = append(lineage, list...)
 	} else {
@@ -456,7 +456,7 @@ func adoptableCompression(ctx context.Context, conn SQLiteConn, receipt *pyjson.
 			return nil, nil, err
 		}
 		if child == nil {
-			return nil, nil, &stateTypedError{"TypeError", "'NoneType' object is not iterable"}
+			return nil, nil, &stateTypedError{"TypeError", "the compression child session is missing"}
 		}
 		if !pyjson.Equal([]any{child["session_key"], child["chat_id"], child["user_id"]}, identity) {
 			return nil, nil, nil
@@ -480,7 +480,7 @@ func (d *SessionDB) AdoptUntrackedCompression(ctx context.Context, epoch int64, 
 			return err
 		}
 		if saved == nil {
-			return &stateTypedError{"TypeError", "'NoneType' object is not subscriptable"}
+			return &stateTypedError{"TypeError", "the saved compression receipt is missing"}
 		}
 		text, _ := saved["value"].(string)
 		decoded, err := pyjson.Loads(text)
@@ -496,7 +496,7 @@ func (d *SessionDB) AdoptUntrackedCompression(ctx context.Context, epoch int64, 
 		}
 		receipt, isObj := decoded.(*pyjson.Object)
 		if !isObj {
-			return &stateTypedError{"TypeError", "receipt is not subscriptable by key"}
+			return &stateTypedError{"TypeError", "the lineage receipt is not a mapping"}
 		}
 		children, routed, err := adoptableCompression(ctx, conn, receipt)
 		if err != nil || children == nil {
@@ -537,7 +537,7 @@ func (d *SessionDB) ResetLocalTarget(ctx context.Context, epoch int64, parentSes
 		}
 		chatID, ok := parent["chat_id"].(string)
 		if !ok {
-			return &stateTypedError{"TypeError", "can only concatenate str (not \"NoneType\") to str"}
+			return &stateTypedError{"TypeError", "the local target has no session id"}
 		}
 		saved, err := connRow(ctx, conn, "SELECT value FROM state_meta WHERE key=?", LocalPolicyPrefix+chatID)
 		if err != nil {
@@ -553,7 +553,7 @@ func (d *SessionDB) ResetLocalTarget(ctx context.Context, epoch int64, parentSes
 		}
 		receipt, isObj := decoded.(*pyjson.Object)
 		if !isObj {
-			return &stateTypedError{"TypeError", "receipt is not subscriptable by key"}
+			return &stateTypedError{"TypeError", "the lineage receipt is not a mapping"}
 		}
 		logical, err := receiptItem(receipt, "session_id")
 		if err != nil {

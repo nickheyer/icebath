@@ -8,11 +8,14 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
+	"unicode"
 
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Launcher a sealed payload records for the icebath command, empty when none is recorded
@@ -312,4 +315,269 @@ func pyExceptionText(err error) string {
 		return pypath.OSErrorText(err)
 	}
 	return err.Error()
+}
+
+// Environment a sealed payload ships beside its tree, empty when there is none
+func PayloadVenv(projectRoot string) (string, error) {
+	manifest, payloadRoot, ok, err := payloadManifest(resolvePath(projectRoot))
+	if err != nil || !ok {
+		return "", err
+	}
+	venv, _ := manifest["venv"].(string)
+	if venv == "" {
+		return "", nil
+	}
+	return payloadPath(payloadRoot, venv, "environment")
+}
+
+// Payload environment, then the checkout's in tree venv, then the venv path a first install creates
+func BaseVenv(projectRoot string) (string, error) {
+	payload, err := PayloadVenv(projectRoot)
+	if err != nil || payload != "" {
+		return payload, err
+	}
+	root := resolvePath(projectRoot)
+	dir, err := projectVenvDir(root)
+	if err != nil || dir != "" {
+		return dir, err
+	}
+	return filepath.Join(root, "venv"), nil
+}
+
+// Committed environment of the install, or its original environment before the first sync
+func SelectedVenv(ctx context.Context, projectRoot string) (string, error) {
+	recorded, err := recordedVenv(ctx, projectRoot)
+	if err != nil || recorded != "" {
+		return recorded, err
+	}
+	return BaseVenv(projectRoot)
+}
+
+// Environment PM committed for the install or a sealed payload's own, never the pre PM in tree venv
+func CommittedVenv(ctx context.Context, projectRoot string) (string, error) {
+	recorded, err := recordedVenv(ctx, projectRoot)
+	if err != nil || recorded != "" {
+		return recorded, err
+	}
+	return PayloadVenv(projectRoot)
+}
+
+// Generation the install's facts select, refusing a damaged record or a tree outside the install
+func recordedVenv(ctx context.Context, projectRoot string) (string, error) {
+	path := EnvironmentRuntimeFactsPath(ctx, projectRoot)
+	data, err := os.ReadFile(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return "", nil
+	}
+	unreadable := &PyError{Class: "RuntimeError", Message: "cannot read dependency environment: " + path}
+	if err != nil {
+		return "", unreadable
+	}
+	data = trimBOM(data)
+	if utf8Strict(data) != nil {
+		return "", unreadable
+	}
+	doc, err := loadJSON(data)
+	if err != nil {
+		return "", unreadable
+	}
+	invalid := &PyError{Class: "RuntimeError", Message: "invalid dependency environment record: " + path}
+	record, ok := doc.(map[string]any)
+	if !ok {
+		return "", invalid
+	}
+	var packages any = map[string]any{}
+	if v, present := record["packages"]; present {
+		packages = v
+	}
+	packageMap, ok := packages.(map[string]any)
+	if !ok {
+		return "", invalid
+	}
+	var fact any = map[string]any{}
+	if v, present := packageMap["venv"]; present {
+		fact = v
+	}
+	factMap, ok := fact.(map[string]any)
+	if !ok {
+		return "", invalid
+	}
+	value := factMap["environment"]
+	if value == nil {
+		return "", nil
+	}
+	text, ok := value.(string)
+	if !ok {
+		return "", &PyError{Class: "RuntimeError", Message: "invalid dependency environment path"}
+	}
+	environment, err := pathResolve(text)
+	if err != nil {
+		return "", err
+	}
+	generations := resolvePath(filepath.Join(InstallStateDir(ctx, projectRoot), "environments"))
+	if !isRelativeTo(environment, generations) || !isRegularFile(filepath.Join(environment, "pyvenv.cfg")) {
+		return "", &PyError{Class: "RuntimeError", Message: "dependency environment is missing or outside this install: " + environment}
+	}
+	return environment, nil
+}
+
+// Interpreter of the install's selected dependency environment
+func ProjectPython(ctx context.Context, projectRoot string) (string, error) {
+	venv, err := SelectedVenv(ctx, projectRoot)
+	if err != nil {
+		return "", err
+	}
+	return VenvPython(venv), nil
+}
+
+// Decimal text Python int gives a digit string, a ValueError for digit forms int refuses
+func pyIntText(s string) (string, error) {
+	for _, r := range s {
+		if !isDecimalRune(r) {
+			return "", &PyError{Class: "ValueError", Message: "invalid literal for int() with base 10: " + pyrepr.StrRepr(s)}
+		}
+	}
+	return digitsValue(s).String(), nil
+}
+
+// Major and minor version a POSIX venv holds from pyvenv.cfg or its lib directory, ok false when neither says
+func VenvPythonVersion(venv string) (major, minor string, ok bool, err error) {
+	parse := func(text string) (string, string, bool, error) {
+		head, rest, _ := strings.Cut(text, ".")
+		tail, _, _ := strings.Cut(rest, ".")
+		if !pystr.All(head, pystr.IsDigit) || !pystr.All(tail, pystr.IsDigit) {
+			return "", "", false, nil
+		}
+		a, err := pyIntText(head)
+		if err != nil {
+			return "", "", false, err
+		}
+		b, err := pyIntText(tail)
+		if err != nil {
+			return "", "", false, err
+		}
+		return a, b, true, nil
+	}
+	if data, readErr := os.ReadFile(filepath.Join(venv, "pyvenv.cfg")); readErr == nil {
+		data = trimBOM(data)
+		if err := utf8Strict(data); err != nil {
+			return "", "", false, err
+		}
+		for _, line := range pystr.Splitlines(string(data), false) {
+			key, value, _ := strings.Cut(line, "=")
+			if k := pystr.Strip(key); k != "version" && k != "version_info" {
+				continue
+			}
+			if a, b, found, err := parse(pystr.Strip(value)); err != nil || found {
+				return a, b, found, err
+			}
+		}
+	}
+	entries, readErr := os.ReadDir(filepath.Join(venv, "lib"))
+	if readErr != nil {
+		return "", "", false, nil
+	}
+	var names []string
+	for _, entry := range entries {
+		name := entry.Name()
+		if strings.HasPrefix(name, "python3") || (runtime.GOOS == "windows" && strings.HasPrefix(strings.ToLower(name), "python3")) {
+			names = append(names, name)
+		}
+	}
+	sortPathNames(names)
+	for _, name := range names {
+		if a, b, found, err := parse(strings.TrimPrefix(name, "python")); err != nil || found {
+			return a, b, found, err
+		}
+	}
+	return "", "", false, nil
+}
+
+// Reports a Unicode decimal digit, the only digit form Python int accepts
+func isDecimalRune(r rune) bool { return unicode.Is(unicode.Nd, r) }
+
+// Major and minor version of the pinned Python PM builds environments with, this process's interpreter
+func pinnedPythonVersion() (string, string, error) {
+	version, ok := currentLockfile().Version("python")
+	major, rest, _ := strings.Cut(version, ".")
+	minor, _, _ := strings.Cut(rest, ".")
+	if !ok || major == "" || minor == "" {
+		return "", "", &PyError{Class: "RuntimeError", Message: fmt.Sprintf("the lock pins no python version: %s", pyrepr.StrRepr(version))}
+	}
+	return major, minor, nil
+}
+
+// Major and minor version of the pinned Python for callers outside pm, a RuntimeError when the lock pins none
+func PinnedPythonVersion() (major, minor string, err error) { return pinnedPythonVersion() }
+
+// Site packages directory of a venv for the interpreter version the tree actually holds
+func SitePackages(venv string) (string, error) {
+	if runtime.GOOS == "windows" {
+		return filepath.Join(venv, "Lib", "site-packages"), nil
+	}
+	major, minor, ok, err := VenvPythonVersion(venv)
+	if err != nil {
+		return "", err
+	}
+	if !ok {
+		if major, minor, err = pinnedPythonVersion(); err != nil {
+			return "", err
+		}
+	}
+	return filepath.Join(venv, "lib", "python"+major+"."+minor, "site-packages"), nil
+}
+
+// Directory of the resolved running executable, what this process runs from
+var processPrefix = func() (string, error) {
+	exe, err := os.Executable()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Dir(resolvePath(exe)), nil
+}
+
+// Exported form for pkg/memory setup, same answer as the package function
+func RunningFromSelectedEnvironment(ctx context.Context, projectRoot string) (bool, string, error) {
+	return runningFromSelectedEnvironment(ctx, projectRoot)
+}
+
+// Reports whether this process resolves imports from the install's selected environment, with what it runs from
+func runningFromSelectedEnvironment(ctx context.Context, projectRoot string) (bool, string, error) {
+	prefix, err := processPrefix()
+	if err != nil {
+		return false, "", err
+	}
+	selected, err := SelectedVenv(ctx, projectRoot)
+	var site, resolved string
+	if err == nil {
+		site, err = SitePackages(selected)
+	}
+	if err == nil {
+		resolved, err = pathResolve(site)
+	}
+	if err != nil {
+		if pyOSRuntimeOrValueError(err) {
+			return false, prefix, nil
+		}
+		return false, prefix, err
+	}
+	for _, entry := range importPathEntries() {
+		if entry != "" && resolvePath(entry) == resolved {
+			return true, prefix, nil
+		}
+	}
+	return false, prefix, nil
+}
+
+// Reports a failure an except clause naming OSError, RuntimeError and ValueError catches, subclasses included
+func pyOSRuntimeOrValueError(err error) bool {
+	if pypath.IsOSError(err) {
+		return true
+	}
+	switch errorClass(err) {
+	case "OSError", "FileNotFoundError", "FileExistsError", "PermissionError", "RuntimeError", "InstallError", "ResolutionConflict",
+		"DownloadError", "DownloadPaused", "HashError", "_RangeError", "DownloadTransportError", "ValueError", "UnicodeDecodeError":
+		return true
+	}
+	return false
 }

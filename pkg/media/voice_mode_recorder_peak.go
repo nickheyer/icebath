@@ -1,3 +1,5 @@
+//go:build !icebath_core && !icebath_noextras
+
 package media
 
 // PeakRMS is the loudest frame level of the current capture

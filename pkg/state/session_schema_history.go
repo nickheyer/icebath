@@ -4,8 +4,6 @@ import (
 	"iter"
 	"slices"
 	"strings"
-
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 // One edit to a declared column order, After empty inserting at the front, Op minus removing Column
@@ -27,9 +25,9 @@ type TableHistory struct {
 	Events []SchemaEvent
 }
 
-// Python list.index ValueError text for a missing column
+// Refusal of a schema edit that places a column after one the table lacks
 func columnNotInList(column string) error {
-	return &pyConvError{"ValueError", pyrepr.Repr(column) + " is not in list"}
+	return &pyConvError{"ValueError", "a schema edit places a column after " + column + ", which the table lacks"}
 }
 
 // Replays edits onto columns, a missing column raising the ValueError list.remove or list.index raise
@@ -38,7 +36,7 @@ func applySchemaEdits(columns []string, edits []SchemaEdit) ([]string, error) {
 		if edit.Op == "-" {
 			i := slices.Index(columns, edit.Column)
 			if i < 0 {
-				return nil, &pyConvError{"ValueError", "list.remove(x): x not in list"}
+				return nil, &pyConvError{"ValueError", "a schema edit removes column " + edit.Column + ", which the table lacks"}
 			}
 			columns = slices.Delete(columns, i, i+1)
 			continue
@@ -60,7 +58,7 @@ func applySchemaEdits(columns []string, edits []SchemaEdit) ([]string, error) {
 func DeclaredSnapshots(table string) ([][]string, error) {
 	history, ok := SchemaHistory[table]
 	if !ok {
-		return nil, &pyConvError{"KeyError", pyrepr.Repr(table)}
+		return nil, &pyConvError{"KeyError", "no schema history for table " + table}
 	}
 	columns := slices.Clone(history.Base)
 	snapshots := [][]string{slices.Clone(columns)}

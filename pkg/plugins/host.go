@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/proc"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
@@ -534,13 +535,11 @@ func (h *PluginHost) LoadTools(ctx context.Context, mf *Manifest, pctx *Context,
 	}
 	if reply, _ := result.(map[string]any); reply != nil && reply["register_tools"] == false {
 		pkgLog().Warn(fmt.Sprintf("Plugin '%s' declares provides_tools %s but its tools.py has no register_tools(ctx); those tools will not be available in CLI/TUI sessions.",
-			key, pyListRepr(mf.ProvidesTools)))
+			key, errchain.Show(mf.ProvidesTools)))
 	}
 	_, err = pctx.OnUnload(func() error { return h.unload(key) })
 	return replyModuleFile(result), err
 }
-
-func pyListRepr(items []string) string { return config.PyRepr(anyList(items)) }
 
 func hostManifestInfo(mf *Manifest) map[string]any {
 	return map[string]any{"name": mf.Name, "version": mf.Version, "description": mf.Description, "author": mf.Author,
@@ -598,7 +597,7 @@ func (h *PluginHost) reloadableInstance(ctx context.Context, capture, name, base
 			return nil, err
 		}
 		if fresh == nil {
-			return nil, &PluginHostUnavailable{Reason: fmt.Sprintf("plugin %s no longer loads in the plugin host", config.PyRepr(name))}
+			return nil, &PluginHostUnavailable{Reason: fmt.Sprintf("plugin %s no longer loads in the plugin host", errchain.Show(name))}
 		}
 		return fresh, nil
 	}
@@ -818,7 +817,7 @@ func (h *PluginHost) handle(ctx context.Context, method string, params map[strin
 		}
 		return nil, nil
 	}
-	return nil, &HostBuiltinError{Type: "ValueError", Message: fmt.Sprintf("unknown plugin host request %s", config.PyRepr(method))}
+	return nil, &HostBuiltinError{Type: "ValueError", Message: fmt.Sprintf("unknown plugin host request %s", errchain.Show(method))}
 }
 
 func (h *PluginHost) pluginCtx(params map[string]any) (*Context, error) {
@@ -826,7 +825,7 @@ func (h *PluginHost) pluginCtx(params map[string]any) (*Context, error) {
 	c := h.contexts[wireStr(params["plugin"])]
 	h.stateMu.Unlock()
 	if c == nil {
-		return nil, &HostBuiltinError{Type: "LookupError", Message: fmt.Sprintf("plugin %s is not loaded in this host", config.PyRepr(params["plugin"]))}
+		return nil, &HostBuiltinError{Type: "LookupError", Message: fmt.Sprintf("plugin %s is not loaded in this host", errchain.Show(params["plugin"]))}
 	}
 	return c, nil
 }
@@ -915,7 +914,7 @@ func (h *PluginHost) serveParentObject(ctx context.Context, params map[string]an
 	}
 	method := wireStr(params["method"])
 	if strings.HasPrefix(method, "_") {
-		return nil, &HostBuiltinError{Type: "AttributeError", Message: fmt.Sprintf("'%s' object has no attribute %s", slot.obj.PyTypeName(), config.PyRepr(method))}
+		return nil, &HostBuiltinError{Type: "AttributeError", Message: fmt.Sprintf("private method %s cannot be called from a plugin", method)}
 	}
 	return h.serveFacadeAttr(ctx, slot.obj, method, params)
 }

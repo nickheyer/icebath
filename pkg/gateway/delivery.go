@@ -82,13 +82,13 @@ func (t *DeliveryTransport) Send(ctx context.Context, logical Platform, chatID, 
 	if t.IsRelay() {
 		relay, ok := t.Adapter.(RelayDeliveryAdapter)
 		if !ok {
-			return SendResult{}, &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("'%T' object has no attribute 'send_for_platform'", t.Adapter)}
+			return SendResult{}, &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("the delivery adapter (%T) cannot send for a platform", t.Adapter)}
 		}
 		return relay.SendForPlatform(ctx, logical, chatID, content, metadata)
 	}
 	native, ok := t.Adapter.(DeliveryAdapter)
 	if !ok {
-		return SendResult{}, &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("'%T' object has no attribute 'send'", t.Adapter)}
+		return SendResult{}, &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("the delivery adapter (%T) cannot send", t.Adapter)}
 	}
 	return native.Send(ctx, chatID, content, "", metadata)
 }

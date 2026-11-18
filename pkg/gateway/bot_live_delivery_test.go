@@ -155,7 +155,7 @@ func TestReadDeliveryResultMapsTheTransitionalCanonicalStatus(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(deliveryRoot(h), testDeliveryID+".json"), []byte("[1]"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := ReadDeliveryResult(context.Background(), h, testDeliveryID); err == nil || err.Error() != "ticket "+testDeliveryID+".json is not a JSON object (list)" {
+	if _, err := ReadDeliveryResult(context.Background(), h, testDeliveryID); err == nil || err.Error() != "ticket "+testDeliveryID+".json is not a JSON object (a list)" {
 		t.Fatal(err)
 	}
 }

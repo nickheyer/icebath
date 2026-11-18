@@ -4,41 +4,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pydantic"
 )
 
-var PromptSubmitParams = pydantic.Extend(SessionParams, "PromptSubmitParams", ParamsConfig,
-	pydantic.Def("text", pydantic.Any, ""),
-	pydantic.Def("display_kind", pydantic.Nullable(pydantic.Str), nil),
-	pydantic.Def("interrupted", pydantic.Nullable(pydantic.Bool), nil),
-	pydantic.Def("queued", pydantic.Nullable(pydantic.Bool), nil),
-	pydantic.Def("surface", pydantic.Nullable(pydantic.Str), nil),
-	pydantic.Def("voice_context", pydantic.Nullable(pydantic.Str), nil),
-	pydantic.Def("voice_turn", pydantic.Nullable(pydantic.Bool), nil),
-	pydantic.Def("title_preview", pydantic.Nullable(pydantic.Str), nil),
-	pydantic.Def("truncate_before_user_ordinal", pydantic.Nullable(pydantic.Int), nil),
-	pydantic.Def("truncate_before_row_id", pydantic.Nullable(pydantic.Int), nil),
-	pydantic.Def("truncate_before_message_id", pydantic.Nullable(pydantic.Str), nil),
-	pydantic.Def("confirm_truncate", pydantic.Nullable(pydantic.Bool), nil),
-	pydantic.Def("confirm_empty_truncate", pydantic.Nullable(pydantic.Bool), nil),
-	pydantic.Def("confirm_deep_truncate", pydantic.Nullable(pydantic.Bool), nil),
-	pydantic.Def("rebind_survivor_row_ids", pydantic.Nullable(pydantic.List(pydantic.Int)), nil),
-	pydantic.Def("hosted_task", pydantic.Nullable(pydantic.Any), nil).Alias("_hosted_task").Exclude(),
-	pydantic.Def("turn_author", pydantic.Nullable(pydantic.Any), nil).Alias("_turn_author").Exclude(),
-	pydantic.Def("hosted_terminal_callback", pydantic.Nullable(pydantic.Any), nil).Alias("_hosted_terminal_callback").Exclude(),
-	pydantic.Def("hosted_images", pydantic.Nullable(pydantic.Any), nil).Alias("_hosted_images").Exclude(),
-).Described("``text`` is normally a string; the relay / hosted paths may hand a structured (parts list)\npayload, and the busy path renders it. Truncation (rewind / edit / regenerate) needs explicit\nconsent: ``confirm_truncate`` plus one durable target (``truncate_before_row_id`` preferred,\n``truncate_before_message_id``, or the legacy ``truncate_before_user_ordinal``).")
 
-var PromptSubmitStatus = pydantic.Enum("PromptSubmitStatus", "streaming", "streaming", "queued", "queued", "steered", "steered", "redirected", "redirected")
 
-var PromptSubmitResult = pydantic.NewModel("PromptSubmitResult", ClosedConfig,
-	pydantic.Def("status", pydantic.Nullable(PromptSubmitStatus), nil),
-	pydantic.Def("voice_stopped", pydantic.Nullable(pydantic.Bool), nil),
-	pydantic.Def("user_row_id", pydantic.Nullable(pydantic.Int), nil),
-	pydantic.Def("survivor_user_row_ids", pydantic.Nullable(pydantic.List(pydantic.Nullable(pydantic.Int))), nil),
-	pydantic.Def("survivor_row_id_map", pydantic.Nullable(pydantic.Dict(pydantic.Nullable(pydantic.Int))), nil),
-	pydantic.Def("admission_id", pydantic.Nullable(pydantic.Str), nil),
-	pydantic.Def("forwarded", pydantic.Nullable(pydantic.Bool), nil),
-).Described("``status`` is absent only on the typed-stop-phrase reply (``voice_stopped``). After a\ntruncation the survivor row ids let the client rebind its cached ``rowId``s (``None`` map\nentries: drop the cached id).")
 
-var _ = Method("prompt.submit", PromptSubmitParams, PromptSubmitResult, "Send a user turn to a live session; busy sessions queue / steer / redirect instead of refusing.")
 
 var ImageMeta = pydantic.NewModel("ImageMeta", ClosedConfig,
 	pydantic.Def("name", pydantic.Nullable(pydantic.Str), nil),
@@ -101,45 +69,16 @@ var InputDetectDropResult = pydantic.Extend(ImageMeta, "InputDetectDropResult", 
 
 var _ = Method("input.detect_drop", InputDetectDropParams, InputDetectDropResult, "Recognise a terminal file drop pasted into the composer and turn it into an attachment.")
 
-var SideAgentParams = pydantic.Extend(SessionParams, "SideAgentParams", ParamsConfig,
-	pydantic.Req("text", pydantic.Str),
-)
 
-var TaskIdResult = pydantic.NewModel("TaskIdResult", ClosedConfig,
-	pydantic.Req("task_id", pydantic.Str),
-).Described("The side agent runs detached; its answer lands on the parent session as an event carrying\nthis ``task_id``.")
 
-var _ = Method("prompt.background", SideAgentParams, TaskIdResult, "Run a task on a fresh agent in the background; the answer arrives as background.complete.")
 
-var _ = Method("prompt.btw", SideAgentParams, TaskIdResult, "Side question over a snapshot of the live conversation; the answer arrives as btw.complete.")
 
-var ClarifyLockParams = pydantic.NewModel("ClarifyLockParams", ParamsConfig,
-	pydantic.Req("request_id", pydantic.Str),
-	pydantic.Req("question_id", pydantic.Str),
-	pydantic.Def("answer", pydantic.Any, ""),
-	pydantic.Def("profile", pydantic.Nullable(pydantic.Str), nil),
-)
 
-var ClarifyLockStatus = pydantic.Enum("ClarifyLockStatus", "ok", "ok", "expired", "expired")
 
-var ClarifyLockResult = pydantic.NewModel("ClarifyLockResult", ClosedConfig,
-	pydantic.Req("status", ClarifyLockStatus),
-	pydantic.Def("remaining", pydantic.Nullable(pydantic.List(pydantic.Str)), nil),
-).Described("``remaining`` lists the qids still unanswered; the lock that empties it resolves the request.\n``expired``: the wait already ended (timeout / cancel) — not an error.")
 
-var _ = Method("clarify.lock", ClarifyLockParams, ClarifyLockResult, "Lock one answer of a batch clarify request (editable until every question is locked).")
 
-var ApprovalRespondParams = pydantic.Extend(SessionParams, "ApprovalRespondParams", ParamsConfig,
-	pydantic.Def("choice", pydantic.Nullable(pydantic.Str), nil),
-	pydantic.Def("all", pydantic.Nullable(pydantic.Bool), nil),
-	pydantic.Def("request_id", pydantic.Nullable(pydantic.Str), nil),
-).Described("``choice`` is one of the offered ``approval`` choices (once / session / always / deny); ``all``\nresolves every pending approval, ``request_id`` a specific one, neither the oldest.")
 
-var ApprovalRespondResult = pydantic.NewModel("ApprovalRespondResult", ClosedConfig,
-	pydantic.Req("resolved", pydantic.Int),
-)
 
-var _ = Method("approval.respond", ApprovalRespondParams, ApprovalRespondResult, "Deliver the user's decision on a dangerous command (falls back to durable identity on a stale sid).")
 
 var VoiceToggleAction = pydantic.Enum("VoiceToggleAction", "status", "status", "on", "on", "off", "off", "tts", "tts")
 

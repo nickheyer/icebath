@@ -47,7 +47,7 @@ type typingIdleMsg struct{ gen int }
 type busyControl struct {
 	destination submissionDestination
 	mode        string
-	generation  *float64
+	generation  *int64
 }
 
 // Terminal UI of one icebath session over the shared gateway
@@ -769,7 +769,7 @@ func (a *app) captureBusyControl() (busyControl, error) {
 	}
 	control := busyControl{destination: destination, mode: a.store.ui.BusyInputMode}
 	if stamp := infoOf(a.store.ui.Info).ExecutionGeneration; stamp != nil {
-		generation := float64(*stamp)
+		generation := *stamp
 		control.generation = &generation
 	}
 	return control, nil

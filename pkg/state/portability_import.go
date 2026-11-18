@@ -457,7 +457,7 @@ func utf8StrictLen(text string) (int, error) {
 	for i := 0; i < len(text); i++ {
 		if pystr.SurrogateAt(text, i) {
 			r := pystr.SurrogateRune(text, i)
-			return 0, &stateTypedError{"UnicodeEncodeError", fmt.Sprintf("'utf-8' codec can't encode character '\\u%04x' in position %d: surrogates not allowed", r, len([]rune(text[:i])))}
+			return 0, &stateTypedError{"UnicodeEncodeError", fmt.Sprintf("the text holds a lone surrogate U+%04X at character %d, which UTF-8 cannot encode", r, len([]rune(text[:i])))}
 		}
 	}
 	return len(text), nil

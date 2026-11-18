@@ -6,6 +6,7 @@ import (
 	"math"
 	"strings"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -326,12 +327,12 @@ func auxPyIntCall(v any) (int, error) {
 		if n, ok := pyIntText(x); ok {
 			return int(n), nil
 		}
-		return 0, &ValueError{Message: fmt.Sprintf("invalid literal for int() with base 10: %s", pyrepr.Repr(x))}
+		return 0, &ValueError{Message: fmt.Sprintf("%v is not a whole number", x)}
 	}
 	if n, ok := pyrepr.Int(v); ok {
 		return int(n.Int64()), nil
 	}
-	return 0, &ValueError{Message: fmt.Sprintf("int() argument must be a string, a bytes-like object or a real number, not '%s'", pyrepr.TypeName(v))}
+	return 0, &ValueError{Message: fmt.Sprintf("expected a whole number, got %s", errchain.Kind(v))}
 }
 
 // OpenAI chat completion shape of a Converse result with cache tokens folded into the prompt count

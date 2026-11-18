@@ -13,6 +13,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/cliui"
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyshlex"
@@ -217,7 +218,7 @@ func (m *MemorySetup) installDeps(ctx context.Context, name string) error {
 	for _, raw := range deps {
 		dep, ok := raw.(map[string]any)
 		if !ok {
-			return fmt.Errorf("'%s' object has no attribute 'get'", pyrepr.TypeName(raw))
+			return fmt.Errorf("memory provider dependency is %s where a mapping was expected", errchain.Kind(raw))
 		}
 		check, _ := dep["check"].(string)
 		install, _ := dep["install"].(string)

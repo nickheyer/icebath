@@ -411,17 +411,17 @@ func (q *DeliveryQueue) Drain(ctx context.Context, send DeliverySend, limit int)
 	return processed, nil
 }
 
-// Runs send turning a returned error or panic into its Python style refusal text
+// Runs send turning a returned error or panic into its refusal text
 func callDeliverySend(send DeliverySend, job *Job, content string, forFailure bool) (errText *string) {
 	defer func() {
 		if r := recover(); r != nil {
-			text := fmt.Sprintf("RuntimeError: %v", r)
+			text := fmt.Sprint(r)
 			errText = &text
 		}
 	}()
 	refusal, err := send(job, content, forFailure)
 	if err != nil {
-		text := cronExceptionName(err) + ": " + err.Error()
+		text := err.Error()
 		return &text
 	}
 	return refusal

@@ -471,7 +471,7 @@ func (s *shellFileOps) zeroMatchProbe(pattern, path, fileGlob string) (string, e
 			}
 			digits, ok := pyIntDigits(n)
 			if !ok {
-				return "", fmt.Errorf("invalid literal for int() with base 10: %s", pyReprStr(n))
+				return "", fmt.Errorf("rg match count %s is not a whole number", pyReprStr(n))
 			}
 			addPyInt(total, digits)
 			perFile = append(perFile, p)

@@ -7,6 +7,8 @@ import (
 	"strings"
 	"sync"
 	"unicode/utf16"
+
+	"github.com/nickheyer/icebath/pkg/tuigateway"
 )
 
 const (
@@ -354,20 +356,20 @@ func hasKey(key string) bool {
 }
 
 // Copy of a failed turn, its title with the provider, the error details and the next step
-func describeTurnFailure(payload map[string]any) string {
-	surface, _ := payload["error_surface"].(map[string]any)
-	code, _ := surface["code"].(string)
-	layer, _ := surface["layer"].(string)
-	title, hint, hintNoRetry := turnCopyFor(code, layer)
-	if provider, isString := surface["provider"].(string); isString && provider != "" {
+func describeTurnFailure(payload tuigateway.MessageCompletePayload) string {
+	surface := payload.ErrorSurface
+	if surface == nil {
+		surface = &tuigateway.ErrorSurface{Retryable: true}
+	}
+	title, hint, hintNoRetry := turnCopyFor(surface.Code, surface.Layer)
+	if provider := val(surface.Provider); provider != "" {
 		title = tr("userMessages.turn.withProvider", title, provider)
 	}
 	nextStep := hint
-	if surface["retryable"] == false || payload["recoverable"] == false {
+	if !surface.Retryable || payload.Recoverable != nil && !*payload.Recoverable {
 		nextStep = hintNoRetry
 	}
-	raw, _ := payload["error"].(string)
-	return joinPresent(tr("userMessages.turn.notAnswered", title), detailLine(bareErrorPrefixRe.ReplaceAllString(raw, "")), nextStep)
+	return joinPresent(tr("userMessages.turn.notAnswered", title), detailLine(bareErrorPrefixRe.ReplaceAllString(val(payload.Error), "")), nextStep)
 }
 
 // Message text that only repeats the error, so the turn failure copy replaces it

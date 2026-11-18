@@ -1,3 +1,5 @@
+//go:build !icebath_core
+
 package gateway
 
 import (

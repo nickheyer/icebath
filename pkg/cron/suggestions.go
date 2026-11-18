@@ -18,7 +18,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/skills"
@@ -110,12 +109,12 @@ func (s *Store) loadSuggestionsRaw() ([]any, error) {
 	}
 	raw, err := os.ReadFile(path)
 	if err != nil {
-		pkgLog().Warn(fmt.Sprintf("suggestions.json unreadable (%s); starting empty", pypath.OSErrorText(err)))
+		pkgLog().Warn(fmt.Sprintf("suggestions.json unreadable (%s); starting empty", errchain.OSText(err)))
 		return []any{}, nil
 	}
 	text := strings.TrimPrefix(string(raw), "\ufeff")
 	if !utf8.ValidString(text) {
-		return nil, fmt.Errorf("UnicodeDecodeError: 'utf-8' codec can't decode %s", path)
+		return nil, fmt.Errorf("%s is not valid UTF-8", path)
 	}
 	data, err := pyjson.Loads(text)
 	if err != nil {
@@ -267,7 +266,7 @@ func (s *Store) GetSuggestion(ref string) (*pyjson.Object, error) {
 		}
 		n, ok := pyint.Parse(ref)
 		if !ok {
-			return nil, fmt.Errorf("invalid literal for int() with base 10: %s", pyrepr.Repr(ref))
+			return nil, fmt.Errorf("suggestion %s is not a number", ref)
 		}
 		if n.IsInt64() && n.Int64() >= 1 && n.Int64() <= int64(len(pending)) {
 			return pending[n.Int64()-1].(*pyjson.Object), nil

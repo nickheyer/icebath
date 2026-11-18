@@ -134,7 +134,7 @@ func restoreRoutedSession(ctx context.Context, a *SessionAuthority, sid string) 
 	}
 	runner, ok := a.Runner.(restoredSourceRunner)
 	if !ok {
-		return nil, &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("'%T' object has no attribute '_restored_source'", a.Runner)}
+		return nil, &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("the gateway runner (%T) cannot restore a routed source", a.Runner)}
 	}
 	source, err := runner.RestoredSource(ctx, plan.entry)
 	if err != nil {
@@ -176,7 +176,7 @@ func detach(ctx context.Context, a *SessionAuthority, live *LiveSession, session
 	}
 	local, ok := adapter.(*LocalSessionAdapter)
 	if !ok {
-		return &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("'%T' object has no attribute 'register_source'", adapter)}
+		return &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("the platform adapter (%T) cannot register a source", adapter)}
 	}
 	route := detachedKey(live.Route, sessionID)
 	source := ReplaceSource(live.Source, func(s *SessionSource) {
@@ -281,7 +281,7 @@ func conversationHead(ctx context.Context, runner any, sessionID string) (*Sessi
 	} else if held, ok := runner.(sessionDBRunner); ok {
 		db = held.SessionDB(ctx)
 	} else {
-		return nil, nil, "", &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("'%T' object has no attribute '_session_db'", runner)}
+		return nil, nil, "", &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("the gateway runner (%T) has no session database", runner)}
 	}
 	if db == nil {
 		return authority, nil, sessionID, nil

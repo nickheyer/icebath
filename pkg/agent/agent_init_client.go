@@ -7,8 +7,8 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -300,7 +300,7 @@ func routedClientKwargs(ctx context.Context, a *AIAgent, fallbackModel []map[str
 		if entries == "" {
 			entries = "none configured"
 		}
-		pkgLog().Warn(fmt.Sprintf("Init-time provider resolution failed: primary %s unresolvable (%s); fallback entries refused: %s", pyrepr.Repr(a.provider), why, entries))
+		pkgLog().Warn(fmt.Sprintf("Init-time provider resolution failed: primary %s unresolvable (%s); fallback entries refused: %s", errchain.Show(a.provider), why, entries))
 	}
 	if poolExhausted {
 		message, ok := provider.PoolBillingMessage(ctx, explicit, a.model, pool)

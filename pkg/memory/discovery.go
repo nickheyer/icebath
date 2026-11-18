@@ -12,6 +12,7 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyast"
 	"github.com/nickheyer/icebath/pkg/internal/pyimport"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -239,7 +240,7 @@ func entryPointRegistration(ep pyimport.EntryPoint) *ProviderRegistration {
 		if dir != "" {
 			return loadProviderFromDir(ctx, dir, opts)
 		}
-		if refusal := plugins.InProcessImportRefusal(ctx, fmt.Sprintf("pip-installed memory provider %s", pyRepr(name)), SourceEntryPoint, nil); refusal != "" {
+		if refusal := plugins.InProcessImportRefusal(ctx, fmt.Sprintf("pip-installed memory provider %s", errchain.Show(name)), SourceEntryPoint, nil); refusal != "" {
 			envLog(env).Warn(refusal)
 			return nil, nil
 		}

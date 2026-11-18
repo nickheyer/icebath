@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"slices"
 	"strings"
 	"sync"
@@ -119,7 +120,12 @@ func ResolveServerRequest(frame *pyjson.Object, sessionOK func(sessionID string,
 	serverRequests.Unlock()
 	var result any
 	if _, hasError := frame.Get("error"); !hasError {
-		result, _ = frame.Get("result")
+		raw, _ := frame.Get("result")
+		if fitted, refused := tuihost.FittedAnswer(pending.method, raw); refused != nil {
+			pkgLog().Warn(fmt.Sprintf("server request %s (%s) answer refused: %s", id, pending.method, refused))
+		} else {
+			result = fitted
+		}
 	}
 	if locked != nil {
 		result = tuihost.SettleBatch(locked, result, "")
@@ -227,6 +233,9 @@ func askServerRequest(events *SessionEvents, sessionID, method string, params *p
 			value, _ := params.Get(key)
 			framed.Set(key, value)
 		}
+	}
+	if err := tuihost.CheckRequestParams(method, framed); err != nil {
+		tuihost.ReportMisfit("params of request", method, err)
 	}
 	pending := &pendingServerRequest{done: make(chan struct{}), sessionID: sessionID, events: events, method: method,
 		params: framed, locked: pyjson.NewObject()}

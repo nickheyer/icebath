@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -187,7 +188,7 @@ func (delegationBackendsFacade) HostAttr(_ context.Context, name string) (any, b
 	if delegationBackendsMethods[name] {
 		return nil, true, false, nil
 	}
-	return nil, false, false, &plugins.HostBuiltinError{Type: "AttributeError", Message: fmt.Sprintf("'DelegationBackends' object has no attribute %s", pyrepr.Repr(name))}
+	return nil, false, false, &plugins.HostBuiltinError{Type: "AttributeError", Message: fmt.Sprintf("delegation backends have no %s", name)}
 }
 
 func (f delegationBackendsFacade) HostCall(ctx context.Context, method string, args []any, kwargs map[string]any) (any, error) {
@@ -209,7 +210,7 @@ func (f delegationBackendsFacade) HostCall(ctx context.Context, method string, a
 		}
 		return nil, f.backends.SetGlobalBackend(ctx, pyrepr.Str(a["name"]), pyrepr.Str(a["session_key"]), pyrepr.Truthy(a["apply_now"]))
 	}
-	return nil, &plugins.HostBuiltinError{Type: "AttributeError", Message: fmt.Sprintf("'DelegationBackends' object has no attribute %s", pyrepr.Repr(method))}
+	return nil, &plugins.HostBuiltinError{Type: "AttributeError", Message: fmt.Sprintf("delegation backends have no %s", method)}
 }
 
 // register and unregister over the tools declaration registry
@@ -219,7 +220,7 @@ type platformDeclarations struct{}
 func PlatformDeclarationsService() plugins.PlatformDeclarations { return platformDeclarations{} }
 
 func (platformDeclarations) Register(name string, app, requires map[string]any) error {
-	decl, err := tools.ParsePlatformDeclaration(name, anyMap(app), anyMap(requires), "plugin.json extension server "+pyrepr.Repr(name))
+	decl, err := tools.ParsePlatformDeclaration(name, anyMap(app), anyMap(requires), "plugin.json extension server "+errchain.Show(name))
 	if err != nil {
 		return err
 	}

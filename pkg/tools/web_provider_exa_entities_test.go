@@ -18,16 +18,16 @@ func TestExaEntitiesRaiseLikeTheSDKParser(t *testing.T) {
 	cases := []struct{ entities, want string }{
 		{`[{"type":"company"}]`, "'id'"},
 		{`[{"type":"person","id":1}]`, "'version'"},
-		{`"x"`, "'str' object has no attribute 'get'"},
-		{`7`, "'int' object is not iterable"},
-		{`[{"type":"company","id":1,"version":1,"properties":null}]`, "'NoneType' object has no attribute 'get'"},
-		{`[{"type":"company","id":1,"version":1,"properties":{"workforce":[1]}}]`, "'list' object has no attribute 'get'"},
-		{`[{"type":"company","id":1,"version":1,"properties":{"financials":{"fundingLatestRound":"r"}}}]`, "'str' object has no attribute 'get'"},
-		{`[{"type":"company","id":1,"version":1,"properties":{"webTraffic":true}}]`, "'bool' object has no attribute 'get'"},
-		{`[{"type":"person","id":1,"version":1,"properties":{"workHistory":5}}]`, "'int' object is not iterable"},
-		{`[{"type":"person","id":1,"version":1,"properties":{"educationHistory":[{"institution":"u"}]}}]`, "'str' object has no attribute 'get'"},
-		{`[{"type":"person","id":1,"version":1,"properties":{"workHistory":[{"dates":["2020"]}]}}]`, "'list' object has no attribute 'get'"},
-		{`[{"type":"person","id":1,"version":1,"properties":{"research":{"notableWorks":[1]}}}]`, "'int' object has no attribute 'get'"},
+		{`"x"`, "expected a mapping, got text"},
+		{`7`, "expected a list, got a number"},
+		{`[{"type":"company","id":1,"version":1,"properties":null}]`, "expected a mapping, got nothing"},
+		{`[{"type":"company","id":1,"version":1,"properties":{"workforce":[1]}}]`, "expected a mapping, got a list"},
+		{`[{"type":"company","id":1,"version":1,"properties":{"financials":{"fundingLatestRound":"r"}}}]`, "expected a mapping, got text"},
+		{`[{"type":"company","id":1,"version":1,"properties":{"webTraffic":true}}]`, "expected a mapping, got true or false"},
+		{`[{"type":"person","id":1,"version":1,"properties":{"workHistory":5}}]`, "expected a list, got a number"},
+		{`[{"type":"person","id":1,"version":1,"properties":{"educationHistory":[{"institution":"u"}]}}]`, "expected a mapping, got text"},
+		{`[{"type":"person","id":1,"version":1,"properties":{"workHistory":[{"dates":["2020"]}]}}]`, "expected a mapping, got a list"},
+		{`[{"type":"person","id":1,"version":1,"properties":{"research":{"notableWorks":[1]}}}]`, "expected a mapping, got a number"},
 	}
 	for _, c := range cases {
 		entities.set(c.entities)

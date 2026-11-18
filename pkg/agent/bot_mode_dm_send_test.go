@@ -97,7 +97,7 @@ func TestMessageAgentRefusesWhatItCannotDeliver(t *testing.T) {
 		{"scribe", "  ", "message is required", false},
 		{"scribe", strings.Repeat("é", messageMaxChars+1), "message too long (16001 chars > 16000)", false},
 		{" @ ", "hi", "target is required.", true},
-		{"bad target!", "hi", "Invalid target: 'bad target!'.", true},
+		{"bad target!", "hi", "Invalid target: bad target!.", true},
 		{"ghost", "hi", "No teammate named 'ghost' on this install or on a registered peer.", true},
 		{"nowhere/scribe", "hi", "No registered peer named 'nowhere'.", true},
 		{"@icebath", "hi", "You can't message yourself. Pick a teammate from the roster.", false},
@@ -167,7 +167,7 @@ func TestMessageAgentHandsAPeerMessageToTheBackgroundRunner(t *testing.T) {
 		`{"error": "no shell"}`:                            "Delivery to @mini on peer 'mini' failed to start: no shell",
 		`{"status": "pending_approval", "error": ""}`:      "needs terminal approval that nobody in this turn can grant, so nothing was sent.",
 		`{"status": "ok"}`:                                 "failed to start: no process id returned",
-		`["proc"]`:                                         "could not be started: 'list' object has no attribute 'get'",
+		`["proc"]`:                                         "could not be started: the terminal tool replied with a list where a mapping was expected",
 		`{"session_id": "p", "notify_on_complete": false}`: "",
 	} {
 		answer = reply

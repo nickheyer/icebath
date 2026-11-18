@@ -568,7 +568,7 @@ func (s *workerStore) setSessionTitle(sessionID, title string) (bool, error) {
 
 func (s *workerStore) setAutoTitle(sessionID, title, source string) (bool, error) {
 	if source != "derived" && source != "llm" {
-		return false, pyValueError("invalid automatic title source: " + pyRepr(source))
+		return false, pyValueError("invalid automatic title source: " + source)
 	}
 	if err := s.session(sessionID); err != nil {
 		return false, err

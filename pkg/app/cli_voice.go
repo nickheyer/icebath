@@ -1,3 +1,5 @@
+//go:build !icebath_core && !icebath_noextras
+
 package app
 
 import (
@@ -21,16 +23,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
-// Wake word and full duplex state of the voice mixin
-type cliVoiceExtra struct {
-	fdActive            *syncEvent
-	noSpeechCount       int
-	wakeWordActive      bool
-	wakeSuspended       bool
-	wakeStartNewSession bool
-	wakeWatchdogStarted bool
-}
-
 // Audio and speech entry points of the voice mixin, the tools.voice_mode and tts_tool functions
 var (
 	voiceCheckRequirements      = media.CheckVoiceRequirements
@@ -44,6 +36,22 @@ var (
 	voiceFullDuplexListen       = media.FullDuplexListen
 	voiceIsAudioOutputActive    = media.IsAudioOutputActive
 )
+
+// Binds voice mode to the chat turn, the shutdown and the /voice and /wake commands
+func init() {
+	checkTTSRequirements = media.CheckTTSRequirements
+	streamTTSToSpeaker = func(ctx context.Context, textQueue *inputQueue, stopEvent, ttsDoneEvent *syncEvent, displayCallback func(string), provider string) {
+		media.StreamTTSToSpeaker(ctx, textQueue, stopEvent, ttsDoneEvent, displayCallback, provider)
+	}
+	startThinkingSound = media.StartThinkingSound
+	stopThinkingSound = media.StopThinkingSound
+	takeSpeechInterrupted = media.TakeSpeechInterrupted
+	voiceFullDuplexListener = (*CLI).voiceFullDuplexListener
+	voiceSpeakResponseAsync = (*CLI).voiceSpeakResponseAsync
+	stopWakeListening = func(owner any) { media.StopListening(owner) }
+	slashDispatch["voice"] = withArg((*CLI).handleVoiceCommand)
+	slashDispatch["wake"] = withArg((*CLI).handleWakeCommand)
+}
 
 // Section of the loaded config as a dict, empty for a non dict or a failed load
 func voiceConfigSection(ctx context.Context, name string) (out map[string]any) {

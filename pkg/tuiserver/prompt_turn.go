@@ -15,7 +15,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/media"
 	"github.com/nickheyer/icebath/pkg/tools"
 	"github.com/nickheyer/icebath/pkg/tuihost"
 )
@@ -275,12 +274,7 @@ func startTurnVoice(ctx context.Context) (*ttsTurnQueue, bool) {
 				started = false
 			}
 		}()
-		started = media.StartThinkingSound(ctx, func() bool {
-			if media.IsAudioOutputActive() {
-				return false
-			}
-			return !voiceContinuousActive()
-		})
+		started = startThinkingSound(ctx)
 	}()
 	return queue, started
 }

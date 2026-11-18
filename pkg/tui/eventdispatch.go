@@ -24,9 +24,8 @@ const (
 var noProviderRe = regexp.MustCompile(`(?i)\bNo (?:LLM|inference) provider configured\b`)
 
 // Records the admission whose completion this view saw last for a session
-func (s *tuiStore) noteCanonicalCompletion(sid string, admissionID any) {
-	id, isStr := admissionID.(string)
-	if sid == "" || !isStr || id == "" {
+func (s *tuiStore) noteCanonicalCompletion(sid, id string) {
+	if sid == "" || id == "" {
 		return
 	}
 	if s.lastAdmission == nil {
@@ -143,7 +142,9 @@ func (h *eventHandler) handle(ev gatewayEventMsg) {
 			h.store.ui.Usage = mergeUsageStable(h.store.ui.Usage, usageOfCounters(tick))
 		}
 	case "thinking.delta":
-		h.thinkingDelta(p)
+		if delta, ok := eventPayload(h, tuigateway.ThinkingDeltaEvent, p); ok {
+			h.thinkingDelta(delta)
+		}
 	case "session.control.update":
 		if update, ok := eventPayload(h, tuigateway.SessionControlUpdateEvent, p); ok {
 			h.store.applyControlSnapshot(sid, update.Control)
@@ -152,20 +153,21 @@ func (h *eventHandler) handle(ev gatewayEventMsg) {
 		h.agentsNudgedThisTurn = false
 		h.turn.startMessage()
 	case "status.update":
-		h.statusUpdate(p)
+		if update, ok := eventPayload(h, tuigateway.StatusUpdateEvent, p); ok {
+			h.statusUpdate(update)
+		}
 	case "notification.show":
 		h.showGatewayNotice(p)
 	case "notification.clear":
 		h.turn.clearNotice(paramStr(p["key"]))
 	case "gateway.stderr":
-		if p != nil {
-			if line := jsTemplate(p, "line"); stderrLooksLikeProblem(line) {
-				h.turn.pushActivity(stderrProblemActivity(line), "warn", "")
-			}
+		if stderr, ok := ev.Local.(gatewayStderr); ok && stderrLooksLikeProblem(stderr.Line) {
+			h.turn.pushActivity(stderrProblemActivity(stderr.Line), "warn", "")
 		}
 	case "gateway.reconnecting":
-		attempt, _ := p["attempt"].(float64)
-		h.setStatus(backendReconnecting(int(attempt), optionalNumber(p, "delay_ms")))
+		if redial, ok := ev.Local.(gatewayReconnecting); ok {
+			h.setStatus(backendReconnecting(redial.Attempt, &redial.DelayMs))
+		}
 	case "browser.progress":
 		if message := strings.TrimFunc(stringOr(p["message"], ""), isJSSpace); message != "" {
 			h.app.sys(message)
@@ -187,7 +189,9 @@ func (h *eventHandler) handle(ev gatewayEventMsg) {
 	case "wake.detected":
 		h.handleWakeDetected(p)
 	case "gateway.start_timeout":
-		h.turn.reportGatewayStartTimeout(paramStr(p["stderr_tail"]), h.setStatus)
+		if timeout, ok := ev.Local.(gatewayStartTimeout); ok {
+			h.turn.reportGatewayStartTimeout(timeout.StderrTail, h.setStatus)
+		}
 	case "gateway.protocol_error":
 		h.setStatus(tr("gatewayMsg.status.protocolWarning"))
 		h.turn.restoreStatusAfter(statusNoteHold)
@@ -195,28 +199,28 @@ func (h *eventHandler) handle(ev gatewayEventMsg) {
 			h.turn.protocolWarned = true
 			h.turn.pushActivity(tr("gatewayMsg.protocol.noiseDetected"), "info", "")
 		}
-		if truthyJS(p["preview"]) {
-			h.turn.pushActivity(tr("gatewayMsg.protocol.noise", jsSlice(jsValueString(p["preview"]), 0, protocolPreview)), "info", "")
+		if noise, ok := ev.Local.(gatewayProtocolError); ok && noise.Preview != "" {
+			h.turn.pushActivity(tr("gatewayMsg.protocol.noise", jsSlice(noise.Preview, 0, protocolPreview)), "info", "")
 		}
 	case "reasoning.delta":
-		if truthyJS(p["text"]) {
-			h.turn.recordReasoningDelta(jsValueString(p["text"]), truthyJS(p["verbose"]))
+		if delta, ok := eventPayload(h, tuigateway.ReasoningDeltaEvent, p); ok && delta.Text != "" {
+			h.turn.recordReasoningDelta(delta.Text, val(delta.Verbose))
 		}
 	case "reasoning.available":
-		h.turn.recordReasoningAvailable(stringOr(p["text"], ""), truthyJS(p["verbose"]))
+		if block, ok := eventPayload(h, tuigateway.ReasoningAvailableEvent, p); ok {
+			h.turn.recordReasoningAvailable(block.Text, val(block.Verbose))
+		}
 	case "moa.reference":
-		index, _ := p["index"].(float64)
-		count, _ := p["count"].(float64)
-		h.turn.recordMoaReference(stringOr(p["label"], "reference"), stringOr(p["text"], ""), int(index), int(count))
+		if ref, ok := eventPayload(h, tuigateway.MoaReferenceEvent, p); ok {
+			h.turn.recordMoaReference(ref.Label, ref.Text, val(ref.Index), val(ref.Count))
+		}
 	case "moa.aggregating":
 	case "moa.progress":
-		done, doneNum := p["refs_done"].(float64)
-		total, totalNum := p["refs_total"].(float64)
-		if doneNum && totalNum {
-			h.turn.pushActivity(tr("gatewayMsg.moa.refs", jsString(done), jsString(total)), "info", "MoA")
+		if progress, ok := eventPayload(h, tuigateway.MoaProgressEvent, p); ok {
+			h.turn.pushActivity(tr("gatewayMsg.moa.refs", progress.RefsDone, progress.RefsTotal), "info", "MoA")
 		}
 	case "moa.phase":
-		if p["phase"] == "aggregator" {
+		if phase, ok := eventPayload(h, tuigateway.MoaPhaseEvent, p); ok && phase.Phase == "aggregator" {
 			h.turn.pushActivity(tr("gatewayMsg.moa.aggregating"), "info", "MoA")
 		}
 	case "tool.generating":
@@ -233,28 +237,29 @@ func (h *eventHandler) handle(ev gatewayEventMsg) {
 	case "tool.complete":
 		h.toolComplete(p)
 	case "request.cancel":
-		h.requestCancel(p)
+		if cancel, ok := eventPayload(h, tuigateway.RequestCancelEvent, p); ok {
+			h.requestCancel(cancel)
+		}
 	case "clarify.request":
 		h.store.openCanonicalClarify(ev, h)
 	case "approval.request":
 		h.store.openCanonicalApproval(ev, h)
 	case "background.complete":
-		if p != nil {
-			taskID := jsTemplate(p, "task_id")
-			delete(h.store.ui.BgTasks, taskID)
-			h.app.sys("[bg " + taskID + "] " + jsTemplate(p, "text"))
+		if done, ok := eventPayload(h, tuigateway.BackgroundCompleteEvent, p); ok {
+			delete(h.store.ui.BgTasks, done.TaskID)
+			h.app.sys("[bg " + done.TaskID + "] " + done.Text)
 		}
 	case "btw.complete":
-		if p != nil {
+		if done, ok := eventPayload(h, tuigateway.BtwCompleteEvent, p); ok {
 			question := ""
-			if truthyJS(p["question"]) {
-				question = ` "` + jsValueString(p["question"]) + `"`
+			if asked := val(done.Question); asked != "" {
+				question = ` "` + asked + `"`
 			}
-			h.app.sys("[btw" + question + "] " + jsTemplate(p, "text"))
+			h.app.sys("[btw" + question + "] " + done.Text)
 		}
 	case "review.summary":
-		if text := strings.TrimFunc(stringOr(p["text"], ""), isJSSpace); text != "" {
-			h.app.sys(text)
+		if summary, ok := eventPayload(h, tuigateway.ReviewSummaryEvent, p); ok && strings.TrimFunc(summary.Text, isJSSpace) != "" {
+			h.app.sys(strings.TrimFunc(summary.Text, isJSSpace))
 		}
 	case "subagent.spawn_requested", "subagent.start":
 		if p == nil {
@@ -320,46 +325,42 @@ func (h *eventHandler) handle(ev gatewayEventMsg) {
 			}
 		}, false)
 	case "message.delta":
-		text, _ := p["text"].(string)
-		h.turn.recordMessageDelta(text)
+		if delta, ok := eventPayload(h, tuigateway.MessageDeltaEvent, p); ok {
+			h.turn.recordMessageDelta(val(delta.Text))
+		}
 	case "message.interim":
-		if text, isStr := p["text"].(string); isStr && strings.TrimFunc(text, isJSSpace) != "" {
-			h.turn.recordInterimMessage(text)
+		if interim, ok := eventPayload(h, tuigateway.MessageInterimEvent, p); ok && strings.TrimFunc(interim.Text, isJSSpace) != "" {
+			h.turn.recordInterimMessage(interim.Text)
 		}
 	case "message.complete":
 		h.messageComplete(ev)
 	case "error":
-		h.handleErrorEvent(p, genericError && infoOf(current).ExecutionGeneration != nil)
+		failure, _ := eventPayload(h, tuigateway.ErrorEvent, p)
+		h.handleErrorEvent(failure, genericError && infoOf(current).ExecutionGeneration != nil)
 	}
 }
 
 // Thinking text while busy, batched into the status line and the reasoning stream
-func (h *eventHandler) thinkingDelta(p map[string]any) {
+func (h *eventHandler) thinkingDelta(delta tuigateway.StreamDeltaPayload) {
 	if !h.store.ui.Busy {
 		return
 	}
-	raw, has := field(p, "text")
-	if !has {
-		return
-	}
-	value := jsValueString(raw)
-	status := value
+	status := delta.Text
 	if status == "" {
 		status = h.store.statusFromBusy()
 	}
 	h.scheduleThinkingStatus(status)
-	if value != "" {
-		h.turn.recordReasoningDelta(value, false)
+	if delta.Text != "" {
+		h.turn.recordReasoningDelta(delta.Text, false)
 	}
 }
 
 // Status line of a status update, goal verdicts, compaction and noted activity
-func (h *eventHandler) statusUpdate(p map[string]any) {
-	if !truthyJS(p["text"]) {
+func (h *eventHandler) statusUpdate(update tuigateway.StatusUpdatePayload) {
+	text, kind := update.Text, update.Kind
+	if text == "" {
 		return
 	}
-	text := jsValueString(p["text"])
-	kind, _ := p["kind"].(string)
 	if kind == "goal" {
 		h.app.sys(text)
 		brief := "ready"
@@ -385,7 +386,7 @@ func (h *eventHandler) statusUpdate(p map[string]any) {
 	if kind == "compacted" {
 		h.store.ui.Compacting = false
 	}
-	if !truthyJS(p["kind"]) || kind == "status" {
+	if kind == "" || kind == "status" {
 		return
 	}
 	if h.turn.lastStatusNote != text {
@@ -429,12 +430,12 @@ func (h *eventHandler) toolComplete(p map[string]any) {
 }
 
 // Closes the prompt cards of a request the gateway cancelled, with its timeout notice
-func (h *eventHandler) requestCancel(p map[string]any) {
-	if !truthyJS(p["id"]) {
+func (h *eventHandler) requestCancel(cancel tuigateway.RequestCancelPayload) {
+	id := cancel.ID
+	if id == "" {
 		return
 	}
-	id := jsValueString(p["id"])
-	if text, has := promptTimeoutNotice(paramStr(p["method"]), paramStr(p["reason"])); has {
+	if text, has := promptTimeoutNotice(cancel.Method, cancel.Reason); has {
 		h.app.sys(text)
 	}
 	h.store.forgetServerRequest(id)
@@ -447,11 +448,8 @@ func (h *eventHandler) requestCancel(p map[string]any) {
 
 // Completed turn, its final rows, interrupt rewrite, failure copy, bell, usage, spawn tree and billing wall
 func (h *eventHandler) messageComplete(ev gatewayEventMsg) {
-	p := ev.Payload
-	if p == nil {
-		p = map[string]any{}
-	}
-	h.store.noteCanonicalCompletion(ev.SessionID, p["admission_id"])
+	p, _ := eventPayload(h, tuigateway.MessageCompleteEvent, ev.Payload)
+	h.store.noteCanonicalCompletion(ev.SessionID, val(p.AdmissionID))
 	done := h.turn.recordMessageComplete(p)
 	if len(done.FinishedSubagents) > 0 {
 		h.queue(h.persistSpawnTree(done.FinishedSubagents, done.SessionID))
@@ -477,11 +475,8 @@ func (h *eventHandler) messageComplete(ev gatewayEventMsg) {
 		})
 	}
 	if !done.WasInterrupted {
-		errText := jsValueString(p["error"])
-		if p["error"] == nil {
-			errText = ""
-		}
-		failed := p["status"] == "error" && !truthyJS(p["partial"]) && isBareErrorText(done.FinalText, errText)
+		errText := val(p.Error)
+		failed := val(p.Status) == "error" && !val(p.Partial) && isBareErrorText(done.FinalText, errText)
 		var msgs []msg
 		switch {
 		case failed:
@@ -509,25 +504,20 @@ func (h *eventHandler) messageComplete(ev gatewayEventMsg) {
 		}
 	}
 	h.setStatus("ready")
-	if truthyJS(p["warning"]) {
-		h.turn.pushActivity(jsValueString(p["warning"]), "warn", "")
+	if warning := val(p.Warning); warning != "" {
+		h.turn.pushActivity(warning, "warn", "")
 	}
-	if raw, has := p["usage"]; has && raw != nil {
-		var usage tuigateway.Usage
-		if err := tuigateway.Loose(raw, &usage); err != nil {
-			h.app.sys("error: " + tr("session.common.invalidResponse", "message.complete") + " " + err.Error())
-		} else {
-			h.store.ui.Usage = mergeUsageStable(h.store.ui.Usage, &usage)
-		}
+	if p.Usage != nil {
+		h.store.ui.Usage = mergeUsageStable(h.store.ui.Usage, p.Usage)
 	}
-	h.confirmBillingWall(p)
+	h.confirmBillingWall(p.Billing)
 }
 
 // Error event, a versioned generic error printed alone, else a turn failure with setup help when no provider exists
-func (h *eventHandler) handleErrorEvent(p map[string]any, versionedGenericError bool) {
-	message := tr("gatewayMsg.error.unknown")
-	if truthyJS(p["message"]) {
-		message = jsValueString(p["message"])
+func (h *eventHandler) handleErrorEvent(failure tuigateway.ErrorPayload, versionedGenericError bool) {
+	message := failure.Message
+	if message == "" {
+		message = tr("gatewayMsg.error.unknown")
 	}
 	if versionedGenericError {
 		h.app.sys("error: " + message)
@@ -563,10 +553,9 @@ func (h *eventHandler) applySessionInfo(ev gatewayEventMsg) {
 	}
 	info := patchedInfo(current, incoming)
 	for _, started := range h.store.newlyStartedRows(current, &incoming) {
-		h.store.markBubbleShown(paramStr(started["input_id"]))
-		row := map[string]any{"role": "user", "text": paramStr(started["user"]),
-			"display_kind": started["display_kind"], "display_metadata": started["display_metadata"]}
-		for _, shown := range toTranscriptMessages([]any{row}) {
+		h.store.markBubbleShown(started.InputID)
+		row := tuigateway.TranscriptMessage{Role: "user", Text: &started.User, DisplayKind: started.DisplayKind, DisplayMetadata: started.DisplayMetadata}
+		for _, shown := range toTranscriptMessages([]tuigateway.TranscriptMessage{row}) {
 			h.app.appendMessage(shown)
 		}
 	}
@@ -608,10 +597,15 @@ func (h *eventHandler) applySessionInfo(ev gatewayEventMsg) {
 func eventPayload[T any](h *eventHandler, ev tuigateway.Event[T], p map[string]any) (T, bool) {
 	payload, err := ev.Payload(p)
 	if err != nil {
-		h.app.sys("error: " + tr("session.common.invalidResponse", ev.Name()) + " " + err.Error())
+		h.misfit(ev.Name(), err)
 		return payload, false
 	}
 	return payload, true
+}
+
+// Prints an event payload or request that does not fit its contract as an invalid response naming the field
+func (h *eventHandler) misfit(name string, err error) {
+	h.app.sys("error: " + tr("session.common.invalidResponse", name) + " " + err.Error())
 }
 
 // Model pick that did not apply at the turn boundary, a refusal named or a guarded target asked again
@@ -665,15 +659,14 @@ func (h *eventHandler) applyDeferredPickOutcome(update tuigateway.SessionMutateR
 }
 
 // Out of credits dialog of a turn the provider refused for billing, opening its billing page or the model picker
-func (h *eventHandler) confirmBillingWall(p map[string]any) {
-	block, _ := p["billing"].(map[string]any)
-	if !truthyJS(p["billing"]) {
+func (h *eventHandler) confirmBillingWall(block *tuigateway.BillingBlock) {
+	if block == nil {
 		return
 	}
 	copy := billingDialogCopy(block)
 	h.store.overlay.Confirm = &confirmReq{CancelLabel: copy.CancelLabel, ConfirmLabel: copy.ConfirmLabel, Detail: copy.Detail, Title: copy.Title, OnConfirm: func() tea.Cmd {
-		if truthyJS(block["billing_url"]) {
-			openExternalURL(jsValueString(block["billing_url"]))
+		if url := val(block.BillingURL); url != "" {
+			openExternalURL(url)
 			return nil
 		}
 		return h.app.submit("/model")

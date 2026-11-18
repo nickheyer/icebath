@@ -85,7 +85,7 @@ func routeProfiles(ctx context.Context, hook, provider, baseURL string) []*Profi
 func bindHookArgs(hook string, args []any, kwargs map[string]any) (map[string]any, error) {
 	params := routeHookParams[hook]
 	if len(args) > len(params) {
-		return nil, fmt.Errorf("%s() takes %d positional arguments but %d were given", hook, len(params), len(args))
+		return nil, fmt.Errorf("%s takes %d unnamed arguments, got %d", hook, len(params), len(args))
 	}
 	bound := map[string]any{}
 	for i, v := range args {
@@ -97,7 +97,7 @@ func bindHookArgs(hook string, args []any, kwargs map[string]any) (map[string]an
 			known = known || p == k
 		}
 		if !known {
-			return nil, fmt.Errorf("%s() got an unexpected keyword argument '%s'", hook, k)
+			return nil, fmt.Errorf("%s takes no argument named %s", hook, k)
 		}
 		if _, dup := bound[k]; dup {
 			return nil, fmt.Errorf("%s() got multiple values for argument '%s'", hook, k)
@@ -181,7 +181,7 @@ func callProfileHook(ctx context.Context, p *Profile, hook string, args []any, k
 		status, _ := b["status_code"].(int)
 		return p.IsStaleCredentialErrorHook(status, hookStr(b["message"])), nil
 	}
-	return nil, fmt.Errorf("'%s' object has no attribute '%s'", p.Name, hook)
+	return nil, fmt.Errorf("provider profile %s has no %s hook", p.Name, hook)
 }
 
 func headersAnswer(m map[string]string) any {

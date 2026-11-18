@@ -257,7 +257,7 @@ func (s *bedrockSSEFrames) Next() (*sseFrame, error) {
 			return nil, fmt.Errorf("binascii.Error: %w", err)
 		}
 		if !utf8.Valid(raw) {
-			return nil, fmt.Errorf("UnicodeDecodeError: 'utf-8' codec can't decode the chunk bytes")
+			return nil, fmt.Errorf("a Bedrock stream chunk is not valid UTF-8")
 		}
 		event := "completion"
 		var data any

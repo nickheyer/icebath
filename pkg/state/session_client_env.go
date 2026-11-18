@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
@@ -318,7 +319,7 @@ func RetryMatches(committed, request *pyjson.Object) (bool, error) {
 	if rulesRaw, _ := committed.Get("client_env_rules_json"); rulesRaw != nil {
 		text, ok := rulesRaw.(string)
 		if !ok {
-			return false, &stateTypedError{"TypeError", "the JSON object must be str, bytes or bytearray, not " + pyTypeName(rulesRaw)}
+			return false, &stateTypedError{"TypeError", "the stored retry rules are " + errchain.Kind(rulesRaw) + ", expected JSON text"}
 		}
 		decoded, derr := pyjson.Loads(text)
 		if derr != nil {
@@ -340,7 +341,7 @@ func RetryMatches(committed, request *pyjson.Object) (bool, error) {
 	sent, _ := NormaliseClientEnv(flat, rules)
 	storedText, ok := stored.(string)
 	if !ok {
-		return false, &stateTypedError{"TypeError", "the JSON object must be str, bytes or bytearray, not " + pyTypeName(stored)}
+		return false, &stateTypedError{"TypeError", "the stored retry request is " + errchain.Kind(stored) + ", expected JSON text"}
 	}
 	decodedStored, err := pyjson.Loads(storedText)
 	if err != nil {

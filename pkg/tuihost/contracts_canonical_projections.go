@@ -23,34 +23,6 @@ var CanonicalAttachedImageResult = pydantic.Extend(AttachedImageResult, "Canonic
 	pydantic.Req("mime", pydantic.Str),
 )
 
-var CanonicalProfileRow = pydantic.Extend(ProfileRow, "CanonicalProfileRow", ClosedConfig,
-	pydantic.Def("last_session", pydantic.Nullable(ProfileCanonicalSession), nil),
-)
-
-var CanonicalProfilesResult = pydantic.Extend(ProfilesListResult, "CanonicalProfilesResult", ClosedConfig,
-	pydantic.Req("profiles", pydantic.List(CanonicalProfileRow)),
-)
-
-var CanonicalProfilesParams = pydantic.Extend(ProfileParams, "CanonicalProfilesParams", ParamsConfig,
-	pydantic.Def("include_sessions", pydantic.Bool, true),
-)
-
-var CanonicalRoomCreateParams = pydantic.Extend(RoomParams, "CanonicalRoomCreateParams", ParamsConfig,
-	pydantic.Req("name", pydantic.Str),
-	pydantic.Req("members", pydantic.List(RoomMemberInput)),
-)
-
-var CanonicalRoomAttemptParams = pydantic.Extend(RoomParams, "CanonicalRoomAttemptParams", ParamsConfig,
-	pydantic.Req("member_id", pydantic.Str),
-	pydantic.Req("task_id", pydantic.Str),
-	pydantic.Req("execution_generation", pydantic.Int),
-)
-
-var CanonicalRoomApproveParams = pydantic.Extend(CanonicalRoomAttemptParams, "CanonicalRoomApproveParams", ParamsConfig,
-	pydantic.Req("choice", pydantic.Literal("once", "deny")),
-	pydantic.Req("request_id", pydantic.Str),
-)
-
 var CanonicalBotDeliverParams = pydantic.NewModel("CanonicalBotDeliverParams", ParamsConfig,
 	pydantic.Def("profile", pydantic.Nullable(pydantic.Str), nil),
 	pydantic.Req("message", pydantic.Str),
@@ -78,15 +50,7 @@ var _ = CanonicalMethod("config.get", ConfigGetParams, CanonicalConfigGetResult,
 
 var _ = CanonicalMethod("config.set", CanonicalConfigSetParams, ConfigSetResult, "")
 
-var _ = CanonicalMethod("profiles.list", CanonicalProfilesParams, CanonicalProfilesResult, "")
-
 var _ = CanonicalMethod("image.attach_bytes", ImageAttachBytesParams, CanonicalAttachedImageResult, "")
-
-var _ = CanonicalMethod("groups.retry", CanonicalRoomAttemptParams, GroupsRetryResult, "")
-
-var _ = CanonicalMethod("groups.create", CanonicalRoomCreateParams, GroupsCreateResult, "")
-
-var _ = CanonicalMethod("groups.approve", CanonicalRoomApproveParams, GroupsApproveResult, "")
 
 var _ = CanonicalMethod("bot_relay.deliver", CanonicalBotDeliverParams, CanonicalBotDeliverResult, "")
 

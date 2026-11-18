@@ -280,7 +280,7 @@ func TestRunJobInactivityTimeoutInterruptsTheAgent(t *testing.T) {
 	fake := &fakeCronAgent{idle: 100, block: make(chan struct{}), result: map[string]any{"final_response": "late"}}
 	ctx, execID := ownerRun(t, s, job, fake)
 	out, err := s.runJob(ctx, job, runJobOptions{ExecutionID: &execID})
-	if err != nil || out.Success || out.Error == nil || !strings.Contains(*out.Error, "TimeoutError: Cron job 'slow' idle for 100s") {
+	if err != nil || out.Success || out.Error == nil || !strings.Contains(*out.Error, "Cron job 'slow' idle for 100s") {
 		t.Fatalf("outcome %+v err %v", out, err)
 	}
 	fake.mu.Lock()

@@ -36,7 +36,7 @@ func AcquireTurnLeasePolling(owner string, try TurnLeaseTry, sleepRetry func(dea
 			}
 			patience = math.Min(o.AcquirePatienceS+math.Max(0, o.PollIntervalSeconds), math.Max(o.AcquirePatienceS, deadline-monotonicSeconds()))
 			if sleepRetry == nil {
-				return false, &stateTypedError{"AttributeError", "'" + owner + "' object has no attribute '_sleep_before_write_retry'"}
+				return false, &stateTypedError{"AttributeError", "the " + owner + " lease owner has no write retry pause"}
 			}
 			if !sleepRetry(deadline, 0) {
 				return false, nil

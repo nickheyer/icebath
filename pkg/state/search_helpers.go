@@ -11,6 +11,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -344,7 +345,7 @@ func flattenText(decoded any) (string, error) {
 		}
 		s, ok := t.(string)
 		if !ok {
-			return "", &pyint.Error{Kind: "TypeError", Msg: fmt.Sprintf("sequence item %d: expected str instance, %s found", len(texts), pyTypeName(t))}
+			return "", &pyint.Error{Kind: "TypeError", Msg: fmt.Sprintf("text part %d is %s, expected text", len(texts), errchain.Kind(t))}
 		}
 		texts = append(texts, s)
 	}

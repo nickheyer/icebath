@@ -20,6 +20,7 @@ import (
 	"github.com/dlclark/regexp2/v2"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
 	"github.com/nickheyer/icebath/pkg/internal/pydifflib"
@@ -93,7 +94,7 @@ func (m *toolMatcher) postInit(kind string) {
 	}
 	re, err := pyre.CompileFullmatch(m.Matcher)
 	if err != nil {
-		pkgLog().Warn(fmt.Sprintf("%s matcher %s is invalid (%v) — treating as literal equality", kind, pyrepr.StrRepr(m.Matcher), err))
+		pkgLog().Warn(fmt.Sprintf("%s matcher %s is invalid (%v) — treating as literal equality", kind, errchain.Show(m.Matcher), err))
 	}
 	m.compiled = re
 }
@@ -111,7 +112,7 @@ func (m *toolMatcher) MatchesTool(toolName any) (bool, error) {
 		return isStr && name == m.Matcher, nil
 	}
 	if !isStr {
-		return false, fmt.Errorf("expected string or bytes-like object, got '%s'", pyrepr.TypeName(toolName))
+		return false, fmt.Errorf("tool name is %s where text was expected", errchain.Kind(toolName))
 	}
 	return m.compiled.MatchString(name)
 }
@@ -452,7 +453,7 @@ func wireShellHooks(manager *Manager, homeKey string, specs []*ShellHookSpec) []
 			matcher = spec.Matcher
 		}
 		pkgLog().Info(fmt.Sprintf("shell hook registered: %s -> %s (matcher=%s, timeout=%ds, fail_closed=%s)",
-			spec.Event, spec.Command, matcher, spec.Timeout, pyrepr.Repr(spec.FailClosed)))
+			spec.Event, spec.Command, matcher, spec.Timeout, errchain.Show(spec.FailClosed)))
 	}
 	return registered
 }
@@ -553,14 +554,14 @@ func parseShellHooks(hooksCfg any) ([]*ShellHookSpec, bool) {
 		}
 		if shellUnsupportedHooks[eventName] {
 			pkgLog().Warn(fmt.Sprintf("hook event %s is Python-plugin-only: shell hooks cannot return its directive, "+
-				"so this registration is refused rather than silently ignored", pyrepr.StrRepr(eventName)))
+				"so this registration is refused rather than silently ignored", errchain.Show(eventName)))
 			continue
 		}
 		if !validHooks[eventName] {
 			if suggestion := pydifflib.GetCloseMatches(eventName, ValidHooks(), 1, 0.6); len(suggestion) > 0 {
-				pkgLog().Warn(fmt.Sprintf("unknown hook event %s in hooks: config — did you mean %s?", pyrepr.StrRepr(eventName), pyrepr.StrRepr(suggestion[0])))
+				pkgLog().Warn(fmt.Sprintf("unknown hook event %s in hooks: config — did you mean %s?", errchain.Show(eventName), errchain.Show(suggestion[0])))
 			} else {
-				pkgLog().Warn(fmt.Sprintf("unknown hook event %s in hooks: config (valid: %s)", pyrepr.StrRepr(eventName), strings.Join(ValidHooks(), ", ")))
+				pkgLog().Warn(fmt.Sprintf("unknown hook event %s in hooks: config (valid: %s)", errchain.Show(eventName), strings.Join(ValidHooks(), ", ")))
 			}
 			complete = false
 			continue
@@ -570,7 +571,7 @@ func parseShellHooks(hooksCfg any) ([]*ShellHookSpec, bool) {
 		}
 		list, ok := entries.([]any)
 		if !ok {
-			pkgLog().Warn(fmt.Sprintf("hooks.%s must be a list of hook definitions; got %s", eventName, pyrepr.TypeName(entries)))
+			pkgLog().Warn(fmt.Sprintf("hooks.%s must be a list of hook definitions; got %s", eventName, errchain.Kind(entries)))
 			complete = false
 			continue
 		}
@@ -590,7 +591,7 @@ func parseShellHookEntry(event string, index int, raw any) *ShellHookSpec {
 	warn := func(msg string) { pkgLog().Warn(fmt.Sprintf("hooks.%s[%d]", event, index) + msg) }
 	entry, ok := shellHookDict(raw)
 	if !ok {
-		warn(fmt.Sprintf(" must be a mapping with a 'command' key; got %s", pyrepr.TypeName(raw)))
+		warn(fmt.Sprintf(" must be a mapping with a 'command' key; got %s", errchain.Kind(raw)))
 		return nil
 	}
 	command, ok := entry["command"].(string)
@@ -606,7 +607,7 @@ func parseShellHookEntry(event string, index int, raw any) *ShellHookSpec {
 	}
 	if hasMatcher && matcherRaw != nil && !shellHookToolEvents[event] {
 		warn(fmt.Sprintf(".matcher=%s will be ignored at runtime — the matcher field is only honored for "+
-			"pre_tool_call / post_tool_call.  The hook will fire on every %s event.", pyrepr.StrRepr(matcher), event))
+			"pre_tool_call / post_tool_call.  The hook will fire on every %s event.", errchain.Show(matcher), event))
 		hasMatcher = false
 	}
 	if !hasMatcher || matcherRaw == nil {
@@ -618,7 +619,7 @@ func parseShellHookEntry(event string, index int, raw any) *ShellHookSpec {
 	}
 	timeout := ShellHookDefaultTimeoutSeconds
 	if n, err := pyint.Of(timeoutRaw); err != nil {
-		warn(fmt.Sprintf(".timeout must be an int (got %s); using default %ds", pyrepr.Repr(timeoutRaw), ShellHookDefaultTimeoutSeconds))
+		warn(fmt.Sprintf(".timeout must be an int (got %s); using default %ds", errchain.Show(timeoutRaw), ShellHookDefaultTimeoutSeconds))
 	} else if n.Cmp(big.NewInt(1)) < 0 {
 		warn(fmt.Sprintf(".timeout must be >=1; using default %ds", ShellHookDefaultTimeoutSeconds))
 	} else if n.Cmp(big.NewInt(ShellHookMaxTimeoutSeconds)) > 0 {
@@ -635,7 +636,7 @@ func parseShellHookEntry(event string, index int, raw any) *ShellHookSpec {
 	}
 	failClosed, isBool := failRaw.(bool)
 	if !isBool {
-		warn(fmt.Sprintf(".fail_closed must be a boolean (got %s); using default false (fail open)", pyrepr.Repr(failRaw)))
+		warn(fmt.Sprintf(".fail_closed must be a boolean (got %s); using default false (fail open)", errchain.Show(failRaw)))
 		failClosed = false
 	}
 	if failClosed && !shellHookBlockingEvents[event] {
@@ -674,7 +675,8 @@ func spawnShellHook(ctx context.Context, spec *ShellHookSpec, stdinJSON string) 
 	}
 	argv, err := pyshlex.SplitCommandLine(pypath.Expanduser(spec.Command))
 	if err != nil {
-		return failed(fmt.Sprintf("command %s cannot be parsed: %v", pyrepr.StrRepr(spec.Command), err))
+		pkgLog().Debug("shell hook command unparsable: " + errchain.Text(err))
+		return failed(fmt.Sprintf("command %s cannot be parsed: its quotes or escapes are unbalanced", errchain.Show(spec.Command)))
 	}
 	if len(argv) == 0 {
 		return failed("empty command")
@@ -726,7 +728,7 @@ func shellHookPopenError(name string, err error) string {
 	case isPermissionError(err):
 		return "command not executable"
 	case isBadExeFormat(err):
-		return pyrepr.StrRepr(name) + " " + shellHookNotDirectlyExecutable
+		return errchain.Show(name) + " " + shellHookNotDirectlyExecutable
 	case isOSError(err):
 		return pypath.OSErrorText(err)
 	}

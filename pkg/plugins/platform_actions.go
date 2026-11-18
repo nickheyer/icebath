@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math/big"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -85,9 +86,9 @@ func actionOK(fields map[string]any) map[string]any {
 	return result
 }
 
-// AttributeError text a verb raises when the adapter lacks the method it calls
+// Failure a verb reports when the adapter lacks the method it calls
 func missingAdapterMethod(adapter any, method string) error {
-	return fmt.Errorf("'%s' object has no attribute '%s'", pyrepr.TypeName(adapter), method)
+	return fmt.Errorf("the platform adapter has no %s", method)
 }
 
 func telegramAddReaction(ctx context.Context, adapter any, args []string) (map[string]any, error) {
@@ -142,7 +143,7 @@ func telegramSetThreadTitle(ctx context.Context, adapter any, args []string) (ma
 	}
 	threadID, err := pyint.Of(args[1])
 	if err != nil {
-		return nil, err
+		return nil, errchain.Reword(err, "thread id %s is not a whole number", args[1])
 	}
 	if err := a.RenameDMTopic(ctx, args[0], threadID, args[2]); err != nil {
 		return nil, err
@@ -199,7 +200,7 @@ func (p *PlatformActions) resolveAdapter(ctx context.Context, platform any) (any
 	}
 	value, err := runner.ParsePlatform(ctx, pystr.Lower(pystr.Strip(pyrepr.Str(platform))))
 	if err != nil {
-		return nil, actionErr("unknown_platform", fmt.Sprintf("unknown platform %s", pyrepr.Repr(platform)))
+		return nil, actionErr("unknown_platform", fmt.Sprintf("unknown platform %s", errchain.Show(platform)))
 	}
 	var adapter any
 	var resolve func(context.Context, string, string) any
@@ -240,7 +241,7 @@ func (p *PlatformActions) resolveAdapter(ctx context.Context, platform any) (any
 func (p *PlatformActions) gate(ctx context.Context, platform any, names []string, values []any) (any, map[string]any) {
 	if !p.capabilityGranted(ctx) {
 		return nil, actionErr("capability_not_granted", fmt.Sprintf("plugin %s lacks the %s capability (grant via consent flow or plugins.entries.%s.allow_platform_actions)",
-			pyrepr.Repr(p.pluginID), pyrepr.Repr(PlatformActionCapability), p.pluginID))
+			errchain.Show(p.pluginID), errchain.Show(PlatformActionCapability), p.pluginID))
 	}
 	for i, name := range names {
 		if s, ok := values[i].(string); !ok || pystr.Strip(s) == "" {
@@ -308,7 +309,7 @@ func (p *PlatformActions) HostAttr(_ context.Context, name string) (any, bool, b
 	if _, ok := platformVerbs[name]; ok {
 		return nil, true, true, nil
 	}
-	return nil, false, false, &HostBuiltinError{Type: "AttributeError", Message: fmt.Sprintf("'PlatformActions' object has no attribute %s", pyrepr.Repr(name))}
+	return nil, false, false, &HostBuiltinError{Type: "AttributeError", Message: fmt.Sprintf("platform actions have no %s", name)}
 }
 
 // Runs add_reaction or set_thread_title for a hosted plugin with the Python argument binding
@@ -316,7 +317,7 @@ func (p *PlatformActions) HostCall(ctx context.Context, method string, args []an
 	third := map[string]string{"add_reaction": "message_id", "set_thread_title": "thread_id"}[method]
 	last := map[string]string{"add_reaction": "emoji", "set_thread_title": "title"}[method]
 	if third == "" {
-		return nil, &HostBuiltinError{Type: "AttributeError", Message: fmt.Sprintf("'PlatformActions' object has no attribute %s", pyrepr.Repr(method))}
+		return nil, &HostBuiltinError{Type: "AttributeError", Message: fmt.Sprintf("platform actions have no %s", method)}
 	}
 	a, _, err := bindPyOn("PlatformActions", method, []pyParam{req("platform"), req("chat_id"), req(third), req(last)}, args, kwargs)
 	if err != nil {

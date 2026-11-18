@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/memory"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -54,7 +54,7 @@ func warnMemoryProviderUnavailable(ctx context.Context, name, reason string, say
 		"is disabled for this session (built-in memory still works). Check the "+
 		"provider's credentials/config with 'icebath memory status'. Note: "+
 		"systemd/gateway services do not inherit ~/.icebath/.env automatically; set "+
-		"any required variables in the service environment.%s", pyrepr.StrRepr(name), suffix), say, "unavailable")
+		"any required variables in the service environment.%s", errchain.Show(name), suffix), say, "unavailable")
 }
 
 // Configured provider ready to add, or nil after telling the user once per home why it will not run

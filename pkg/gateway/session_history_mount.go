@@ -46,7 +46,7 @@ func mountHistory(ctx context.Context, a *SessionAuthority, actor Principal, sid
 		return false, err
 	}
 	if row == nil {
-		return false, &PyError{Kind: "TypeError", Msg: "'NoneType' object is not subscriptable"}
+		return false, &PyError{Kind: "TypeError", Msg: "the history mount row is missing"}
 	}
 	label, has := row.Get("source")
 	if !has {

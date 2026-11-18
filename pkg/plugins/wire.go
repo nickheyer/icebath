@@ -20,6 +20,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pybase64"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -122,7 +123,7 @@ func (o *Opaque) String() string { return "<opaque " + o.TypeName + ">" }
 
 // Attribute access on an Opaque, which always fails naming the live object
 func (o *Opaque) Attr(name string) error {
-	return &HostBuiltinError{Type: "AttributeError", Message: fmt.Sprintf("%s is a live object in the Icebath process and is not available inside the plugin host (attribute %s)", config.PyRepr(o.TypeName), config.PyRepr(name))}
+	return &HostBuiltinError{Type: "AttributeError", Message: fmt.Sprintf("%s is a live object in the Icebath process and is not available inside the plugin host (attribute %s)", errchain.Show(o.TypeName), errchain.Show(name))}
 }
 
 // Python class name a Go value reports across the wire
@@ -367,15 +368,17 @@ func wireDecode(value any, resolve func(map[string]any) (any, error)) (any, erro
 func wireDecodeBytes(raw any) (any, error) {
 	s, ok := raw.(string)
 	if !ok {
-		return nil, &HostBuiltinError{Type: "TypeError", Message: fmt.Sprintf("argument should be a bytes-like object or ASCII string, not '%s'", config.PyTypeName(raw)), Bases: []string{"Exception", "BaseException"}}
+		return nil, &HostBuiltinError{Type: "TypeError", Message: fmt.Sprintf("bytes payload is %s where base64 text was expected", errchain.Kind(raw)), Bases: []string{"Exception", "BaseException"}}
 	}
 	b, err := pybase64.B64Decode(s)
 	var binErr *pybase64.Error
 	switch {
 	case errors.As(err, &binErr):
-		return nil, &HostBuiltinError{Type: "Error", Message: binErr.Msg, Bases: []string{"ValueError", "Exception", "BaseException"}}
+		pkgLog().Debug("bytes payload refused: " + errchain.Text(err))
+		return nil, &HostBuiltinError{Type: "Error", Message: "bytes payload is not valid base64", Bases: []string{"ValueError", "Exception", "BaseException"}}
 	case err != nil:
-		return nil, &HostBuiltinError{Type: "ValueError", Message: err.Error(), Bases: []string{"Exception", "BaseException"}}
+		pkgLog().Debug("bytes payload refused: " + errchain.Text(err))
+		return nil, &HostBuiltinError{Type: "ValueError", Message: "bytes payload is not valid base64", Bases: []string{"Exception", "BaseException"}}
 	}
 	return b, nil
 }
@@ -890,7 +893,7 @@ func pyJSONWrite(b *strings.Builder, v any) error {
 		}
 		b.WriteByte('}')
 	default:
-		return fmt.Errorf("Object of type %s is not JSON serializable", wireTypeName(v))
+		return fmt.Errorf("%s cannot be written as JSON", errchain.Kind(v))
 	}
 	return nil
 }
@@ -995,7 +998,7 @@ func (p *pyJSONParser) skip() {
 	}
 }
 
-func (p *pyJSONParser) fail() error { return fmt.Errorf("Expecting value: char %d", p.i) }
+func (p *pyJSONParser) fail() error { return fmt.Errorf("invalid JSON at character %d", p.i) }
 
 func (p *pyJSONParser) lit(word string, v any) (any, error) {
 	if strings.HasPrefix(string(p.s[p.i:]), word) {

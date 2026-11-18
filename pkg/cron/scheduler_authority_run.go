@@ -29,9 +29,9 @@ type cronRPCClient interface {
 	Close() error
 }
 
-// Failure outcome of a canonical run with the exception class and message
+// Failure outcome of a canonical run with the error message
 func canonicalFailure(jobID string, err error) jobRunOutcome {
-	text := fmt.Sprintf("%s: %v", pyExceptionName(err), err)
+	text := err.Error()
 	return jobRunOutcome{Success: false, Output: fmt.Sprintf("# Cron Job: %s (FAILED)\n\n%s\n", jobID, text), Error: &text}
 }
 

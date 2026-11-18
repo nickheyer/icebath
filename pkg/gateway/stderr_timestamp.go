@@ -175,7 +175,7 @@ func parseStderrTimestampArgs(argv []string) (string, []string, int) {
 	for ; i < len(argv); i++ {
 		arg := argv[i]
 		if arg == "-h" || arg == "--help" {
-			fmt.Fprint(stderrTimestampStdout, stderrTimestampUsage+"\nRun a command, timestamp each stderr line into a log file and each stdout line to stdout.\n\npositional arguments:\n  command\n\noptions:\n  -h, --help            show this help message and exit\n  --error-log ERROR_LOG\n")
+			fmt.Fprint(stderrTimestampStdout, stderrTimestampUsage+"\nRun a command, timestamp each stderr line into a log file and each stdout line to stdout.\n\narguments:\n  command\n\noptions:\n  -h, --help            show this help message and exit\n  --error-log ERROR_LOG\n")
 			return "", nil, 0
 		}
 		name, value, inline := strings.Cut(arg, "=")

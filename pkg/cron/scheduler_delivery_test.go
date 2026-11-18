@@ -277,7 +277,7 @@ func TestConfirmAdapterDeliveryEvidence(t *testing.T) {
 			t.Fatalf("case %d got %v gap %d", i, got, len(gap))
 		}
 	}
-	if !errors.Is(errFutureTimeout, errFutureTimeout) || pyExceptionName(errFutureTimeout) != "TimeoutError" {
+	if !errors.Is(errFutureTimeout, errFutureTimeout) {
 		t.Fatal("timeout name")
 	}
 }

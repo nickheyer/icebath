@@ -628,18 +628,34 @@ func (a *app) transcriptCommands() []slashCommand {
 				r.sys(tr("slashCmd.core.steer.noActiveTurnQueued", previewOf(payload)))
 				return nil
 			}
-			params := map[string]any{"session_id": r.sid, "text": payload}
-			if generation := infoOf(a.store.ui.Info).ExecutionGeneration; generation != nil && a.gw.canonical() {
-				params["execution_generation"] = *generation
-			}
-			return r.rpc("session.steer", params, func(res map[string]any) tea.Cmd {
-				if res["status"] == "queued" {
+			settle := func(status tuigateway.CorrectionStatus) tea.Cmd {
+				if status == "queued" {
 					r.sys(tr("slashCmd.core.steer.queued", previewOf(payload)))
 					return nil
 				}
 				a.enqueue(payload, payload, r.destination)
 				r.sys(tr("slashCmd.core.steer.rejected"))
 				return nil
+			}
+			if !a.gw.canonical() {
+				return ask(r.rpc, r.sys, tuigateway.SessionSteer, tuigateway.SessionCorrectionParams{SessionID: r.sid, Text: payload}, func(res *tuigateway.SessionCorrectionResult) tea.Cmd {
+					if res == nil {
+						return nil
+					}
+					return settle(res.Status)
+				})
+			}
+			generation := infoOf(a.store.ui.Info).ExecutionGeneration
+			if generation == nil {
+				r.sys("error: " + rpcErrorMessage(tuigateway.MissingParam(tuigateway.CanonicalSessionSteer.Name(), "execution_generation")))
+				return nil
+			}
+			return ask(r.rpc, r.sys, tuigateway.CanonicalSessionSteer, tuigateway.CanonicalCorrectionParams{SessionID: r.sid, ExecutionGeneration: *generation, Text: payload}, func(res *tuigateway.CorrectionAnswer) tea.Cmd {
+				switch {
+				case res == nil, res.VoiceStopped:
+					return nil
+				}
+				return settle(res.Status)
 			})
 		}},
 		{name: "undo", help: "undo the last exchange", run: func(r *slashRun) tea.Cmd {

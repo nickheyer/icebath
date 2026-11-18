@@ -72,7 +72,7 @@ func (o *copilotACPObject) Get(_ context.Context, name string) (any, error) {
 	case o.depth == 1 && name == "completions":
 		return &copilotACPObject{client: o.client, depth: 2}, nil
 	}
-	return nil, fmt.Errorf("'%s' object has no attribute '%s'", "CopilotACPClient", name)
+	return nil, fmt.Errorf("the Copilot ACP client has no %s", name)
 }
 
 func (o *copilotACPObject) Call(ctx context.Context, method string, _ []any, kwargs map[string]any) (any, error) {
@@ -88,7 +88,7 @@ func (o *copilotACPObject) Call(ctx context.Context, method string, _ []any, kwa
 	case o.depth == 0 && method == "close":
 		return nil, o.client.Close()
 	}
-	return nil, fmt.Errorf("'%s' object has no attribute '%s'", "CopilotACPClient", method)
+	return nil, fmt.Errorf("the Copilot ACP client has no %s method", method)
 }
 
 // Copilot CLI ACP client from client kwargs, an error when the acpclient package is not linked

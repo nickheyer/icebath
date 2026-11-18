@@ -19,6 +19,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyfs"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
@@ -123,7 +124,7 @@ func (s *Store) withJobsLock(ctx context.Context, fn func(tx *jobsTx) error) err
 	defer mu.Unlock()
 	lockFile, err := s.openJobsLock(home.WithOverride(ctx, s.home))
 	if err != nil {
-		s.log.Warn(fmt.Sprintf("jobs.json cross-process lock unavailable (%s); proceeding with in-process lock only", pypath.OSErrorText(err)))
+		s.log.Warn(fmt.Sprintf("jobs.json cross-process lock unavailable (%s); proceeding with in-process lock only", errchain.OSText(err)))
 	}
 	if lockFile != nil {
 		defer releaseFlock(lockFile)
@@ -183,18 +184,18 @@ func (s *Store) fireJobLock(ctx context.Context, jobID string, fn func(ctx conte
 	acquired := false
 	var lockFile *os.File
 	if err := s.ensureDirs(home.WithOverride(ctx, s.home)); err != nil {
-		s.log.Error(fmt.Sprintf("Cron fire fence unavailable for %s: %s", jobID, pypath.OSErrorText(err)))
+		s.log.Error(fmt.Sprintf("Cron fire fence unavailable for %s: %s", jobID, errchain.OSText(err)))
 	} else {
 		path := filepath.Join(s.cronDir, ".fire-"+uuid5URLHex(key)+".lock")
 		f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0o666)
 		if err != nil {
-			s.log.Error(fmt.Sprintf("Cron fire fence unavailable for %s: %s", jobID, pypath.OSErrorText(err)))
+			s.log.Error(fmt.Sprintf("Cron fire fence unavailable for %s: %s", jobID, errchain.OSText(err)))
 		} else {
 			lockFile = f
 			ok, err := acquireFlock(f, jobsLockTimeout)
 			switch {
 			case err != nil:
-				s.log.Error(fmt.Sprintf("Cron fire fence unavailable for %s: %s", jobID, pypath.OSErrorText(err)))
+				s.log.Error(fmt.Sprintf("Cron fire fence unavailable for %s: %s", jobID, errchain.OSText(err)))
 			case !ok:
 				s.log.Error(fmt.Sprintf("Timed out waiting for fire fence %s; failing closed", path))
 			default:
@@ -395,7 +396,7 @@ func (s *Store) preserveFileOwnership(path string, before os.FileInfo) {
 		return
 	}
 	if err := ownership.chown(path, uid, gid); err != nil {
-		s.log.Warn(fmt.Sprintf("Could not restore ownership of %s to uid=%d gid=%d after rewrite: %s — if the gateway runs as a different user, its cron ticker may now be locked out (see issue #68483).", path, uid, gid, pypath.OSErrorText(err)))
+		s.log.Warn(fmt.Sprintf("Could not restore ownership of %s to uid=%d gid=%d after rewrite: %s — if the gateway runs as a different user, its cron ticker may now be locked out (see issue #68483).", path, uid, gid, errchain.OSText(err)))
 	}
 }
 
@@ -431,7 +432,7 @@ func parseJobsFile(path string) (any, bool, error) {
 	}
 	raw = []byte(strings.TrimPrefix(string(raw), "\ufeff"))
 	if !utf8.Valid(raw) {
-		return nil, false, fmt.Errorf("'utf-8' codec can't decode jobs.json: invalid continuation byte")
+		return nil, false, fmt.Errorf("jobs.json is not valid UTF-8")
 	}
 	v, err := pyjson.Loads(string(raw))
 	if err == nil {
@@ -465,8 +466,8 @@ func (s *Store) loadJobs(ctx context.Context, tx *jobsTx) ([]*Job, error) {
 	data, lenient, err := jobsFileParser(s.jobsFile)
 	if err != nil {
 		if isOSError(err) {
-			s.log.Error(fmt.Sprintf("IOError reading jobs.json: %s", pypath.OSErrorText(err)))
-			return nil, fmt.Errorf("Failed to read cron database: %s", pypath.OSErrorText(err))
+			s.log.Error(fmt.Sprintf("IOError reading jobs.json: %s", errchain.OSText(err)))
+			return nil, fmt.Errorf("Failed to read cron database: %s", errchain.OSText(err))
 		}
 		s.log.Error(fmt.Sprintf("Failed to auto-repair jobs.json: %s", err))
 		return nil, fmt.Errorf("Cron database corrupted and unrepairable: %s", err)
@@ -511,14 +512,14 @@ func (s *Store) loadJobs(ctx context.Context, tx *jobsTx) ([]*Job, error) {
 		case []any:
 			entries = jv
 		default:
-			notes = append(notes, fmt.Sprintf("Replacing invalid jobs.json 'jobs' field (%s) with an empty list", pyrepr.TypeName(jobsVal)))
+			notes = append(notes, fmt.Sprintf("Replacing invalid jobs.json 'jobs' field (%s) with an empty list", errchain.Kind(jobsVal)))
 			repair, unmergeable = "invalid jobs field replaced with list", true
 		}
 	case []any:
 		entries = d
 		repair = "bare list wrapped as dict"
 	default:
-		return nil, fmt.Errorf("Cron database corrupted: expected {'jobs': [...]}, got %s", pyrepr.TypeName(data))
+		return nil, fmt.Errorf("Cron database corrupted: expected a mapping with a jobs list, got %s", errchain.Kind(data))
 	}
 	var objs []*pyjson.Object
 	junkTypes := map[string]bool{}
@@ -529,7 +530,7 @@ func (s *Store) loadJobs(ctx context.Context, tx *jobsTx) ([]*Job, error) {
 			continue
 		}
 		junk++
-		junkTypes[pyrepr.TypeName(e)] = true
+		junkTypes[errchain.Kind(e)] = true
 	}
 	if junk > 0 {
 		types := make([]string, 0, len(junkTypes))
@@ -988,7 +989,7 @@ func (s *Store) pruneJobOutput(dir string, keep int64) int {
 	deleted := 0
 	for _, name := range names[keep:] {
 		if err := os.Remove(filepath.Join(dir, name)); err != nil {
-			s.log.Debug(fmt.Sprintf("Failed to prune cron output %s: %s", name, pypath.OSErrorText(err)))
+			s.log.Debug(fmt.Sprintf("Failed to prune cron output %s: %s", name, errchain.OSText(err)))
 			continue
 		}
 		deleted++

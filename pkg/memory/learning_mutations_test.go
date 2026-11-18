@@ -116,7 +116,7 @@ func TestMemoryDetailAndMissingSkill(t *testing.T) {
 		t.Fatalf("detail = %v", d)
 	}
 	d = mustNode(t)(NodeDetail(ctx, nil, "memory:bogus:0"))
-	if d["ok"] != false || d["message"] != "bad memory node id: 'memory:bogus:0'" {
+	if d["ok"] != false || d["message"] != "bad memory node id: memory:bogus:0" {
 		t.Fatalf("detail = %v", d)
 	}
 	d = mustNode(t)(NodeDetail(ctx, nil, "memory:memory:9"))
@@ -142,7 +142,7 @@ func TestEmptyMemoryEditRefusedAfterIDCheck(t *testing.T) {
 	if res := mustNode(t)(EditNode(ctx, nil, "memory:memory:0", "   ")); res["message"] != "empty memory \u2014 use delete to remove it" {
 		t.Fatalf("edit = %v", res)
 	}
-	if res := mustNode(t)(EditNode(ctx, nil, "memory:x", "   ")); res["message"] != "bad memory node id: 'memory:x'" {
+	if res := mustNode(t)(EditNode(ctx, nil, "memory:x", "   ")); res["message"] != "bad memory node id: memory:x" {
 		t.Fatalf("edit = %v", res)
 	}
 }

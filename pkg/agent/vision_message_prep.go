@@ -8,6 +8,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pybase64"
 	"github.com/nickheyer/icebath/pkg/internal/pycopy"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -194,11 +195,12 @@ func analyzeImageDescription(ctx context.Context, env *tools.Env, source, prompt
 	}()
 	parsed, err := pyjson.Loads(tools.VisionAnalyzeTool(ctx, env, source, prompt))
 	if err != nil {
-		return "Image analysis failed: " + err.Error()
+		pkgLog().Debug("vision tool reply unreadable: " + errchain.Text(err))
+		return "Image analysis failed: the vision tool reply is not valid JSON"
 	}
 	obj, ok := parsed.(*pyjson.Object)
 	if !ok {
-		return fmt.Sprintf("Image analysis failed: '%s' object has no attribute 'get'", pyrepr.TypeName(parsed))
+		return fmt.Sprintf("Image analysis failed: the vision tool replied with %s where a mapping was expected", errchain.Kind(parsed))
 	}
 	analysis, _ := obj.Get("analysis")
 	if !pyrepr.Truthy(analysis) {
@@ -206,7 +208,7 @@ func analyzeImageDescription(ctx context.Context, env *tools.Env, source, prompt
 	}
 	text, ok := analysis.(string)
 	if !ok {
-		return fmt.Sprintf("Image analysis failed: '%s' object has no attribute 'strip'", pyrepr.TypeName(analysis))
+		return fmt.Sprintf("Image analysis failed: the vision tool analysis is %s where text was expected", errchain.Kind(analysis))
 	}
 	return pystr.Strip(text)
 }

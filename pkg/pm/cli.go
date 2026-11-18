@@ -19,7 +19,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pysys"
 )
 
@@ -1274,14 +1273,4 @@ func dedupeStrings(items []string) []string {
 func isDirPath(path string) bool {
 	st, err := os.Stat(path)
 	return err == nil && st.IsDir()
-}
-
-// Sorts sibling names the way Python sorts their paths, by code point and lowercased on Windows
-func sortPathNames(names []string) {
-	sort.SliceStable(names, func(i, j int) bool {
-		if runtime.GOOS == "windows" {
-			return pystr.Lower(names[i]) < pystr.Lower(names[j])
-		}
-		return tarNameLess(names[i], names[j])
-	})
 }

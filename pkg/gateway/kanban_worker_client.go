@@ -159,14 +159,14 @@ func kanbanAwaitReceipt(ctx context.Context, client *GatewayClient, params kanba
 		}
 		accepted, ok := pyjson.Plain(raw).(map[string]any)
 		if !ok {
-			return nil, &kanbanPyError{"TypeError", fmt.Sprintf("'%s' object is not subscriptable", pyrepr.TypeName(raw))}
+			return nil, &kanbanPyError{"TypeError", fmt.Sprintf("the kanban receipt is %s, expected a mapping", errchain.Kind(raw))}
 		}
 		rv, err := kanbanItem(accepted, "receipt")
 		if err != nil {
 			return nil, err
 		}
 		if receipt, ok = rv.(map[string]any); !ok {
-			return nil, &kanbanPyError{"TypeError", fmt.Sprintf("'%s' object is not subscriptable", pyrepr.TypeName(rv))}
+			return nil, &kanbanPyError{"TypeError", fmt.Sprintf("the kanban receipt value is %s, expected a mapping", errchain.Kind(rv))}
 		}
 		sessionID, err := kanbanItem(accepted, "session_id")
 		if err != nil {
@@ -258,7 +258,7 @@ func kanbanWorkerResult(path string, params kanbanWorkerParams) (*pyjson.Object,
 		}
 		obj, ok := decoded.(*pyjson.Object)
 		if !ok {
-			return nil, &kanbanPyError{"AttributeError", fmt.Sprintf("'%s' object has no attribute 'get'", pyrepr.TypeName(decoded))}
+			return nil, &kanbanPyError{"AttributeError", fmt.Sprintf("the kanban worker result is %s, expected a mapping", errchain.Kind(decoded))}
 		}
 		result = obj
 	}
@@ -313,7 +313,7 @@ func kanbanWorkerClientSubmit(ctx context.Context) (int, error) {
 	if (errors.As(err, &pyErr) && (pyErr.Class == "KeyError" || pyErr.Class == "ValueError")) || pypath.IsOSError(err) {
 		text := pyrepr.ExceptionMessage(err)
 		if pypath.IsOSError(err) {
-			text = pypath.OSErrorText(err)
+			text = errchain.OSText(err)
 		}
 		fmt.Fprintf(os.Stderr, "Kanban owner refused: %s\n", text)
 		return 1, nil
@@ -344,7 +344,7 @@ func kanbanWorkerParamsFromEnv() (kanbanWorkerParams, string, error) {
 	}
 	n, ok := pyint.Parse(rawRun)
 	if !ok || !n.IsInt64() {
-		return p, "", &kanbanPyError{"ValueError", "invalid literal for int() with base 10: " + pyrepr.Repr(rawRun)}
+		return p, "", &kanbanPyError{"ValueError", "the kanban run id " + rawRun + " is not a whole number"}
 	}
 	p.runID = n.Int64()
 	if p.claimLock, err = get("ICEBATH_KANBAN_CLAIM_LOCK"); err != nil {

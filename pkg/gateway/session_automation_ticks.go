@@ -32,7 +32,7 @@ type watchNotificationRunner interface {
 func producerIdentity(ctx context.Context, runner any, event map[string]any) (string, error) {
 	deriver, ok := runner.(completionIdentityRunner)
 	if !ok {
-		return "", &PyError{Kind: "AttributeError", Msg: "'" + pyTypeName(runner) + "' object has no attribute '_completion_delivery_identity'"}
+		return "", &PyError{Kind: "AttributeError", Msg: "the gateway runner cannot name the completion delivery identity"}
 	}
 	identity := deriver.CompletionDeliveryIdentity(ctx, event)
 	if identity == nil {
@@ -131,7 +131,7 @@ func deliverHeartbeat(ctx context.Context, runner AuthorityRunner, event map[str
 		}
 		injector, ok := runner.(watchNotificationRunner)
 		if !ok {
-			return nil, &PyError{Kind: "AttributeError", Msg: "'" + pyTypeName(runner) + "' object has no attribute '_inject_watch_notification'"}
+			return nil, &PyError{Kind: "AttributeError", Msg: "the gateway runner cannot inject a watch notification"}
 		}
 		delivered, err := injector.InjectWatchNotification(ctx, text, prepared)
 		if err != nil {
@@ -498,7 +498,7 @@ func heartbeatLock(runner any) *asyncLock {
 func processCompleted(ctx context.Context, runner any, a *SessionAuthority, owner string, event map[string]any) (bool, error) {
 	deriver, ok := runner.(completionIdentityRunner)
 	if !ok {
-		return false, &PyError{Kind: "AttributeError", Msg: "'" + pyTypeName(runner) + "' object has no attribute '_completion_delivery_identity'"}
+		return false, &PyError{Kind: "AttributeError", Msg: "the gateway runner cannot name the completion delivery identity"}
 	}
 	completion := deriver.CompletionDeliveryIdentity(ctx, map[string]any{"type": "completion", "session_id": event["session_id"], "started_at": event["started_at"]})
 	if completion == nil {

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
@@ -48,7 +49,7 @@ func timeoutSetting[T any](s *Store, ctx context.Context, envVar, configKey, lab
 	}
 	cron, isMap := cfg["cron"].(map[string]any)
 	if raw, present := cfg["cron"]; present && !isMap {
-		s.log.Debug(fmt.Sprintf("Failed to load %s from config: %T object has no attribute get", label, raw))
+		s.log.Debug(fmt.Sprintf("Failed to load %s from config: the cron section is %s, expected a mapping", label, errchain.Kind(raw)))
 		return zero, false
 	}
 	configured, present := cron[configKey]

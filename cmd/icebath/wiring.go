@@ -85,7 +85,6 @@ func installProcessWiring() {
 	gatewayrun.GatewayDebugLocalReport = selfupdate.GatewayDebugLocalReport
 	gatewayrun.GatewayDebugUploadReply = selfupdate.GatewayDebugUploadReply
 	gatewayrun.SweepExpiredPastes = selfupdate.SweepExpiredPastes
-	gatewayrun.CheckRuntime, gatewayrun.MaybeRunBootBootstrap = selfupdate.CheckRuntime, selfupdate.MaybeRunBootBootstrap
 	gatewayrun.ConfigureWindowsStdio = app.ConfigureWindowsStdio
 	gatewayrun.RunApprovalModeCommand = func(ctx context.Context, h string, env *tools.Env, requestedMode string) (string, error) {
 		result, err := commands.RunApprovalModeCommand(ctx, h, env, requestedMode)
@@ -189,7 +188,6 @@ func installProcessWiring() {
 			return out
 		}
 	}
-	selfupdate.RunCLIHook = run
 	agent.TUIGatewayToolsets = tuiserver.GatewayToolsets
 	agent.SessionSteerAuthority = tuiserver.SessionSteerAuthority
 	mcp.TUIProfileRuntimeScope = tuiserver.ProfileRuntimeScope
@@ -252,7 +250,6 @@ func installProcessWiring() {
 		return commands.ShouldBypassActiveSession(name), commands.IsInterruptThenDispatch(name)
 	}
 	tools.DiagnosticProcessEvent = agent.DiagnosticProcessEvent
-	tools.GitlockRunGit = selfupdate.GitlockRunGit
 	tools.AsyncDelegationOwnerProbes.PidExists = gateway.PidExists
 	tools.AsyncDelegationOwnerProbes.ProcessStartTime = gatewayProcessStartTime
 	tools.ProfileSecrets = provider.ProfileSecretSource()

@@ -170,7 +170,7 @@ func engineAttributeError(compressor ContextEngine, attr string) error {
 	if i := strings.LastIndex(name, "."); i >= 0 {
 		name = name[i+1:]
 	}
-	return fmt.Errorf("'%s' object has no attribute '%s'", name, attr)
+	return fmt.Errorf("context engine %s does not provide %s", name, attr)
 }
 
 // Runs idle compaction then preflight compression or the uncompressed overflow re-arm at turn start

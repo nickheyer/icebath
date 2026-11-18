@@ -308,14 +308,14 @@ func TestFromISOFormatMatchesCPython(t *testing.T) {
 
 func TestUTF8DecodeErrorsMatchCPython(t *testing.T) {
 	cases := map[string]string{
-		"\xef\xbb\xbfab\xff": "'utf-8' codec can't decode byte 0xff in position 2: invalid start byte",
-		"ab\xe2\x82":         "'utf-8' codec can't decode bytes in position 2-3: unexpected end of data",
-		"\xe2":               "'utf-8' codec can't decode byte 0xe2 in position 0: unexpected end of data",
-		"\xe2(\xa1":          "'utf-8' codec can't decode byte 0xe2 in position 0: invalid continuation byte",
-		"\xf0\x90(":          "'utf-8' codec can't decode bytes in position 0-1: invalid continuation byte",
-		"\xed\xa0\x80":       "'utf-8' codec can't decode byte 0xed in position 0: invalid continuation byte",
-		"\xe0\x80":           "'utf-8' codec can't decode byte 0xe0 in position 0: invalid continuation byte",
-		"\xc0\xaf":           "'utf-8' codec can't decode byte 0xc0 in position 0: invalid start byte",
+		"\xef\xbb\xbfab\xff": "not valid UTF-8: byte 0xff at position 2 cannot start a character",
+		"ab\xe2\x82":         "not valid UTF-8: bytes at positions 2-3 begin a character the text ends inside",
+		"\xe2":               "not valid UTF-8: byte 0xe2 at position 0 begins a character the text ends inside",
+		"\xe2(\xa1":          "not valid UTF-8: byte 0xe2 at position 0 begins a character that the next byte breaks",
+		"\xf0\x90(":          "not valid UTF-8: bytes at positions 0-1 begin a character that the next byte breaks",
+		"\xed\xa0\x80":       "not valid UTF-8: byte 0xed at position 0 begins a character that the next byte breaks",
+		"\xe0\x80":           "not valid UTF-8: byte 0xe0 at position 0 begins a character that the next byte breaks",
+		"\xc0\xaf":           "not valid UTF-8: byte 0xc0 at position 0 cannot start a character",
 	}
 	for in, want := range cases {
 		_, err := decodeUTF8Sig([]byte(in))

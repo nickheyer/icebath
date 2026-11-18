@@ -108,7 +108,7 @@ func TestBuildORHeadersConfigAndEnvPrecedence(t *testing.T) {
 	})
 	t.Setenv("ICEBATH_OPENROUTER_CACHE", "yes")
 	t.Setenv("ICEBATH_OPENROUTER_CACHE_TTL", "²")
-	if _, err := BuildORHeaders(context.Background(), map[string]any{}); err == nil || err.Error() != "invalid literal for int() with base 10: '²'" {
+	if _, err := BuildORHeaders(context.Background(), map[string]any{}); err == nil || err.Error() != `the cache TTL "²" is not a whole number` {
 		t.Fatalf("superscript ttl err %v", err)
 	}
 	t.Setenv("ICEBATH_OPENROUTER_CACHE", "off")

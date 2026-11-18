@@ -1,3 +1,5 @@
+//go:build !icebath_core && !icebath_noextras
+
 package selfupdate
 
 import (
@@ -295,7 +297,7 @@ func TestBrowserAvailableFollowsChromiumSelection(t *testing.T) {
 			}
 			e := newDoctorLiveEnv(context.Background(), &Doctor{W: &bytes.Buffer{}, Home: h, DisplayHome: "~/.icebath"})
 			want := found || browser.ChromiumExecutable(e.toolsEnv(), true) != ""
-			if got := e.doctorLiveBrowserAvailable(); got != want {
+			if got := e.browserAvailable(); got != want {
 				t.Fatalf("available = %v, want %v", got, want)
 			}
 			if found && browser.ChromiumExecutable(e.toolsEnv(), true) == "" {
@@ -308,18 +310,19 @@ func TestBrowserAvailableFollowsChromiumSelection(t *testing.T) {
 // Records the launcher calls of a browser probe and answers the launch with a fixed result
 func doctorFakeLauncher(e *doctorLiveEnv, launched *browser.LaunchedBrowser, launchErr string) *[]string {
 	calls := &[]string{}
-	e.launchChromium = func(key string, opts browser.LaunchOptions) (*browser.LaunchedBrowser, string) {
+	p := bindDoctorChromiumProbe(e)
+	p.launchChromium = func(key string, opts browser.LaunchOptions) (*browser.LaunchedBrowser, string) {
 		*calls = append(*calls, fmt.Sprintf("launch %s ephemeral=%v timeout=%v", key, opts.Ephemeral, *opts.Timeout))
 		return launched, launchErr
 	}
-	e.stopBrowser = func(key string) { *calls = append(*calls, "stop "+key) }
+	p.stopBrowser = func(key string) { *calls = append(*calls, "stop "+key) }
 	return calls
 }
 
 func TestLaunchBrowserProbeSuccessStopsTheBrowser(t *testing.T) {
 	e, _ := doctorLiveTestEnv(t, nil)
 	calls := doctorFakeLauncher(e, &browser.LaunchedBrowser{CDPURL: "ws://x"}, "")
-	ok, detail := e.doctorLaunchBrowserProbe(5.0)
+	ok, detail := e.launchBrowserProbe(5.0)
 	if !ok || !strings.Contains(detail, "CDP ready") {
 		t.Fatalf("ok = %v detail = %q", ok, detail)
 	}
@@ -332,7 +335,7 @@ func TestLaunchBrowserProbeSuccessStopsTheBrowser(t *testing.T) {
 func TestLaunchBrowserProbeLaunchErrorIsReportedAndStillStopped(t *testing.T) {
 	e, _ := doctorLiveTestEnv(t, nil)
 	calls := doctorFakeLauncher(e, nil, "Chromium exited: missing libnss3")
-	ok, detail := e.doctorLaunchBrowserProbe(5.0)
+	ok, detail := e.launchBrowserProbe(5.0)
 	if ok || !strings.Contains(detail, "libnss3") {
 		t.Fatalf("ok = %v detail = %q", ok, detail)
 	}

@@ -6,6 +6,8 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
+	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
@@ -61,7 +63,7 @@ func coerceContentText(raw any) (any, error) {
 					}
 					s, ok := text.(string)
 					if !ok {
-						return nil, &pyrepr.FormatError{Class: "TypeError", Msg: fmt.Sprintf("sequence item %d: expected str instance, %s found", i, pyrepr.TypeName(text))}
+						return nil, &pyint.Error{Kind: "TypeError", Msg: fmt.Sprintf("content part %d text is %s where text was expected", i, errchain.Kind(text))}
 					}
 					parts = append(parts, s)
 				} else if text, has := p["text"]; has {
@@ -158,7 +160,7 @@ func reasoningPreview(a *AIAgent, content string, assistantMessage *provider.Res
 func relayThinking(a *AIAgent, content any, assistantMessage *provider.Response) error {
 	text, isText := content.(string)
 	if !isText && pyrepr.Truthy(content) {
-		return &pyrepr.FormatError{Class: "AttributeError", Msg: fmt.Sprintf("'%s' object has no attribute 'strip'", pyrepr.TypeName(content))}
+		return &pyint.Error{Kind: "AttributeError", Msg: fmt.Sprintf("response content is %s where text was expected", errchain.Kind(content))}
 	}
 	thinkText := pystr.Strip(intakeReasoningTagRE.ReplaceAllString(pystr.Strip(text), ""))
 	firstLine := ""
@@ -212,9 +214,9 @@ func assistantContentPreview(content any) (string, error) {
 		}
 		return pyrepr.Str(c), nil
 	case map[string]any:
-		return "", &pyrepr.FormatError{Class: "KeyError", Msg: "slice(None, 100, None)"}
+		return "", &pyint.Error{Kind: "KeyError", Msg: "response content is a mapping where text or a list was expected"}
 	}
-	return "", &pyrepr.FormatError{Class: "TypeError", Msg: fmt.Sprintf("'%s' object is not subscriptable", pyrepr.TypeName(content))}
+	return "", &pyint.Error{Kind: "TypeError", Msg: fmt.Sprintf("response content is %s where text or a list was expected", errchain.Kind(content))}
 }
 
 // Opened but never closed scratchpad in content or empty text, lists and dicts checked by membership
@@ -241,7 +243,7 @@ func contentHasIncompleteScratchpad(content any) (bool, error) {
 		_, shut := c[closed]
 		return open && !shut, nil
 	}
-	return false, &pyrepr.FormatError{Class: "TypeError", Msg: fmt.Sprintf("argument of type '%s' is not iterable", pyrepr.TypeName(content))}
+	return false, &pyint.Error{Kind: "TypeError", Msg: fmt.Sprintf("response content is %s where text, a list or a mapping was expected", errchain.Kind(content))}
 }
 
 // Normalizes the response into a text assistant message then runs the post response hooks and continuation guards in order

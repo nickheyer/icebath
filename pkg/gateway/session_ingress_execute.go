@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/provider"
 )
@@ -59,7 +60,7 @@ func admittedText(payload *pyjson.Object) (string, bool, error) {
 	case []any:
 		return "", true, nil
 	}
-	return "", false, &PyError{Kind: "TypeError", Msg: "admitted text must be str or list, not " + pyTypeName(text)}
+	return "", false, &PyError{Kind: "TypeError", Msg: "admitted text is " + errchain.Kind(text) + ", expected text or a list"}
 }
 
 // Event of a claimed row rebuilt from its committed payload
@@ -98,7 +99,7 @@ func preparedText(prepared *pyjson.Object) (string, error) {
 	for _, item := range items {
 		part, isPart := item.(*pyjson.Object)
 		if !isPart {
-			return "", &PyError{Kind: "AttributeError", Msg: "'" + pyTypeName(item) + "' object has no attribute 'get'"}
+			return "", &PyError{Kind: "AttributeError", Msg: "an admitted text part is " + errchain.Kind(item) + ", expected a mapping"}
 		}
 		if kind, _ := part.Get("type"); kind != "text" {
 			continue
@@ -109,7 +110,7 @@ func preparedText(prepared *pyjson.Object) (string, error) {
 		}
 		line, isText := text.(string)
 		if !isText {
-			return "", &PyError{Kind: "TypeError", Msg: "sequence item 0: expected str instance, " + pyTypeName(text) + " found"}
+			return "", &PyError{Kind: "TypeError", Msg: "admitted text part 0 is " + errchain.Kind(text) + ", expected text"}
 		}
 		lines = append(lines, line)
 	}
@@ -178,7 +179,7 @@ func executeAdmission(ctx context.Context, a *SessionAuthority, ref SessionRef, 
 		}
 	}
 	if live.Source == nil {
-		return nil, &PyError{Kind: "AttributeError", Msg: "'NoneType' object has no attribute 'platform'"}
+		return nil, &PyError{Kind: "AttributeError", Msg: "the admission has no source"}
 	}
 	isAPI := live.Source.Platform == PlatformAPIServer
 	if !(event.Internal || isAPI || live.Source.Platform == PlatformLocal) {
@@ -232,11 +233,11 @@ func executeAdmission(ctx context.Context, a *SessionAuthority, ref SessionRef, 
 			event.AllowGatewayControl = false
 			event.Internal = true
 		} else if textParts {
-			return &PyError{Kind: "TypeError", Msg: "admitted text must be str, not list"}
+			return &PyError{Kind: "TypeError", Msg: "admitted text is a list, expected text"}
 		}
 		handler, canHandle := a.Runner.(turnHandlerRunner)
 		if !canHandle {
-			return &PyError{Kind: "AttributeError", Msg: "'" + pyTypeName(a.Runner) + "' object has no attribute '_handle_message'"}
+			return &PyError{Kind: "AttributeError", Msg: "the gateway runner cannot handle a message"}
 		}
 		var err error
 		if response, err = handler.HandleMessage(scope, event); err != nil {

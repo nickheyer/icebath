@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/kanban"
@@ -46,7 +47,7 @@ func BindWorkerContext(ctx context.Context, frame *pyjson.Object) error {
 	}
 	kctx, ok := decoded.(*pyjson.Object)
 	if !ok {
-		return &PyError{Kind: "TypeError", Msg: fmt.Sprintf("%s indices must be integers or slices, not str", pyTypeName(decoded))}
+		return &PyError{Kind: "TypeError", Msg: fmt.Sprintf("the kanban worker context is %s, expected a mapping", errchain.Kind(decoded))}
 	}
 	item := func(key string) any {
 		if err != nil {
@@ -137,7 +138,7 @@ func BindWorkerContext(ctx context.Context, frame *pyjson.Object) error {
 		}
 		obj, ok := decoded.(*pyjson.Object)
 		if !ok {
-			return &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("'%s' object has no attribute 'get'", pyTypeName(decoded))}
+			return &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("the kanban worker context is %s, expected a mapping", errchain.Kind(decoded))}
 		}
 		expires, isInt := obj.GetOr("expires", nil).(int64)
 		if isInt && pyrepr.Truthy(claimedAt) {
@@ -168,9 +169,9 @@ func claimInt(v any) (int64, error) {
 		if i, err := strconv.ParseInt(n, 10, 64); err == nil {
 			return i, nil
 		}
-		return 0, &PyError{Kind: "ValueError", Msg: fmt.Sprintf("invalid literal for int() with base 10: %s", pyrepr.Repr(n))}
+		return 0, &PyError{Kind: "ValueError", Msg: fmt.Sprintf("the kanban claim number %v is not a whole number", n)}
 	}
-	return 0, &PyError{Kind: "TypeError", Msg: fmt.Sprintf("int() argument must be a string, a bytes-like object or a real number, not '%s'", pyTypeName(v))}
+	return 0, &PyError{Kind: "TypeError", Msg: fmt.Sprintf("the kanban claim number is %s, expected a whole number", errchain.Kind(v))}
 }
 
 // Ends this attempt hard once the dispatcher's spawned worker for the run is gone, re-reading the run row each second

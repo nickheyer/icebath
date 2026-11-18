@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"context"
 	"os"
 	"strings"
@@ -11,6 +10,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/nickheyer/icebath/pkg/i18n"
+	"github.com/nickheyer/icebath/pkg/tuigateway"
 )
 
 // Trees /worktree new created in this process, the newest the active one, each settled on quit
@@ -31,13 +31,9 @@ func activeNewWorktree() *Worktree {
 	return newWorktrees.active
 }
 
-// Tree of a worktree answer, false when the answer names none
-func worktreeOf(v any) (Worktree, bool) {
-	m, _ := v.(map[string]any)
-	path, _ := m["path"].(string)
-	branch, _ := m["branch"].(string)
-	root, _ := m["repo_root"].(string)
-	return Worktree{Path: path, Branch: branch, RepoRoot: root}, path != ""
+// Reference the gateway takes for a tree
+func worktreeRef(tree Worktree) tuigateway.WorktreeRef {
+	return tuigateway.WorktreeRef{Path: tree.Path, Branch: tree.Branch, RepoRoot: tree.RepoRoot}
 }
 
 // Lines of the status form, the active tree or none, with the hints when inside a repository
@@ -56,11 +52,11 @@ func worktreeStatusLines(ctx context.Context, active *Worktree, inRepo bool) []s
 }
 
 // Lines of a prune answer, the reclaimed or planned actions with their count and the trees kept for a reason
-func worktreePruneLines(ctx context.Context, res map[string]any, dryRun bool) []string {
-	if failure, failed := res["error"].(string); failed {
-		return []string{"error: " + failure}
+func worktreePruneLines(ctx context.Context, res *tuigateway.WorktreePruneResult, dryRun bool) []string {
+	if res.Error != nil {
+		return []string{"error: " + *res.Error}
 	}
-	lines := rpcStrings(res["actions"])
+	lines := append([]string{}, res.Actions...)
 	if len(lines) > 0 {
 		key := "worktree.actions_done"
 		if dryRun {
@@ -70,12 +66,10 @@ func worktreePruneLines(ctx context.Context, res map[string]any, dryRun bool) []
 	} else {
 		lines = append(lines, commandText(ctx, "worktree.nothing_to_reclaim", nil))
 	}
-	preserved, _ := res["preserved"].([]any)
-	if len(preserved) > 0 {
-		lines = append(lines, commandText(ctx, "worktree.preserved", map[string]any{"count": len(preserved)}))
-		for _, item := range preserved {
-			kept, _ := item.(map[string]any)
-			lines = append(lines, "  "+jsValueString(kept["name"])+": "+jsValueString(kept["reason"]))
+	if len(res.Preserved) > 0 {
+		lines = append(lines, commandText(ctx, "worktree.preserved", map[string]any{"count": len(res.Preserved)}))
+		for _, kept := range res.Preserved {
+			lines = append(lines, "  "+kept.Name+": "+kept.Reason)
 		}
 	}
 	return lines
@@ -83,15 +77,17 @@ func worktreePruneLines(ctx context.Context, res map[string]any, dryRun bool) []
 
 // Asks the gateway for the folder's repository and the tree a -w launch of this process locked
 func (a *app) worktreeStatus(cwd string, then func(repoRoot string, launch *Worktree, err error) tea.Cmd) tea.Cmd {
-	params := map[string]any{"cwd": cwd, "launch_cwd": os.Getenv("ICEBATH_CWD"), "pid": os.Getpid()}
-	return gatewayCall(a.gw, "worktree.status", params, func(v any, err error) tea.Cmd {
-		res := asRPCResult(v)
-		root, _ := res["repo_root"].(string)
-		var launch *Worktree
-		if tree, named := worktreeOf(res["launch"]); named {
-			launch = &tree
+	params := tuigateway.WorktreeStatusParams{Cwd: cwd, LaunchCwd: os.Getenv("ICEBATH_CWD"), PID: int64(os.Getpid())}
+	return call(a.gw, tuigateway.WorktreeStatus, params, func(res *tuigateway.WorktreeStatusResult, err error) tea.Cmd {
+		if err != nil {
+			return then("", nil, err)
 		}
-		return then(root, launch, err)
+		root := val(res.RepoRoot)
+		var launch *Worktree
+		if res.Launch != nil && res.Launch.Path != "" {
+			launch = &Worktree{Path: res.Launch.Path, Branch: res.Launch.Branch}
+		}
+		return then(root, launch, nil)
 	})
 }
 
@@ -107,31 +103,30 @@ func (a *app) withActiveWorktree(cwd string, then func(active *Worktree, repoRoo
 
 // Creates a tree through the gateway and moves the session into it, the creation report first
 func (a *app) worktreeNew(r *slashRun, cwd, name string) tea.Cmd {
-	return gatewayCall(a.gw, "worktree.create", map[string]any{"cwd": cwd, "name": name, "pid": os.Getpid()}, func(v any, err error) tea.Cmd {
+	params := tuigateway.WorktreeCreateParams{Cwd: cwd, Name: name, PID: int64(os.Getpid())}
+	return call(a.gw, tuigateway.WorktreeCreate, params, func(res *tuigateway.WorktreeCreateResult, err error) tea.Cmd {
 		if err != nil {
 			r.sys("error: " + rpcErrorMessage(err))
 			return nil
 		}
-		res := asRPCResult(v)
-		if _, inRepo := res["repo_root"].(string); !inRepo {
+		if res.RepoRoot == nil {
 			r.sys(commandText(a.ctx, "worktree.new_requires_repo", nil))
 			return nil
 		}
-		if lines := rpcStrings(res["lines"]); len(lines) > 0 {
-			r.sys(strings.Join(lines, "\n"))
+		if len(res.Lines) > 0 {
+			r.sys(strings.Join(res.Lines, "\n"))
 		}
-		tree, made := worktreeOf(res["tree"])
-		if !made {
+		if res.Tree == nil || res.Tree.Path == "" {
 			return nil
 		}
-		return a.enterWorktree(r, tree)
+		return a.enterWorktree(r, Worktree{Path: res.Tree.Path, Branch: res.Tree.Branch, RepoRoot: res.Tree.RepoRoot})
 	})
 }
 
 // Moves the session's workspace into the tree through the gateway, then this process and later sessions follow
 func (a *app) enterWorktree(r *slashRun, tree Worktree) tea.Cmd {
 	ctx := a.ctx
-	ref := map[string]any{"path": tree.Path, "branch": tree.Branch, "repo_root": tree.RepoRoot}
+	ref := worktreeRef(tree)
 	entered := func() tea.Cmd {
 		newWorktrees.Lock()
 		active := tree
@@ -144,7 +139,7 @@ func (a *app) enterWorktree(r *slashRun, tree Worktree) tea.Cmd {
 			lines = append(lines, i18n.T(ctx, "cli.session.cwd_enter_failed", "", map[string]any{"path": tree.Path, "error": err.Error()}))
 		}
 		r.sys(strings.Join(lines, "\n"))
-		return gatewayCall(a.gw, "worktree.record", ref, func(_ any, err error) tea.Cmd {
+		return call(a.gw, tuigateway.WorktreeRecord, ref, func(_ *tuigateway.WorktreeRecordResult, err error) tea.Cmd {
 			if err != nil {
 				r.sys("error: " + rpcErrorMessage(err))
 			}
@@ -182,13 +177,13 @@ func (a *app) enterWorktree(r *slashRun, tree Worktree) tea.Cmd {
 }
 
 // Removes a tree the session could not move into, or shows why the gateway kept it
-func (a *app) settleRefusedWorktree(r *slashRun, ref map[string]any) tea.Cmd {
-	return gatewayCall(a.gw, "worktree.settle", ref, func(v any, err error) tea.Cmd {
+func (a *app) settleRefusedWorktree(r *slashRun, ref tuigateway.WorktreeRef) tea.Cmd {
+	return call(a.gw, tuigateway.WorktreeSettle, ref, func(res *tuigateway.WorktreeSettleResult, err error) tea.Cmd {
 		switch {
 		case err != nil:
 			r.sys("error: " + rpcErrorMessage(err))
-		case len(rpcStrings(asRPCResult(v)["lines"])) > 0:
-			r.sys(strings.Join(rpcStrings(asRPCResult(v)["lines"]), "\n"))
+		case len(res.Lines) > 0:
+			r.sys(strings.Join(res.Lines, "\n"))
 		}
 		return nil
 	})
@@ -293,13 +288,13 @@ func (a *app) worktreeCommands() []slashCommand {
 				case "new":
 					return tea.Batch(r.ran(), a.worktreeNew(r, cwd, rest))
 				case "list":
-					return tea.Batch(r.ran(), gatewayCall(a.gw, "worktree.list", map[string]any{"cwd": cwd}, func(v any, err error) tea.Cmd {
-						res := asRPCResult(v)
-						lines := rpcStrings(res["lines"])
-						switch _, inRepo := res["repo_root"].(string); {
-						case err != nil:
+					return tea.Batch(r.ran(), call(a.gw, tuigateway.WorktreeList, tuigateway.WorktreeCwdParams{Cwd: cwd}, func(res *tuigateway.WorktreeListResult, err error) tea.Cmd {
+						if err != nil {
 							return failed(err)
-						case !inRepo:
+						}
+						lines := res.Lines
+						switch {
+						case res.RepoRoot == nil:
 							r.sys(commandText(ctx, "worktree.not_in_repo", nil))
 							return nil
 						case len(lines) == 0:
@@ -317,15 +312,15 @@ func (a *app) worktreeCommands() []slashCommand {
 						r.sys(commandText(ctx, "worktree.not_in_repo", nil))
 						return nil
 					}
-					params := map[string]any{"cwd": cwd, "dry_run": dryRun, "keep": nil}
+					params := tuigateway.WorktreePruneParams{Cwd: cwd, DryRun: dryRun}
 					if active != nil {
-						params["keep"] = active.Path
+						params.Keep = active.Path
 					}
-					return gatewayCall(a.gw, "worktree.prune", params, func(v any, err error) tea.Cmd {
+					return call(a.gw, tuigateway.WorktreePrune, params, func(res *tuigateway.WorktreePruneResult, err error) tea.Cmd {
 						if err != nil {
 							return failed(err)
 						}
-						return a.showOutput(strings.Join(worktreePruneLines(ctx, asRPCResult(v), dryRun), "\n"), "worktree")
+						return a.showOutput(strings.Join(worktreePruneLines(ctx, res, dryRun), "\n"), "worktree")
 					})
 				}))
 			}},

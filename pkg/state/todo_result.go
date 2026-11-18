@@ -214,7 +214,7 @@ func pyIntConvertible(v any) error {
 		return nil
 	case float64:
 		if math.IsInf(x, 0) {
-			return &pyConvError{"OverflowError", "cannot convert float infinity to integer"}
+			return &pyConvError{"OverflowError", "infinity has no whole number value"}
 		}
 		if math.IsNaN(x) {
 			return errTodoSkip

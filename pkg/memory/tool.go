@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 
 	"github.com/nickheyer/icebath/pkg/config"
@@ -591,15 +592,15 @@ func opMaps(v any) ([]map[string]any, error) {
 			}
 			m, ok := op.(map[string]any)
 			if !ok {
-				return nil, &pyError{class: "AttributeError", msg: fmt.Sprintf("'%s' object has no attribute 'get'", pyTypeName(op))}
+				return nil, &pyError{class: "AttributeError", msg: fmt.Sprintf("memory operation is %s where a mapping was expected", errchain.Kind(op))}
 			}
 			out[i] = m
 		}
 		return out, nil
 	case string, map[string]any:
-		return nil, &pyError{class: "AttributeError", msg: "'str' object has no attribute 'get'"}
+		return nil, &pyError{class: "AttributeError", msg: fmt.Sprintf("memory operations are %s where a list was expected", errchain.Kind(v))}
 	}
-	return nil, &pyError{class: "TypeError", msg: fmt.Sprintf("'%s' object is not iterable", pyTypeName(v))}
+	return nil, &pyError{class: "TypeError", msg: fmt.Sprintf("memory operations are %s where a list was expected", errchain.Kind(v))}
 }
 
 // Registry handler running the tool against the session store and mirroring committed writes

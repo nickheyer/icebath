@@ -14,6 +14,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 
 	"github.com/nickheyer/icebath/pkg/home"
@@ -861,7 +862,7 @@ func (m *MemoryManager) GetAllToolSchemas(ctx context.Context) []map[string]any 
 			schema, ok := NormalizeToolSchema(r)
 			if !ok {
 				m.logf(slog.LevelWarn, "Memory provider '%s' returned a tool schema with no resolvable name; skipping (%s)",
-					p.Name(), pyRepr(r))
+					p.Name(), errchain.Show(r))
 				continue
 			}
 			name := schema["name"].(string)
@@ -1172,7 +1173,7 @@ func (m *MemoryManager) NotifyMemoryToolWriteContext(ctx context.Context, toolRe
 						afterEntries = map[string]any{}
 					}
 					if _, ok := afterEntries.(map[string]any); !ok {
-						return fmt.Errorf("'%s' object has no attribute 'get'", pyTypeName(afterEntries))
+						return fmt.Errorf("memory tool result entries are %s where a mapping was expected", errchain.Kind(afterEntries))
 					}
 					after = indexedEntry(afterEntries, index)
 				} else {
@@ -1375,7 +1376,7 @@ func (m *MemoryManager) InitializeForAgent(ctx context.Context, sessionID string
 		}
 		message := fmt.Sprintf("⚠ Memory provider %s is disabled for this profile: it handed out the provider instance "+
 			"another profile already uses. Built-in memory still works; the operator can see why with `icebath logs errors`.",
-			pyRepr(p.Name()))
+			errchain.Show(p.Name()))
 		if say != nil {
 			say(message)
 		} else {
@@ -1544,7 +1545,7 @@ func InjectMemoryProviderTools(ctx context.Context, env *tools.Env, manager *Mem
 		schema, ok := NormalizeToolSchema(raw)
 		if !ok {
 			envLog(env).Warn(fmt.Sprintf("Memory provider returned a tool schema with no resolvable name; skipping to avoid "+
-				"poisoning the request (%s)", pyRepr(raw)))
+				"poisoning the request (%s)", errchain.Show(raw)))
 			continue
 		}
 		name := schema["name"].(string)

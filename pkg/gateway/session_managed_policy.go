@@ -3,6 +3,7 @@ package gateway
 import (
 	"context"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
@@ -27,7 +28,7 @@ func managedPolicy(ctx context.Context, a *SessionAuthority, ref SessionRef) (*L
 	if section, present := cfg["gateway"]; present {
 		gateway, isMap := section.(map[string]any)
 		if !isMap {
-			return nil, &PyError{Kind: "AttributeError", Msg: "'" + jsonValueTypeName(section) + "' object has no attribute 'get'"}
+			return nil, &PyError{Kind: "AttributeError", Msg: "the managed policy section is " + errchain.Kind(section) + ", expected a mapping"}
 		}
 		managed = gateway["managed_workers"]
 	}
@@ -40,7 +41,7 @@ func managedPolicy(ctx context.Context, a *SessionAuthority, ref SessionRef) (*L
 	}
 	request, isObj := decoded.(*pyjson.Object)
 	if !isObj {
-		return nil, &PyError{Kind: "AttributeError", Msg: "'" + jsonValueTypeName(decoded) + "' object has no attribute 'get'"}
+		return nil, &PyError{Kind: "AttributeError", Msg: "the managed policy is " + errchain.Kind(decoded) + ", expected a mapping"}
 	}
 	provider, _ := request.Get("provider")
 	baseURL, _ := request.Get("base_url")

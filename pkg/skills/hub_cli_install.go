@@ -10,6 +10,7 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -95,7 +96,7 @@ func (x *HubCLI) resolveURLBundleName(c *pyrich.Console, b *SkillBundle, meta *S
 	case nameOverride != "" && isValidInstalledSkillName(nameOverride):
 		b.Name = strings.TrimSpace(nameOverride)
 	case nameOverride != "":
-		c.Print(fmt.Sprintf("[bold red]Invalid --name:[/] %s. Must be a lowercase identifier (letters, digits, hyphens, underscores; starts with a letter).\n", pyrepr.Repr(nameOverride)))
+		c.Print(fmt.Sprintf("[bold red]Invalid --name:[/] %s. Must be a lowercase identifier (letters, digits, hyphens, underscores; starts with a letter).\n", errchain.Show(nameOverride)))
 		return false
 	case skipConfirm:
 		c.Print(fmt.Sprintf("[bold red]Cannot install from URL:[/] %s\n"+

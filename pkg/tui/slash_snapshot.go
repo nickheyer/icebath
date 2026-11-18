@@ -7,6 +7,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/tuigateway"
 )
 
 // Drops the gateway socket and blocks every reconnect until the returned func starts the owner again
@@ -41,15 +42,12 @@ func (a *app) snapshotOutput(lines []string, err error) tea.Cmd {
 	return a.showOutput(strings.Join(lines, "\n"), "snapshot")
 }
 
-// Runs a snapshot method, with the words after the subcommand when it takes them, and shows its lines
-func (a *app) snapshotLines(method string, args []string) tea.Cmd {
-	params := map[string]any{}
-	if args != nil {
-		params["args"] = args
+// Shows the lines a snapshot method answered or its failure
+func (a *app) snapshotAnswer(res *tuigateway.SnapshotLines, err error) tea.Cmd {
+	if err != nil {
+		return a.snapshotOutput(nil, err)
 	}
-	return gatewayCall(a.gw, method, params, func(v any, err error) tea.Cmd {
-		return a.snapshotOutput(rpcStrings(asRPCResult(v)["lines"]), err)
-	})
+	return a.snapshotOutput(res.Lines, nil)
 }
 
 // Subcommands the argument completes to
@@ -124,15 +122,19 @@ func (a *app) snapshotCommands() []slashCommand {
 				}
 				switch sub {
 				case "list", "ls":
-					return tea.Batch(r.ran(), a.snapshotLines("snapshot.list", nil))
-				case "create", "prune":
-					return tea.Batch(r.ran(), a.snapshotLines("snapshot."+sub, words))
+					return tea.Batch(r.ran(), call(a.gw, tuigateway.SnapshotList, tuigateway.SnapshotListParams{}, a.snapshotAnswer))
+				case "create":
+					return tea.Batch(r.ran(), call(a.gw, tuigateway.SnapshotCreate, tuigateway.SnapshotArgsParams{Args: words}, a.snapshotAnswer))
+				case "prune":
+					return tea.Batch(r.ran(), call(a.gw, tuigateway.SnapshotPrune, tuigateway.SnapshotArgsParams{Args: words}, a.snapshotAnswer))
 				case "restore", "rewind":
-					return tea.Batch(r.ran(), gatewayCall(a.gw, "snapshot.target", map[string]any{"args": words}, func(v any, err error) tea.Cmd {
-						answer := asRPCResult(v)
-						snapID, named := answer["id"].(string)
-						if err != nil || !named {
-							return a.snapshotOutput(rpcStrings(answer["lines"]), err)
+					return tea.Batch(r.ran(), call(a.gw, tuigateway.SnapshotTarget, tuigateway.SnapshotArgsParams{Args: words}, func(answer *tuigateway.SnapshotTargetResult, err error) tea.Cmd {
+						if err != nil {
+							return a.snapshotOutput(nil, err)
+						}
+						snapID := val(answer.ID)
+						if answer.ID == nil {
+							return a.snapshotOutput(answer.Lines, nil)
 						}
 						return a.confirmDestructive("Restore snapshot "+snapID+"?",
 							"State files of "+home.Display(home.Dir(a.ctx))+" go back to this snapshot. The gateway stops for the restore and the session reopens on the restored state.",

@@ -2,6 +2,7 @@ package media
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -44,7 +45,7 @@ func (v *openAIVideo) typeName() string {
 func (v *openAIVideo) id() (string, error) {
 	raw, ok := v.attr("id")
 	if !ok {
-		return "", fmt.Errorf("'%s' object has no attribute 'id'", v.typeName())
+		return "", errors.New("OpenAI video reply has no id")
 	}
 	return pyrepr.Str(pyjson.Plain(raw)), nil
 }
@@ -99,7 +100,7 @@ func (c *openAIClient) VideosCreate(ctx context.Context, req map[string]any, ext
 	}
 	for k := range req {
 		if !containsString(openAIVideoCreateParams, k) {
-			return nil, &openAIError{Class: "TypeError", Message: fmt.Sprintf("Videos.create() got an unexpected keyword argument '%s'", k)}
+			return nil, &openAIError{Class: "TypeError", Message: fmt.Sprintf("video create request has an unknown option %s", k)}
 		}
 	}
 	obj := pyjson.NewObject()

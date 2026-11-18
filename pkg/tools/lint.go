@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"math"
 	"os"
 	"os/exec"
@@ -2293,9 +2294,9 @@ func ruamelUTF8EncodeError(content string) string {
 			i += w
 		}
 		if run == 1 {
-			return "UnicodeEncodeError: 'utf-8' codec can't encode character '\\u" + strconv.FormatInt(int64(bad), 16) + "' in position " + strconv.Itoa(pos) + ": surrogates not allowed"
+			return fmt.Sprintf("invalid YAML: the file holds a lone surrogate U+%04X at character %d, which UTF-8 cannot encode", bad, pos)
 		}
-		return "UnicodeEncodeError: 'utf-8' codec can't encode characters in position " + strconv.Itoa(pos) + "-" + strconv.Itoa(pos+run-1) + ": surrogates not allowed"
+		return fmt.Sprintf("invalid YAML: the file holds lone surrogates at characters %d to %d, which UTF-8 cannot encode", pos, pos+run-1)
 	}
 	return ""
 }
@@ -2338,13 +2339,9 @@ func ruamelUTF8DecodeError(b []byte) string {
 		return ""
 	}
 	if end == start+1 {
-		hex := strconv.FormatInt(int64(b[start]), 16)
-		if len(hex) < 2 {
-			hex = "0" + hex
-		}
-		return "UnicodeDecodeError: 'utf-8' codec can't decode byte 0x" + hex + " in position " + strconv.Itoa(start) + ": " + reason
+		return fmt.Sprintf("invalid YAML: a tag or anchor is not valid UTF-8 at byte %d (0x%02x, %s)", start, b[start], reason)
 	}
-	return "UnicodeDecodeError: 'utf-8' codec can't decode bytes in position " + strconv.Itoa(start) + "-" + strconv.Itoa(end-1) + ": " + reason
+	return fmt.Sprintf("invalid YAML: a tag or anchor is not valid UTF-8 at bytes %d to %d (%s)", start, end-1, reason)
 }
 
 // Locates the first error range and reason of the CPython stringlib UTF-8 decoder
@@ -2419,7 +2416,7 @@ func ruamelUTF8DecodeFailure(b []byte) (int, int, string) {
 func ruamelParserError(p *yamlParser, name string) string {
 	switch p.errorType {
 	case yamlMemoryError:
-		return "MemoryError: "
+		return "invalid YAML: the document nests too deep to parse"
 	case yamlReaderError:
 		return "invalid YAML: unacceptable character #x" + ruamelFormatHex04(p.problemValue) + ": " + p.problem + "\n  in \"" + name + "\", position " + strconv.Itoa(p.problemOffset)
 	case yamlScannerError, yamlParserError:

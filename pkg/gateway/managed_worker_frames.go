@@ -8,6 +8,7 @@ import (
 	"math/big"
 	"slices"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
@@ -115,7 +116,7 @@ func scalarAdd(left, right any) (any, error) {
 	_, leftText := left.(string)
 	_, rightText := right.(string)
 	if leftText || rightText || left == nil || right == nil {
-		return nil, &PyError{Kind: "TypeError", Msg: fmt.Sprintf("unsupported operand type(s) for +: '%s' and '%s'", pyrepr.TypeName(left), pyrepr.TypeName(right))}
+		return nil, &PyError{Kind: "TypeError", Msg: fmt.Sprintf("cannot add %s to %s", errchain.Kind(right), errchain.Kind(left))}
 	}
 	lf, leftFloat := left.(float64)
 	rf, rightFloat := right.(float64)

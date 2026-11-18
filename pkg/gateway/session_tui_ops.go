@@ -412,11 +412,11 @@ func resolveCheckpointHash(mgr *tools.CheckpointManager, cwd, ref string) (strin
 // Value of a Python int() of text, a ValueError for anything int() refuses
 func pyIntLiteral(text string) (int64, error) {
 	if !pyIntPattern.MatchString(text) {
-		return 0, &PyError{Kind: "ValueError", Msg: "invalid literal for int() with base 10: " + pyrepr.Repr(text)}
+		return 0, &PyError{Kind: "ValueError", Msg: text + " is not a whole number"}
 	}
 	value, err := strconv.ParseInt(strings.ReplaceAll(strings.TrimSpace(text), "_", ""), 10, 64)
 	if err != nil {
-		return 0, &PyError{Kind: "ValueError", Msg: "invalid literal for int() with base 10: " + pyrepr.Repr(text)}
+		return 0, &PyError{Kind: "ValueError", Msg: text + " is not a whole number"}
 	}
 	return value, nil
 }

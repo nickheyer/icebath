@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pycodecs"
 	"github.com/nickheyer/icebath/pkg/internal/pyfs"
@@ -68,7 +69,7 @@ func hostedDocumentReferences(ctx context.Context, requestID string, payload *py
 		return references, nil
 	}
 	if payload == nil {
-		return nil, errors.New("'NoneType' object has no attribute 'get'")
+		return nil, errors.New("the admission has no media section")
 	}
 	raw, _ := payload.Get("text")
 	text, ok := raw.(string)
@@ -98,7 +99,7 @@ func hostedDocumentReferences(ctx context.Context, requestID string, payload *py
 // Native attachment and text media references eligible as deletion candidates after terminal settlement
 func AdmissionMediaReferences(payload *pyjson.Object) ([]*pyjson.Object, error) {
 	if payload == nil {
-		return nil, errors.New("'NoneType' object has no attribute 'get'")
+		return nil, errors.New("the admission has no media section")
 	}
 	var items []any
 	for _, key := range []string{"attachments_v1", "native_text_v1"} {
@@ -108,7 +109,7 @@ func AdmissionMediaReferences(payload *pyjson.Object) ([]*pyjson.Object, error) 
 		}
 		obj, ok := section.(*pyjson.Object)
 		if !ok {
-			return nil, fmt.Errorf("'%s' object has no attribute 'get'", pyrepr.TypeName(section))
+			return nil, fmt.Errorf("the admission media section is %s, expected a mapping", errchain.Kind(section))
 		}
 		media, has := obj.Get("media")
 		if !has {
@@ -149,18 +150,18 @@ func jsonList(v any) ([]any, error) {
 		}
 		return out, nil
 	}
-	return nil, fmt.Errorf("'%s' object is not iterable", pyrepr.TypeName(v))
+	return nil, fmt.Errorf("the admission media list is %s, expected a list", errchain.Kind(v))
 }
 
 // TypeError Python raises subscripting a non dict value with a str key
 func strSubscriptError(v any) error {
 	switch v.(type) {
 	case string:
-		return errors.New("string indices must be integers, not 'str'")
+		return errors.New("an admission media entry is text, expected a mapping")
 	case []any:
-		return errors.New("list indices must be integers or slices, not str")
+		return errors.New("an admission media entry is a list, expected a mapping")
 	}
-	return fmt.Errorf("'%s' object is not subscriptable", pyrepr.TypeName(v))
+	return fmt.Errorf("an admission media entry is %s, expected a mapping", errchain.Kind(v))
 }
 
 // Value under key of a reference dict, the Python TypeError or KeyError otherwise
@@ -176,9 +177,9 @@ func referenceItem(reference any, key string) (any, error) {
 	return v, nil
 }
 
-// TypeError pathlib raises for a non str path argument
+// Refusal of a media path that is no text
 func pathArgError(v any) error {
-	return fmt.Errorf("argument should be a str or an os.PathLike object where __fspath__ returns a str, not '%s'", pyrepr.TypeName(v))
+	return fmt.Errorf("a media path is %s, expected text", errchain.Kind(v))
 }
 
 // One release candidate, its raw path and the digest directory naming it
@@ -287,9 +288,9 @@ func heldMediaPaths(ctx context.Context, conn state.SQLiteConn) (map[string]bool
 			case string:
 				held[p] = true
 			case []any:
-				return nil, errors.New("unhashable type: 'list'")
+				return nil, errors.New("a held media path is a list, expected text")
 			case *pyjson.Object:
-				return nil, errors.New("unhashable type: 'dict'")
+				return nil, errors.New("a held media path is a mapping, expected text")
 			default:
 				return nil, pathArgError(p)
 			}

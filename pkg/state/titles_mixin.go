@@ -5,9 +5,9 @@ import (
 	"math/big"
 	"regexp"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
@@ -59,7 +59,7 @@ func matchNumberedTitle(title any) (*big.Int, string, bool, error) {
 	case []byte:
 		return nil, "", false, &pyint.Error{Kind: "TypeError", Msg: "cannot use a string pattern on a bytes-like object"}
 	default:
-		return nil, "", false, &pyint.Error{Kind: "TypeError", Msg: "expected string or bytes-like object, got '" + pyrepr.TypeName(title) + "'"}
+		return nil, "", false, &pyint.Error{Kind: "TypeError", Msg: "the session title is " + errchain.Kind(title) + ", expected text"}
 	}
 	m, err := numberedTitleRe.FindStringMatch(text)
 	if err != nil || m == nil {
@@ -250,7 +250,7 @@ func (t *sessionTitles) SetSessionTitle(ctx context.Context, sessionID, title st
 // Sets a derived or llm title, false when a higher authority title holds the row
 func (t *sessionTitles) SetAutoTitle(ctx context.Context, sessionID, title, source string) (bool, error) {
 	if source != TitleSourceDerived && source != TitleSourceLLM {
-		return false, &pyint.Error{Kind: "ValueError", Msg: "invalid automatic title source: " + pyrepr.StrRepr(source)}
+		return false, &pyint.Error{Kind: "ValueError", Msg: "invalid automatic title source: " + errchain.Show(source)}
 	}
 	return t.setSessionTitle(ctx, sessionID, title, source)
 }
@@ -300,7 +300,7 @@ func (t *sessionTitles) GetSessionTitleSource(ctx context.Context, sessionID str
 // Overwrites the provenance of a titled session without touching its text
 func (t *sessionTitles) SetSessionTitleSource(ctx context.Context, sessionID, source string) (bool, error) {
 	if _, ok := titleSourceRank[source]; !ok {
-		return false, &pyint.Error{Kind: "ValueError", Msg: "invalid title source: " + pyrepr.StrRepr(source)}
+		return false, &pyint.Error{Kind: "ValueError", Msg: "invalid title source: " + errchain.Show(source)}
 	}
 	n, err := t.host.writeRowcount(ctx, "UPDATE sessions SET title_source = ? WHERE id = ? AND title IS NOT NULL", []any{source, sessionID}, nil)
 	return n > 0, err

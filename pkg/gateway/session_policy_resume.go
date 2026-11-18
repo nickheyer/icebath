@@ -59,7 +59,7 @@ func rebindLaunchKey(ctx context.Context, a *SessionAuthority, session SessionRe
 		return err
 	}
 	if receipt == nil {
-		return &PyError{Kind: "TypeError", Msg: "'NoneType' object is not subscriptable"}
+		return &PyError{Kind: "TypeError", Msg: "the launch key to rebind is missing"}
 	}
 	stored, hasPolicy := receipt.Get("policy")
 	if !hasPolicy {

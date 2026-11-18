@@ -131,7 +131,7 @@ func BuildORHeaders(ctx context.Context, orConfig map[string]any) (map[string]st
 		if auxIsDigitString(envTTL) {
 			n, ok := auxPyIntDigits(envTTL)
 			if !ok {
-				return nil, fmt.Errorf("invalid literal for int() with base 10: %s", pyrepr.Repr(envTTL))
+				return nil, fmt.Errorf("the cache TTL %q is not a whole number", envTTL)
 			}
 			if n >= 1 && n <= 86400 {
 				headers["X-OpenRouter-Cache-TTL"] = strconv.Itoa(n)

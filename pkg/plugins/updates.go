@@ -14,6 +14,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pyversion"
@@ -100,7 +101,7 @@ func checkLocalProvenance(prov Provenance) *CheckResult {
 		return result
 	case ProvenanceDrift:
 		result.Reason = fmt.Sprintf("provenance drift — sidecar records %s but the dir has no .git; reinstall from the recorded source",
-			pyrepr.Repr(prov.Row["source"]))
+			errchain.Show(prov.Row["source"]))
 		return result
 	case ProvenanceSelfCloned:
 		result.Reason = "self-cloned; run `icebath plugins adopt` first"
@@ -134,12 +135,12 @@ func checkLocalProvenance(prov Provenance) *CheckResult {
 	}
 	if saved == nil && claimed != "" {
 		result.NeedsFixing = fmt.Sprintf("manifest declares update_url %s but no url was saved at install; "+
-			"run `icebath plugins trust-update-url` after review", pyrepr.Repr(claimed))
+			"run `icebath plugins trust-update-url` after review", errchain.Show(claimed))
 		return result
 	}
 	if savedText, isStr := saved.(string); saved != nil && (!isStr || claimed == "" || savedText != claimed) {
 		result.NeedsFixing = fmt.Sprintf("update_url mismatch: saved %s, manifest declares %s; "+
-			"run `icebath plugins trust-update-url` after review", pyrepr.Repr(saved), pyrepr.Repr(claimedValue))
+			"run `icebath plugins trust-update-url` after review", errchain.Show(saved), errchain.Show(claimedValue))
 	}
 	return result
 }
@@ -194,7 +195,7 @@ func httpsUpdateURL(url any) (string, error) {
 	}
 	text = pystr.Strip(text)
 	if !strings.HasPrefix(strings.ToLower(text), "https://") {
-		return "", fmt.Errorf("update_url must be an https:// URL, got %s", pyrepr.Repr(text))
+		return "", fmt.Errorf("update_url must be an https:// URL, got %s", errchain.Show(text))
 	}
 	return text, nil
 }

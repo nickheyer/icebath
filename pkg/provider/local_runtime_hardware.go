@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/hostinfo"
 )
@@ -225,7 +226,7 @@ func hwIntOr(text string, fallback int64) (int64, error) {
 	}
 	n, ok := pyIntText(text)
 	if !ok {
-		return 0, &HardwareProbeError{Class: "ValueError", Msg: fmt.Sprintf("invalid literal for int() with base 10: %s", pyRepr(text))}
+		return 0, &HardwareProbeError{Class: "ValueError", Msg: fmt.Sprintf("hardware value %s is not a whole number", pyRepr(text))}
 	}
 	return n, nil
 }
@@ -600,7 +601,7 @@ func hwLocalRuntimeSection() (map[string]any, error) {
 	}
 	section, ok := raw.(map[string]any)
 	if !ok {
-		return nil, &HardwareProbeError{Class: "AttributeError", Msg: fmt.Sprintf("'%s' object has no attribute 'get'", pyTypeName(raw))}
+		return nil, &HardwareProbeError{Class: "AttributeError", Msg: fmt.Sprintf("the local_runtime section of config.yaml is %s, expected a mapping", errchain.Kind(raw))}
 	}
 	return section, nil
 }
@@ -613,7 +614,7 @@ func hwConfiguredBackend(section map[string]any) (string, error) {
 	}
 	backend, ok := raw.(string)
 	if !ok {
-		return "", &HardwareProbeError{Class: "TypeError", Msg: fmt.Sprintf("backend must be a string, not %s", pyTypeName(raw))}
+		return "", &HardwareProbeError{Class: "TypeError", Msg: fmt.Sprintf("backend must be text, got %s", errchain.Kind(raw))}
 	}
 	return backend, nil
 }
@@ -777,7 +778,7 @@ func PromptCacheBytes(live *HardwareBudget, modelBytes int64, residents int) *in
 // Device memory a model may plan with on Windows unified memory leaving each resident the smallest cache
 func UsableBesidePromptCache(live HardwareBudget, residents int) (int64, error) {
 	if live.CommitRoomBytes == nil {
-		return 0, &HardwareProbeError{Class: "TypeError", Msg: "unsupported operand type(s) for //: 'NoneType' and 'int'"}
+		return 0, &HardwareProbeError{Class: "TypeError", Msg: "the usable memory is unknown"}
 	}
 	share := pyFloorDiv(*live.CommitRoomBytes, int64(max(1, residents))) - hwPromptCacheMin
 	return min(live.UsableVRAMBytes, max(0, int64(float64(share)*(1-hwUMAHeadroomFraction)))), nil

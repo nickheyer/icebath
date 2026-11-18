@@ -113,7 +113,7 @@ func TestSchemaBuilderMalformedSchemaPanicsOnFirstRead(t *testing.T) {
 	r := NewRegistry()
 	r.Register(Def{Name: "lazy_bad", Toolset: "lazy", Handler: constHandler("{}"), SchemaBuilder: func() *pyjson.Object { return nil }})
 	defer func() {
-		if rec := recover(); rec != "tools: Tool 'lazy_bad': schema must be a dict, got NoneType" {
+		if rec := recover(); rec != "tools: Tool 'lazy_bad': schema must be a mapping, got nothing" {
 			t.Fatalf("recovered %v", rec)
 		}
 	}()

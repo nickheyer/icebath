@@ -221,7 +221,7 @@ func ocrScannedPDF(ctx context.Context, env *Env, p string, data []byte, pages [
 		if err == nil {
 			return strings.TrimRight(md, "\n") + "\n"
 		}
-		hostedError = "HostedError: " + err.Error()
+		hostedError = "hosted PDF parsing failed: " + err.Error()
 	}
 	return needsOCRWarning(p, pages, hostedError)
 }

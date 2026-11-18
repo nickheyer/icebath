@@ -106,7 +106,7 @@ func TestBundleFileShapesAreSkippedOrRaised(t *testing.T) {
 		t.Fatalf("shapes %v", out)
 	}
 	os.WriteFile(filepath.Join(dir, "zz.yaml"), []byte("name: \xff\n"), 0o644)
-	if _, err := s.ScanBundles(); err == nil || !strings.Contains(err.Error(), "'utf-8' codec can't decode byte 0xff in position 6: invalid start byte") {
+	if _, err := s.ScanBundles(); err == nil || !strings.Contains(err.Error(), "not valid UTF-8 at byte 6") {
 		t.Fatalf("decode error %v", err)
 	}
 }
@@ -237,7 +237,7 @@ func TestSaveAndDeleteBundle(t *testing.T) {
 		name   string
 		skills []string
 		msg    string
-	}{{" ", []string{"a"}, "Bundle name is required"}, {"x", []string{" "}, "Bundle must reference at least one skill"}, {"!!!", []string{"a"}, "Bundle name '!!!' normalizes to an empty slug"}} {
+	}{{" ", []string{"a"}, "Bundle name is required"}, {"x", []string{" "}, "Bundle must reference at least one skill"}, {"!!!", []string{"a"}, "Bundle name !!! normalizes to an empty slug"}} {
 		if _, err := s.SaveBundle(context.Background(), tc.name, tc.skills, "", "", false); err == nil || err.(*BundleError).Class != "ValueError" || err.Error() != tc.msg {
 			t.Fatalf("%q %v", tc.name, err)
 		}

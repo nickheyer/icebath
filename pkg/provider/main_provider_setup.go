@@ -678,7 +678,7 @@ func removeCustomProvider(r *ModelFlowRun) error {
 	pos := int(idx.Int64())
 	if idx.Sign() < 0 {
 		if idx.Cmp(big.NewInt(int64(-len(providers)))) < 0 {
-			return fmt.Errorf("IndexError: pop index out of range")
+			return fmt.Errorf("custom provider number %s is past the end of the list", idx.String())
 		}
 		pos = len(providers) + pos
 	}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -34,7 +35,7 @@ func writeWorkerLoss(ctx context.Context, policy *LocalSessionPolicy, reason str
 	}
 	context_, isDict := decoded.(*pyjson.Object)
 	if !isDict {
-		return &PyError{Kind: "TypeError", Msg: "'" + pyTypeName(decoded) + "' object is not subscriptable"}
+		return &PyError{Kind: "TypeError", Msg: "the kanban worker record is " + errchain.Kind(decoded) + ", expected a mapping"}
 	}
 	field := func(key string) (any, error) {
 		value, ok := context_.Get(key)

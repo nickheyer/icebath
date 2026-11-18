@@ -32,7 +32,7 @@ func (e *deregisterDeniedError) Is(target error) bool { return target == ErrOver
 // Refuses a missing schema or a non object parameters value before anything is stored
 func validateRegistrationSchema(d Def) error {
 	if d.Schema == nil {
-		return fmt.Errorf("Tool %s: schema must be a dict, got NoneType", pyrepr.StrRepr(d.Name))
+		return fmt.Errorf("Tool %s: schema must be a mapping, got nothing", pyrepr.StrRepr(d.Name))
 	}
 	if p, ok := d.Schema.Get("parameters"); ok && p != nil {
 		if _, isMap := pyjson.Dict(p); !isMap {

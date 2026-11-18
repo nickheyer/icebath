@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pybase64"
 	"github.com/nickheyer/icebath/pkg/internal/pydict"
@@ -124,7 +125,7 @@ func hostedAttachmentData(ctx context.Context, binding *pyjson.Object, attested 
 			}
 			promptText, isText := prompt.(string)
 			if !isText {
-				return nil, &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("'%s' object has no attribute 'encode'", pyTypeName(prompt))}
+				return nil, &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("the hosted attachment prompt is %s, expected text", errchain.Kind(prompt))}
 			}
 			promptDigest := sha256.Sum256([]byte(promptText))
 			chunk, err := hostedAttest(ctx, binding, "attachment", map[string]any{
@@ -405,7 +406,7 @@ func (o *HostedRoomOwnerRPC) call(ctx context.Context, operation string, params 
 	if operation == "submit" {
 		prompt, ok := sent["prompt"].(string)
 		if !ok {
-			return nil, errors.New("'" + pyrepr.TypeName(sent["prompt"]) + "' object has no attribute 'encode'")
+			return nil, errors.New("the hosted prompt is " + errchain.Kind(sent["prompt"]) + ", expected text")
 		}
 		delete(sent, "prompt")
 		digest := sha256.Sum256([]byte(prompt))

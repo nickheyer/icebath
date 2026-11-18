@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -147,7 +148,7 @@ func (e *cronResultShapeError) PyTypeName() string { return e.typeName }
 // Python KeyError of a missing mapping key
 type pyKeyError struct{ key string }
 
-func (e *pyKeyError) Error() string { return pyrepr.Repr(e.key) }
+func (e *pyKeyError) Error() string { return "missing " + e.key }
 
 // Python repr of an exception, its class name around the repr of its message
 func pyExceptionRepr(err error) string {
@@ -473,7 +474,7 @@ func cronOperation(ctx context.Context, a *SessionAuthority, name string, params
 		if pyTruthy(saved) {
 			savedObj, ok := saved.(*pyjson.Object)
 			if !ok {
-				return nil, &cronResultShapeError{"TypeError", fmt.Sprintf("'%s' object is not subscriptable", pyrepr.TypeName(saved))}
+				return nil, &cronResultShapeError{"TypeError", fmt.Sprintf("the saved cron result is %s, expected a mapping", errchain.Kind(saved))}
 			}
 			inner, found := savedObj.Get("result")
 			if !found {
@@ -481,7 +482,7 @@ func cronOperation(ctx context.Context, a *SessionAuthority, name string, params
 			}
 			innerObj, ok := inner.(*pyjson.Object)
 			if !ok {
-				return nil, &cronResultShapeError{"AttributeError", fmt.Sprintf("'%s' object has no attribute 'get'", pyrepr.TypeName(inner))}
+				return nil, &cronResultShapeError{"AttributeError", fmt.Sprintf("the cron result payload is %s, expected a mapping", errchain.Kind(inner))}
 			}
 			result, _ = innerObj.Get("cron_result")
 			if f, _ := innerObj.Get("cron_job_flags"); pyTruthy(f) {
@@ -553,7 +554,7 @@ func cronRecover(ctx context.Context, a *SessionAuthority, params map[string]any
 	}
 	frozen, ok := frozenValue.(*pyjson.Object)
 	if !ok {
-		return nil, &cronResultShapeError{"TypeError", fmt.Sprintf("'%s' object is not subscriptable", pyrepr.TypeName(frozenValue))}
+		return nil, &cronResultShapeError{"TypeError", fmt.Sprintf("the frozen cron result is %s, expected a mapping", errchain.Kind(frozenValue))}
 	}
 	frozenExtra, found := frozen.Get("extra_prompt")
 	if !found {

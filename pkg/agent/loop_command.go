@@ -6,10 +6,10 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
@@ -77,7 +77,7 @@ func ParseLoopArgs(text string) LoopArgs {
 		group := m.GroupByNumber(1).String()
 		n, err := pyint.Of(group)
 		if err != nil || n.Sign() < 1 || !n.IsInt64() {
-			return LoopArgs{Error: "--times expects a positive integer, got " + pyrepr.Repr(group)}
+			return LoopArgs{Error: "--times expects a positive integer, got " + errchain.Show(group)}
 		}
 		times = n.Int64()
 		raw = pystr.Strip(string(runes[:m.RuneIndex]) + string(runes[m.RuneIndex+m.RuneLength:]))

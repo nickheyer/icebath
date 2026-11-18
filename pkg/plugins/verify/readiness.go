@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 )
 
@@ -86,7 +85,7 @@ func validateReadinessURL(rawURL string) error {
 	}
 	if i := strings.LastIndexByte(hostport, ':'); i >= 0 {
 		if port := hostport[i+1:]; port != "" && strings.Trim(port, "0123456789") != "" {
-			return &RequestError{Class: "InvalidURL", Msg: "nonnumeric port: '" + port + "'"}
+			return &RequestError{Class: "InvalidURL", Msg: "readiness URL port " + port + " is not a number"}
 		}
 	}
 	if i := strings.IndexByte(path, '#'); i >= 0 {
@@ -94,19 +93,13 @@ func validateReadinessURL(rawURL string) error {
 	}
 	for _, c := range path {
 		if c <= 0x20 || c == 0x7f {
-			return &RequestError{Class: "InvalidURL", Msg: "URL can't contain control characters. " + pyrepr.Repr(path) + " (found at least " + pyrepr.Repr(string(c)) + ")"}
+			return &RequestError{Class: "InvalidURL", Msg: "readiness URL path " + path + " holds a space or control character"}
 		}
 	}
 	pos := len("GET ")
 	for _, c := range path {
 		if c > 0x7f {
-			esc := fmt.Sprintf("\\U%08x", c)
-			if c < 0x100 {
-				esc = fmt.Sprintf("\\x%02x", c)
-			} else if c < 0x10000 {
-				esc = fmt.Sprintf("\\u%04x", c)
-			}
-			return &RequestError{Class: "UnicodeEncodeError", Msg: fmt.Sprintf("'ascii' codec can't encode character '%s' in position %d: ordinal not in range(128)", esc, pos)}
+			return &RequestError{Class: "UnicodeEncodeError", Msg: fmt.Sprintf("readiness URL path holds the non-ASCII character %c at position %d, which a request line cannot carry", c, pos-len("GET "))}
 		}
 		pos++
 	}

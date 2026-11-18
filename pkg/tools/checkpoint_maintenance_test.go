@@ -255,7 +255,7 @@ func TestCheckpointAutoPruneFromConfigHonoursTheSection(t *testing.T) {
 		t.Fatalf("disabled auto prune ran: %+v", out)
 	}
 	os.WriteFile(filepath.Join(f.env.Home, "config.yaml"), []byte("checkpoints:\n  auto_prune: true\n  retention_days: soon\n"), 0o644)
-	if out := AutoPruneCheckpointsFromConfig(f.env); !out.Skipped || !strings.Contains(out.Error, "invalid literal for int()") {
+	if out := AutoPruneCheckpointsFromConfig(f.env); !out.Skipped || !strings.Contains(out.Error, "is not a whole number") {
 		t.Fatalf("bad retention not reported: %+v", out)
 	}
 	orphan := cpSeedLegacyRepo(t, f.base, strings.Repeat("abcd", 4), filepath.Join(f.tmp, "gone"), nil)

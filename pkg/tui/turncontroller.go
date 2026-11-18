@@ -2,9 +2,11 @@ package tui
 
 import (
 	"context"
+	"fmt"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -91,7 +93,7 @@ type interruptReplyMsg struct {
 	keepBusy    bool
 	destination submissionDestination
 	info        *tuigateway.SessionInfo
-	response    map[string]any
+	handle      *tuigateway.CanonicalSessionHandle
 	err         error
 }
 
@@ -216,16 +218,13 @@ func interruptedText(partial string) string {
 }
 
 // Bubble fix of an honoured interrupt whose persisted partial extends what was sealed, nil otherwise
-func lateInterruptedReply(sealed *sealedInterrupt, payload map[string]any) *interruptedReply {
-	persisted := ""
-	if text, isStr := payload["text"].(string); isStr {
-		persisted = strings.TrimFunc(text, isJSSpace)
-	}
+func lateInterruptedReply(sealed *sealedInterrupt, payload tuigateway.MessageCompletePayload) *interruptedReply {
+	persisted := strings.TrimFunc(val(payload.Text), isJSSpace)
 	if sealed == nil {
 		return nil
 	}
 	shown := strings.TrimRightFunc(sealed.Partial, isJSSpace)
-	if payload["status"] != "interrupted" || unitLen(persisted) <= unitLen(shown) || !strings.HasPrefix(persisted, shown) {
+	if val(payload.Status) != "interrupted" || unitLen(persisted) <= unitLen(shown) || !strings.HasPrefix(persisted, shown) {
 		return nil
 	}
 	return &interruptedReply{From: sealed.Text, To: interruptedText(persisted)}
@@ -346,7 +345,7 @@ func (c *turnController) clearStatusTimer() { c.clear(timerStatus) }
 func (c *turnController) showNotice(n notice) {
 	if n.ID == "" {
 		c.noticeIDSeq++
-		n.ID = "n" + jsString(float64(c.noticeIDSeq))
+		n.ID = "n" + strconv.Itoa(c.noticeIDSeq)
 	}
 	if c.store.ui.Busy {
 		c.pendingNotice = &n
@@ -426,7 +425,7 @@ func (c *turnController) interruptTurn(deps interruptDeps, keepBusy bool) (tea.C
 	if !deps.Gateway.canonical() {
 		gw, sid := deps.Gateway, deps.Sid
 		request := func() tea.Msg {
-			_, _ = gw.request(context.Background(), "session.interrupt", map[string]any{"session_id": sid}, 0)
+			_, _ = gw.request(context.Background(), tuigateway.SessionInterrupt.Name(), wireParams(tuigateway.SessionInterruptParams{SessionID: sid}), 0)
 			return nil
 		}
 		c.sealInterrupt(deps, keepBusy)
@@ -440,12 +439,20 @@ func (c *turnController) interruptTurn(deps interruptDeps, keepBusy bool) (tea.C
 	gw, sid := deps.Gateway, deps.Sid
 	return func() tea.Msg {
 		reply := interruptReplyMsg{deps: deps, keepBusy: keepBusy, destination: destination, info: info}
-		params := map[string]any{"session_id": sid}
-		if generation := infoOf(info).ExecutionGeneration; generation != nil {
-			params["execution_generation"] = *generation
+		generation := infoOf(info).ExecutionGeneration
+		if generation == nil {
+			reply.err = tuigateway.MissingParam(tuigateway.CanonicalSessionInterrupt.Name(), "execution_generation")
+			return reply
 		}
-		value, err := gw.request(context.Background(), "session.interrupt", params, 0)
-		reply.response, _ = value.(map[string]any)
+		value, err := gw.request(context.Background(), tuigateway.CanonicalSessionInterrupt.Name(), wireParams(tuigateway.CanonicalControlParams{SessionID: sid, ExecutionGeneration: *generation}), 0)
+		if err == nil {
+			var handle tuigateway.CanonicalSessionHandle
+			if handle, err = tuigateway.CanonicalSessionInterrupt.Result(value); err == nil {
+				reply.handle = &handle
+			} else {
+				err = fmt.Errorf("%s %w", tr("session.common.invalidResponse", tuigateway.CanonicalSessionInterrupt.Name()), err)
+			}
+		}
 		reply.err = err
 		return reply
 	}, nil
@@ -465,8 +472,7 @@ func (c *turnController) settleInterrupt(m interruptReplyMsg) {
 		}
 		return
 	}
-	generation, answered := m.response["execution_generation"].(float64)
-	if held := infoOf(m.info).ExecutionGeneration; m.response["execution_state"] != "running" || held == nil || !answered || generation != float64(*held) {
+	if held := infoOf(m.info).ExecutionGeneration; m.handle == nil || m.handle.ExecutionState != "running" || held == nil || m.handle.ExecutionGeneration != *held {
 		return
 	}
 	if !isActiveTurn() {
@@ -676,33 +682,29 @@ func (c *turnController) recordError() {
 }
 
 // Seals the turn into its final rows, the streamed tail kept and repeated segments deduped
-func (c *turnController) recordMessageComplete(payload map[string]any) messageCompleteResult {
+func (c *turnController) recordMessageComplete(payload tuigateway.MessageCompletePayload) messageCompleteResult {
 	c.closeReasoningSegment()
-	var completion *string
-	if text, isStr := payload["text"].(string); isStr {
-		completion = &text
-	} else if rendered, isStr := payload["rendered"].(string); isStr {
-		completion = &rendered
+	completion := payload.Text
+	if completion == nil {
+		completion = payload.Rendered
 	}
 	source := c.bufRef
 	if completion != nil {
 		source = *completion
 	}
 	rawText := strings.TrimLeftFunc(source, isJSSpace)
-	if keepsStreamedTail(strings.TrimFunc(c.bufRef, isJSSpace), completion, truthyJS(payload["response_transformed"])) {
+	if keepsStreamedTail(strings.TrimFunc(c.bufRef, isJSSpace), completion, val(payload.ResponseTransformed)) {
 		c.flushStreamingSegment()
 	}
 	split := splitReasoning(rawText)
 	dedupeStart := 0
-	if !truthyJS(payload["response_previewed"]) && c.interimBoundaryIndex >= 0 {
+	if !val(payload.ResponsePreviewed) && c.interimBoundaryIndex >= 0 {
 		dedupeStart = min(c.interimBoundaryIndex, len(c.segmentMessages))
 	}
 	finalText := finalTail(split.Text, c.segmentMessages[dedupeStart:])
 	existing := strings.TrimFunc(c.reasoningText, isJSSpace)
 	if existing == "" {
-		if r, has := payload["reasoning"]; has && r != nil {
-			existing = strings.TrimFunc(jsString(r), isJSSpace)
-		}
+		existing = strings.TrimFunc(val(payload.Reasoning), isJSSpace)
 	}
 	saved := existing
 	if existing == "" {
@@ -806,14 +808,14 @@ func (c *turnController) recordReasoningAvailable(text string, force bool) {
 }
 
 // Commits one mixture of agents reference output as its own labelled thinking segment
-func (c *turnController) recordMoaReference(label, text string, index, count int) {
+func (c *turnController) recordMoaReference(label, text string, index, count int64) {
 	if c.interrupted {
 		return
 	}
 	c.closeReasoningSegment()
 	header := "◇ Reference — " + label
 	if index != 0 && count != 0 {
-		header = "◇ Reference " + jsString(float64(index)) + "/" + jsString(float64(count)) + " — " + label
+		header = "◇ Reference " + strconv.FormatInt(index, 10) + "/" + strconv.FormatInt(count, 10) + " — " + label
 	}
 	thinking := header
 	if body := strings.TrimFunc(text, isJSSpace); body != "" {

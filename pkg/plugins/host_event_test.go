@@ -43,7 +43,7 @@ func TestPyWaitTimeout(t *testing.T) {
 		want time.Duration
 		err  string
 	}{{nil, -1, ""}, {int64(2), 2 * time.Second, ""}, {0.25, 250 * time.Millisecond, ""}, {-3.0, 0, ""}, {true, time.Second, ""},
-		{1e10, 0, "timestamp out of range for C PyTime_t"}, {"x", 0, "'>' not supported between instances of 'str' and 'int'"}} {
+		{1e10, 0, "event wait timeout of 10000000000 seconds is too large"}, {"x", 0, "event wait timeout is text where a number was expected"}} {
 		got, err := pyWaitTimeout(c.in)
 		if (err == nil) != (c.err == "") || (err != nil && err.Error() != c.err) || (err == nil && got != c.want) {
 			t.Fatalf("pyWaitTimeout(%v) = %v %v", c.in, got, err)

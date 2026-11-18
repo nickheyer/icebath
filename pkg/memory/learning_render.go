@@ -9,6 +9,8 @@ import (
 	"strings"
 	"time"
 	"unicode/utf8"
+
+	"github.com/nickheyer/icebath/pkg/errchain"
 )
 
 // Recency of the oldest node, just off zero on the time axis
@@ -75,7 +77,7 @@ func nodeMap(v any) (map[string]any, error) {
 	if m, ok := v.(map[string]any); ok {
 		return m, nil
 	}
-	return nil, &pyError{class: "AttributeError", msg: fmt.Sprintf("'%s' object has no attribute 'get'", pyTypeName(v))}
+	return nil, &pyError{class: "AttributeError", msg: fmt.Sprintf("memory node is %s where a mapping was expected", errchain.Kind(v))}
 }
 
 // Mapping list of a payload field accepting typed and decoded JSON lists
@@ -96,7 +98,7 @@ func payloadMaps(v any) ([]map[string]any, error) {
 		}
 		return out, nil
 	}
-	return nil, &pyError{class: "TypeError", msg: fmt.Sprintf("'%s' object is not iterable", pyTypeName(v))}
+	return nil, &pyError{class: "TypeError", msg: fmt.Sprintf("memory payload is %s where a list was expected", errchain.Kind(v))}
 }
 
 // Raw list of a payload field for filters that skip non mapping entries
@@ -495,12 +497,12 @@ func pyIntOf(v any) (int, error) {
 		if i, ok := pyInt(x); ok {
 			return i, nil
 		}
-		return 0, &pyError{class: "ValueError", msg: fmt.Sprintf("invalid literal for int() with base 10: %s", pyRepr(x))}
+		return 0, &pyError{class: "ValueError", msg: fmt.Sprintf("%s is not a whole number", errchain.Show(x))}
 	case bool, int, int64:
 		i, _ := pyInt(x)
 		return i, nil
 	}
-	return 0, &pyError{class: "TypeError", msg: fmt.Sprintf("int() argument must be a string, a bytes-like object or a real number, not '%s'", pyTypeName(v))}
+	return 0, &pyError{class: "TypeError", msg: fmt.Sprintf("expected a whole number, got %s", errchain.Kind(v))}
 }
 
 // Float of a JSON value the way float converts it, the Python error text otherwise
@@ -510,9 +512,9 @@ func pyFloatOfErr(v any) (float64, error) {
 	}
 	switch v.(type) {
 	case string, json.Number:
-		return 0, &pyError{class: "ValueError", msg: fmt.Sprintf("could not convert string to float: %s", pyRepr(pyStr(v)))}
+		return 0, &pyError{class: "ValueError", msg: fmt.Sprintf("%s is not a number", errchain.Show(pyStr(v)))}
 	}
-	return 0, &pyError{class: "TypeError", msg: fmt.Sprintf("float() argument must be a string or a real number, not '%s'", pyTypeName(v))}
+	return 0, &pyError{class: "TypeError", msg: fmt.Sprintf("expected a number, got %s", errchain.Kind(v))}
 }
 
 // Value of a node count field read like int of the value or zero

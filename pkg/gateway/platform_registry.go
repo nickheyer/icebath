@@ -108,7 +108,7 @@ func (e *PlatformEntry) SetKeywords(kwargs map[string]any) error {
 	for _, k := range keys {
 		i, ok := fields[k]
 		if !ok {
-			return &PyError{"TypeError", fmt.Sprintf("PlatformEntry.__init__() got an unexpected keyword argument '%s'", k)}
+			return &PyError{"TypeError", fmt.Sprintf("a platform entry has no field %s", k)}
 		}
 		f := v.Field(i)
 		val := kwargs[k]
@@ -722,7 +722,7 @@ func (r *PlatformRegistry) CreateAdapter(ctx context.Context, name string, cfg *
 	}
 	depsOK := probe(func() (bool, error) {
 		if entry.CheckFn == nil {
-			return false, errors.New("'NoneType' object is not callable")
+			return false, errors.New("the platform has no adapter factory")
 		}
 		return entry.RunCheck(ctx), nil
 	}, "Platform '%s' check_fn raised: %s")
@@ -751,7 +751,7 @@ func (r *PlatformRegistry) CreateAdapter(ctx context.Context, name string, cfg *
 	}
 	adapter, err := guardedCall(func() (any, error) {
 		if entry.AdapterFactory == nil {
-			return nil, errors.New("'NoneType' object is not callable")
+			return nil, errors.New("the platform has no adapter factory")
 		}
 		return entry.AdapterFactory(ctx, cfg)
 	})

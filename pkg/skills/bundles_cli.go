@@ -8,6 +8,7 @@ import (
 	"strconv"
 
 	"github.com/nickheyer/icebath/pkg/cliui"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyrich"
@@ -92,7 +93,7 @@ func (b *BundlesCLI) cmdShow(a BundlesArgs) (int, error) {
 		return 0, err
 	}
 	if !ok {
-		return bundlesFail(c, "[bold red]Bundle "+pyrepr.StrRepr(a.Name)+" not found.[/]"), nil
+		return bundlesFail(c, "[bold red]Bundle "+errchain.Show(a.Name)+" not found.[/]"), nil
 	}
 	members, _ := info["skills"].([]any)
 	c.Print("[bold cyan]/" + pyrepr.Str(info["slug"]) + "[/]  [bold]" + pyrepr.Str(info["name"]) + "[/]")

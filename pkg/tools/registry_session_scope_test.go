@@ -133,10 +133,10 @@ func TestNormalizeHandlerResultMatchesTheRegistryContract(t *testing.T) {
 		result any
 		typ    string
 	}{
-		{map[string]any{"ok": true}, "dict"}, {map[string]any{"_multimodal": 1, "content": []any{}}, "dict"},
-		{notEnvelope, "dict"}, {nil, "NoneType"}, {int64(3), "int"}, {1.5, "float"}, {true, "bool"}, {[]any{"a"}, "list"},
+		{map[string]any{"ok": true}, "a mapping"}, {map[string]any{"_multimodal": 1, "content": []any{}}, "a mapping"},
+		{notEnvelope, "a mapping"}, {nil, "nothing"}, {int64(3), "a number"}, {1.5, "a number"}, {true, "true or false"}, {[]any{"a"}, "a list"},
 	} {
-		want := `{"error": "Tool handler returned unsupported result type: ` + tc.typ + `", "error_type": "tool_result_contract", "tool": "t", "result_type": "` + tc.typ + `"}`
+		want := `{"error": "Tool handler returned an unsupported result: ` + tc.typ + `", "error_type": "tool_result_contract", "tool": "t", "result_type": "` + tc.typ + `"}`
 		if got := NormalizeHandlerResult(env, "t", tc.result); got != want {
 			t.Fatalf("%#v gave %q", tc.result, got)
 		}

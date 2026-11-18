@@ -9,9 +9,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
@@ -49,7 +49,7 @@ func NewDeadTargetRegistry(ctx context.Context, path string) *DeadTargetRegistry
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if !os.IsNotExist(err) {
-			pkgLog().Debug(fmt.Sprintf("dead_targets: could not load %s (%s) — starting empty", path, pypath.OSErrorText(err)))
+			pkgLog().Debug(fmt.Sprintf("dead_targets: could not load %s (%s) — starting empty", path, errchain.OSText(err)))
 		}
 		return r
 	}

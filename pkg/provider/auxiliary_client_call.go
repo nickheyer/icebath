@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
@@ -57,7 +58,7 @@ func auxFloatKwarg(name string, v any) (*float64, error) {
 		f := float64(n)
 		return &f, nil
 	}
-	return nil, fmt.Errorf("%s must be a number, got %s", name, auxTypeName(v))
+	return nil, fmt.Errorf("%s must be a number, got %s", name, errchain.Kind(v))
 }
 
 // Call request of keyword arguments, a TypeError shaped error for unknown or missing ones
@@ -65,7 +66,7 @@ func auxParseCallKwargs(fn string, kwargs map[string]any, sync bool) (auxCallReq
 	var req auxCallRequest
 	for k := range kwargs {
 		if !auxAsyncCallKeys[k] && !(sync && auxSyncOnlyCallKeys[k]) {
-			return req, fmt.Errorf("%s() got an unexpected keyword argument '%s'", fn, k)
+			return req, fmt.Errorf("%s takes no argument named %s", fn, k)
 		}
 	}
 	messages, ok := kwargs["messages"]

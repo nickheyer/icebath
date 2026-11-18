@@ -6,7 +6,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 )
 
@@ -346,7 +346,7 @@ func FirePreCommandHook(ctx context.Context, surface, command, aliasUsed, argsRa
 		_, hasDecision := d["decision"]
 		if hasAction || hasDecision {
 			pkgLog().Debug(fmt.Sprintf("pre_command is observer-only in v1: ignoring directive %s for /%s (surface=%s). Block/rewrite will arrive with the command middleware variant (#64204/#64231).",
-				config.PyRepr(d), command, surface))
+				errchain.Show(d), command, surface))
 		}
 	}
 }

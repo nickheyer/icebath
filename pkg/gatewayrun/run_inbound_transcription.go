@@ -2,6 +2,7 @@ package gatewayrun
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"reflect"
 	"strings"
@@ -11,7 +12,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/media"
+	"github.com/nickheyer/icebath/pkg/linktier"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -65,7 +66,12 @@ func (r *GatewayRunner) enrichMessageWithTranscription(ctx context.Context, user
 		if !memoized {
 			pkgLog().Debug("Transcribing user voice: " + path)
 			var err error
-			clip, err = r.transcribeOneClip(ctx, path, media.TranscribeAudio, media.TranscribeAudioLocalFallback)
+			if transcribeVoice == nil {
+				line, _ := linktier.Refusal("speech to text", linktier.Plugins)
+				err = errors.New(line)
+			} else {
+				clip, err = r.transcribeOneClip(ctx, path, transcribeVoice, transcribeVoiceFallback)
+			}
 			if err != nil {
 				pkgLog().Error(fmt.Sprintf("Transcription error: %s", err))
 				enrichedParts = append(enrichedParts, untranscribedAudioNote(ctx, path))
@@ -193,6 +199,12 @@ func untranscribedAudioNote(ctx context.Context, path string) string {
 	agentPath := tools.ToAgentVisibleCachePath(inboundToolsEnv(ctx), inboundAbspath(path))
 	return fmt.Sprintf("[voice message could not be transcribed automatically; the audio is available at: %s]", agentPath)
 }
+
+// Speech to text of inbound voice and its local fallback, set by the media backends and nil in a build without them
+var (
+	transcribeVoice         sttTranscribe
+	transcribeVoiceFallback sttTranscribeFallback
+)
 
 // Transcript or nil and the note for one clip through the configured provider with the local fallback
 func (r *GatewayRunner) transcribeOneClip(ctx context.Context, path string, transcribe sttTranscribe, fallback sttTranscribeFallback) (gateway.STTClip, error) {

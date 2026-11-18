@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
@@ -186,7 +187,7 @@ func (c *AuthorityConnection) a2aForward(ctx context.Context, ref SessionRef, pa
 	if saved != nil {
 		savedObj, ok := saved.(*pyjson.Object)
 		if !ok {
-			return nil, &PyError{Kind: "TypeError", Msg: "'" + pyrepr.TypeName(saved) + "' object is not subscriptable"}
+			return nil, &PyError{Kind: "TypeError", Msg: "the saved A2A forward is " + errchain.Kind(saved) + ", expected a mapping"}
 		}
 		if result, err = receiptField(savedObj, "result"); err != nil {
 			return nil, err
@@ -214,7 +215,7 @@ func checkForwardIdentity(ctx context.Context, a *SessionAuthority, sid string, 
 		return err
 	}
 	if receipt == nil {
-		return &PyError{Kind: "TypeError", Msg: "'NoneType' object is not subscriptable"}
+		return &PyError{Kind: "TypeError", Msg: "the forwarded session row is missing"}
 	}
 	rawPolicy, err := receiptField(receipt, "policy")
 	if err != nil {
@@ -222,7 +223,7 @@ func checkForwardIdentity(ctx context.Context, a *SessionAuthority, sid string, 
 	}
 	policy, ok := rawPolicy.(*pyjson.Object)
 	if !ok {
-		return &PyError{Kind: "TypeError", Msg: "'" + pyrepr.TypeName(rawPolicy) + "' object is not subscriptable"}
+		return &PyError{Kind: "TypeError", Msg: "the forwarded session policy is " + errchain.Kind(rawPolicy) + ", expected a mapping"}
 	}
 	rawRequest, err := receiptField(policy, "request_json")
 	if err != nil {
@@ -230,7 +231,7 @@ func checkForwardIdentity(ctx context.Context, a *SessionAuthority, sid string, 
 	}
 	text, isStr := rawRequest.(string)
 	if !isStr {
-		return &PyError{Kind: "TypeError", Msg: "the JSON object must be str, bytes or bytearray, not " + pyrepr.TypeName(rawRequest)}
+		return &PyError{Kind: "TypeError", Msg: "the forwarded request is " + errchain.Kind(rawRequest) + ", expected JSON text"}
 	}
 	parsed, err := pyjson.Loads(text)
 	if err != nil {
@@ -238,7 +239,7 @@ func checkForwardIdentity(ctx context.Context, a *SessionAuthority, sid string, 
 	}
 	request, ok := parsed.(*pyjson.Object)
 	if !ok {
-		return &PyError{Kind: "AttributeError", Msg: "'" + pyrepr.TypeName(parsed) + "' object has no attribute 'get'"}
+		return &PyError{Kind: "AttributeError", Msg: "the forwarded request is " + errchain.Kind(parsed) + ", expected a mapping"}
 	}
 	if !pyrepr.Equal(request.GetOr("a2a_identity", nil), identity) {
 		return runtimeRefusal("admission_conflict")

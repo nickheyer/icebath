@@ -16,6 +16,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
@@ -372,7 +373,7 @@ func (c *CodexAppServerClient) Request(method string, params any, timeout time.D
 	if cxHas(reply, "error") {
 		errVal := cxGet(reply, "error")
 		if !cxIsObject(errVal) {
-			return nil, &codexPyError{"AttributeError", fmt.Sprintf("'%s' object has no attribute 'get'", pyrepr.TypeName(errVal))}
+			return nil, &codexPyError{"AttributeError", fmt.Sprintf("the Codex app server error is %s, expected a mapping", errchain.Kind(errVal))}
 		}
 		code := any(-1)
 		if cxHas(errVal, "code") {
@@ -494,7 +495,7 @@ func codexOSErrorText(err error) string {
 	if errors.Is(err, os.ErrClosed) {
 		return "write to closed file"
 	}
-	return pypath.OSErrorText(err)
+	return errchain.OSText(err)
 }
 
 func (c *CodexAppServerClient) appendStderr(line string) {
@@ -557,7 +558,7 @@ func codexMsgHas(msg any, key string) (bool, error) {
 	case string:
 		return strings.Contains(m, key), nil
 	}
-	return false, &codexPyError{"TypeError", fmt.Sprintf("argument of type '%s' is not iterable", pyrepr.TypeName(msg))}
+	return false, &codexPyError{"TypeError", fmt.Sprintf("a Codex app server message is %s, expected a mapping", errchain.Kind(msg))}
 }
 
 // Pending reply key of a JSON id, integral numbers and bools hashing as the Python int keys do
@@ -590,7 +591,7 @@ func (c *CodexAppServerClient) dispatch(msg any) error {
 	hasMethod, _ := codexMsgHas(msg, "method")
 	if hasID && (hasResult || hasError) {
 		if !cxIsObject(msg) {
-			return &codexPyError{"TypeError", fmt.Sprintf("%s indices must be integers or slices, not str", pyrepr.TypeName(msg))}
+			return &codexPyError{"TypeError", fmt.Sprintf("a Codex app server message is %s, expected a mapping", errchain.Kind(msg))}
 		}
 		key, ok := codexReplyKey(cxGet(msg, "id"))
 		if !ok {

@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/dlclark/regexp2/v2"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -433,14 +434,14 @@ func referencedSupportPaths(skillMD string) (paths map[string]bool, ok bool, err
 func skillMetaFromDict(v any) (SkillMeta, error) {
 	o, ok := v.(*pyjson.Object)
 	if !ok {
-		return SkillMeta{}, fmt.Errorf("SkillMeta() argument after ** must be a mapping, not %s", pyrepr.TypeName(v))
+		return SkillMeta{}, fmt.Errorf("skill metadata is %s where a mapping was expected", errchain.Kind(v))
 	}
 	var m SkillMeta
 	seen := map[string]bool{}
 	str := func(key string, val any) (string, error) {
 		s, isStr := val.(string)
 		if !isStr {
-			return "", fmt.Errorf("SkillMeta field %s holds %s, not str", key, pyrepr.TypeName(val))
+			return "", fmt.Errorf("skill metadata field %s is %s where text was expected", key, errchain.Kind(val))
 		}
 		return s, nil
 	}
@@ -473,7 +474,7 @@ func skillMetaFromDict(v any) (SkillMeta, error) {
 		case "tags":
 			list, isList := val.([]any)
 			if !isList {
-				return m, fmt.Errorf("SkillMeta field tags holds %s, not list", pyrepr.TypeName(val))
+				return m, fmt.Errorf("skill metadata field tags is %s where a list was expected", errchain.Kind(val))
 			}
 			m.Tags = make([]string, 0, len(list))
 			for _, t := range list {
@@ -486,11 +487,11 @@ func skillMetaFromDict(v any) (SkillMeta, error) {
 		case "extra":
 			ex, isObj := val.(*pyjson.Object)
 			if !isObj {
-				return m, fmt.Errorf("SkillMeta field extra holds %s, not dict", pyrepr.TypeName(val))
+				return m, fmt.Errorf("skill metadata field extra is %s where a mapping was expected", errchain.Kind(val))
 			}
 			m.Extra = ex
 		default:
-			return m, fmt.Errorf("SkillMeta.__init__() got an unexpected keyword argument '%s'", key)
+			return m, fmt.Errorf("skill metadata has an unknown field %s", key)
 		}
 		if err != nil {
 			return m, err
@@ -498,7 +499,7 @@ func skillMetaFromDict(v any) (SkillMeta, error) {
 	}
 	for _, key := range []string{"name", "description", "source", "identifier", "trust_level"} {
 		if !seen[key] {
-			return m, fmt.Errorf("SkillMeta.__init__() missing 1 required positional argument: '%s'", key)
+			return m, fmt.Errorf("skill metadata has no %s", key)
 		}
 	}
 	return m, nil
@@ -512,7 +513,7 @@ func (h *Hub) cachedMetas(key string) ([]SkillMeta, bool, error) {
 	}
 	list, ok := cached.([]any)
 	if !ok {
-		return nil, false, fmt.Errorf("'%s' object is not iterable as SkillMeta items", pyrepr.TypeName(cached))
+		return nil, false, fmt.Errorf("cached skill metadata is %s where a list was expected", errchain.Kind(cached))
 	}
 	out := make([]SkillMeta, 0, len(list))
 	for _, item := range list {

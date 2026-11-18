@@ -9,6 +9,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -32,7 +33,7 @@ func hostedProviderCLI(ctx context.Context, env *tools.Env, r *ProviderRegistrat
 	if _, err := os.Stat(filepath.Join(r.Dir, "cli.py")); err != nil {
 		return nil
 	}
-	if plugins.InProcessImportRefusal(ctx, fmt.Sprintf("memory provider %s CLI commands", pyRepr(r.Name)), r.Source, nil) != "" {
+	if plugins.InProcessImportRefusal(ctx, fmt.Sprintf("memory provider %s CLI commands", errchain.Show(r.Name)), r.Source, nil) != "" {
 		return nil
 	}
 	name, dir, module, desc := r.Name, r.Dir, providerDirModuleName(r.Dir, r.Name), r.Description()

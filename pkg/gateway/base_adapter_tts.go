@@ -12,7 +12,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/media"
+	"github.com/nickheyer/icebath/pkg/linktier"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -27,12 +27,27 @@ var (
 	}
 )
 
-// Whether the configured text to speech provider can run
-func checkTTSRequirements(ctx context.Context) bool { return media.CheckTTSRequirements(ctx) }
+// Text to speech backends the session host speaks through, set by the plugins tier and nil in a build without it
+var (
+	SpeechReady  func(ctx context.Context) bool
+	SpeechToFile func(ctx context.Context, text, outputPath string) (string, error)
+)
 
-// Speech synthesized into the output path, the text_to_speech tool result envelope
+// Whether the configured text to speech provider can run, false without the speech backends
+func checkTTSRequirements(ctx context.Context) bool { return SpeechReady != nil && SpeechReady(ctx) }
+
+// Speech synthesized into the output path, the text_to_speech tool result envelope, refused without the speech backends
 func textToSpeechTool(ctx context.Context, text, outputPath string) (string, error) {
-	return media.TextToSpeechTool(ctx, text, outputPath)
+	if SpeechToFile == nil {
+		line, _ := linktier.Refusal("text to speech", linktier.Plugins)
+		return "", errors.New(line)
+	}
+	return SpeechToFile(ctx, text, outputPath)
+}
+
+// Speech synthesized into the output path for callers outside the gateway, refused without the speech backends
+func TextToSpeech(ctx context.Context, text, outputPath string) (string, error) {
+	return textToSpeechTool(ctx, text, outputPath)
 }
 
 // Unique temp path for gateway auto TTS, ogg for Opus voice platforms and mp3 everywhere else

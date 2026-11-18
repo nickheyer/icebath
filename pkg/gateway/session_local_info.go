@@ -162,7 +162,7 @@ func localSessionInfo(ctx context.Context, a *SessionAuthority, ref SessionRef) 
 			return nil, err
 		}
 		if row == nil {
-			return nil, &PyError{Kind: "TypeError", Msg: "'NoneType' object is not subscriptable"}
+			return nil, &PyError{Kind: "TypeError", Msg: "the local session row is missing"}
 		}
 		label, has := row.Get("source")
 		if !has {
@@ -296,14 +296,14 @@ func authorityAgent(ctx context.Context, a *SessionAuthority, ref SessionRef) (s
 	} else if cached, has := a.Runner.(cachedAgentRunner); has {
 		found = cached.CachedAgentFor(key)
 	} else {
-		return nil, &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("'%T' object has no attribute '_cached_agent_for'", a.Runner)}
+		return nil, &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("the gateway runner (%T) cannot look up a cached agent", a.Runner)}
 	}
 	if found == nil {
 		return nil, nil
 	}
 	agent, ok := found.(sessionInfoAgent)
 	if !ok {
-		return nil, &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("'%T' object has no attribute 'model'", found)}
+		return nil, &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("the cached agent (%T) has no model", found)}
 	}
 	return agent, nil
 }

@@ -10,7 +10,7 @@ import (
 	"time"
 	"weak"
 
-	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 )
 
 // Flag a hosted plugin sees as a threading.Event whose state stays on the side that created it
@@ -228,7 +228,7 @@ func (h *PluginHost) serveParentEvent(ctx context.Context, params map[string]any
 		}
 		return e.Wait(wctx, timeout), nil
 	default:
-		return nil, &HostBuiltinError{Type: "ValueError", Message: fmt.Sprintf("unknown icebath event operation %s", config.PyRepr(op))}
+		return nil, &HostBuiltinError{Type: "ValueError", Message: fmt.Sprintf("unknown icebath event operation %s", errchain.Show(op))}
 	}
 }
 
@@ -247,13 +247,13 @@ func pyWaitTimeout(raw any) (time.Duration, error) {
 	case *big.Int:
 		seconds, _ = new(big.Float).SetInt(v).Float64()
 	default:
-		return 0, &HostBuiltinError{Type: "TypeError", Message: fmt.Sprintf("'>' not supported between instances of '%s' and 'int'", pyTypeName(raw))}
+		return 0, &HostBuiltinError{Type: "TypeError", Message: fmt.Sprintf("event wait timeout is %s where a number was expected", errchain.Kind(raw))}
 	}
 	if math.IsNaN(seconds) || seconds <= 0 {
 		return 0, nil
 	}
 	if seconds*float64(time.Second) >= math.MaxInt64 {
-		return 0, &HostBuiltinError{Type: "OverflowError", Message: "timestamp out of range for C PyTime_t"}
+		return 0, &HostBuiltinError{Type: "OverflowError", Message: fmt.Sprintf("event wait timeout of %s seconds is too large", errchain.Show(seconds))}
 	}
 	return time.Duration(seconds * float64(time.Second)), nil
 }

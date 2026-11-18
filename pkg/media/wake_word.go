@@ -1,3 +1,5 @@
+//go:build !icebath_core && !icebath_noextras
+
 package media
 
 import (
@@ -17,7 +19,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pysounddevice"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/media/speech"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/profiles"
 )
@@ -94,7 +95,6 @@ var (
 	wakeLoadConfig = func(ctx context.Context) (config.Tree, error) {
 		return config.LoadContext(ctx, home.Dir(ctx), config.Lookup(os.LookupEnv))
 	}
-	wakeSpeechSupported = speech.Supported
 	wakeExtraSupported  = wakeEngineSupported
 	wakePMAvailable     = wakeEngineAvailable
 	wakeRequireExtra    = requireWakeExtra

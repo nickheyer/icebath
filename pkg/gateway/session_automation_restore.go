@@ -3,6 +3,7 @@ package gateway
 import (
 	"context"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pycopy"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -38,7 +39,7 @@ func checkAutomationRoute(ctx context.Context, runner AuthorityRunner, payload *
 	}
 	automation, ok := rawAutomation.(*pyjson.Object)
 	if !ok {
-		return nil, "", &PyError{Kind: "TypeError", Msg: "'" + pyTypeName(rawAutomation) + "' object is not subscriptable"}
+		return nil, "", &PyError{Kind: "TypeError", Msg: "the stored automation is " + errchain.Kind(rawAutomation) + ", expected a mapping"}
 	}
 	owner, found := automation.Get("owner")
 	if !found {
@@ -84,7 +85,7 @@ func restoreLocalAutomation(ctx context.Context, a *SessionAuthority, ref Sessio
 		return nil, err
 	}
 	if entry == nil {
-		return nil, &PyError{Kind: "AttributeError", Msg: "'NoneType' object has no attribute 'session_id'"}
+		return nil, &PyError{Kind: "AttributeError", Msg: "the automation has no session to restore into"}
 	}
 	text, _ := payload.Get("text")
 	identity, _ := descriptor.Get("identity")

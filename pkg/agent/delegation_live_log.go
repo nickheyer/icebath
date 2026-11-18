@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -518,7 +519,7 @@ func updateManifestStatuses(delegationID string, results []*pyjson.Object, liveH
 		}
 		manifest, ok := decoded.(*pyjson.Object)
 		if !ok {
-			return fmt.Errorf("'%s' object has no attribute 'get'", pyrepr.TypeName(decoded))
+			return fmt.Errorf("delegation manifest is %s where a mapping was expected", errchain.Kind(decoded))
 		}
 		type indexed struct {
 			key any
@@ -544,7 +545,7 @@ func updateManifestStatuses(delegationID string, results []*pyjson.Object, liveH
 		for _, rawTask := range taskList {
 			task, ok := rawTask.(*pyjson.Object)
 			if !ok {
-				return fmt.Errorf("'%s' object has no attribute 'get'", pyrepr.TypeName(rawTask))
+				return fmt.Errorf("delegation manifest task is %s where a mapping was expected", errchain.Kind(rawTask))
 			}
 			idx, _ := task.Get("index")
 			var r *pyjson.Object

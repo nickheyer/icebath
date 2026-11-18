@@ -274,7 +274,7 @@ const procSelfMountinfo = "/proc/self/mountinfo"
 // Filesystem type of the longest mount point prefixing the directory, empty when unreadable or unmatched
 func mountinfoFstype(directory, mountinfoPath string) (string, error) {
 	if strings.ContainsRune(mountinfoPath, 0) {
-		return "", &pyConvError{"ValueError", "embedded null byte"}
+		return "", &pyConvError{"ValueError", "the mount path holds a null byte"}
 	}
 	data, err := os.ReadFile(mountinfoPath)
 	if err != nil {
@@ -297,7 +297,7 @@ func mountinfoFstype(directory, mountinfoPath string) (string, error) {
 			if n := pyLenWTF8(mountPoint); n > bestLen {
 				tailParts := pySplitWhitespace(tail)
 				if len(tailParts) == 0 {
-					return "", &pyConvError{"IndexError", "list index out of range"}
+					return "", &pyConvError{"IndexError", "a mountinfo line has no file system type"}
 				}
 				bestLen, bestFstype = n, tailParts[0]
 			}

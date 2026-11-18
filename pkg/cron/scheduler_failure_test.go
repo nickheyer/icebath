@@ -264,8 +264,8 @@ func TestCronDisabledToolsetsAndMarkers(t *testing.T) {
 	if _, ok := cronFailureMarkerError("ok\n[CRON_FAILURE]"); ok {
 		t.Fatal("marker must open the response")
 	}
-	if b, d, ok := staleCodeYieldLabels((&CronTickYielded{BootRev: "abc", DiskRev: "def"}).Error()); ok {
-		t.Fatal(b, d)
+	if b, d, ok := staleCodeYieldLabels((&CronTickYielded{BootRev: "abc", DiskRev: "def"}).Error()); !ok || b != "abc" || d != "def" {
+		t.Fatal(b, d, ok)
 	}
 	if b, d, ok := staleCodeYieldLabels("CronTickYielded: " + (&CronTickYielded{BootRev: "abc", DiskRev: "def"}).Error()); !ok || b != "abc" || d != "def" {
 		t.Fatal(b, d, ok)

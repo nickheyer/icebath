@@ -27,7 +27,7 @@ func pmEnsure(name string, explicit bool) (string, error) {
 		return "", err
 	}
 	if selected == nil {
-		return "", errors.New("'NoneType' object has no attribute 'binary'")
+		return "", errors.New("no package manager runtime is selected")
 	}
 	return selected.Binary, nil
 }

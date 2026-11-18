@@ -126,9 +126,9 @@ func TestKeenableRequestErrorsAndDecoding(t *testing.T) {
 	}
 	for payload, want := range map[string]string{
 		"not json":            "Keyless Keenable search failed: Expecting value: line 1 column 1 (char 0).",
-		`[1, 2]`:              "Keyless Keenable search failed: 'list' object has no attribute 'get'.",
-		`{"results": 5}`:      "Keyless Keenable search failed: 'int' object is not iterable.",
-		`{"results": ["x"]}`:  "Keyless Keenable search failed: 'str' object has no attribute 'get'.",
+		`[1, 2]`:              "Keyless Keenable search failed: expected a mapping, got a list.",
+		`{"results": 5}`:      "Keyless Keenable search failed: expected a list, got a number.",
+		`{"results": ["x"]}`:  "Keyless Keenable search failed: expected a mapping, got text.",
 		`{"results": [], "x"`: "Keyless Keenable search failed: Expecting ':' delimiter: line 1 column 20 (char 19).",
 	} {
 		body = payload
@@ -139,7 +139,7 @@ func TestKeenableRequestErrorsAndDecoding(t *testing.T) {
 	}
 	body = `[1]`
 	pages, err := keenableExtractKeyless(context.Background(), []string{"https://a"})
-	if err != nil || len(pages) != 1 || pages[0].Error != "Keyless Keenable extract failed: 'list' object has no attribute 'get'. Set KEENABLE_API_KEY (https://keenable.ai) for reliable service." {
+	if err != nil || len(pages) != 1 || pages[0].Error != "Keyless Keenable extract failed: expected a mapping, got a list. Set KEENABLE_API_KEY (https://keenable.ai) for reliable service." {
 		t.Fatalf("extract %+v %v", pages, err)
 	}
 	keenableAPIURL = "http://127.0.0.1:1"
@@ -218,8 +218,8 @@ func TestKeylessCalls(t *testing.T) {
 		t.Fatalf("zero limit %+v", out)
 	}
 	for payload, want := range map[string]string{
-		`{"results": 5}`:                   "Keyless Parallel search returned an unexpected payload: 'int' object is not subscriptable",
-		`{"results": {"a": 1}}`:            "Keyless Parallel search returned an unexpected payload: unhashable type: 'slice'",
+		`{"results": 5}`:                   "Keyless Parallel search returned an unexpected payload: expected a list, got a number",
+		`{"results": {"a": 1}}`:            "Keyless Parallel search returned an unexpected payload: expected a list, got a mapping",
 		`{"results": [{"excerpts": [1]}]}`: "Keyless Parallel search returned an unexpected payload: sequence item 0: expected str instance, int found",
 		`{"results": [{"excerpts": 3}]}`:   "Keyless Parallel search returned an unexpected payload: can only join an iterable",
 		`{"results": [], "x" 1}`:           "Keyless Parallel search returned an unexpected payload: Expecting ':' delimiter: line 1 column 21 (char 20)",
@@ -231,7 +231,7 @@ func TestKeylessCalls(t *testing.T) {
 			t.Errorf("payload %q gave %+v %v", payload, out, err)
 		}
 	}
-	for payload, want := range map[string]string{`[1]`: "'list' object has no attribute 'get'", `{"results": "ab"}`: "'str' object has no attribute 'get'"} {
+	for payload, want := range map[string]string{`[1]`: "expected a mapping, got a list", `{"results": "ab"}`: "expected a mapping, got text"} {
 		reply = keylessEnvelope(payload)
 		if _, err := parallelSearchKeyless(context.Background(), "q", 5); err == nil || err.Error() != want {
 			t.Errorf("payload %q propagated %v", payload, err)

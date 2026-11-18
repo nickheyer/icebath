@@ -116,7 +116,7 @@ func runServiceProbe(ctx context.Context, argv []string, deadline float64, text 
 		return res, "", nil
 	}
 	if !utf8.Valid(res.Stdout) || !utf8.Valid(res.Stderr) {
-		return nil, "", serviceValueError{"utf-8 codec can't decode service manager output"}
+		return nil, "", serviceValueError{"the service manager output is not valid UTF-8"}
 	}
 	return res, strings.ReplaceAll(strings.ReplaceAll(string(res.Stdout), "\r\n", "\n"), "\r", "\n"), nil
 }

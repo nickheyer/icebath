@@ -69,7 +69,7 @@ func TestTier1ParseReport(t *testing.T) {
 		t.Fatalf("incomplete findings %+v", r)
 	}
 	bad, _ := pyjson.Loads(`{"results": ["x"]}`)
-	if _, err := parseTier1Report(bad.(*pyjson.Object)); err == nil || err.Error() != "'str' object has no attribute 'get'" {
+	if _, err := parseTier1Report(bad.(*pyjson.Object)); err == nil || err.Error() != "expected a mapping holding validator, got text" {
 		t.Fatalf("non dict result: %v", err)
 	}
 }

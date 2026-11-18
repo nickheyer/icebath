@@ -35,7 +35,7 @@ type agentRuntimeResolver interface {
 func runtimeResolver(a *SessionAuthority) (agentRuntimeResolver, error) {
 	resolver, ok := a.Runner.(agentRuntimeResolver)
 	if !ok {
-		return nil, &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("'%T' object has no attribute '_resolve_session_agent_runtime'", a.Runner)}
+		return nil, &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("the gateway runner (%T) cannot resolve the agent runtime of a session", a.Runner)}
 	}
 	return resolver, nil
 }
@@ -499,7 +499,7 @@ func freezeSelectedProvider(ctx context.Context, cfg, frozen map[string]any, nam
 		}
 		if position >= profileCount {
 			if len(same) == 0 {
-				return nil, nil, nil, &PyError{Kind: "IndexError", Msg: "list index out of range"}
+				return nil, nil, nil, &PyError{Kind: "IndexError", Msg: "the selected provider position is past the configured providers"}
 			}
 			position = same[0]
 		}

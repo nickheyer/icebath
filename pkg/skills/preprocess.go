@@ -18,8 +18,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -117,7 +117,7 @@ func spawnErrorText(errno syscall.Errno, filename string) string {
 	if runtime.GOOS == "windows" {
 		return text
 	}
-	return text + ": " + pyrepr.StrRepr(filename)
+	return text + ": " + filename
 }
 
 // Process environment as a map
@@ -241,11 +241,11 @@ func pyIntValue(v any) (int, error) {
 	case string:
 		n, err := strconv.Atoi(strings.TrimSpace(strings.ReplaceAll(t, "_", "")))
 		if err != nil {
-			return 0, fmt.Errorf("invalid literal for int() with base 10: '%s'", t)
+			return 0, fmt.Errorf("%s is not a whole number", t)
 		}
 		return n, nil
 	}
-	return 0, fmt.Errorf("int() argument must be a string or a real number, not '%T'", v)
+	return 0, fmt.Errorf("expected a whole number, got %s", errchain.Kind(v))
 }
 
 // Applies configured template and inline shell preprocessing, the raw content when preprocessing fails

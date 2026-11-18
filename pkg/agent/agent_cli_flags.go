@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"fmt"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/goals"
@@ -178,7 +177,7 @@ func (a *AIAgent) controlMeta(ctx context.Context, key string) (string, error) {
 		GetMeta(ctx context.Context, key string) (string, bool, error)
 	})
 	if !has {
-		return "", &workerStoreError{"AttributeError", fmt.Sprintf("'%s' object has no attribute 'get_meta'", sessionStoreKind(a.sessionDB))}
+		return "", &workerStoreError{"AttributeError", "the session store cannot read session meta"}
 	}
 	raw, ok, err := meta.GetMeta(ctx, key)
 	if err != nil || !ok {

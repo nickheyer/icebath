@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -785,7 +786,7 @@ func durationMillis(v any) (int, error) {
 		}
 	}
 	if !ok {
-		return 0, fmt.Errorf("unsupported operand type(s) for *: '%s' and 'int'", pyrepr.TypeName(v))
+		return 0, fmt.Errorf("subagent duration is %s where a number was expected", errchain.Kind(v))
 	}
 	n, err := pyint.Of(f * 1000)
 	if err != nil {

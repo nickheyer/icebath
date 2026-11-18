@@ -46,7 +46,7 @@ func TestScenarioPluginsManageHub(t *testing.T) {
 
 	s.HasJSON(call(map[string]any{"action": "toggle"}), `{"error": {"code": 4019, "message": "plugins.toggle requires a 'key' or 'name'"}}`)
 	s.HasJSON(call(map[string]any{"action": "settings", "key": "disk-cleanup", "values": map[string]any{"nope": 1}}),
-		`{"error": {"code": 4021, "message": "'nope' is not declared in the plugin's config_schema"}}`)
+		`{"error": {"code": 4021, "message": "nope is not declared in the plugin's config_schema"}}`)
 	s.HasJSON(call(map[string]any{"action": "settings", "key": "ghost", "values": map[string]any{}}), `{"error": {"code": 4020, "message": "plugin 'ghost' not found"}}`)
 	s.HasJSON(call(map[string]any{"action": "settings", "key": "disk-cleanup"}),
 		`{"error": {"code": 4019, "message": "plugins.settings requires a 'key' and a 'values' mapping"}}`)

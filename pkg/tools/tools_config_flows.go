@@ -154,7 +154,7 @@ func (s *ToolsSetup) promptToolsetChecklistImpl(platformLabel string, enabled ma
 	for i := range chosen {
 		j, ok := pyListIndex(len(effective), i)
 		if !ok {
-			return nil, fmt.Errorf("IndexError: list index out of range")
+			return nil, fmt.Errorf("toolset choice %d is past the end of the list", i)
 		}
 		out[effective[j].Key] = true
 	}
@@ -239,7 +239,7 @@ func (s *ToolsSetup) reconfigureTool(cfg config.Tree) error {
 	}
 	j, ok := pyListIndex(len(keys), idx)
 	if !ok {
-		return fmt.Errorf("IndexError: list index out of range")
+		return fmt.Errorf("tool choice %d is past the end of the list", idx)
 	}
 	if err := configureToolset(s, keys[j], cfg, true); err != nil {
 		return err
@@ -462,7 +462,7 @@ func (s *ToolsSetup) configurePlatforms(cfg config.Tree, platformKeys []string, 
 	label := "All platforms"
 	if !allPlatforms {
 		if len(platformKeys) == 0 {
-			return false, fmt.Errorf("IndexError: list index out of range")
+			return false, fmt.Errorf("no platform is configured to choose from")
 		}
 		var err error
 		if label, err = platformLabel(platformKeys[0]); err != nil {

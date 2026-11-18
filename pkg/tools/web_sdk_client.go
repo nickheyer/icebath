@@ -15,6 +15,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
@@ -234,9 +235,13 @@ func pyDictGet(v any, key string) (any, error) {
 	return val, nil
 }
 
-// AttributeError text for a missing attribute of a decoded value
+// Refusal of a decoded reply value that is no mapping, naming the field read from it unless it is a lookup
 func pyAttributeError(v any, attr string) error {
-	return &pyAttrError{fmt.Sprintf("'%s' object has no attribute '%s'", pyrepr.TypeName(v), attr)}
+	switch attr {
+	case "get", "items", "keys", "values":
+		return &pyAttrError{"expected a mapping, got " + errchain.Kind(v)}
+	}
+	return &pyAttrError{fmt.Sprintf("expected a mapping with %s, got %s", attr, errchain.Kind(v))}
 }
 
 // AttributeError raised while reading a decoded payload
@@ -263,9 +268,9 @@ func pySubscriptTo(v any, n int) (any, error) {
 		return string(runes[:min(n, len(runes))]), nil
 	}
 	if _, ok := pyDict(v); ok {
-		return nil, &pyTypeError{"unhashable type: 'slice'"}
+		return nil, &pyTypeError{"expected a list, got a mapping"}
 	}
-	return nil, &pyTypeError{fmt.Sprintf("'%s' object is not subscriptable", pyrepr.TypeName(v))}
+	return nil, &pyTypeError{fmt.Sprintf("expected a list, got %s", errchain.Kind(v))}
 }
 
 // Items of a for loop over a decoded value, dict keys and string characters included
@@ -287,7 +292,7 @@ func pyIter(v any) ([]any, error) {
 		}
 		return out, nil
 	}
-	return nil, &pyTypeError{fmt.Sprintf("'%s' object is not iterable", pyrepr.TypeName(v))}
+	return nil, &pyTypeError{fmt.Sprintf("expected a list, got %s", errchain.Kind(v))}
 }
 
 // Value or a fallback when the value is falsy, the Python x or y

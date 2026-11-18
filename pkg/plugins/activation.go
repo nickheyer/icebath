@@ -394,7 +394,7 @@ func goLive(ctx context.Context, name string) (map[string]any, error) {
 		return nil, nil
 	})
 	if err != nil {
-		pkgLog().Debug(fmt.Sprintf("in-process plugin reload after change to %s failed", pyrepr.Repr(name)), "error", err)
+		pkgLog().Debug(fmt.Sprintf("in-process plugin reload after change to %s failed", errchain.Show(name)), "error", err)
 		return nil, nil
 	}
 	if activation == nil {
@@ -421,7 +421,7 @@ func goLive(ctx context.Context, name string) (map[string]any, error) {
 	if s := installedServices(); s != nil && s.RefreshPluginSessions != nil && (len(servers) > 0 || note != "") {
 		key := pyrepr.Str(activation["key"])
 		if err := callGuarded(func() error { return s.RefreshPluginSessions(ctx, home.Dir(ctx), key, note) }); err != nil {
-			pkgLog().Warn(fmt.Sprintf("open chats were not refreshed after activating %s", pyrepr.Repr(name)), "error", err)
+			pkgLog().Warn(fmt.Sprintf("open chats were not refreshed after activating %s", errchain.Show(name)), "error", err)
 		}
 	}
 	return activation, nil

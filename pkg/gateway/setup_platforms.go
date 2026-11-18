@@ -479,7 +479,7 @@ func SetupGateway(ctx context.Context, cfg config.Tree) error {
 	for _, idx := range selected {
 		at, ok := pyIndex(idx, len(platforms))
 		if !ok {
-			return errors.New("IndexError: list index out of range")
+			return errors.New("a selected platform number is past the end of the platform list")
 		}
 		if err := configurePlatform(ctx, platforms[at]); err != nil {
 			return err

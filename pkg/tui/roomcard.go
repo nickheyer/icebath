@@ -14,6 +14,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 	"github.com/google/uuid"
 
+	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"github.com/nickheyer/icebath/pkg/ui/cards"
 	"github.com/nickheyer/icebath/pkg/ui/keys"
 	"github.com/nickheyer/icebath/pkg/ui/render"
@@ -34,7 +35,7 @@ const roomFileLimit = 15_000_000
 
 // One file uploaded for the next message, its manifest item and name
 type roomUpload struct {
-	item map[string]any
+	item tuigateway.RoomAttachmentItem
 	name string
 }
 
@@ -43,17 +44,17 @@ type roomCard struct {
 	app      *app
 	room     roomInfo
 	self     string
-	events   []map[string]any
+	events   []tuigateway.RoomEvent
 	cursor   int64
-	status   map[string]any
-	replica  map[string]any
+	status   *tuigateway.RoomDriverStatus
+	replica  *tuigateway.GroupsReplicaStateResult
 	uploads  []roomUpload
 	composer *cards.Composer
 	scroll   int
 	gone     string
 	reading  bool
 	closed   bool
-	seen     map[float64]bool
+	seen     map[int64]bool
 	// First content row of the composer, for its cursor and clicks
 	composerTop int
 	lines       int
@@ -76,7 +77,7 @@ func (a *app) openRoom(r roomInfo, self string) tea.Cmd {
 	if card, _ := a.wm.Find(roomKey(r.ID)); card != nil {
 		return a.wm.Focus(card)
 	}
-	c := &roomCard{app: a, room: r, self: self, seen: map[float64]bool{}}
+	c := &roomCard{app: a, room: r, self: self, seen: map[int64]bool{}}
 	c.composer = cards.NewComposer(a.uiTheme(), a.keys, "", a.store.sessionCwd)
 	c.composer.Literal = true
 	c.composer.SessionID = roomSessionPrefix + r.ID
@@ -144,9 +145,9 @@ func (c *roomCard) Status() string {
 	parts := []string{}
 	if c.status != nil {
 		switch {
-		case c.status["blocked"] == true:
+		case c.status.Blocked:
 			parts = append(parts, tr("room.status.blocked"))
-		case c.status["working"] == true:
+		case c.status.Working:
 			parts = append(parts, tr("room.status.working"))
 		}
 		if n := len(c.pendingActions()); n > 0 {
@@ -154,10 +155,10 @@ func (c *roomCard) Status() string {
 		}
 	}
 	if c.replica != nil {
-		if n := jsNumberOf(c.replica["pending"]); n > 0 {
-			parts = append(parts, tr("room.status.queued", n, c.room.Home))
+		if n := val(c.replica.Pending); n > 0 {
+			parts = append(parts, tr("room.status.queued", float64(n), c.room.Home))
 		}
-		if synced := jsNumberOf(c.replica["synced_at"]); synced > 0 {
+		if synced := val(c.replica.SyncedAt); synced > 0 {
 			parts = append(parts, tr("room.status.synced", whenText(synced)))
 		}
 	}
@@ -170,16 +171,15 @@ func (c *roomCard) read() tea.Cmd {
 		return nil
 	}
 	c.reading = true
-	return gatewayCall(c.app.gw, "groups.state", map[string]any{"room_id": c.room.ID, "include_disbanded": true}, func(v any, err error) tea.Cmd {
+	params := tuigateway.GroupsStateParams{RoomID: c.room.ID, IncludeDisbanded: ptr(true)}
+	return call(c.app.gw, tuigateway.GroupsState, params, func(res *tuigateway.GroupsStateResult, err error) tea.Cmd {
 		if err != nil {
 			c.reading = false
 			c.gone = tr("rooms.errorLine", roomErrorText(err))
 			return c.next()
 		}
-		res := asRPCResult(v)
-		room, _ := res["room"].(map[string]any)
-		c.room = roomOf(room)
-		c.status, _ = res["driver_status"].(map[string]any)
+		c.room = roomOf(res.Room)
+		c.status = res.DriverStatus
 		if c.room.Disbanded {
 			c.gone = tr("room.disbanded")
 		}
@@ -189,21 +189,16 @@ func (c *roomCard) read() tea.Cmd {
 
 // Reads log pages after the cursor until the room has none left
 func (c *roomCard) readLog() tea.Cmd {
-	return gatewayCall(c.app.gw, "groups.log", map[string]any{"room_id": c.room.ID, "since_seq": c.cursor, "include_disbanded": true}, func(v any, err error) tea.Cmd {
+	params := tuigateway.GroupsLogParams{RoomID: c.room.ID, SinceSeq: ptr(c.cursor), IncludeDisbanded: ptr(true)}
+	return call(c.app.gw, tuigateway.GroupsLog, params, func(page *tuigateway.GroupsLogResult, err error) tea.Cmd {
 		if err != nil {
 			c.reading = false
 			c.gone = tr("rooms.errorLine", roomErrorText(err))
 			return c.next()
 		}
-		page := asRPCResult(v)
-		rows, _ := page["events"].([]any)
-		for _, raw := range rows {
-			if event, ok := raw.(map[string]any); ok {
-				c.events = append(c.events, event)
-			}
-		}
-		c.cursor = int64(jsNumberOf(page["cursor"]))
-		if page["has_more"] == true && len(rows) > 0 {
+		c.events = append(c.events, page.Events...)
+		c.cursor = page.Cursor
+		if page.HasMore && len(page.Events) > 0 {
 			return c.readLog()
 		}
 		if !c.room.Replica {
@@ -211,12 +206,12 @@ func (c *roomCard) readLog() tea.Cmd {
 			c.replica = nil
 			return c.next()
 		}
-		return gatewayCall(c.app.gw, "groups.replica_state", map[string]any{"room_id": c.room.ID}, func(v any, err error) tea.Cmd {
+		return call(c.app.gw, tuigateway.GroupsReplicaState, tuigateway.GroupsReplicaStateParams{RoomID: c.room.ID}, func(res *tuigateway.GroupsReplicaStateResult, err error) tea.Cmd {
 			c.reading = false
 			if err != nil {
 				return tea.Batch(wm.Notify(tr("rooms.errorLine", roomErrorText(err)), wm.Error), c.next())
 			}
-			c.replica = asRPCResult(v)
+			c.replica = res
 			return tea.Batch(c.refusals(), c.next())
 		})
 	})
@@ -224,16 +219,13 @@ func (c *roomCard) readLog() tea.Cmd {
 
 // Toasts each operation the home refused that this window has not shown yet
 func (c *roomCard) refusals() tea.Cmd {
-	failed, _ := c.replica["errors"].([]any)
 	var cmds []tea.Cmd
-	for _, raw := range failed {
-		row, _ := raw.(map[string]any)
-		id := jsNumberOf(row["outbox_id"])
-		if c.seen[id] {
+	for _, row := range c.replica.Errors {
+		if c.seen[row.OutboxID] {
 			continue
 		}
-		c.seen[id] = true
-		cmds = append(cmds, wm.Notify(tr("room.notice.refused", fmt.Sprint(row["op"]), fmt.Sprint(row["error"])), wm.Warn))
+		c.seen[row.OutboxID] = true
+		cmds = append(cmds, wm.Notify(tr("room.notice.refused", row.Op, row.Error), wm.Warn))
 	}
 	return tea.Batch(cmds...)
 }
@@ -255,15 +247,11 @@ func (c *roomCard) next() tea.Cmd {
 }
 
 // Pending actions the room's driver reports
-func (c *roomCard) pendingActions() []map[string]any {
-	rows, _ := c.status["pending_actions"].([]any)
-	out := make([]map[string]any, 0, len(rows))
-	for _, raw := range rows {
-		if row, ok := raw.(map[string]any); ok {
-			out = append(out, row)
-		}
+func (c *roomCard) pendingActions() []tuigateway.RoomPendingAction {
+	if c.status == nil {
+		return nil
 	}
-	return out
+	return c.status.PendingActions
 }
 
 // Member label of a member id, the id when the roster does not seat it
@@ -277,12 +265,12 @@ func (c *roomCard) memberLabel(id string) string {
 }
 
 // Who wrote a user message, you for this gateway's user
-func (c *roomCard) userLabel(actor map[string]any) string {
-	id, _ := actor["id"].(string)
+func (c *roomCard) userLabel(actor tuigateway.RoomActor) string {
+	id := actor.ID
 	if (id == "local-user" && !c.room.Replica) || (c.self != "" && id == "peer:"+c.self) {
 		return tr("room.you")
 	}
-	if name, _ := actor["display_name"].(string); name != "" {
+	if name := val(actor.DisplayName); name != "" {
 		return tr("room.peerUser", name)
 	}
 	if id == "local-user" {
@@ -292,60 +280,62 @@ func (c *roomCard) userLabel(actor map[string]any) string {
 }
 
 // Lines of one log event, a message with its author and files, a turn or room change as a dim note
-func (c *roomCard) eventLines(event map[string]any) []string {
+func (c *roomCard) eventLines(event tuigateway.RoomEvent) []string {
 	t := c.app.toolkit
-	kind, _ := event["kind"].(string)
-	actor, _ := event["actor"].(map[string]any)
-	payload, _ := event["payload"].(map[string]any)
-	text, _ := payload["text"].(string)
+	actor := event.Actor
+	turn, _ := tuigateway.RoomPayload[tuigateway.RoomTurnPayload](event)
 	member := func() string {
-		if id, _ := payload["member_id"].(string); id != "" {
-			return c.memberLabel(id)
+		if turn.MemberID != "" {
+			return c.memberLabel(turn.MemberID)
 		}
-		if id, _ := actor["id"].(string); id != "" {
-			return c.memberLabel(id)
+		if actor.ID != "" {
+			return c.memberLabel(actor.ID)
 		}
 		return ""
 	}
-	switch kind {
+	switch event.Kind {
 	case "message.user", "message.member":
+		message, _ := tuigateway.RoomPayload[tuigateway.RoomMessagePayload](event)
 		who := c.userLabel(actor)
-		if kind == "message.member" {
-			who = c.memberLabel(fmt.Sprint(actor["id"]))
-			if name, _ := actor["display_name"].(string); name != "" {
+		if event.Kind == "message.member" {
+			who = c.memberLabel(actor.ID)
+			if name := val(actor.DisplayName); name != "" {
 				who = name
 			}
 		}
-		out := []string{render.Heading(who, t) + "  " + render.Dim(whenText(jsNumberOf(event["created_at"])), t)}
-		for _, line := range strings.Split(text, "\n") {
+		out := []string{render.Heading(who, t) + "  " + render.Dim(whenText(event.CreatedAt), t)}
+		for _, line := range strings.Split(message.Text, "\n") {
 			out = append(out, "  "+line)
 		}
-		files, _ := payload["attachments"].([]any)
-		for _, raw := range files {
-			item, _ := raw.(map[string]any)
-			out = append(out, "  "+render.Warm(tr("room.file", fmt.Sprint(item["name"]), render.Bytes(int64(jsNumberOf(item["size"])))), t))
+		for _, item := range message.Attachments {
+			out = append(out, "  "+render.Warm(tr("room.file", item.Name, render.Bytes(item.Size)), t))
 		}
 		return out
 	case "turn.started":
 		return []string{render.Dim(tr("room.event.turnStarted", member()), t)}
 	case "turn.failed":
-		return []string{render.Bad(tr("room.event.turnFailed", member(), fmt.Sprint(payload["error"])), t)}
+		return []string{render.Bad(tr("room.event.turnFailed", member(), turn.Error), t)}
 	case "turn.cancelled":
 		return []string{render.Dim(tr("room.event.turnCancelled", member()), t)}
 	case "turn.deferred":
+		if turn.Reason != "" {
+			return []string{render.Dim(tr("room.event.turnDeferredReason", member(), turn.Reason), t)}
+		}
 		return []string{render.Dim(tr("room.event.turnDeferred", member()), t)}
 	case "member.unavailable":
 		return []string{render.Bad(tr("room.event.unavailable", member()), t)}
 	case "room.created":
 		return []string{render.Dim(tr("room.event.created"), t)}
 	case "room.renamed":
-		return []string{render.Dim(tr("room.event.renamed", fmt.Sprint(payload["name"])), t)}
+		renamed, _ := tuigateway.RoomPayload[tuigateway.RoomRenamedPayload](event)
+		return []string{render.Dim(tr("room.event.renamed", renamed.Name), t)}
 	case "room.stop_requested":
 		return []string{render.Dim(tr("room.event.stopped"), t)}
 	case "room.disbanded":
 		return []string{render.Dim(tr("room.event.disbanded"), t)}
 	case "authority.claimed", "authority.lost":
-		return []string{render.Dim(tr("room.event.authority", fmt.Sprint(payload["authority_gateway_id"])), t)}
+		claim, _ := tuigateway.RoomPayload[tuigateway.RoomAuthorityPayload](event)
+		return []string{render.Dim(tr("room.event.authority", claim.AuthorityGatewayID), t)}
 	}
 	return nil
 }
@@ -473,23 +463,20 @@ func (c *roomCard) send(text string) tea.Cmd {
 	if c.gone != "" {
 		return wm.Notify(c.gone, wm.Warn)
 	}
-	payload := map[string]any{"text": text, "thread_id": roomThread}
-	if len(c.uploads) > 0 {
-		items := make([]any, len(c.uploads))
-		for i, u := range c.uploads {
-			items[i] = u.item
-		}
-		payload["attachments"] = items
+	payload := tuigateway.RoomMessagePayload{Text: text, ThreadID: roomThread}
+	for _, u := range c.uploads {
+		payload.Attachments = append(payload.Attachments, u.item)
 	}
 	uploads := c.uploads
 	c.uploads = nil
 	c.scroll = 0
-	return gatewayCall(c.app.gw, "groups.send", map[string]any{"room_id": c.room.ID, "event_id": "msg-" + uuid.NewString(), "payload": payload}, func(v any, err error) tea.Cmd {
+	params := tuigateway.GroupsSendParams{RoomID: c.room.ID, EventID: ptr("msg-" + uuid.NewString()), Payload: payload}
+	return call(c.app.gw, tuigateway.GroupsSend, params, func(res *tuigateway.GroupsSendResult, err error) tea.Cmd {
 		if err != nil {
 			c.uploads = uploads
 			return wm.Notify(tr("rooms.errorLine", roomErrorText(err)), wm.Error)
 		}
-		if asRPCResult(v)["queued"] == true {
+		if val(res.Queued) {
 			return tea.Batch(wm.Notify(tr("rooms.notice.queued", c.room.Home), wm.Info), c.read())
 		}
 		return c.read()
@@ -537,14 +524,13 @@ func (c *roomCard) attach(path string) tea.Cmd {
 		kind = "pdf"
 	}
 	name := filepath.Base(path)
-	params := map[string]any{"room_id": c.room.ID, "upload_id": "up-" + uuid.NewString(), "kind": kind, "name": name, "mime": media,
-		"data_base64": base64.StdEncoding.EncodeToString(data)}
-	return gatewayCall(c.app.gw, "groups.attachment.upload", params, func(v any, err error) tea.Cmd {
+	params := tuigateway.GroupsAttachmentUploadParams{RoomID: c.room.ID, UploadID: "up-" + uuid.NewString(), Kind: kind, Name: name, Mime: media,
+		DataBase64: base64.StdEncoding.EncodeToString(data)}
+	return call(c.app.gw, tuigateway.GroupsAttachmentUpload, params, func(res *tuigateway.RoomAttachment, err error) tea.Cmd {
 		if err != nil {
 			return wm.Notify(tr("rooms.errorLine", roomErrorText(err)), wm.Error)
 		}
-		res := asRPCResult(v)
-		item := map[string]any{"attachment_id": res["attachment_id"], "kind": res["kind"], "mime": res["mime"], "name": res["name"], "size": res["size"]}
+		item := tuigateway.RoomAttachmentItem{AttachmentID: res.AttachmentID, Kind: res.Kind, Mime: res.Mime, Name: res.Name, Size: res.Size}
 		c.uploads = append(c.uploads, roomUpload{item: item, name: name})
 		return wm.Notify(tr("room.notice.attached", name, render.Bytes(int64(len(data)))), wm.Success)
 	})
@@ -553,7 +539,7 @@ func (c *roomCard) attach(path string) tea.Cmd {
 // One file of the log, the event it came with and its manifest item
 type roomFile struct {
 	eventID string
-	item    map[string]any
+	item    tuigateway.RoomAttachmentItem
 }
 
 // Files the log's messages carry, newest first
@@ -561,12 +547,9 @@ func (c *roomCard) files() []roomFile {
 	var out []roomFile
 	for i := len(c.events) - 1; i >= 0; i-- {
 		event := c.events[i]
-		payload, _ := event["payload"].(map[string]any)
-		items, _ := payload["attachments"].([]any)
-		for _, raw := range items {
-			if item, ok := raw.(map[string]any); ok {
-				out = append(out, roomFile{eventID: fmt.Sprint(event["event_id"]), item: item})
-			}
+		message, _ := tuigateway.RoomPayload[tuigateway.RoomMessagePayload](event)
+		for _, item := range message.Attachments {
+			out = append(out, roomFile{eventID: event.EventID, item: item})
 		}
 	}
 	return out
@@ -580,8 +563,7 @@ func (c *roomCard) pickFile() tea.Cmd {
 	}
 	items := make([]wm.Item, 0, len(files))
 	for _, f := range files {
-		name := fmt.Sprint(f.item["name"])
-		items = append(items, wm.Item{ID: "room:file:" + fmt.Sprint(f.item["attachment_id"]), Title: name, Detail: render.Bytes(int64(jsNumberOf(f.item["size"]))),
+		items = append(items, wm.Item{ID: "room:file:" + f.item.AttachmentID, Title: f.item.Name, Detail: render.Bytes(f.item.Size),
 			Run: func() tea.Cmd { return c.saveFile(f, 0) }})
 	}
 	picker := wm.NewPalette(c.app.toolkit, items)
@@ -591,8 +573,8 @@ func (c *roomCard) pickFile() tea.Cmd {
 
 // Downloads a file of the log into the project folder, asking again while a shared room's home sends it
 func (c *roomCard) saveFile(f roomFile, tries int) tea.Cmd {
-	params := map[string]any{"room_id": c.room.ID, "event_id": f.eventID, "attachment_id": f.item["attachment_id"]}
-	return gatewayCall(c.app.gw, "groups.attachment.download", params, func(v any, err error) tea.Cmd {
+	params := tuigateway.GroupsAttachmentDownloadParams{RoomID: c.room.ID, EventID: f.eventID, AttachmentID: f.item.AttachmentID}
+	return call(c.app.gw, tuigateway.GroupsAttachmentDownload, params, func(res *tuigateway.RoomAttachmentBytes, err error) tea.Cmd {
 		if err != nil {
 			if shapeOf(err).data["reason"] == "attachment_fetching" && tries < 120 {
 				var notice tea.Cmd
@@ -605,19 +587,18 @@ func (c *roomCard) saveFile(f roomFile, tries int) tea.Cmd {
 			}
 			return wm.Notify(tr("rooms.errorLine", roomErrorText(err)), wm.Error)
 		}
-		res := asRPCResult(v)
-		data, err := base64.StdEncoding.DecodeString(fmt.Sprint(res["data_base64"]))
+		data, err := base64.StdEncoding.DecodeString(res.DataBase64)
 		if err != nil {
 			return wm.Notify(tr("rooms.errorLine", err.Error()), wm.Error)
 		}
 		dir := c.app.store.sessionCwd()
-		target := filepath.Join(dir, filepath.Base(fmt.Sprint(res["name"])))
+		target := filepath.Join(dir, filepath.Base(res.Name))
 		for n := 1; ; n++ {
 			if _, err := os.Stat(target); os.IsNotExist(err) {
 				break
 			}
-			ext := filepath.Ext(fmt.Sprint(res["name"]))
-			target = filepath.Join(dir, fmt.Sprintf("%s-%d%s", strings.TrimSuffix(filepath.Base(fmt.Sprint(res["name"])), ext), n, ext))
+			ext := filepath.Ext(res.Name)
+			target = filepath.Join(dir, fmt.Sprintf("%s-%d%s", strings.TrimSuffix(filepath.Base(res.Name), ext), n, ext))
 		}
 		tmp := target + ".part"
 		if err := os.WriteFile(tmp, data, 0o644); err != nil {
@@ -638,41 +619,57 @@ func (c *roomCard) pickPending() tea.Cmd {
 	}
 	items := []wm.Item{}
 	for i, action := range actions {
-		member := c.memberLabel(fmt.Sprint(action["member_id"]))
-		attempt := map[string]any{"room_id": c.room.ID, "member_id": action["member_id"], "task_id": action["task_id"],
-			"execution_generation": action["execution_generation"]}
+		member := c.memberLabel(action.MemberID)
 		key := fmt.Sprintf("room:pending:%d:", i)
-		if action["kind"] == "approval" {
-			approval, _ := action["approval"].(map[string]any)
-			what := fmt.Sprint(approval["description"])
-			if command, _ := approval["command"].(string); command != "" {
-				what = command
+		if action.Kind == "approval" {
+			what := ""
+			if action.Approval != nil {
+				what = action.Approval.Description
+				if action.Approval.Command != "" {
+					what = action.Approval.Command
+				}
 			}
-			for _, choice := range []string{"once", "deny"} {
-				params := withKeys(attempt, "choice", choice, "request_id", action["request_id"])
-				items = append(items, wm.Item{ID: key + choice, Title: tr("room.pending.approval."+choice, member), Detail: what,
-					Run: func() tea.Cmd { return c.resolve("groups.approve", params, tr("room.notice.answered", member)) }})
+			for _, choice := range []tuigateway.ApprovalChoice{"once", "deny"} {
+				params := tuigateway.GroupsApproveParams{RoomID: c.room.ID, MemberID: action.MemberID, TaskID: action.TaskID,
+					ExecutionGeneration: action.ExecutionGeneration, Choice: choice, RequestID: action.RequestID}
+				items = append(items, wm.Item{ID: key + string(choice), Title: tr("room.pending.approval."+string(choice), member), Detail: what,
+					Run: func() tea.Cmd {
+						return resolveRoom(c, tuigateway.GroupsApprove, params, func(r *tuigateway.GroupsApproveResult) bool { return val(r.Queued) },
+							tr("room.notice.answered", member))
+					}})
 			}
 			continue
 		}
+		detail := action.TaskID
+		if action.Reason != "" {
+			detail = tr("room.pending.waitingReason", action.Reason)
+		}
+		retry := tuigateway.GroupsRetryParams{RoomID: c.room.ID, TaskID: action.TaskID, MemberID: ptr(action.MemberID), ExecutionGeneration: ptr(action.ExecutionGeneration)}
+		discard := tuigateway.GroupsDiscardParams{RoomID: c.room.ID, MemberID: action.MemberID, TaskID: action.TaskID, ExecutionGeneration: action.ExecutionGeneration}
 		items = append(items,
-			wm.Item{ID: key + "retry", Title: tr("room.pending.retry", member), Detail: fmt.Sprint(action["task_id"]),
-				Run: func() tea.Cmd { return c.resolve("groups.retry", attempt, tr("room.notice.retried", member)) }},
-			wm.Item{ID: key + "discard", Title: tr("room.pending.discard", member), Detail: fmt.Sprint(action["task_id"]),
-				Run: func() tea.Cmd { return c.resolve("groups.discard", attempt, tr("room.notice.discarded", member)) }})
+			wm.Item{ID: key + "retry", Title: tr("room.pending.retry", member), Detail: detail,
+				Run: func() tea.Cmd {
+					return resolveRoom(c, tuigateway.GroupsRetry, retry, func(r *tuigateway.GroupsRetryResult) bool { return val(r.Queued) },
+						tr("room.notice.retried", member))
+				}},
+			wm.Item{ID: key + "discard", Title: tr("room.pending.discard", member), Detail: detail,
+				Run: func() tea.Cmd {
+					return resolveRoom(c, tuigateway.GroupsDiscard, discard, func(r *tuigateway.GroupsDiscardResult) bool { return val(r.Queued) },
+						tr("room.notice.discarded", member))
+				}})
 	}
 	picker := wm.NewPalette(c.app.toolkit, items)
 	picker.Placeholder = tr("room.pending.pick")
 	return c.app.wm.ShowOverlay(picker)
 }
 
-// Answers one pending action and reads the room again
-func (c *roomCard) resolve(method string, params map[string]any, notice string) tea.Cmd {
-	return gatewayCall(c.app.gw, method, params, func(v any, err error) tea.Cmd {
+// Answers one pending action and reads the room again, a replica's answer noted as queued for the home
+func resolveRoom[P, R any](c *roomCard, m tuigateway.Method[P, R], params P, queued func(*R) bool, notice string) tea.Cmd {
+	return call(c.app.gw, m, params, func(res *R, err error) tea.Cmd {
 		if err != nil {
 			return wm.Notify(tr("rooms.errorLine", roomErrorText(err)), wm.Error)
 		}
-		if asRPCResult(v)["queued"] == true {
+		if queued(res) {
 			notice = tr("rooms.notice.queued", c.room.Home)
 		}
 		return tea.Batch(wm.Notify(notice, wm.Success), c.read())
@@ -699,7 +696,7 @@ func (c *roomCard) menu() tea.Cmd {
 	} else {
 		items = append(items, wm.Item{ID: "room:promote", Title: tr("room.menu.promote", c.room.Home), Run: func() tea.Cmd {
 			return c.confirm(tr("rooms.promote.confirm", c.room.Name, c.room.Home), func() tea.Cmd {
-				return gatewayCall(c.app.gw, "groups.promote", map[string]any{"room_id": c.room.ID, "confirm": true}, func(_ any, err error) tea.Cmd {
+				return call(c.app.gw, tuigateway.GroupsPromote, tuigateway.GroupsPromoteParams{RoomID: c.room.ID, Confirm: ptr(true)}, func(_ *tuigateway.GroupsPromoteResult, err error) tea.Cmd {
 					if err != nil {
 						return wm.Notify(tr("rooms.errorLine", roomErrorText(err)), wm.Error)
 					}

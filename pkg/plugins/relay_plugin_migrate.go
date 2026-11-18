@@ -142,7 +142,7 @@ func ValidateRelayPluginPayload(ctx context.Context, payload *pyjson.Object) ([]
 	}
 	cfg, ok := rawConfig.(map[string]any)
 	if !ok {
-		return nil, &HostBuiltinError{Type: "TypeError", Message: fmt.Sprintf("'%s' object is not subscriptable", pyrepr.TypeName(rawConfig))}
+		return nil, &HostBuiltinError{Type: "TypeError", Message: fmt.Sprintf("relay plugin config is %s where a mapping was expected", errchain.Kind(rawConfig))}
 	}
 	rawDiagnostics, ok := cfg["diagnostics"]
 	if !ok {
@@ -150,7 +150,7 @@ func ValidateRelayPluginPayload(ctx context.Context, payload *pyjson.Object) ([]
 	}
 	diagnostics, ok := rawDiagnostics.([]any)
 	if !ok {
-		return nil, &HostBuiltinError{Type: "TypeError", Message: fmt.Sprintf("'%s' object is not iterable", pyrepr.TypeName(rawDiagnostics))}
+		return nil, &HostBuiltinError{Type: "TypeError", Message: fmt.Sprintf("relay plugin diagnostics are %s where a list was expected", errchain.Kind(rawDiagnostics))}
 	}
 	var messages []string
 	for _, d := range diagnostics {

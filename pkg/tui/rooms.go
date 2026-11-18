@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"fmt"
 	"slices"
 	"strconv"
 	"strings"
@@ -10,6 +9,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/google/uuid"
 
+	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"github.com/nickheyer/icebath/pkg/ui/cards"
 	"github.com/nickheyer/icebath/pkg/ui/keys"
 	"github.com/nickheyer/icebath/pkg/ui/render"
@@ -80,22 +80,11 @@ type roomInfo struct {
 }
 
 // Room of a listing or state row
-func roomOf(row map[string]any) roomInfo {
-	text := func(key string) string {
-		s, _ := row[key].(string)
-		return s
-	}
-	r := roomInfo{ID: text("room_id"), Name: text("name"), Home: text("home"), Replica: row["replica"] == true, Disbanded: row["disbanded_at"] != nil}
-	r.Latest = int64(jsNumberOf(row["latest_seq"]))
-	r.Updated = jsNumberOf(row["updated_at"])
-	members, _ := row["members"].([]any)
-	for _, raw := range members {
-		m, _ := raw.(map[string]any)
-		s := func(key string) string {
-			v, _ := m[key].(string)
-			return v
-		}
-		r.Members = append(r.Members, roomMember{ID: s("member_id"), Profile: s("profile"), Handle: s("handle"), Name: s("display_name")})
+func roomOf(row tuigateway.Room) roomInfo {
+	r := roomInfo{ID: row.RoomID, Name: row.Name, Home: val(row.Home), Replica: val(row.Replica), Disbanded: row.DisbandedAt != nil,
+		Latest: val(row.LatestSeq), Updated: row.UpdatedAt}
+	for _, m := range row.Members {
+		r.Members = append(r.Members, roomMember{ID: m.MemberID, Profile: m.Profile, Handle: m.Handle, Name: m.DisplayName})
 	}
 	return r
 }
@@ -297,27 +286,24 @@ func (p *roomsPanel) fail(err error) tea.Cmd {
 
 // Reads the gateway's room capabilities, then the rooms, a failure leaving the rows as they were
 func (p *roomsPanel) load() tea.Cmd {
-	return gatewayCall(p.app.gw, "groups.capabilities", map[string]any{}, func(v any, err error) tea.Cmd {
+	return call(p.app.gw, tuigateway.GroupsCapabilities, tuigateway.GroupsCapabilitiesParams{}, func(caps *tuigateway.GroupsCapabilitiesResult, err error) tea.Cmd {
 		if err != nil {
 			p.loading = false
 			p.List.Refresh()
 			return p.fail(err)
 		}
-		caps := asRPCResult(v)
-		p.seatable = rpcStrings(caps["seatable_profiles"])
-		p.self, _ = caps["authority_gateway_id"].(string)
-		return gatewayCall(p.app.gw, "groups.peers", map[string]any{}, func(pv any, err error) tea.Cmd {
+		p.seatable = caps.SeatableProfiles
+		p.self = caps.AuthorityGatewayID
+		return call(p.app.gw, tuigateway.CanonicalGroupsPeers, tuigateway.GroupsPeersParams{}, func(res *tuigateway.GroupsPeersResult, err error) tea.Cmd {
 			if err != nil {
 				p.loading = false
 				p.List.Refresh()
 				return p.fail(err)
 			}
 			p.gateways = p.gateways[:0]
-			rows, _ := asRPCResult(pv)["peers"].([]any)
-			for _, raw := range rows {
-				peer, _ := raw.(map[string]any)
-				if name, _ := peer["name"].(string); name != "" && peer["key"] == true {
-					p.gateways = append(p.gateways, name)
+			for _, peer := range res.Peers {
+				if peer.Name != "" && peer.Key {
+					p.gateways = append(p.gateways, peer.Name)
 				}
 			}
 			return p.loadRooms()
@@ -327,16 +313,14 @@ func (p *roomsPanel) load() tea.Cmd {
 
 // Reads the rooms into the list
 func (p *roomsPanel) loadRooms() tea.Cmd {
-	return gatewayCall(p.app.gw, "groups.list", map[string]any{"include_disbanded": p.history}, func(lv any, err error) tea.Cmd {
+	return call(p.app.gw, tuigateway.GroupsList, tuigateway.GroupsListParams{IncludeDisbanded: ptr(p.history)}, func(res *tuigateway.GroupsListResult, err error) tea.Cmd {
 		p.loading = false
 		if err != nil {
 			p.List.Refresh()
 			return p.fail(err)
 		}
-		rows, _ := asRPCResult(lv)["rooms"].([]any)
 		p.rooms = p.rooms[:0]
-		for _, raw := range rows {
-			row, _ := raw.(map[string]any)
+		for _, row := range res.Rooms {
 			p.rooms = append(p.rooms, roomOf(row))
 		}
 		p.List.Refresh()
@@ -361,15 +345,15 @@ func (p *roomsPanel) back(notice string, level wm.Level) tea.Cmd {
 	return tea.Batch(cmds...)
 }
 
-// Request of the panel, its answer handed on and a failure shown as a toast
-func (p *roomsPanel) call(method string, params map[string]any, then func(map[string]any) tea.Cmd) tea.Cmd {
+// Request of the panel marked busy until it answers, a failure shown as a toast
+func panelCall[P, R any](p *roomsPanel, m tuigateway.Method[P, R], params P, then func(*R) tea.Cmd) tea.Cmd {
 	p.busy = true
-	return gatewayCall(p.app.gw, method, params, func(v any, err error) tea.Cmd {
+	return call(p.app.gw, m, params, func(res *R, err error) tea.Cmd {
 		p.busy = false
 		if err != nil {
 			return p.fail(err)
 		}
-		return then(asRPCResult(v))
+		return then(res)
 	})
 }
 
@@ -409,22 +393,22 @@ func (p *roomsPanel) create(_ *cards.List, _ int) tea.Cmd {
 // One member chosen for a new room, a local profile or a profile on a peer gateway
 type roomSeat struct {
 	label  string
-	member map[string]any
+	member tuigateway.RoomMemberInput
 }
 
 // Seat of a local profile
 func localSeat(profile string) roomSeat {
-	return roomSeat{label: profile, member: map[string]any{"member_id": profile, "profile": profile, "handle": profile}}
+	return roomSeat{label: profile, member: tuigateway.RoomMemberInput{MemberID: profile, Profile: profile, Handle: profile}}
 }
 
 // Seat of a profile a peer gateway serves, its default profile when profile is empty
 func peerSeat(peer, profile string) roomSeat {
-	label, handle, seated, target := peer, peer, "default", map[string]any{"kind": "peer", "peer": peer}
+	label, handle, seated, target := peer, peer, "default", &tuigateway.RoomTarget{Kind: "peer", Peer: peer}
 	if profile != "" {
 		label, handle, seated = peer+"/"+profile, peer+"-"+profile, profile
-		target["profile"] = profile
+		target.Profile = profile
 	}
-	return roomSeat{label: label, member: map[string]any{"member_id": handle, "profile": seated, "handle": handle, "target": target}}
+	return roomSeat{label: label, member: tuigateway.RoomMemberInput{MemberID: handle, Profile: seated, Handle: handle, Target: target}}
 }
 
 // Labels of the chosen seats
@@ -482,14 +466,14 @@ func (p *roomsPanel) pickMembers(name string, chosen []roomSeat) tea.Cmd {
 
 // Creates the room with the chosen members seated, then opens it
 func (p *roomsPanel) createRoom(name string, chosen []roomSeat) tea.Cmd {
-	members := make([]any, len(chosen))
+	members := make([]tuigateway.RoomMemberInput, len(chosen))
 	for i, seat := range chosen {
 		members[i] = seat.member
 	}
 	roomID := "room-" + strings.ReplaceAll(uuid.NewString(), "-", "")[:16]
-	return p.call("groups.create", map[string]any{"room_id": roomID, "name": name, "members": members}, func(res map[string]any) tea.Cmd {
-		room, _ := res["room"].(map[string]any)
-		created := roomOf(room)
+	params := tuigateway.GroupsCreateParams{RoomID: roomID, Name: name, Members: members}
+	return panelCall(p, tuigateway.GroupsCreate, params, func(res *tuigateway.GroupsCreateResult) tea.Cmd {
+		created := roomOf(res.Room)
 		return tea.Batch(p.app.wm.Dismiss(), p.load(), wm.Notify(tr("rooms.notice.created", created.Name), wm.Success), p.app.openRoom(created, p.self))
 	})
 }
@@ -540,7 +524,7 @@ func (p *roomsPanel) promote(l *cards.List, i int) tea.Cmd {
 		return nil
 	}
 	l.Confirm(tr("rooms.promote.confirm", r.Name, r.Home), func() tea.Cmd {
-		return p.call("groups.promote", map[string]any{"room_id": r.ID, "confirm": true}, func(map[string]any) tea.Cmd {
+		return panelCall(p, tuigateway.GroupsPromote, tuigateway.GroupsPromoteParams{RoomID: r.ID, Confirm: ptr(true)}, func(*tuigateway.GroupsPromoteResult) tea.Cmd {
 			return p.back(tr("rooms.notice.promoted", r.Name), wm.Success)
 		})
 	})
@@ -554,11 +538,12 @@ func (a *app) renameRoom(r roomInfo, back func(string, wm.Level) tea.Cmd) tea.Cm
 		if name == "" || name == r.Name {
 			return back("", wm.Info)
 		}
-		return gatewayCall(a.gw, "groups.rename", map[string]any{"room_id": r.ID, "event_id": "rename-" + uuid.NewString(), "name": name}, func(v any, err error) tea.Cmd {
+		params := tuigateway.GroupsRenameParams{RoomID: r.ID, EventID: "rename-" + uuid.NewString(), Name: name}
+		return call(a.gw, tuigateway.GroupsRename, params, func(res *tuigateway.GroupsRenameResult, err error) tea.Cmd {
 			if err != nil {
 				return back(tr("rooms.errorLine", roomErrorText(err)), wm.Error)
 			}
-			if asRPCResult(v)["queued"] == true {
+			if val(res.Queued) {
 				return back(tr("rooms.notice.queued", r.Home), wm.Info)
 			}
 			return back(tr("rooms.notice.renamed", name), wm.Success)
@@ -568,25 +553,26 @@ func (a *app) renameRoom(r roomInfo, back func(string, wm.Level) tea.Cmd) tea.Cm
 
 // Stops the work running in a room
 func (a *app) stopRoom(r roomInfo) tea.Cmd {
-	return gatewayCall(a.gw, "groups.stop", map[string]any{"room_id": r.ID, "cancel_id": "stop-" + uuid.NewString()}, func(v any, err error) tea.Cmd {
+	params := tuigateway.GroupsStopParams{RoomID: r.ID, CancelID: ptr("stop-" + uuid.NewString())}
+	return call(a.gw, tuigateway.GroupsStop, params, func(res *tuigateway.GroupsStopResult, err error) tea.Cmd {
 		if err != nil {
 			return wm.Notify(tr("rooms.errorLine", roomErrorText(err)), wm.Error)
 		}
-		res := asRPCResult(v)
-		if res["queued"] == true {
+		if val(res.Queued) {
 			return wm.Notify(tr("rooms.notice.queued", r.Home), wm.Info)
 		}
-		return wm.Notify(tr("rooms.notice.stopped", r.Name, jsNumberOf(res["cancelled"])), wm.Success)
+		return wm.Notify(tr("rooms.notice.stopped", r.Name, float64(res.Cancelled)), wm.Success)
 	})
 }
 
 // Disbands a room, the answer handed to back
 func (a *app) disbandRoom(r roomInfo, back func(string, wm.Level) tea.Cmd) tea.Cmd {
-	return gatewayCall(a.gw, "groups.disband", map[string]any{"room_id": r.ID, "cancel_id": "disband-" + uuid.NewString()}, func(v any, err error) tea.Cmd {
+	params := tuigateway.GroupsDisbandParams{RoomID: r.ID, CancelID: ptr("disband-" + uuid.NewString())}
+	return call(a.gw, tuigateway.GroupsDisband, params, func(res *tuigateway.GroupsDisbandResult, err error) tea.Cmd {
 		if err != nil {
 			return back(tr("rooms.errorLine", roomErrorText(err)), wm.Error)
 		}
-		if asRPCResult(v)["queued"] == true {
+		if val(res.Queued) {
 			return back(tr("rooms.notice.queued", r.Home), wm.Info)
 		}
 		return back(tr("rooms.notice.disbanded", r.Name), wm.Success)
@@ -598,47 +584,40 @@ func (a *app) roomPeers(r roomInfo, back func(string, wm.Level) tea.Cmd) tea.Cmd
 	if r.Replica {
 		return wm.Notify(tr("rooms.peers.onlyHome", r.Home), wm.Info)
 	}
-	return gatewayCall(a.gw, "groups.peers", map[string]any{"room_id": r.ID}, func(v any, err error) tea.Cmd {
+	return call(a.gw, tuigateway.CanonicalGroupsPeers, tuigateway.GroupsPeersParams{RoomID: ptr(r.ID)}, func(res *tuigateway.GroupsPeersResult, err error) tea.Cmd {
 		if err != nil {
 			return wm.Notify(tr("rooms.errorLine", roomErrorText(err)), wm.Error)
 		}
-		res := asRPCResult(v)
-		shares := map[string]map[string]any{}
-		rows, _ := res["shares"].([]any)
-		for _, raw := range rows {
-			share, _ := raw.(map[string]any)
-			peer, _ := share["peer"].(string)
-			shares[strings.SplitN(peer, "/", 2)[0]] = share
+		shares := map[string]tuigateway.RoomShare{}
+		for _, share := range res.Shares {
+			shares[strings.SplitN(share.Peer, "/", 2)[0]] = share
 		}
-		peers, _ := res["peers"].([]any)
-		if len(peers) == 0 {
+		if len(res.Peers) == 0 {
 			return wm.Notify(tr("rooms.peers.none"), wm.Info)
 		}
 		items := []wm.Item{}
-		for _, raw := range peers {
-			peer, _ := raw.(map[string]any)
-			name, _ := peer["name"].(string)
-			url, _ := peer["url"].(string)
+		for _, peer := range res.Peers {
+			name := peer.Name
 			share, shared := shares[name]
-			detail := tr("rooms.peers.notShared", url)
+			detail := tr("rooms.peers.notShared", peer.URL)
 			switch {
-			case peer["key"] != true:
+			case !peer.Key:
 				detail = tr("rooms.peers.noKey", name)
-			case shared && share["state"] == "removing":
+			case shared && share.State == "removing":
 				detail = tr("rooms.peers.removing")
-			case shared && share["error"] != nil:
-				detail = tr("rooms.peers.failing", fmt.Sprint(share["error"]))
-			case shared && share["synced_at"] != nil:
-				detail = tr("rooms.peers.synced", whenText(jsNumberOf(share["synced_at"])))
+			case shared && share.Error != nil:
+				detail = tr("rooms.peers.failing", *share.Error)
+			case shared && share.SyncedAt != nil:
+				detail = tr("rooms.peers.synced", whenText(*share.SyncedAt))
 			case shared:
 				detail = tr("rooms.peers.waiting")
 			}
-			method, notice := "groups.share", "rooms.notice.shared"
-			if shared && share["state"] != "removing" {
-				method, notice = "groups.unshare", "rooms.notice.unshared"
+			method, notice := tuigateway.CanonicalGroupsShare, "rooms.notice.shared"
+			if shared && share.State != "removing" {
+				method, notice = tuigateway.CanonicalGroupsUnshare, "rooms.notice.unshared"
 			}
 			items = append(items, wm.Item{ID: "rooms:peer:" + name, Title: name, Detail: detail, Run: func() tea.Cmd {
-				return gatewayCall(a.gw, method, map[string]any{"room_id": r.ID, "peer": name}, func(_ any, err error) tea.Cmd {
+				return call(a.gw, method, tuigateway.GroupsShareParams{RoomID: r.ID, Peer: name}, func(_ *tuigateway.GroupsShareResult, err error) tea.Cmd {
 					if err != nil {
 						return back(tr("rooms.errorLine", roomErrorText(err)), wm.Error)
 					}

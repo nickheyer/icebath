@@ -8,6 +8,7 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/hostinfo"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -213,7 +214,7 @@ func embedderEnvironmentHint(env *tools.Env) (string, error) {
 	}
 	section, ok := agentCfg.(map[string]any)
 	if !ok {
-		return "", fmt.Errorf("'%s' object has no attribute 'get'", pyrepr.TypeName(agentCfg))
+		return "", fmt.Errorf("config agent section is %s where a mapping was expected", errchain.Kind(agentCfg))
 	}
 	hint, ok := section["environment_hint"]
 	if !ok {

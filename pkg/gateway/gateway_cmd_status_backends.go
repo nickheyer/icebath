@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -319,7 +320,7 @@ func readJSONObjectSig(path string) (*pyjson.Object, error) {
 	}
 	obj, ok := parsed.(*pyjson.Object)
 	if !ok {
-		return nil, fmt.Errorf("'%s' object has no attribute 'get'", pyrepr.TypeName(parsed))
+		return nil, fmt.Errorf("the status file is %s, expected a mapping", errchain.Kind(parsed))
 	}
 	return obj, nil
 }
@@ -367,11 +368,11 @@ func pyIntArg(v any) (int, error) {
 	case string:
 		parsed, err := strconv.Atoi(pystr.Strip(n))
 		if err != nil {
-			return 0, fmt.Errorf("invalid literal for int() with base 10: %s", pyrepr.Repr(n))
+			return 0, fmt.Errorf("%v is not a whole number", n)
 		}
 		return parsed, nil
 	}
-	return 0, fmt.Errorf("int() argument must be a string, a bytes-like object or a real number, not '%s'", pyrepr.TypeName(v))
+	return 0, fmt.Errorf("expected a whole number, got %s", errchain.Kind(v))
 }
 
 func windowsProbeLockFile(w io.Writer, lockPath string) {

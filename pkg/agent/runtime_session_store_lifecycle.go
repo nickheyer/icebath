@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
@@ -31,7 +32,7 @@ func (s *RuntimeSessionStore) CreateSession(n state.NewSession) error {
 func titleResult(result any) (bool, error) {
 	obj, ok := result.(*pyjson.Object)
 	if !ok {
-		return false, &workerStoreError{"AttributeError", fmt.Sprintf("'%s' object has no attribute 'get'", pyrepr.TypeName(result))}
+		return false, &workerStoreError{"AttributeError", fmt.Sprintf("title receipt is %s where a mapping was expected", errchain.Kind(result))}
 	}
 	if failure := obj.GetOr("error", nil); pyrepr.Truthy(failure) {
 		return false, &workerStoreError{"ValueError", pyrepr.Str(failure)}
@@ -55,7 +56,7 @@ func (s *RuntimeSessionStore) SetSessionTitle(ctx context.Context, sessionID, ti
 // Sets a derived or llm title through the owner, refusing any other source
 func (s *RuntimeSessionStore) SetAutoTitleContext(ctx context.Context, sessionID, title, source string) (bool, error) {
 	if source != "derived" && source != "llm" {
-		return false, &workerStoreError{"ValueError", "invalid automatic title source: " + pyrepr.Repr(source)}
+		return false, &workerStoreError{"ValueError", "invalid automatic title source: " + errchain.Show(source)}
 	}
 	if err := s.session(sessionID); err != nil {
 		return false, err
@@ -92,7 +93,7 @@ func (s *RuntimeSessionStore) GetSessionTitleSource(ctx context.Context, session
 // Sets the title provenance through the owner
 func (s *RuntimeSessionStore) SetSessionTitleSource(ctx context.Context, sessionID, source string) (bool, error) {
 	if source != "user" && source != "derived" && source != "llm" {
-		return false, &workerStoreError{"ValueError", "invalid title source: " + pyrepr.Repr(source)}
+		return false, &workerStoreError{"ValueError", "invalid title source: " + errchain.Show(source)}
 	}
 	if err := s.session(sessionID); err != nil {
 		return false, err

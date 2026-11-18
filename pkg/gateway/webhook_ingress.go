@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/profiles"
@@ -57,7 +58,7 @@ func ProducerScope(ctx context.Context, adapter PlatformAdapter, event *MessageE
 	}
 	runner, ok := owner.(ProducerScopeRunner)
 	if !ok {
-		return nil, nil, &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("'%T' object has no attribute '_owning_profile'", owner)}
+		return nil, nil, &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("the webhook owner (%T) cannot name its owning profile", owner)}
 	}
 	registered, profile := runner.OwningProfile(adapter, adapter.Base().Platform)
 	var profileKey *string
@@ -264,7 +265,7 @@ func admitOnce(ctx context.Context, authority *SessionAuthority, event *MessageE
 	if len(hooks) > 0 && (webhook || len(rows) == 0) {
 		runner, ok := authority.Runner.(ProducerHooksRunner)
 		if !ok {
-			return nil, &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("'%T' object has no attribute '_hm_pre_gateway_dispatch_hook'", authority.Runner)}
+			return nil, &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("the gateway runner (%T) has no pre dispatch hook", authority.Runner)}
 		}
 		if slices.Contains(hooks, "pre_gateway_dispatch") {
 			rewritten := runner.HMPreGatewayDispatchHook(ctx, event, event.Source)
@@ -387,12 +388,12 @@ func webhookRetry(ctx context.Context, authority *SessionAuthority, event *Messa
 		return nil, err
 	}
 	if row == nil {
-		return nil, &PyError{Kind: "TypeError", Msg: "'NoneType' object is not subscriptable"}
+		return nil, &PyError{Kind: "TypeError", Msg: "the webhook retry record is missing"}
 	}
 	stored, _ := row.Get("payload")
 	storedPayload, _ := stored.(*pyjson.Object)
 	if storedPayload == nil {
-		return nil, &PyError{Kind: "TypeError", Msg: "'" + pyTypeName(stored) + "' object is not subscriptable"}
+		return nil, &PyError{Kind: "TypeError", Msg: "the stored webhook record is " + errchain.Kind(stored) + ", expected a mapping"}
 	}
 	retained, err := nativeEnvelope(storedPayload)
 	if err != nil {
@@ -506,7 +507,7 @@ func recoverWebhookFinalization(ctx context.Context, authority *SessionAuthority
 	}
 	payload, _ := stored.(*pyjson.Object)
 	if payload == nil {
-		return "", &PyError{Kind: "TypeError", Msg: "'" + pyTypeName(stored) + "' object is not subscriptable"}
+		return "", &PyError{Kind: "TypeError", Msg: "the stored webhook record is " + errchain.Kind(stored) + ", expected a mapping"}
 	}
 	envelope, err := nativeEnvelope(payload)
 	if err != nil {

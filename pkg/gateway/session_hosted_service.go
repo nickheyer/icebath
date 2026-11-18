@@ -5,10 +5,12 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"slices"
 	"strings"
 	"sync"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pydict"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
@@ -93,7 +95,7 @@ func (c *CanonicalHostedRoomService) RoomProfiles(room map[string]any) ([]string
 		target := map[string]any{}
 		if pyrepr.Truthy(member["target"]) {
 			if target, ok = hostedMapping(member["target"]); !ok {
-				return nil, errors.New("'" + pyrepr.TypeName(member["target"]) + "' object has no attribute 'get'")
+				return nil, errors.New("a room member target is " + errchain.Kind(member["target"]) + ", expected a mapping")
 			}
 		}
 		kind, has := target["kind"]
@@ -212,7 +214,7 @@ func hostedManifestItems(value any) ([]map[string]any, error) {
 	for _, raw := range list {
 		item, ok := hostedMapping(raw)
 		if !ok {
-			return nil, errors.New("'" + pyrepr.TypeName(raw) + "' object is not subscriptable")
+			return nil, errors.New("a hosted manifest item is " + errchain.Kind(raw) + ", expected a mapping")
 		}
 		out = append(out, item)
 	}
@@ -607,7 +609,7 @@ func (c *CanonicalHostedRoomService) checkAdmission(ctx context.Context, ref Ses
 	}
 	producer, ok := rpc.(*HostedRoomAuthorityRPC)
 	if !ok {
-		return errors.New("'HostedRoomOwnerRPC' object has no attribute 'authority'")
+		return errors.New("the hosted room owner has no session authority")
 	}
 	payload, _ := hostedMapping(task["payload"])
 	prompt, _ := payload["prompt"].(string)
@@ -642,11 +644,11 @@ func (c *CanonicalHostedRoomService) Approve(ctx context.Context, sessionID, req
 			var known bool
 			if ref, known = r.currentRef(); !known {
 				c.memberMu.Unlock()
-				return nil, errors.New("'HostedRoomOwnerRPC' object has no attribute 'ref'")
+				return nil, errors.New("the hosted room owner has no current session")
 			}
 		default:
 			c.memberMu.Unlock()
-			return nil, errors.New("'" + pyrepr.TypeName(rpc) + "' object has no attribute 'ref'")
+			return nil, fmt.Errorf("the session transport (%T) has no session reference", rpc)
 		}
 		if ref.SessionID == sessionID {
 			producer = rpc
@@ -742,14 +744,14 @@ func ensureHostedService(ctx context.Context, runner any, authority *SessionAuth
 	}
 	service, ok := authority.HostedRoomService.(hostedLifecycleService)
 	if !ok {
-		return errors.New("'" + pyrepr.TypeName(authority.HostedRoomService) + "' object has no attribute 'attest'")
+		return fmt.Errorf("the hosted room service (%T) cannot attest", authority.HostedRoomService)
 	}
 	if service.TransportInstalled() {
 		return nil
 	}
 	server, ok := runner.(hostedServiceRunner)
 	if !ok || server.SessionControlServer() == nil {
-		return errors.New("'NoneType' object has no attribute 'private_handlers'")
+		return errors.New("no hosted room service is running")
 	}
 	InstallHostedTransport(server.SessionControlServer(), authority, ctx, service.Attest)
 	service.MarkTransportInstalled()

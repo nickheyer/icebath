@@ -2,12 +2,15 @@
 package errchain
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
+	"math/big"
 	"os"
 	"os/exec"
 	"reflect"
+	"strconv"
 	"strings"
 )
 
@@ -57,6 +60,8 @@ func Kind(v any) string {
 		return "true or false"
 	case []byte:
 		return "bytes"
+	case *big.Int, *big.Float:
+		return "a number"
 	case interface{ Float64() (float64, error) }:
 		return "a number"
 	case interface{ Get(string) (any, bool) }:
@@ -83,6 +88,73 @@ func Kind(v any) string {
 		return Kind(rv.Elem().Interface())
 	}
 	return fmt.Sprintf("a %T", v)
+}
+
+// Value as a person writes it, text as is, plain numbers, true or false, list items joined by commas
+func Show(v any) string {
+	switch x := v.(type) {
+	case nil:
+		return "nothing"
+	case string:
+		if x == "" {
+			return "empty text"
+		}
+		return x
+	case []byte:
+		return Show(string(x))
+	case bool:
+		return strconv.FormatBool(x)
+	case float64:
+		return strconv.FormatFloat(x, 'f', -1, 64)
+	case float32:
+		return strconv.FormatFloat(float64(x), 'f', -1, 32)
+	case error:
+		return x.Error()
+	case interface{ PyStr() string }:
+		return x.PyStr()
+	case json.Marshaler:
+		if b, err := x.MarshalJSON(); err == nil {
+			return string(b)
+		}
+	case fmt.Stringer:
+		return x.String()
+	}
+	rv := reflect.ValueOf(v)
+	switch rv.Kind() {
+	case reflect.Slice, reflect.Array:
+		if rv.Len() == 0 {
+			return "an empty list"
+		}
+		parts := make([]string, rv.Len())
+		for i := range parts {
+			parts[i] = Show(rv.Index(i).Interface())
+		}
+		return strings.Join(parts, ", ")
+	case reflect.Map:
+		if b, err := json.Marshal(v); err == nil {
+			return string(b)
+		}
+	case reflect.Pointer, reflect.Interface:
+		if rv.IsNil() {
+			return "nothing"
+		}
+		return Show(rv.Elem().Interface())
+	}
+	return fmt.Sprint(v)
+}
+
+// Failure reading a plain message while the original stays underneath for the log
+type reworded struct {
+	msg string
+	err error
+}
+
+func (e *reworded) Error() string { return e.msg }
+func (e *reworded) Unwrap() error { return e.err }
+
+// Error saying the formatted message to the reader, err kept in the chain for the log and class checks
+func Reword(err error, format string, args ...any) error {
+	return &reworded{msg: fmt.Sprintf(format, args...), err: err}
 }
 
 // Reason of an operating system failure followed by the path, paths or command it concerns

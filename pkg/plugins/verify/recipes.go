@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/dlclark/regexp2/v2"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -171,7 +172,7 @@ type OSError struct {
 func (e *OSError) Error() string {
 	var pe *fs.PathError
 	if errors.As(e.Err, &pe) {
-		return pyhttpx.OSErrorText(pe.Err) + ": " + pyrepr.Repr(pe.Path)
+		return errchain.OSText(pe)
 	}
 	return pyhttpx.OSErrorText(e.Err)
 }
@@ -272,7 +273,7 @@ func inferPortFromCommand(command any) (*int, error) {
 	}
 	s, ok := command.(string)
 	if !ok {
-		return nil, &TypeError{Msg: "expected string or bytes-like object, got '" + pyrepr.TypeName(command) + "'"}
+		return nil, &TypeError{Msg: "start command is " + errchain.Kind(command) + " where text was expected"}
 	}
 	for _, re := range []*regexp2.Regexp{portFlagRE, portEnvRE} {
 		m, err := re.FindStringMatch(s)
@@ -282,7 +283,7 @@ func inferPortFromCommand(command any) (*int, error) {
 		if m != nil {
 			n, ok := pystr.IntText(m.GroupByNumber(1).String())
 			if !ok {
-				return nil, fmt.Errorf("invalid literal for int() with base 10: %s", pyrepr.Repr(m.GroupByNumber(1).String()))
+				return nil, fmt.Errorf("port %s in the start command is not a number", m.GroupByNumber(1).String())
 			}
 			p := int(n.Int64())
 			return &p, nil

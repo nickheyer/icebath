@@ -4,6 +4,7 @@ import (
 	"context"
 	"slices"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
 )
@@ -69,7 +70,7 @@ func followBotChat(ctx context.Context, a *SessionAuthority, sessionID string, p
 		}
 		target, isDict := held.(*pyjson.Object)
 		if !isDict {
-			return nil, &PyError{Kind: "TypeError", Msg: "'" + jsonValueTypeName(held) + "' object does not support item assignment"}
+			return nil, &PyError{Kind: "TypeError", Msg: "the held bot chat record is " + errchain.Kind(held) + ", expected a mapping"}
 		}
 		name, providerName := profileTarget(live)
 		target.Set("selection_profile", []any{name, providerName})

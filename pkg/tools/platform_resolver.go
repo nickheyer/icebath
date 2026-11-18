@@ -520,7 +520,7 @@ func platformPlistVersion(bundle string) (observation[string], error) {
 	}
 	d, ok := info.(*pyplist.Dict)
 	if !ok {
-		return observation[string]{}, &pyplist.Error{Class: "AttributeError", Msg: fmt.Sprintf("object has no attribute 'get'")}
+		return observation[string]{}, &pyplist.Error{Class: "AttributeError", Msg: "the property list is not a dictionary"}
 	}
 	value, _ := d.Get("CFBundleShortVersionString")
 	if !pyTruthy(platformPlistTruthValue(value)) {

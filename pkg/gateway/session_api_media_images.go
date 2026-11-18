@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
@@ -138,7 +139,7 @@ func RestoreAPIImages(ctx context.Context, content []any, media []any) ([]any, e
 	current, _ := text.Get("text")
 	body, ok := current.(string)
 	if !ok {
-		return nil, &PyError{Kind: "TypeError", Msg: "unsupported operand type(s) for +: '" + jsonValueTypeName(current) + "' and 'str'"}
+		return nil, &PyError{Kind: "TypeError", Msg: "the API turn text is " + errchain.Kind(current) + ", expected text"}
 	}
 	text.Set("text", body+"\n\n"+strings.Join(hints, "\n"))
 	return parts, nil
@@ -155,7 +156,7 @@ func rehydrateAPIImages(ctx context.Context, content any, media any) (any, error
 	for _, reference := range references {
 		obj, isObj := reference.(*pyjson.Object)
 		if !isObj {
-			return nil, &PyError{Kind: "TypeError", Msg: "'" + jsonValueTypeName(reference) + "' object is not subscriptable"}
+			return nil, &PyError{Kind: "TypeError", Msg: "an API image reference is " + errchain.Kind(reference) + ", expected a mapping"}
 		}
 		digest, found := obj.Get("sha256")
 		if !found {

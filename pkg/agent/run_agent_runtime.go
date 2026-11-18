@@ -268,7 +268,7 @@ func parsePyFloat(raw string) (float64, error) {
 		return strconv.ParseFloat(s, 64)
 	}
 	if strings.Contains(s, "__") || strings.HasPrefix(s, "_") || strings.HasSuffix(s, "_") {
-		return 0, fmt.Errorf("could not convert string to float: %q", raw)
+		return 0, fmt.Errorf("%s is not a number", raw)
 	}
 	return strconv.ParseFloat(strings.ReplaceAll(s, "_", ""), 64)
 }
@@ -289,7 +289,7 @@ func (a *AIAgent) resolvedAPICallStaleTimeoutBase(ctx context.Context) (float64,
 	if env, ok := os.LookupEnv("ICEBATH_API_CALL_STALE_TIMEOUT"); ok {
 		v, err := parsePyFloat(env)
 		if err != nil {
-			panic(fmt.Errorf("could not convert string to float: '%s'", env))
+			panic(fmt.Errorf("ICEBATH_API_CALL_STALE_TIMEOUT is %s, which is not a number", env))
 		}
 		return v, false
 	}

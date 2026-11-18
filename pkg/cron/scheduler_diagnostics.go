@@ -29,12 +29,12 @@ func formatRunError(s *Store, err error) string {
 	return "## Error\n\n```\n" + text + "\n```\n"
 }
 
-// Exception line as traceback prints it, the bare class name when the message is empty
+// Message of one error of the chain on its own line, a fixed phrase when the error has no message
 func exceptionOnlyLine(err error) string {
 	if msg := err.Error(); msg != "" {
-		return cronExceptionName(err) + ": " + msg + "\n"
+		return msg + "\n"
 	}
-	return cronExceptionName(err) + "\n"
+	return "an error with no message\n"
 }
 
 // Redacted tail of an external worker's captured stderr as a message suffix, empty when nothing was captured

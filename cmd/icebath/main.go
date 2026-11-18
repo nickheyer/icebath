@@ -10,7 +10,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/commands"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/pm"
-	"github.com/nickheyer/icebath/pkg/selfupdate"
 	"github.com/spf13/cobra"
 )
 
@@ -25,19 +24,13 @@ func main() {
 	if code, ok := runSQLiteRuntimeVerb(os.Args[1:], os.Stdout, os.Stderr); ok {
 		os.Exit(code)
 	}
-	for _, step := range tierBeforeStart {
-		step(os.Args)
-	}
+	runStartupPhase(phaseBeforeStart, os.Args)
 	startProcess(context.Background())
 	args, pinned := pm.LauncherStart(pm.RepoRoot(), os.Args)
-	if restoreInterruptedPull() {
-		relaunchAfterRestore()
-	}
+	runStartupPhase(phaseAfterLauncher, os.Args)
 	os.Args = args
 	pm.PinLauncherHome()
-	if handoff, tail, ok := pm.LegacyPostSwapInvocation(os.Args[1:]); ok {
-		exit(selfupdate.LegacyPostSwapMain(context.Background(), handoff, tail, os.Stderr))
-	}
+	runStartupPhase(phaseAfterPinHome, os.Args)
 	if legacy, ok := app.LegacyAgentArgv(os.Args); ok {
 		exit(app.LegacyAgentMain(context.Background(), legacy, os.Stdout, os.Stderr, nil))
 	}
@@ -61,7 +54,7 @@ func main() {
 	if len(argv) > 0 && argv[0] == "pm" {
 		exit(runCLI(argv))
 	}
-	ensureBinLaunchers()
+	runStartupPhase(phaseBeforeDotenv, os.Args)
 	loadDotenv()
 	forceIPv4 := applyEarlyConfig()
 	if serverProcess(argv) {
@@ -80,16 +73,7 @@ func run(argv []string) int {
 	warnIfUnsupervisedPID1(os.Getpid())
 	advertiseAgentEnv()
 	installTruststore()
-	cleanupQuarantinedExes()
-	selfupdate.SweepStaleBytecodeIfCheckoutChanged()
-	recoverUpdateDebtsOnStartup()
-	first, _ := firstPositional(argv)
-	if first != "update" {
-		maybeRunBootBootstrap(pm.InstallRoot())
-	}
-	if problem := checkRuntime(pm.InstallRoot()); problem != "" {
-		fmt.Fprintln(os.Stderr, "⚠ "+problem)
-	}
+	runStartupPhase(phaseRun, argv)
 	for _, fast := range []func([]string) (bool, int){tryTermuxFastTUILaunch, tryTermuxFastCLILaunch, tryFastChatLaunch} {
 		if handled, code := fast(argv); handled {
 			return code

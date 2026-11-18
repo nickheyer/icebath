@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"reflect"
 	"strings"
@@ -308,7 +309,7 @@ func salvageOrRefuseGrownTranscript(ctx context.Context, a *AIAgent, original, c
 	swallowCompression("could not record rejected-compaction strike", true, func() error {
 		recorder, ok := a.contextCompressor.(rejectedCompactionRecorder)
 		if !ok {
-			return fmt.Errorf("%T object has no attribute 'record_rejected_compaction'", a.contextCompressor)
+			return errors.New("the context compressor cannot record rejected compactions")
 		}
 		recorder.RecordRejectedCompaction()
 		return nil
@@ -371,7 +372,7 @@ func carrySessionStateToChild(ctx context.Context, a *AIAgent, oldSessionID, old
 	var src *string
 	swallowCompression("Could not read title provenance", false, func() error {
 		if a.sessionDB == nil {
-			return fmt.Errorf("'NoneType' object has no attribute 'get_session_title_source'")
+			return errors.New("no session store to read title provenance from")
 		}
 		s, found, err := a.sessionDB.GetSessionTitleSource(ctx, oldSessionID)
 		if err == nil && found {
@@ -380,7 +381,7 @@ func carrySessionStateToChild(ctx context.Context, a *AIAgent, oldSessionID, old
 		return err
 	})
 	if a.sessionDB == nil {
-		pkgLog().Debug("Could not propagate title on compression: 'NoneType' object has no attribute 'set_session_title'")
+		pkgLog().Debug("Could not propagate title on compression: no session store")
 		return
 	}
 	if _, err := a.sessionDB.SetSessionTitle(ctx, a.sessionID, oldTitle); err != nil {

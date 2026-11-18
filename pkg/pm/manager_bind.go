@@ -8,20 +8,9 @@ func init() {
 	ensurePythonToolEntry = managedEnsurePythonTool
 	ensureExtraEntry = managedEnsureExtra
 	extraSupportedEntry = managedExtraSupported
-	payloadVenvEntry = managedPayloadVenv
-	selectedVenvEntry = managedSelectedVenv
-	sitePackagesEntry = managedSitePackages
 	pythonToolEntry = managedPythonTool
-	pinnedPythonVersionEntry = managedPinnedPythonVersion
 	venvCommandEntry = managedVenvCommand
-	baseVenvEntry = managedBaseVenv
 	anchorImportableEntry = managedAnchorImportable
-	projectPythonEntry = managedProjectPython
-	selectedSitePackagesEntry = managedSelectedSitePackages
-	selectedEntryPointsEntry = managedSelectedEntryPoints
-	resolveModuleOriginEntry = managedResolveModuleOrigin
-	runningFromSelectedEnvironmentEntry = managedRunningFromSelectedEnvironment
-	distInstalledEntry = managedDistInstalled
 	requirementAppliesHereEntry = managedRequirementAppliesHere
 	activationEnvironmentEntry = managedActivationEnvironment
 	venvIsCurrentEntry = managedVenvIsCurrent
@@ -37,6 +26,5 @@ func init() {
 	runtimeEnvironmentReadyEntry = managedRuntimeEnvironmentReady
 	nemoRelayWheelEntry = managedNemoRelayWheel
 	activateDependenciesEntry = managedActivateDependencies
-	committedVenvEntry = managedCommittedVenv
 	runtimeRequirementsEntry = managedRuntimeRequirements
 }

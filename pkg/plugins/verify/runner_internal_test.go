@@ -249,9 +249,9 @@ func TestStartGating(t *testing.T) {
 	})
 	t.Run("readiness_url_refusals", func(t *testing.T) {
 		for url, want := range map[string]string{
-			"http://127.0.0.1:True/":  "nonnumeric port: 'True'",
-			"http://127.0.0.1:80/a b": "URL can't contain control characters. '/a b' (found at least ' ')",
-			"http://127.0.0.1:80/hé":  "'ascii' codec can't encode character '\\xe9' in position 6: ordinal not in range(128)",
+			"http://127.0.0.1:True/":  "readiness URL port True is not a number",
+			"http://127.0.0.1:80/a b": "readiness URL path /a b holds a space or control character",
+			"http://127.0.0.1:80/hé":  "readiness URL path holds the non-ASCII character é at position 2, which a request line cannot carry",
 		} {
 			_, _, _, err := pollReadiness(url, 1, time.Millisecond)
 			var re *RequestError

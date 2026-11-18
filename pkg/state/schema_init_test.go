@@ -421,7 +421,7 @@ func TestMessageUIDBackfillResumesAcrossOpens(t *testing.T) {
 	}
 	mustExecConn(t, conn, "DELETE FROM state_meta WHERE key = 'message_uid_backfill'")
 	mustExecConn(t, conn, "INSERT INTO state_meta (key, value) VALUES ('message_uid_backfill_id', 'abc')")
-	if err := schema.advanceMessageUIDBackfill(ctx, conn); err == nil || !strings.Contains(err.Error(), "invalid literal for int()") {
+	if err := schema.advanceMessageUIDBackfill(ctx, conn); err == nil || !strings.Contains(err.Error(), "the message uid backfill cursor abc is not a whole number") {
 		t.Fatalf("bad cursor %v", err)
 	}
 }

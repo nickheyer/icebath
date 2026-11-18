@@ -13,6 +13,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -831,7 +832,7 @@ func (s *Store) runAgentWithWatchdog(ctx context.Context, a CronAgent, prompt st
 		return nil, future.err
 	}
 	if future.result == nil {
-		return nil, errors.New("agent.run_conversation returned NoneType instead of dict: None")
+		return nil, errors.New("the cron agent returned no result")
 	}
 	return future.result, nil
 }
@@ -1210,7 +1211,7 @@ func cronConfigSection(cfg config.Tree, key string) (map[string]any, error) {
 	}
 	section, ok := raw.(map[string]any)
 	if !ok {
-		return nil, fmt.Errorf("'%s' object has no attribute 'get'", pyrepr.TypeName(raw))
+		return nil, fmt.Errorf("the %s section of config.yaml is %s, expected a mapping", key, errchain.Kind(raw))
 	}
 	return section, nil
 }
@@ -1425,7 +1426,11 @@ func (s *Store) runJob(ctx context.Context, job *Job, o runJobOptions) (jobRunOu
 	if runErr == nil {
 		return outcome, nil
 	}
-	errorMsg := fmt.Sprintf("%s: %s", cronExceptionName(runErr), runErr.Error())
+	errorMsg := runErr.Error()
+	if errorMsg == "" {
+		errorMsg = "the run failed with no error message"
+	}
+	job.run.failureReason = string(provider.ClassifyError(provider.ClassifyInput{Err: runErr}).Reason)
 	s.log.Error(fmt.Sprintf("Job '%s' failed: %s", jobName, errorMsg))
 	apiCalls := 0
 	if a != nil {

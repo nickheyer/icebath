@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/fnmatch"
 	"github.com/nickheyer/icebath/pkg/internal/pyfs"
@@ -411,9 +412,9 @@ func ResolvePluginPath(ctx context.Context, target string) (string, error) {
 			hint = fmt.Sprintf("Point Doctor at a plugin directory inside it: %s.", strings.Join(nested, ", "))
 		}
 		return "", &PluginPathNotFoundError{fmt.Sprintf("%s holds no plugin manifest (%s), and %s is not an installed plugin id. %s",
-			resolved, strings.Join(doctorManifestNames, ", "), config.PyRepr(raw), hint)}
+			resolved, strings.Join(doctorManifestNames, ", "), errchain.Show(raw), hint)}
 	}
-	return "", &PluginPathNotFoundError{fmt.Sprintf("Plugin %s was not found as a path or installed plugin id", config.PyRepr(raw))}
+	return "", &PluginPathNotFoundError{fmt.Sprintf("Plugin %s was not found as a path or installed plugin id", errchain.Show(raw))}
 }
 
 var (
@@ -432,16 +433,16 @@ func checkManifestV2(r *PluginDoctorReport, mf *Manifest) {
 	}
 	for _, dep := range mf.RequiresPlugins {
 		if dep.ID == "" {
-			vr := "None"
+			vr := "none"
 			if dep.VersionRange != "" {
-				vr = config.PyRepr(dep.VersionRange)
+				vr = dep.VersionRange
 			}
-			r.addWarning(fmt.Sprintf("requires_plugins entry {'id': %s, 'version_range': %s} has no plugin id", config.PyRepr(dep.ID), vr))
+			r.addWarning(fmt.Sprintf("requires_plugins entry with version_range %s has no plugin id", vr))
 			continue
 		}
 		if dep.VersionRange != "" {
 			r.addWarning(fmt.Sprintf("requires plugin %s (%s) — version ranges are advisory; a missing dependency logs a warning at load",
-				config.PyRepr(dep.ID), dep.VersionRange))
+				errchain.Show(dep.ID), dep.VersionRange))
 		}
 	}
 	for _, key := range configSchemaKeys(mf) {
@@ -451,7 +452,7 @@ func checkManifestV2(r *PluginDoctorReport, mf *Manifest) {
 			continue
 		}
 		if _, known := ConfigSchemaTypes[strings.ToLower(config.PyStr(stype))]; !known {
-			r.addWarning(fmt.Sprintf("config_schema key %s declares unknown type %s", config.PyRepr(key), config.PyRepr(stype)))
+			r.addWarning(fmt.Sprintf("config_schema key %s declares unknown type %s", errchain.Show(key), errchain.Show(stype)))
 		}
 	}
 }
@@ -551,12 +552,12 @@ func doctorPlugin(ctx context.Context, target string) (*PluginDoctorReport, erro
 			if s, isStr := name.(string); !isStr {
 				report.addError("provides_hooks entries must be strings")
 			} else if !validHooks[s] {
-				report.addError(fmt.Sprintf("unknown hook %s in provides_hooks", config.PyRepr(s)))
+				report.addError(fmt.Sprintf("unknown hook %s in provides_hooks", errchain.Show(s)))
 			}
 		}
 		for _, hookName := range doctorHookOrder(host) {
 			if !validHooks[hookName] {
-				report.addError(fmt.Sprintf("registered unknown hook %s", config.PyRepr(hookName)))
+				report.addError(fmt.Sprintf("registered unknown hook %s", errchain.Show(hookName)))
 			}
 			host.manager.mu.RLock()
 			entries := append([]*hookEntry{}, host.manager.hooks[hookName]...)
@@ -564,7 +565,7 @@ func doctorPlugin(ctx context.Context, target string) (*PluginDoctorReport, erro
 			for _, entry := range entries {
 				if !entry.acceptsVarKwargs() {
 					report.addError(fmt.Sprintf("hook callback %s for %s must accept **kwargs for forward compatibility",
-						config.PyRepr(entry.name), config.PyRepr(hookName)))
+						errchain.Show(entry.name), errchain.Show(hookName)))
 				}
 			}
 		}
@@ -584,12 +585,12 @@ func doctorPlugin(ctx context.Context, target string) (*PluginDoctorReport, erro
 			}
 			for _, name := range sortedSet(declaredNames) {
 				if !registeredNames[name] {
-					report.addWarning(fmt.Sprintf("manifest declares %s %s but registration did not add it", check.kind, config.PyRepr(name)))
+					report.addWarning(fmt.Sprintf("manifest declares %s %s but registration did not add it", check.kind, errchain.Show(name)))
 				}
 			}
 			for _, name := range sortedSet(registeredNames) {
 				if !declaredNames[name] {
-					report.addWarning(fmt.Sprintf("registration adds %s %s not listed in provides_%ss", check.kind, config.PyRepr(name), check.kind))
+					report.addWarning(fmt.Sprintf("registration adds %s %s not listed in provides_%ss", check.kind, errchain.Show(name), check.kind))
 				}
 			}
 		}

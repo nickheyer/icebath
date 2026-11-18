@@ -23,6 +23,7 @@ import (
 	"github.com/dlclark/regexp2/v2"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
@@ -91,7 +92,7 @@ func orEmptyDict(cfg map[string]any, key string) (map[string]any, error) {
 	if m, ok := asStrMap(v); ok {
 		return m, nil
 	}
-	return nil, &ttsAttributeError{msg: fmt.Sprintf("'%s' object has no attribute 'get'", pyrepr.TypeName(v))}
+	return nil, &ttsAttributeError{msg: fmt.Sprintf("config %s is %s where a mapping was expected", key, errchain.Kind(v))}
 }
 
 // Python type error raised by a builtin conversion
@@ -104,7 +105,7 @@ func ttsFloat(v any) (float64, error) {
 	if s, ok := v.(string); ok {
 		f, err := pyint.ParseFloat(s)
 		if err != nil {
-			return 0, &ttsValueError{msg: fmt.Sprintf("could not convert string to float: %s", pyrepr.Repr(s))}
+			return 0, &ttsValueError{msg: fmt.Sprintf("%s is not a number", s)}
 		}
 		return f, nil
 	}
@@ -117,7 +118,7 @@ func ttsFloat(v any) (float64, error) {
 	if f, ok := pyRealNumber(v); ok {
 		return f, nil
 	}
-	return 0, &ttsTypeError{msg: fmt.Sprintf("float() argument must be a string or a real number, not '%s'", pyrepr.TypeName(v))}
+	return 0, &ttsTypeError{msg: fmt.Sprintf("expected a number, got %s", errchain.Kind(v))}
 }
 
 // Python int() of a config value, truncating floats and parsing base ten strings
@@ -138,7 +139,7 @@ func pyInt(v any) (int, error) {
 		if i, err := strconv.Atoi(s); err == nil && pystr.Strip(n) != "" {
 			return i, nil
 		}
-		return 0, &ttsValueError{msg: fmt.Sprintf("invalid literal for int() with base 10: %s", pyrepr.Repr(n))}
+		return 0, &ttsValueError{msg: fmt.Sprintf("%s is not a whole number", errchain.Show(n))}
 	}
 	if i := ttsPositiveInt(v); i > 0 {
 		return i, nil
@@ -146,7 +147,7 @@ func pyInt(v any) (int, error) {
 	if f, ok := pyRealNumber(v); ok {
 		return int(f), nil
 	}
-	return 0, &ttsTypeError{msg: fmt.Sprintf("int() argument must be a string, a bytes-like object or a real number, not '%s'", pyrepr.TypeName(v))}
+	return 0, &ttsTypeError{msg: fmt.Sprintf("expected a whole number, got %s", errchain.Kind(v))}
 }
 
 // OpenAI style response format picked from the output extension
@@ -285,7 +286,7 @@ func parseTTSJSONBody(raw []byte) (map[string]any, error) {
 		return map[string]any{}, nil
 	}
 	if !utf8.Valid(raw) {
-		return nil, &ttsValueError{msg: "'utf-8' codec can't decode the response body"}
+		return nil, &ttsValueError{msg: "the response body is not valid UTF-8"}
 	}
 	var v any
 	if err := json.Unmarshal(raw, &v); err != nil {
@@ -533,11 +534,7 @@ func clampedNumber(raw any, asInt bool, lo, hi float64) (any, error) {
 		return nil, nil
 	}
 	if s, ok := raw.(string); ok && s == "" {
-		kind := "float"
-		if asInt {
-			kind = "int"
-		}
-		return nil, &ttsTypeError{msg: fmt.Sprintf("'<' not supported between instances of 'str' and '%s'", kind)}
+		return nil, &ttsTypeError{msg: "expected a number, got empty text"}
 	}
 	if asInt {
 		i, err := pyInt(raw)
@@ -1114,21 +1111,21 @@ func geminiAudioPayload(data map[string]any) (string, error) {
 	candidates, ok := data["candidates"].([]any)
 	if !ok {
 		if _, present := data["candidates"]; !present {
-			return "", malformed("'candidates'")
+			return "", malformed("no candidates")
 		}
-		return "", malformed("'NoneType' object is not subscriptable")
+		return "", malformed(fmt.Sprintf("candidates is %s where a list was expected", errchain.Kind(data["candidates"])))
 	}
 	if len(candidates) == 0 {
-		return "", malformed("list index out of range")
+		return "", malformed("the candidates list is empty")
 	}
 	first, _ := asStrMap(candidates[0])
 	content, ok := asStrMap(first["content"])
 	if !ok {
-		return "", malformed("'content'")
+		return "", malformed("the first candidate has no content")
 	}
 	parts, ok := content["parts"].([]any)
 	if !ok {
-		return "", malformed("'parts'")
+		return "", malformed("the first candidate content has no parts")
 	}
 	for _, p := range parts {
 		part, _ := asStrMap(p)

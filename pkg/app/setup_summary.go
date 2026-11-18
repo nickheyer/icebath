@@ -10,7 +10,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/media"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/provider"
 )
@@ -161,23 +160,8 @@ func setupProviderAvailable(p provider.CatalogProviderBase) (available bool) {
 	return p.IsAvailable()
 }
 
-// Registered image and video generation providers as catalog providers, the agent registries the summary probes
-var (
-	setupImageGenProviders = func(ctx context.Context) []provider.CatalogProviderBase {
-		var out []provider.CatalogProviderBase
-		for _, p := range media.ListImageGenProviders(ctx, "") {
-			out = append(out, p)
-		}
-		return out
-	}
-	setupVideoGenProviders = func(ctx context.Context) []provider.CatalogProviderBase {
-		var out []provider.CatalogProviderBase
-		for _, p := range media.ListVideoGenProviders(ctx, "") {
-			out = append(out, p)
-		}
-		return out
-	}
-)
+// Registered image and video generation providers as catalog providers, set by the media backends and nil in a build without them
+var setupImageGenProviders, setupVideoGenProviders func(ctx context.Context) []provider.CatalogProviderBase
 
 // Row of a tool feature, available with its provider before the missing hint
 func providerRow(feature provider.ToolFeatureState, name, missingHint string) toolStatusRow {
@@ -219,8 +203,11 @@ func browserRow(_ context.Context, _ config.Tree, feats provider.ToolFeatures) (
 	return []toolStatusRow{providerRow(browser, "Browser Automation", hint)}, nil
 }
 
-// Image generation through FAL directly, else the first available plugin provider
+// Image generation through FAL directly, else the first available plugin provider, absent without the media backends
 func imageGenRow(ctx context.Context, _ config.Tree, feats provider.ToolFeatures) ([]toolStatusRow, error) {
+	if setupImageGenProviders == nil {
+		return nil, nil
+	}
 	if feats.Feature("image_gen").Available {
 		return []toolStatusRow{{name: "Image Generation", available: true}}, nil
 	}
@@ -232,6 +219,9 @@ func imageGenRow(ctx context.Context, _ config.Tree, feats provider.ToolFeatures
 
 // Video generation, shown only when a plugin provider reports available
 func videoGenRow(ctx context.Context, _ config.Tree, _ provider.ToolFeatures) ([]toolStatusRow, error) {
+	if setupVideoGenProviders == nil {
+		return nil, nil
+	}
 	if backend := firstAvailablePluginProvider(ctx, setupVideoGenProviders(ctx), ""); backend != "" {
 		return []toolStatusRow{{name: "Video Generation (" + backend + ")", available: true}}, nil
 	}

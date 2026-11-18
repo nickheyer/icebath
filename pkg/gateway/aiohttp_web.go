@@ -439,7 +439,7 @@ func (a *HTTPApp) addResource(path string) (*webResource, error) {
 		return nil, err
 	}
 	if a.frozen {
-		return nil, errors.New("RuntimeError: Cannot register a resource into frozen router.")
+		return nil, errors.New("cannot add a route after the server started")
 	}
 	a.resources = append(a.resources, res)
 	a.index[res.indexKey] = append(a.index[res.indexKey], res)
@@ -453,7 +453,7 @@ func (res *webResource) addRoute(method string, handler WebHandler) error {
 		if res.anyRoute != nil && !taken {
 			registered = "*"
 		}
-		return fmt.Errorf("RuntimeError: Added route will never be executed, method %s is already registered", registered)
+		return fmt.Errorf("a route for method %s is already registered, the new one would never run", registered)
 	}
 	if method == "*" {
 		res.anyRoute = handler

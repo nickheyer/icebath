@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"regexp"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
+	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
@@ -290,7 +292,7 @@ var stageToolCallMessage = func(a *AIAgent, assistantMessage *provider.Response,
 	msg := assistantMessage.Message
 	turnContent, isText := msg.Content.(string)
 	if !isText && pyrepr.Truthy(msg.Content) {
-		return nil, false, &pyrepr.FormatError{Class: "AttributeError", Msg: fmt.Sprintf("'%s' object has no attribute 'strip'", pyrepr.TypeName(msg.Content))}
+		return nil, false, &pyint.Error{Kind: "AttributeError", Msg: fmt.Sprintf("assistant message content is %s where text was expected", errchain.Kind(msg.Content))}
 	}
 
 	if len(msg.ToolCalls) > 0 && toolCallStaleMarkerRE.MatchString(pystr.Strip(turnContent)) {

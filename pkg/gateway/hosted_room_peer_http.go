@@ -431,7 +431,7 @@ func (c *PeerRunsHTTPClient) httpError(resp *http.Response, method, path string,
 	}
 	flags.retryable = code == 408 || code == 425 || code == 429 || code >= 500
 	flags.errorCode = errorCode
-	failure := newPeerRunsHTTPError(message, flags, fmt.Errorf("HTTP Error %d: %s", code, http.StatusText(code)))
+	failure := newPeerRunsHTTPError(message, flags, fmt.Errorf("HTTP %d %s", code, http.StatusText(code)))
 	failure.Detail = peerResponseErrorMessage(detail)
 	return failure
 }

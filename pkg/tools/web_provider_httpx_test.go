@@ -135,7 +135,7 @@ func TestNormalizeTavilySearchResults(t *testing.T) {
 	if w := resp.Data.Web[0]; w.Title != "" || w.URL != "" || w.Description != "" {
 		t.Fatalf("%+v", w)
 	}
-	if _, err := normalizeTavilySearchResults(decodeAny(`[1]`)); err == nil || err.Error() != "'list' object has no attribute 'get'" {
+	if _, err := normalizeTavilySearchResults(decodeAny(`[1]`)); err == nil || err.Error() != "expected a mapping, got a list" {
 		t.Fatalf("%v", err)
 	}
 }

@@ -106,7 +106,7 @@ func TestTodoRestoreAndTool(t *testing.T) {
 		t.Fatal(r)
 	}
 	env.Values.Store(TodoToolName, s)
-	if r := todoTool(TodoStoreOf(env), "nope", false); !strings.Contains(r, "todos must be a list, got str") {
+	if r := todoTool(TodoStoreOf(env), "nope", false); !strings.Contains(r, "todos must be a list, got text") {
 		t.Fatal(r)
 	}
 	out := mustJSON(t, todoTool(s, todoItems("1", "a", "pending", "2", "b", "cancelled"), false))

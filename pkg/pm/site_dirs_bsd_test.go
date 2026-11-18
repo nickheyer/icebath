@@ -1,4 +1,4 @@
-//go:build darwin || freebsd
+//go:build (darwin || freebsd) && !icebath_core && !icebath_noextras
 
 package pm
 

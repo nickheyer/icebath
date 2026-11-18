@@ -12,6 +12,7 @@ import (
 
 	"github.com/dlclark/regexp2/v2"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/hostinfo"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -145,7 +146,7 @@ func livenessFieldsTypeError(raw map[string]any) error {
 	}
 	if f := raw["fields"]; pyrepr.Truthy(f) {
 		if _, ok := f.(map[string]any); !ok {
-			return fmt.Errorf("'%s' object is not a mapping", pyTypeName(f))
+			return fmt.Errorf("catalog presence fields are %s where a mapping was expected", errchain.Kind(f))
 		}
 	}
 	return nil
@@ -243,7 +244,7 @@ func CatalogPresence(ctx context.Context, entry *PluginCatalogEntry) (Presence, 
 	}
 	extMap, ok := ext.(map[string]any)
 	if !ok {
-		return Presence{}, fmt.Errorf("'%s' object has no attribute 'get'", pyTypeName(ext))
+		return Presence{}, fmt.Errorf("plugin catalog extensions are %s where a mapping was expected", errchain.Kind(ext))
 	}
 	vendor, present := extMap[PortableExtension]
 	if !present {
@@ -251,7 +252,7 @@ func CatalogPresence(ctx context.Context, entry *PluginCatalogEntry) (Presence, 
 	}
 	vendorMap, ok := vendor.(map[string]any)
 	if !ok {
-		return Presence{}, fmt.Errorf("'%s' object has no attribute 'get'", pyTypeName(vendor))
+		return Presence{}, fmt.Errorf("plugin catalog vendor extension is %s where a mapping was expected", errchain.Kind(vendor))
 	}
 	rawServers := vendorMap["servers"]
 	if !pyrepr.Truthy(rawServers) {
@@ -287,7 +288,7 @@ func CatalogPresence(ctx context.Context, entry *PluginCatalogEntry) (Presence, 
 			rawReq = d.Requires
 		}
 		var pd *tools.PlatformDeclaration
-		pd, err = tools.ParsePlatformDeclaration(name, rawApp, rawReq, "plugin.json extension server "+pyrepr.Repr(name))
+		pd, err = tools.ParsePlatformDeclaration(name, rawApp, rawReq, "plugin.json extension server "+errchain.Show(name))
 		ordered = append(ordered, parsedDecl{pd, d.Liveness})
 	}
 	if err != nil {

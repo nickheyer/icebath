@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"context"
+	"math"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -102,12 +103,15 @@ func (c *PendingControls) register(ctx context.Context, sessionID, route string,
 		prompt.Set("choices", []any{"once", "deny"})
 	}
 	if timeoutS != nil {
-		prompt.Set("timeout_s", *timeoutS)
+		prompt.Set("timeout_s", wholeSeconds(*timeoutS))
 	}
 	c.hold(promptID, route, prompt)
 	c.events.Publish(sessionID, prompt, "approval.request", nil)
 	return nil
 }
+
+// Whole seconds of a prompt timeout as its wire field carries them, a fraction rounded up
+func wholeSeconds(seconds float64) int64 { return int64(math.Ceil(seconds)) }
 
 // Projects a clarify question of the generation to the session's viewers
 func (c *PendingControls) registerClarify(ctx context.Context, sessionID string, generation int64, entry *tools.ClarifyEntry, timeoutS *float64) error {
@@ -120,7 +124,7 @@ func (c *PendingControls) registerClarify(ctx context.Context, sessionID string,
 	prompt := pyjson.ObjectOf("kind", "clarify", "prompt_id", entry.ClarifyID, "execution_generation", generation,
 		"question", redactApprovalCommand(ctx, entry.Question), "choices", choices, "multi_select", entry.MultiSelect)
 	if timeoutS != nil {
-		prompt.Set("timeout_s", *timeoutS)
+		prompt.Set("timeout_s", wholeSeconds(*timeoutS))
 	}
 	c.hold(entry.ClarifyID, entry, prompt)
 	c.events.Publish(sessionID, prompt, "clarify.request", nil)

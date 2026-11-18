@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyipaddress"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -56,7 +57,7 @@ func hostedParseLinkModes(raw any) ([]string, error) {
 	for _, item := range items {
 		switch item.(type) {
 		case []any, map[string]any, *pyjson.Object:
-			return nil, &PyError{Kind: "TypeError", Msg: "unhashable type: '" + pyTypeName(item) + "'"}
+			return nil, &PyError{Kind: "TypeError", Msg: "a link mode is " + errchain.Kind(item) + ", expected text"}
 		}
 		mode, ok := item.(string)
 		if !ok || !hostedLinkModes[mode] {
@@ -326,7 +327,7 @@ func CatalogMapping(ctx context.Context, o CatalogOptions) (*pyjson.Object, erro
 	}
 	endpointFields, ok := hostedMapping(endpoint)
 	if !ok {
-		return nil, &PyError{Kind: "TypeError", Msg: "'" + pyTypeName(endpoint) + "' object is not iterable"}
+		return nil, &PyError{Kind: "TypeError", Msg: "the catalog endpoint is " + errchain.Kind(endpoint) + ", expected a list"}
 	}
 	endpointCopy := pyjson.NewObject()
 	if ordered, isObject := endpoint.(*pyjson.Object); isObject {

@@ -6,6 +6,7 @@ import (
 	"strconv"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
@@ -89,11 +90,11 @@ func pyFloat(v any) (float64, error) {
 	case string:
 		f, err := strconv.ParseFloat(pystr.Strip(n), 64)
 		if err != nil {
-			return 0, fmt.Errorf("could not convert string to float: '%s'", n)
+			return 0, fmt.Errorf("expected a number, got %s", errchain.Show(n))
 		}
 		return f, nil
 	}
-	return 0, fmt.Errorf("float() argument must be a string or a real number, not '%T'", v)
+	return 0, fmt.Errorf("expected a number, got %s", errchain.Kind(v))
 }
 
 // Rebases the pending prepared MoA request onto the new messages or prepares a fresh one

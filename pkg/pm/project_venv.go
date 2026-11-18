@@ -1,5 +1,3 @@
-//go:build !icebath_core && !icebath_noextras
-
 package pm
 
 import (

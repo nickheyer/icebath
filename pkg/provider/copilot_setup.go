@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
@@ -250,14 +251,14 @@ func copilotPyInt(v any) (int, error) {
 	case string:
 		i, err := strconv.Atoi(pystr.Strip(strings.ReplaceAll(n, "_", "")))
 		if err != nil {
-			return 0, fmt.Errorf("invalid literal for int() with base 10: %s", pyStringRepr(n))
+			return 0, fmt.Errorf("%s is not a whole number", pyStringRepr(n))
 		}
 		return i, nil
 	}
 	if f, ok := cpFloat(v); ok {
 		return int(f), nil
 	}
-	return 0, fmt.Errorf("int() argument must be a string, a bytes-like object or a real number, not '%s'", copilotJSONTypeName(v))
+	return 0, fmt.Errorf("expected a whole number, got %s", errchain.Kind(v))
 }
 
 // Python int of value or a default when the value is falsy

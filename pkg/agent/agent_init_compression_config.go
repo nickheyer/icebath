@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
@@ -103,13 +104,13 @@ func compressionCodexSettings(cfg map[string]any) (string, bool, *int) {
 	}
 	appServerAuto, valid := CodexAppServerAutoMode(pyrepr.Str(raw))
 	if !valid {
-		pkgLog().Warn(fmt.Sprintf("Invalid compression.codex_app_server_auto=%s; using 'native'. Valid values are: native, icebath, off.", pyrepr.Repr(strings.ToLower(pyrepr.Str(raw)))))
+		pkgLog().Warn(fmt.Sprintf("Invalid compression.codex_app_server_auto=%s; using 'native'. Valid values are: native, icebath, off.", errchain.Show(strings.ToLower(pyrepr.Str(raw)))))
 	}
 	responsesNative := isTruthyValue(cfgValue(cfg, "codex_responses_native", false), false)
 	var compactThreshold *int
 	if rawThreshold := cfg["codex_responses_compact_threshold"]; rawThreshold != nil {
 		if compactThreshold = configPositiveInt(rawThreshold, true); compactThreshold == nil {
-			pkgLog().Warn(fmt.Sprintf("Invalid compression.codex_responses_compact_threshold=%s; using the automatic threshold derived from local compression.", pyrepr.Repr(rawThreshold)))
+			pkgLog().Warn(fmt.Sprintf("Invalid compression.codex_responses_compact_threshold=%s; using the automatic threshold derived from local compression.", errchain.Show(rawThreshold)))
 		}
 	}
 	return appServerAuto, responsesNative, compactThreshold
@@ -202,7 +203,7 @@ func parseCompressionConfig(a *AIAgent, agentCfg map[string]any) (CompressionSet
 
 // Logs an invalid integer config value and prints it to stderr when the warning policy shows diagnostics
 func warnInvalidConfigInt(ctx context.Context, what string, value any, requirement, fallback, printFallback string, a *AIAgent) {
-	pkgLog().Warn(fmt.Sprintf("Invalid %s: %s — %s. Falling back to %s.", what, pyrepr.Repr(value), requirement, fallback))
+	pkgLog().Warn(fmt.Sprintf("Invalid %s: %s — %s. Falling back to %s.", what, errchain.Show(value), requirement, fallback))
 	enabled := true
 	func() {
 		defer func() { _ = recover() }()
@@ -218,5 +219,5 @@ func warnInvalidConfigInt(ctx context.Context, what string, value any, requireme
 	if printFallback == "" {
 		printFallback = fallback
 	}
-	fmt.Fprintf(invalidConfigStderr, "\n⚠ Invalid %s: %s\n  %s.\n  Falling back to %s.\n\n", what, pyrepr.Repr(value), pystr.Upper(requirement[:1])+requirement[1:], printFallback)
+	fmt.Fprintf(invalidConfigStderr, "\n⚠ Invalid %s: %s\n  %s.\n  Falling back to %s.\n\n", what, errchain.Show(value), pystr.Upper(requirement[:1])+requirement[1:], printFallback)
 }

@@ -130,7 +130,7 @@ func TestXAIModelResolutionCallerEnvAndUnknown(t *testing.T) {
 	if id, _, _ := resolveXAIImageModel(context.Background(), env, "not-a-real-model"); id != "grok-imagine-image" {
 		t.Fatal(id)
 	}
-	if _, _, err := resolveXAIImageModel(context.Background(), env, []any{"x"}); err == nil || err.Error() != "unhashable type: 'list'" {
+	if _, _, err := resolveXAIImageModel(context.Background(), env, []any{"x"}); err == nil || err.Error() != "xAI image model is a list where text was expected" {
 		t.Fatal(err)
 	}
 }

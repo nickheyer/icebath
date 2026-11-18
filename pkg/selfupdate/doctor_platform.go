@@ -14,17 +14,12 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/backup"
 	"github.com/nickheyer/icebath/pkg/cliui"
-	"github.com/nickheyer/icebath/pkg/codeexec"
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/gateway/platforms/discord"
-	"github.com/nickheyer/icebath/pkg/gateway/platforms/matrix"
 	"github.com/nickheyer/icebath/pkg/gatewaycli"
 	"github.com/nickheyer/icebath/pkg/hostinfo"
 	"github.com/nickheyer/icebath/pkg/internal/pyfs"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pysounddevice"
-	"github.com/nickheyer/icebath/pkg/media"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/provider"
@@ -32,7 +27,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
-// doctorPackage is one library, program or runtime package an optional capability loads, probed the way that capability loads it
+// doctorPackage is one library, program or runtime package an optional capability loads, no probe when its tier is not linked
 type doctorPackage struct {
 	Name    string
 	Present func(ctx context.Context) bool
@@ -53,15 +48,24 @@ var (
 	doctorDescribeHolderPID    = state.DescribeHolderPID
 	doctorSelectedVenvDir      = func(ctx context.Context) (string, error) { return pm.SelectedVenv(ctx, pm.RepoRoot()) }
 	doctorPackages             = []doctorPackage{
-		{"PortAudio (voice mode audio)", func(context.Context) bool { return pysounddevice.Load() == nil }},
-		{"Opus (Discord voice playback)", func(context.Context) bool { return discord.LoadOpusLibrary() == nil }},
-		{"FFmpeg (audio conversion)", func(context.Context) bool { return media.FindFFmpegBinary() != "" }},
-		{"Porcupine (wake word)", func(ctx context.Context) bool { return media.LoadPorcupineLibrary(ctx) == nil }},
-		{"sherpa-onnx (wake word)", func(context.Context) bool { return media.SherpaOnnxAvailable() }},
-		{"openWakeWord (wake word)", func(ctx context.Context) bool { return media.LoadOpenWakeWordLibrary(ctx) == nil }},
-		{"Python on PATH (execute_code)", func(ctx context.Context) bool { _, err := codeexec.RuntimePython(ctx); return err == nil }},
+		{Name: "PortAudio (voice mode audio)"}, {Name: "Opus (Discord voice playback)"}, {Name: "FFmpeg (audio conversion)"},
+		{Name: "Porcupine (wake word)"}, {Name: "sherpa-onnx (wake word)"}, {Name: "openWakeWord (wake word)"},
+		{Name: "Python on PATH (execute_code)"},
 	}
+	// Matrix E2EE build state and the build command that adds it, nil in a build without the Matrix adapter
+	doctorMatrixE2EE func() (builtIn bool, buildCommand string)
 )
+
+// Sets the probe of a capability row, called at init by the tier file that links the capability
+func setDoctorPackageProbe(name string, present func(ctx context.Context) bool) {
+	for i := range doctorPackages {
+		if doctorPackages[i].Name == name {
+			doctorPackages[i].Present = present
+			return
+		}
+	}
+	panic("doctor has no capability row " + name)
+}
 
 // Default client TLS context, the error its construction raises when a trust bundle cannot be loaded
 var doctorDefaultTLSContext = func() error {
@@ -469,39 +473,6 @@ func doctorPlatformPathExists(path string) bool {
 	return err == nil
 }
 
-// Reports the interpreter TCC anchor and installs it with fix, silent off macOS and for unmanaged interpreters
-func doctorCheckMacosTCCAnchor(ctx context.Context, d *Doctor, shouldFix bool) error {
-	return doctorWarnOnError(d.W, "macOS TCC anchor check failed", "", nil, func() error {
-		status, detail, err := macosTCCAnchorState(ctx, d.ProjectRoot)
-		if err != nil {
-			return err
-		}
-		switch status {
-		case "skip":
-			return nil
-		case "active":
-			doctorCheckOK(d.W, "macOS TCC anchor active", "("+detail+")")
-			return nil
-		}
-		if shouldFix {
-			anchored, err := ensureMacosTCCAnchor(ctx, d.ProjectRoot)
-			if err != nil {
-				return err
-			}
-			if anchored != "" {
-				doctorCheckOK(d.W, "macOS TCC anchor installed", "("+anchored+")")
-				return nil
-			}
-		}
-		if status == "missing" {
-			doctorCheckWarn(d.W, "macOS TCC anchor missing", "("+detail+")")
-		} else {
-			doctorCheckWarn(d.W, "macOS TCC anchor stale", "("+detail+")")
-		}
-		return nil
-	})
-}
-
 // Reports compromised package advisories as manual issues with their remediation text
 func checkSecurityAdvisories(ctx context.Context, d *Doctor, shouldFix bool) (*Finding, error) {
 	return doctorCheckGuarded(d.W, "Security advisory check failed: {e}", "", func(f *Finding) error {
@@ -581,12 +552,17 @@ func checkPythonEnvironment(ctx context.Context, d *Doctor, shouldFix bool) (*Fi
 		if staged := doctorStagedVenvDir(ctx); staged != "" {
 			doctorCheckOK(d.W, "Runtime venv staged ("+staged+")", "(this process runs outside it)")
 		}
-		if err := doctorCheckMacosTCCAnchor(ctx, d, shouldFix); err != nil {
-			return err
+		if doctorTCCAnchorCheck != nil {
+			if err := doctorTCCAnchorCheck(ctx, d, shouldFix); err != nil {
+				return err
+			}
 		}
 		return CheckMacosFullDiskAccess(d.W)
 	})
 }
+
+// TCC anchor row of the managed interpreter, set by the package manager and nil in a build without it
+var doctorTCCAnchorCheck func(ctx context.Context, d *Doctor, shouldFix bool) error
 
 // Verifies the TLS policy, recording an unusable default context as a manual issue
 func checkCertificates(ctx context.Context, d *Doctor, shouldFix bool) (*Finding, error) {
@@ -599,16 +575,21 @@ func checkCertificates(ctx context.Context, d *Doctor, shouldFix bool) (*Finding
 func checkRequiredPackages(ctx context.Context, d *Doctor, shouldFix bool) (*Finding, error) {
 	return doctorCheck(func(f *Finding) error {
 		for _, p := range doctorPackages {
+			if p.Present == nil {
+				continue
+			}
 			if p.Present(ctx) {
 				doctorCheckOK(d.W, p.Name, "(optional)")
 			} else {
 				doctorCheckWarn(d.W, p.Name, "(optional, not installed)")
 			}
 		}
-		if matrix.E2EEBuiltIn {
-			doctorCheckOK(d.W, "Matrix E2EE (goolm)", "(optional)")
-		} else {
-			doctorCheckWarn(d.W, "Matrix E2EE (goolm)", "(optional, not built in: "+matrix.E2EEBuildCommand+")")
+		if doctorMatrixE2EE != nil {
+			if builtIn, command := doctorMatrixE2EE(); builtIn {
+				doctorCheckOK(d.W, "Matrix E2EE (goolm)", "(optional)")
+			} else {
+				doctorCheckWarn(d.W, "Matrix E2EE (goolm)", "(optional, not built in: "+command+")")
+			}
 		}
 		return nil
 	})

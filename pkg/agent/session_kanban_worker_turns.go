@@ -8,6 +8,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/goals"
 	"github.com/nickheyer/icebath/pkg/home"
@@ -80,7 +81,7 @@ func runTaskTurns(ctx context.Context, a WorkerTurnAgent, frame *pyjson.Object, 
 		}
 	case nil:
 	default:
-		return nil, &workerStoreError{"TypeError", "'" + pyrepr.TypeName(rawSkills) + "' object is not iterable"}
+		return nil, &workerStoreError{"TypeError", "kanban task skills are " + errchain.Kind(rawSkills) + " where a list was expected"}
 	}
 	prompt, loaded, missing := skills.NewScope(home.Dir(ctx), nil).BuildPreloadedSkillsPrompt(ctx, identifiers, a.SessionID(), nil)
 	if len(missing) > 0 && len(loaded) == 0 {
@@ -97,7 +98,7 @@ func runTaskTurns(ctx context.Context, a WorkerTurnAgent, frame *pyjson.Object, 
 		}
 		text, isText := part.(string)
 		if !isText {
-			return nil, &workerStoreError{"TypeError", "sequence item " + pyrepr.Str(int64(i)) + ": expected str instance, " + pyrepr.TypeName(part) + " found"}
+			return nil, &workerStoreError{"TypeError", "kanban turn " + []string{"prompt", "card context", "frame text"}[i] + " is " + errchain.Kind(part) + " where text was expected"}
 		}
 		parts = append(parts, text)
 	}

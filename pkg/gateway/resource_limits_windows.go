@@ -8,7 +8,7 @@ const rlimInfinity = ^uint64(0)
 
 var nofileSupported = false
 
-var errNoResourceModule = errors.New("No module named 'resource'")
+var errNoResourceModule = errors.New("resource limits are not available on Windows")
 
 var getNofile = func() (uint64, uint64, error) { return 0, 0, errNoResourceModule }
 

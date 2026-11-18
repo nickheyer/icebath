@@ -369,7 +369,7 @@ func TestReadExtractPDFHostedOCR(t *testing.T) {
 	}
 	status = 402
 	got, err = ExtractDocumentText(context.Background(), nil, p)
-	if err != nil || got != needsOCRWarning(p, []int{1, 2}, "HostedError: Firecrawl Parse is out of credits: no credits") {
+	if err != nil || got != needsOCRWarning(p, []int{1, 2}, "hosted PDF parsing failed: Firecrawl Parse is out of credits: no credits") {
 		t.Fatalf("hosted failure: %q %v", got, err)
 	}
 }

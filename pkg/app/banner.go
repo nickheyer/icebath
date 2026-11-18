@@ -57,10 +57,7 @@ var (
 	bannerPrefetchStarted bool
 	deferredNoticeStarted bool
 	bannerTerminalColumns = terminalColumns
-	bannerUpdateCheck     = func(ctx context.Context) (*pyjson.Object, error) {
-		return selfupdate.CheckForUpdates(ctx, selfupdate.SourceCheckOptions{Passive: true})
-	}
-	bannerFindAllSkills = func(ctx context.Context) ([]map[string]any, error) {
+	bannerFindAllSkills   = func(ctx context.Context) ([]map[string]any, error) {
 		return skillsScope(ctx).FindAllSkills(true), nil
 	}
 	bannerActiveSkin   = config.GetActiveSkin
@@ -348,15 +345,16 @@ func bannerDaemon(target func()) {
 	}()
 }
 
-// Starts the passive update check in the background, finishing at once when prefetch is off
+// Starts the passive update check in the background, finishing at once when prefetch is off or no updater is linked
 func PrefetchUpdateCheck() {
 	signal := currentUpdateCheck()
-	if skipBackgroundPrefetch() {
+	check := selfupdate.BannerUpdateCheck
+	if skipBackgroundPrefetch() || check == nil {
 		signal.set()
 		return
 	}
 	bannerDaemon(func() {
-		status, err := bannerUpdateCheck(context.Background())
+		status, err := check(context.Background())
 		if err != nil {
 			return
 		}

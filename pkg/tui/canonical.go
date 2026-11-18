@@ -30,7 +30,6 @@ var creationOptionOrder = []string{
 var (
 	toolProgressModes = map[string]bool{"off": true, "new": true, "all": true, "verbose": true}
 	skillSplitRe      = regexp.MustCompile(`[,\n]`)
-	submitMethods     = map[string]bool{"prompt.submit": true, "session.steer": true, "session.redirect": true}
 	unlimitedTurns    = map[string]bool{"none": true, "null": true, "unlimited": true, "infinite": true, "infinity": true, "inf": true, "\u221e": true}
 )
 
@@ -49,14 +48,6 @@ func orderedKeys(params map[string]any) []string {
 	}
 	sort.Strings(rest)
 	return append(keys, rest...)
-}
-
-// Params of a shared control answer, empty without one
-func sharedControlParams(ctl *sharedControl) map[string]any {
-	if ctl == nil {
-		return map[string]any{}
-	}
-	return map[string]any{"session_id": ctl.SessionID, "execution_generation": ctl.ExecutionGeneration, "prompt_id": ctl.PromptID}
 }
 
 // Request rewritten for the canonical gateway, a tui session.create checked against its contract
@@ -86,10 +77,6 @@ func canonicalRequest(method string, original map[string]any, contract *tuigatew
 		if len(unsupported) > 0 {
 			return "", nil, errors.New(tr("canonical.launch.unsupportedOptions", strings.Join(unsupported, ", ")))
 		}
-	}
-	if submitMethods[method] && truthyJS(params["submission_id"]) {
-		params["input_id"] = params["submission_id"]
-		delete(params, "submission_id")
 	}
 	return method, params, nil
 }
@@ -123,16 +110,6 @@ func withKeys(base map[string]any, kv ...any) map[string]any {
 		out[kv[i].(string)] = kv[i+1]
 	}
 	return out
-}
-
-// Result reshaped for the UI, a receipt carrying its input id and target
-func canonicalResult(method string, value any, request map[string]any) any {
-	obj, isDict := value.(map[string]any)
-	if !isDict || !submitMethods[method] || !truthyJS(obj["ref"]) {
-		return value
-	}
-	ref, _ := obj["ref"].(map[string]any)
-	return withKeys(obj, "input_id", request["input_id"], "target_profile_home", ref["profile_id"], "target_session_id", ref["session_id"])
 }
 
 // Session creation options of the launch environment, flags only when set and a cap refused when it is no whole number or unlimited spelling

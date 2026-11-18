@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -144,7 +145,7 @@ func agentKwargDictList(name string, value any) ([]map[string]any, error) {
 }
 
 func agentKwargTypeError(name string, value any) error {
-	return &workerStoreError{"TypeError", fmt.Sprintf("AIAgent() argument '%s' cannot take a %s", name, pyrepr.TypeName(value))}
+	return &workerStoreError{"TypeError", fmt.Sprintf("agent option %s cannot take %s", name, errchain.Kind(value))}
 }
 
 // Sets the option one keyword names
@@ -363,7 +364,7 @@ func applyAgentKwarg(o *AIAgentOptions, name string, value any) error {
 	case "tool_result_metadata_callback":
 		o.ToolResultMetadataCallback = value
 	default:
-		return &workerStoreError{"TypeError", fmt.Sprintf("AIAgent.__init__() got an unexpected keyword argument '%s'", name)}
+		return &workerStoreError{"TypeError", fmt.Sprintf("unknown agent option %s", name)}
 	}
 	return err
 }

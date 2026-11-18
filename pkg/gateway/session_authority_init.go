@@ -54,7 +54,7 @@ func InitializeSessionAuthority(ctx context.Context, runner AuthorityRunner, pro
 	if db == nil {
 		holder, ok := runner.(sessionDBRunner)
 		if !ok {
-			return nil, fmt.Errorf("'%T' object has no attribute '_session_db'", runner)
+			return nil, fmt.Errorf("the gateway runner (%T) has no session database", runner)
 		}
 		db = holder.SessionDB(ctx)
 	}
@@ -88,7 +88,7 @@ func InitializeSessionAuthority(ctx context.Context, runner AuthorityRunner, pro
 	if register {
 		registrar, ok := runner.(authorityRegistrar)
 		if !ok {
-			return nil, fmt.Errorf("'%T' object has no attribute 'session_authority'", runner)
+			return nil, fmt.Errorf("the gateway runner (%T) has no session authority", runner)
 		}
 		registrar.SetSessionAuthority(a)
 	}

@@ -355,7 +355,7 @@ func (s *SessionStore) promoteSessionReset(ctx context.Context, sessionKey, sess
 	err := func() error {
 		db := s.dbForKey(ctx, sessionKey)
 		if db == nil {
-			return fmt.Errorf("'NoneType' object has no attribute 'end_session'")
+			return fmt.Errorf("no session store is open to end the session")
 		}
 		if promoter, ok := db.(sessionResetPromoter); ok {
 			promoter.PromoteToSessionReset(ctx, sessionID, reason)
@@ -385,7 +385,7 @@ func (s *SessionStore) reopenSessionRow(ctx context.Context, sessionKey, session
 	db := s.dbForKey(ctx, sessionKey)
 	var err error
 	if db == nil {
-		err = fmt.Errorf("'NoneType' object has no attribute 'reopen_session'")
+		err = fmt.Errorf("no session store is open to reopen the session")
 	} else {
 		err = db.ReopenSession(ctx, sessionID)
 	}
@@ -538,7 +538,7 @@ func derefStr(v *string) string {
 func (s *SessionStore) createSessionRow(ctx context.Context, sessionKey string, create *sessionCreateArgs, origin *SessionSource, displayName *string, log func(error)) {
 	db := s.dbForKey(ctx, sessionKey)
 	if db == nil {
-		log(fmt.Errorf("'NoneType' object has no attribute 'create_session'"))
+		log(fmt.Errorf("no session store is open to create the session"))
 		return
 	}
 	if err := db.CreateSession(create.Row); err != nil {

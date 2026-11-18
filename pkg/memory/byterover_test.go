@@ -291,7 +291,7 @@ func TestByteRoverToolCalls(t *testing.T) {
 		t.Fatalf("status %q", out)
 	}
 	if _, err := p.HandleToolCall(ctx, "brv_query", map[string]any{"query": 5}, ToolCallOptions{}); err == nil ||
-		err.Error() != "'int' object has no attribute 'strip'" {
+		err.Error() != "query is a number where text was expected" {
 		t.Fatalf("non string query error %v", err)
 	}
 	out, _ = p.HandleToolCall(ctx, "brv_curate", map[string]any{"content": 5}, ToolCallOptions{})

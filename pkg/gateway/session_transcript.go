@@ -122,7 +122,7 @@ func (s *SessionStore) LoadTranscript(ctx context.Context, sessionID string) ([]
 	if db := s.dbForSessionID(ctx, sessionID); db != nil {
 		messages, err = db.GetMessagesAsConversation(ctx, sessionID, state.ConversationOptions{RepairAlternation: true})
 	} else {
-		err = fmt.Errorf("'NoneType' object has no attribute 'get_messages_as_conversation'")
+		err = fmt.Errorf("no session store is open to load the transcript")
 	}
 	if err != nil {
 		pkgLog().Error(fmt.Sprintf("Transcript read failed for session %s; refusing to treat the conversation as empty: %v", sessionID, err))
@@ -265,7 +265,7 @@ type transcriptRewriteDB interface {
 
 // AttributeError text of a store that lacks a method
 func missingStoreMethod(db any, method string) error {
-	return fmt.Errorf("'%T' object has no attribute '%s'", db, method)
+	return fmt.Errorf("the session store (%T) has no %s method", db, method)
 }
 
 // Spools one evicted or undeliverable message for replay after recovery, empty when the spool failed

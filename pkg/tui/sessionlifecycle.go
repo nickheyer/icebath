@@ -165,14 +165,7 @@ func liveSessionInflightMessages(inflight *tuigateway.InflightTurn) []msg {
 	if user == "" {
 		return []msg{}
 	}
-	row := map[string]any{"role": "user", "text": user}
-	if kind := val(inflight.DisplayKind); kind != "" {
-		row["display_kind"] = kind
-	}
-	if len(inflight.DisplayMetadata) > 0 {
-		row["display_metadata"] = inflight.DisplayMetadata
-	}
-	return toTranscriptMessages([]any{row})
+	return toTranscriptMessages([]tuigateway.TranscriptMessage{{Role: "user", Text: &user, DisplayKind: inflight.DisplayKind, DisplayMetadata: inflight.DisplayMetadata}})
 }
 
 // Streams the partial reply of a live session's turn in flight
@@ -549,7 +542,7 @@ func (l *sessionLifecycle) applyAttachment(a attachment, hold *attachHold) tea.C
 		startedAt = a.StartedAt * 1000
 	}
 	l.view.setSessionStartedAt(startedAt)
-	transcript := append(toTranscriptMessages(historyRows(a.Messages)), liveSessionInflightMessages(a.Inflight)...)
+	transcript := append(toTranscriptMessages(a.Messages), liveSessionInflightMessages(a.Inflight)...)
 	l.view.setHistoryItems(func([]msg) []msg { return append([]msg{introMsg(a.Info)}, transcript...) })
 	reportRedactionOff(a.Info, l.view.sys)
 	writeActiveSessionFile(a.StoredSID)

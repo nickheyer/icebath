@@ -13,7 +13,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/memory"
 	"github.com/nickheyer/icebath/pkg/monitoring"
 	"github.com/nickheyer/icebath/pkg/plugins"
-	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/selfupdate"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -26,49 +25,40 @@ type groupHandler func(ctx context.Context, cli *commands.CLI, cmd *cobra.Comman
 // Binds every host owned command path to the handler of its top level group
 func bindHostCommands(cli *commands.CLI) {
 	groups := map[string]groupHandler{
-		"approvals":               approvalsGroup,
-		"auth":                    authGroup,
-		"checkpoints":             checkpointsGroup,
-		"codex-runtime":           codexRuntimeGroup,
-		"completion":              completionGroup,
-		"console":                 consoleGroup,
-		"curator":                 curatorGroup,
-		"debug":                   debugGroup,
-		"doctor":                  doctorGroup,
-		"dump":                    dumpGroup,
-		"egress":                  egressGroup,
-		"fallback":                fallbackGroup,
-		"gateway":                 gatewayGroup,
-		"install-self":            installSelfGroup,
-		"journey":                 journeyGroup,
-		"logs":                    logsGroup,
-		"migrate":                 migrateGroup,
-		"model":                   modelGroup,
-		"monitoring":              monitoringGroup,
-		"pairing":                 pairingGroup,
-		"pause":                   pauseGroup,
-		"peer":                    peerGroup,
-		"pets":                    petsGroup,
-		"project":                 projectGroup,
-		"prompt-size":             promptSizeGroup,
-		"proxy":                   proxyGroup,
-		"secrets":                 secretsGroup,
-		"security":                securityGroup,
-		"sessions":                sessionsGroup,
-		"status":                  statusGroup,
-		"tools":                   toolsGroup,
-		"uninstall":               uninstallGroup,
-		"update":                  updateGroup,
-		"update-takeover":         updateTakeoverGroup,
-		"update-finish":           updateFinishGroup,
-		"update-restart-recovery": updateRestartRecoveryGroup,
-		"update-completion":       updateCompletionGroup,
-		"venv-sync":               venvSyncGroup,
-		"source-completion":       sourceCompletionGroup,
-		"import-health":           importHealthGroup,
-		"usage":                   usageGroup,
-		"verify":                  verifyGroup,
-		"worktree":                worktreeGroup,
+		"approvals":     approvalsGroup,
+		"auth":          authGroup,
+		"checkpoints":   checkpointsGroup,
+		"codex-runtime": codexRuntimeGroup,
+		"completion":    completionGroup,
+		"console":       consoleGroup,
+		"curator":       curatorGroup,
+		"debug":         debugGroup,
+		"doctor":        doctorGroup,
+		"dump":          dumpGroup,
+		"egress":        egressGroup,
+		"fallback":      fallbackGroup,
+		"gateway":       gatewayGroup,
+		"install-self":  installSelfGroup,
+		"journey":       journeyGroup,
+		"logs":          logsGroup,
+		"migrate":       migrateGroup,
+		"model":         modelGroup,
+		"monitoring":    monitoringGroup,
+		"pairing":       pairingGroup,
+		"pause":         pauseGroup,
+		"peer":          peerGroup,
+		"pets":          petsGroup,
+		"project":       projectGroup,
+		"prompt-size":   promptSizeGroup,
+		"proxy":         proxyGroup,
+		"secrets":       secretsGroup,
+		"sessions":      sessionsGroup,
+		"status":        statusGroup,
+		"tools":         toolsGroup,
+		"uninstall":     uninstallGroup,
+		"usage":         usageGroup,
+		"verify":        verifyGroup,
+		"worktree":      worktreeGroup,
 	}
 	bindGroups(cli, groups)
 }
@@ -302,15 +292,6 @@ func secretsGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, pa
 	return provider.SecretsCommand(ctx, home.Dir(ctx), ns, cmd.OutOrStdout())
 }
 
-func securityGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path string, args []string) (int, error) {
-	sub := secondWord(path)
-	if sub == "" || sub == "audit" {
-		return selfupdate.CmdSecurityAudit(ctx, home.Dir(ctx), namespace(cli, cmd, path, args), cmd.OutOrStdout())
-	}
-	cmd.PrintErrf("unknown security subcommand: %s\n", sub)
-	return 2, nil
-}
-
 func sessionsGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path string, args []string) (int, error) {
 	ns := namespace(cli, cmd, path, args)
 	ns["sessions_action"] = nilWhenEmpty(secondWord(path))
@@ -338,46 +319,6 @@ func toolsGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path
 
 func uninstallGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path string, args []string) (int, error) {
 	return app.CmdUninstall(ctx, namespace(cli, cmd, path, args), cmd.OutOrStdout(), requireTTY)
-}
-
-func updateGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path string, args []string) (int, error) {
-	return selfupdate.CmdUpdate(ctx, selfupdate.UpdateInvocation{Namespace: namespace(cli, cmd, path, args), ProjectRoot: pm.RepoRoot(),
-		Stdout: cmd.OutOrStdout(), Stderr: cmd.ErrOrStderr()})
-}
-
-func updateTakeoverGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path string, args []string) (int, error) {
-	return selfupdate.CmdUpdateTakeover(ctx, namespace(cli, cmd, path, args), cmd.OutOrStdout())
-}
-
-// Finishes an update in the selected checkout from a request file
-func updateFinishGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path string, args []string) (int, error) {
-	ns := namespace(cli, cmd, path, args)
-	return selfupdate.UpdateFinishMain(ctx, nsString(ns, "context"), nsString(ns, "result"), cmd.OutOrStdout(), cmd.ErrOrStderr()), nil
-}
-
-// Restarts supervised gateways and serve units from the payload on stdin over the entry's raw arguments
-func updateRestartRecoveryGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path string, args []string) (int, error) {
-	return selfupdate.UpdateRestartRecoveryMain(ctx, args, cmd.InOrStdin(), cmd.OutOrStdout(), cmd.ErrOrStderr()), nil
-}
-
-// Runs the post commit completion of a source update over the entry's raw arguments
-func updateCompletionGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path string, args []string) (int, error) {
-	return selfupdate.UpdateCompletionMain(ctx, args, cmd.OutOrStdout(), cmd.ErrOrStderr()), nil
-}
-
-// Reports or syncs a checkout's dependencies over the entry's raw arguments
-func venvSyncGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path string, args []string) (int, error) {
-	return selfupdate.VenvSyncMain(ctx, args, cmd.OutOrStdout(), cmd.ErrOrStderr()), nil
-}
-
-// Runs the completion tail a source update launch starts in its custody
-func sourceCompletionGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path string, args []string) (int, error) {
-	return selfupdate.SourceCompletionMain(ctx, args, cmd.OutOrStdout(), cmd.ErrOrStderr()), nil
-}
-
-// Answers the import health probe an update runs against this install's binary
-func importHealthGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path string, args []string) (int, error) {
-	return selfupdate.ImportHealthMain(args, cmd.OutOrStdout()), nil
 }
 
 func usageGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path string, args []string) (int, error) {

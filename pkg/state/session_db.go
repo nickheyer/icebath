@@ -880,7 +880,7 @@ func (d *SessionDB) writeSQL(ctx context.Context, query string, params []any, ma
 		for _, row := range params {
 			rowArgs, ok := row.([]any)
 			if !ok {
-				return &pyConvError{"ProgrammingError", "parameters are of unsupported type"}
+				return &pyConvError{"ProgrammingError", "each row of statement parameters must be a list"}
 			}
 			if _, err := conn.ExecContext(ctx, query, rowArgs...); err != nil {
 				return err
@@ -1012,7 +1012,7 @@ func (c *sessionCore) ensureDBFileGeneration() error {
 			}
 			prefix, ok := pyint.ParseBase(string(head), 16)
 			if !ok {
-				return &pyConvError{"ValueError", fmt.Sprintf("invalid literal for int() with base 16: %s", pyrepr.Repr(string(head)))}
+				return &pyConvError{"ValueError", fmt.Sprintf("the database file generation %q is not a hexadecimal number", string(head))}
 			}
 			current = uint32(new(big.Int).And(prefix, big.NewInt(0x7FFFFFFF)).Int64())
 			if current == 0 {
@@ -1511,7 +1511,7 @@ func (c *sessionCore) getMeta(ctx context.Context, key string) (string, bool, er
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.conn == nil {
-		return "", false, &pyConvError{"AttributeError", "'NoneType' object has no attribute 'execute'"}
+		return "", false, &pyConvError{"AttributeError", "the session database connection is closed"}
 	}
 	var value any
 	err := c.conn.QueryRowContext(ctx, "SELECT value FROM state_meta WHERE key = ?", key).Scan(&value)

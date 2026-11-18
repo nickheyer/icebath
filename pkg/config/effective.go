@@ -67,6 +67,9 @@ func LoadUserEffectiveFailClosed(configPath string, lookup Lookup) (map[string]a
 
 // Cached on the user and managed signatures and every referenced env value, a fresh copy each call
 func loadUserEffective(ctx context.Context, configPath string, lookup Lookup, failClosed bool) (map[string]any, error) {
+	if lookup == nil {
+		lookup = processLookup
+	}
 	if snap := workerConfigSnapshot(); snap != nil {
 		return effectiveOf(snap, lookup)
 	}

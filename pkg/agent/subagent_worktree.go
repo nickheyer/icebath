@@ -226,7 +226,7 @@ func finalizeSubagentWorktree(info map[string]string, prune bool) (*pyjson.Objec
 	for _, p := range probes {
 		res, err := subagentRunGit(p.args, path, probeEnv)
 		if err != nil {
-			return markWorktreePayloadUnproven(payload, fmt.Sprintf("inspection raised: %v", err), "commits/dirty"), nil
+			return markWorktreePayloadUnproven(payload, fmt.Sprintf("git %s could not run: %v", p.label, err), "commits/dirty"), nil
 		}
 		if res.code != 0 {
 			failed = append(failed, fmt.Sprintf("%s exit %d: %s", p.label, res.code, pystr.Slice(strings.TrimSpace(res.stderr), 0, 200)))
@@ -239,7 +239,7 @@ func finalizeSubagentWorktree(info map[string]string, prune bool) (*pyjson.Objec
 			if out != "" {
 				v, err := strconv.Atoi(out)
 				if err != nil {
-					return markWorktreePayloadUnproven(payload, fmt.Sprintf("inspection raised: invalid literal for int() with base 10: '%s'", out), "commits/dirty"), nil
+					return markWorktreePayloadUnproven(payload, fmt.Sprintf("git rev-list printed %s where a commit count was expected", out), "commits/dirty"), nil
 				}
 				n = v
 			}

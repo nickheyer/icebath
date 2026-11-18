@@ -15,14 +15,13 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/nickheyer/icebath/pkg/browser"
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/linktier"
 	"github.com/nickheyer/icebath/pkg/mcp"
-	"github.com/nickheyer/icebath/pkg/media"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -62,8 +61,6 @@ type doctorLiveEnv struct {
 	httpGet            func(target string, headers [][2]string, timeout float64) (int, error)
 	browserAvailable   func() bool
 	launchBrowserProbe func(timeout float64) (bool, string)
-	launchChromium     func(key string, opts browser.LaunchOptions) (*browser.LaunchedBrowser, string)
-	stopBrowser        func(key string)
 	probeMCPServer     func(name string, cfg map[string]any, timeout float64) (int, error)
 	speak              func(text, outputPath string) (string, error)
 	transcribe         func(path string) (map[string]any, error)
@@ -71,7 +68,7 @@ type doctorLiveEnv struct {
 	spoken             string
 }
 
-// Live probe seams of a doctor run bound to the real config, network, browser launcher and MCP client
+// Live probe seams of a doctor run bound to the real config, network and MCP client, plus the browser and speech of linked tiers
 func newDoctorLiveEnv(ctx context.Context, d *Doctor) *doctorLiveEnv {
 	e := &doctorLiveEnv{ctx: ctx, d: d}
 	e.loadConfig = func() (map[string]any, error) {
@@ -79,18 +76,21 @@ func newDoctorLiveEnv(ctx context.Context, d *Doctor) *doctorLiveEnv {
 		return map[string]any(cfg), err
 	}
 	e.httpGet = e.doctorLiveHTTPGet
-	e.browserAvailable = e.doctorLiveBrowserAvailable
-	e.launchBrowserProbe = e.doctorLaunchBrowserProbe
-	e.launchChromium = func(key string, opts browser.LaunchOptions) (*browser.LaunchedBrowser, string) {
-		return browser.LaunchChromium(ctx, e.toolsEnv(), key, opts)
-	}
-	e.stopBrowser = func(key string) { browser.StopBrowser(ctx, key) }
 	e.probeMCPServer = e.doctorProbeMCPServer
-	e.speak = func(text, outputPath string) (string, error) { return media.TextToSpeechTool(ctx, text, outputPath) }
-	e.transcribe = func(path string) (map[string]any, error) { return media.TranscribeAudio(ctx, path, "", "") }
-	e.sample = func() (string, string, error) { return media.SpeechSample(ctx) }
+	if doctorLiveBrowser != nil {
+		doctorLiveBrowser(e)
+	}
+	if doctorLiveSpeech != nil {
+		doctorLiveSpeech(e)
+	}
 	return e
 }
+
+// Binders of the live browser and local speech probes, set by their tiers and nil in a build without them
+var (
+	doctorLiveBrowser func(e *doctorLiveEnv)
+	doctorLiveSpeech  func(e *doctorLiveEnv)
+)
 
 // Sentence the local speech probe speaks and the transcription probe expects to hear back
 const doctorLiveSentence = "The quick brown fox jumps over the lazy dog."
@@ -193,28 +193,6 @@ func (e *doctorLiveEnv) doctorLiveHTTPGet(target string, headers [][2]string, ti
 	return resp.StatusCode, nil
 }
 
-// Reports whether a Chromium exists for the local browser launcher
-func (e *doctorLiveEnv) doctorLiveBrowserAvailable() bool {
-	return browser.ChromiumExecutable(e.toolsEnv(), true) != ""
-}
-
-// Launches Chromium through the browser launcher, waits for its CDP endpoint and always stops it
-func (e *doctorLiveEnv) doctorLaunchBrowserProbe(timeout float64) (bool, string) {
-	key := "doctor-live-probe"
-	limit := time.Duration(timeout * float64(time.Second))
-	launched, launchErr := func() (*browser.LaunchedBrowser, string) {
-		defer e.stopBrowser(key)
-		return e.launchChromium(key, browser.LaunchOptions{Ephemeral: true, Timeout: &limit})
-	}()
-	if launched == nil {
-		if launchErr == "" {
-			launchErr = "launch failed"
-		}
-		return false, launchErr
-	}
-	return true, "launched + CDP ready + stopped"
-}
-
 // Connects one configured MCP server, lists its tools and returns how many it offers
 func (e *doctorLiveEnv) doctorProbeMCPServer(name string, cfg map[string]any, timeout float64) (int, error) {
 	found, err := mcp.ProbeSingleServerTimeout(e.ctx, e.toolsEnv(), name, cfg, timeout)
@@ -247,6 +225,10 @@ func (e *doctorLiveEnv) doctorLiveKeyedProbe(spec doctorLiveKeyedSpec, timeout f
 
 // Launches and stops the local browser when one is available
 func (e *doctorLiveEnv) doctorLiveProbeBrowser(timeout float64) (doctorLiveProbeResult, error) {
+	if e.browserAvailable == nil {
+		line, _ := linktier.Refusal("browser automation", linktier.Extras)
+		return doctorLiveProbeResult{"Browser", "skip", "(" + line + ")"}, nil
+	}
 	if !e.browserAvailable() {
 		return doctorLiveProbeResult{"Browser", "skip", "(not configured)"}, nil
 	}
@@ -276,6 +258,10 @@ func (e *doctorLiveEnv) doctorLiveProbeAudio(kind string, cfg map[string]any, ti
 		}
 	}
 	if doctorLiveLocalAudioProviders[providerName] {
+		if e.speak == nil {
+			line, _ := linktier.Refusal("local speech", linktier.Plugins)
+			return doctorLiveProbeResult{name, "skip", "(" + line + ")"}, nil
+		}
 		shown := providerName
 		if shown == "" {
 			shown = "local"

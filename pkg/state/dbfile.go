@@ -196,7 +196,7 @@ func iterProcFDTargets(fn func(pid int, target, fdPath string)) error {
 		}
 		n, ok := pyint.Parse(pidStr)
 		if !ok || !n.IsInt64() {
-			return &pyConvError{"ValueError", "invalid literal for int() with base 10: " + pyrepr.StrRepr(pidStr)}
+			return &pyConvError{"ValueError", "process id " + pidStr + " is not a whole number"}
 		}
 		pid := int(n.Int64())
 		for _, fd := range fds {
@@ -973,7 +973,7 @@ func CollectStateDBStats(dbPath string) (*pyjson.Object, error) {
 		case []byte:
 			parsed, perr = pyjson.LoadsBytes(v)
 		default:
-			perr = &pyConvError{"TypeError", "the JSON object must be str, bytes or bytearray"}
+			perr = &pyConvError{"TypeError", "the stored JSON is not text"}
 		}
 		if obj, ok := parsed.(*pyjson.Object); ok && perr == nil {
 			stats.Set("fts_rebuild_deferral", obj)

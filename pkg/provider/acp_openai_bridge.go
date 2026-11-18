@@ -74,7 +74,7 @@ func bridgeRequire(v any, key string) (any, error) {
 	if val, ok := bridgeAttr(v, key); ok {
 		return val, nil
 	}
-	return nil, fmt.Errorf("%s object has no attribute %s", pyrepr.StrRepr(fmt.Sprintf("%T", v)), pyrepr.StrRepr(key))
+	return nil, fmt.Errorf("the ACP reply (%T) has no %s", v, key)
 }
 
 // Value of key or def when the part has no such key
@@ -120,7 +120,7 @@ func CompletionToStreamChunks(completion map[string]any) (*StreamChunks, error) 
 	}
 	choices, _ := bridgeList(rawChoices)
 	if len(choices) == 0 {
-		return nil, errors.New("list index out of range")
+		return nil, errors.New("the ACP completion has no choices")
 	}
 	choice := choices[0]
 	message, err := bridgeRequire(choice, "message")

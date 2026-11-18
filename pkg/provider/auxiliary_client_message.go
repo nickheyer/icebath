@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -44,15 +45,15 @@ func CoerceLLMMessage(response any) any {
 func FirstChoiceMessage(response any) (any, error) {
 	choices := reflect.ValueOf(MessageField(response, "choices"))
 	if !choices.IsValid() || (choices.Kind() != reflect.Slice && choices.Kind() != reflect.Array) {
-		return nil, &pyint.Error{Kind: "AttributeError", Msg: "'" + pyrepr.TypeName(response) + "' object has no attribute 'choices'"}
+		return nil, &pyint.Error{Kind: "AttributeError", Msg: "the auxiliary response is " + errchain.Kind(response) + ", expected a chat completion"}
 	}
 	if choices.Len() == 0 {
-		return nil, &pyint.Error{Kind: "IndexError", Msg: "list index out of range"}
+		return nil, &pyint.Error{Kind: "IndexError", Msg: "the auxiliary response has no choices"}
 	}
 	choice := choices.Index(0).Interface()
 	message := MessageField(choice, "message")
 	if message == nil {
-		return nil, &pyint.Error{Kind: "AttributeError", Msg: "'" + pyrepr.TypeName(choice) + "' object has no attribute 'message'"}
+		return nil, &pyint.Error{Kind: "AttributeError", Msg: "the first auxiliary choice has no message"}
 	}
 	return message, nil
 }

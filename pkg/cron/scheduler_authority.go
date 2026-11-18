@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -87,7 +88,7 @@ func (s *Store) pauseForUnknown(ctx context.Context, jobID, executionID, reason 
 	}
 	record, ok := decoded.(*pyjson.Object)
 	if !ok {
-		return &pyTypeError{msg: "'" + pyTypeName(decoded) + "' object does not support item assignment"}
+		return &pyTypeError{msg: "the execution record is " + errchain.Kind(decoded) + ", expected a mapping"}
 	}
 	record.Set("pause_recorded", pauseIdentity(paused))
 	return s.writeAdmissionJournal(ctx, journal, record)

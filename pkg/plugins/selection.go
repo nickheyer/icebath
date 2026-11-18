@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
@@ -46,7 +47,7 @@ func writeConfigValue(ctx context.Context, h, section, key string, value any) er
 		}
 		m, ok := existing.(map[string]any)
 		if !ok {
-			return fmt.Errorf("%s object does not support item assignment", pyrepr.Repr(pyrepr.TypeName(existing)))
+			return fmt.Errorf("config %s is %s where a mapping was expected", section, errchain.Kind(existing))
 		}
 		m[key] = value
 		return nil

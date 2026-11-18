@@ -71,7 +71,7 @@ func TestRunJobFailsOnANonMappingProviderRouting(t *testing.T) {
 	if err != nil {
 		text = err.Error()
 	}
-	if out.Success || !strings.Contains(text, "'str' object has no attribute 'get'") || fake.spec.Platform != "" {
+	if out.Success || !strings.Contains(text, "the provider_routing section of config.yaml is text, expected a mapping") || fake.spec.Platform != "" {
 		t.Fatalf("outcome %+v err %v spec %+v", out, err, fake.spec)
 	}
 }

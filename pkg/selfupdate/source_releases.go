@@ -1,3 +1,5 @@
+//go:build !icebath_core && !icebath_noextras
+
 package selfupdate
 
 import (
@@ -62,10 +64,6 @@ type sourceCalledProcessError struct {
 
 func (e *sourceCalledProcessError) Error() string {
 	return fmt.Sprintf("Command '%s' returned non-zero exit status %d.", pyListRepr(e.Argv), e.ReturnCode)
-}
-
-func gitArgs(gitCmd []string, args ...string) []string {
-	return append(append([]string{}, gitCmd...), args...)
 }
 
 // GitHub repository whose releases a checkout follows, a GitHub origin's own, else the official one

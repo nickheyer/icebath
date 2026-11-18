@@ -378,19 +378,19 @@ func (b *BasePlatformAdapter) Self() PlatformAdapter {
 type baseOnly struct{ *BasePlatformAdapter }
 
 func (a baseOnly) Connect(context.Context, bool) (bool, error) {
-	return false, fmt.Errorf("NotImplementedError: %s.connect is abstract", "BasePlatformAdapter")
+	return false, &PyError{Kind: "NotImplementedError", Msg: "the base platform adapter cannot connect"}
 }
 
 func (a baseOnly) Disconnect(context.Context) error {
-	return fmt.Errorf("NotImplementedError: %s.disconnect is abstract", "BasePlatformAdapter")
+	return &PyError{Kind: "NotImplementedError", Msg: "the base platform adapter cannot disconnect"}
 }
 
 func (a baseOnly) Send(context.Context, string, string, string, map[string]any) (SendResult, error) {
-	return SendResult{}, fmt.Errorf("NotImplementedError: %s.send is abstract", "BasePlatformAdapter")
+	return SendResult{}, &PyError{Kind: "NotImplementedError", Msg: "the base platform adapter cannot send"}
 }
 
 func (a baseOnly) GetChatInfo(context.Context, string) (map[string]any, error) {
-	return nil, fmt.Errorf("NotImplementedError: %s.get_chat_info is abstract", "BasePlatformAdapter")
+	return nil, &PyError{Kind: "NotImplementedError", Msg: "the base platform adapter cannot read chat info"}
 }
 
 // Type name of the bound adapter for not implemented messages
@@ -463,7 +463,7 @@ func (b *BasePlatformAdapter) StreamingOverflowLimit() (int, bool) { return 0, f
 
 // Streaming draft preview, an error for adapters that never override it
 func (b *BasePlatformAdapter) SendDraft(ctx context.Context, chatID string, draftID int, content string, metadata map[string]any) (SendResult, error) {
-	return SendResult{}, fmt.Errorf("NotImplementedError: %s does not implement send_draft", b.typeName())
+	return SendResult{}, &PyError{Kind: "NotImplementedError", Msg: "the " + b.typeName() + " platform adapter cannot send drafts"}
 }
 
 // Renders a message chunk, intermediate stop or commentary onto the stream sink
@@ -1023,7 +1023,7 @@ func (b *BasePlatformAdapter) IsSenderAuthorized(userID string, chatType, chatID
 	if v, ok := result.(bool); ok {
 		return &v
 	}
-	pkgLog().Warn(fmt.Sprintf("[%s] Authorization check returned %s for user %s; treating as unknown", name, pyrepr.TypeName(result), userID))
+	pkgLog().Warn(fmt.Sprintf("[%s] Authorization check returned %s for user %s; treating as unknown", name, errchain.Kind(result), userID))
 	return nil
 }
 

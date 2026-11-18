@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -52,12 +53,10 @@ func auxKwargMaps(v any) []map[string]any {
 	return nil
 }
 
-// Python AttributeError of a lookup on a value lacking the attribute
-type auxAttributeError struct{ typeName, attr string }
+// Refusal of a value that lacks what the auxiliary call reads from it
+type auxAttributeError struct{ msg string }
 
-func (e *auxAttributeError) Error() string {
-	return fmt.Sprintf("'%s' object has no attribute '%s'", e.typeName, e.attr)
-}
+func (e *auxAttributeError) Error() string { return e.msg }
 
 // Python iteration of a kwargs list, empty when the key is absent and TypeError for a non list value
 func auxIterKwarg(kwargs map[string]any, key string) ([]any, error) {
@@ -75,7 +74,7 @@ func auxIterKwarg(kwargs map[string]any, key string) ([]any, error) {
 		}
 		return out, nil
 	}
-	return nil, &auxTypeError{Message: fmt.Sprintf("'%s' object is not iterable", pyrepr.TypeName(v))}
+	return nil, &auxTypeError{Message: fmt.Sprintf("the %s argument is %s, expected a list", key, errchain.Kind(v))}
 }
 
 // Python list of dicts under the key, AttributeError for a non dict item and None empty only when allowed
@@ -91,7 +90,7 @@ func auxKwargDicts(kwargs map[string]any, key string, noneOK bool) ([]map[string
 	for _, item := range items {
 		m, ok := item.(map[string]any)
 		if !ok {
-			return nil, &auxAttributeError{typeName: pyrepr.TypeName(item), attr: "get"}
+			return nil, &auxAttributeError{msg: fmt.Sprintf("an item of the %s argument is %s, expected a mapping", key, errchain.Kind(item))}
 		}
 		out = append(out, m)
 	}
@@ -155,7 +154,7 @@ func (a *auxCodexCompletionsAdapter) buildResponsesKwargs(ctx context.Context, k
 	for _, raw := range messages {
 		msg, ok := raw.(map[string]any)
 		if !ok {
-			return nil, "", nil, &auxAttributeError{typeName: pyrepr.TypeName(raw), attr: "get"}
+			return nil, "", nil, &auxAttributeError{msg: "a message is " + errchain.Kind(raw) + ", expected a mapping"}
 		}
 		content := msg["content"]
 		if !pyrepr.Truthy(content) {
@@ -188,7 +187,7 @@ func (a *auxCodexCompletionsAdapter) buildResponsesKwargs(ctx context.Context, k
 				fn := pyjson.NewObject()
 				if fnRaw := tc.Vals["function"]; pyrepr.Truthy(fnRaw) {
 					if fn, isMap = pyjson.AsObject(fnRaw); !isMap {
-						return nil, "", nil, &auxAttributeError{typeName: pyrepr.TypeName(fnRaw), attr: "get"}
+						return nil, "", nil, &auxAttributeError{msg: "a tool call function is " + errchain.Kind(fnRaw) + ", expected a mapping"}
 					}
 				}
 				name, isStr := fn.Vals["name"].(string)

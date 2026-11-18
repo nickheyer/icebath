@@ -47,7 +47,7 @@ func cronExceptionName(err error) string {
 }
 
 func (e *CronSchedulerRegistrationError) Error() string {
-	return fmt.Sprintf("Cron job '%s' was saved, but its first scheduler registration failed (%s). Do not create a duplicate. Pause/resume or update the job to retry registration.", e.Job.ID, cronExceptionName(e.Cause))
+	return fmt.Sprintf("Cron job '%s' was saved, but its first scheduler registration failed. Do not create a duplicate. Pause/resume or update the job to retry registration.", e.Job.ID)
 }
 
 func (e *CronSchedulerRegistrationError) Unwrap() error { return e.Cause }

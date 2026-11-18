@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -35,7 +36,7 @@ func loadsPolicyMap(text string) (map[string]any, error) {
 	}
 	out, ok := pyjson.Plain(parsed).(map[string]any)
 	if !ok {
-		return nil, &PyError{Kind: "TypeError", Msg: "'" + jsonValueTypeName(parsed) + "' object is not a mapping"}
+		return nil, &PyError{Kind: "TypeError", Msg: "the refreshed session policy is " + errchain.Kind(parsed) + ", expected a mapping"}
 	}
 	return out, nil
 }
@@ -68,15 +69,15 @@ func followLive(target map[string]any, live any, key string) error {
 			delete(target, key)
 			return nil
 		}
-		return &PyError{Kind: "TypeError", Msg: "string indices must be integers, not 'str'"}
+		return &PyError{Kind: "TypeError", Msg: "the live session policy is text, expected a mapping"}
 	case []any:
 		if !slices.ContainsFunc(source, func(item any) bool { return pyjson.Equal(item, key) }) {
 			delete(target, key)
 			return nil
 		}
-		return &PyError{Kind: "TypeError", Msg: "list indices must be integers or slices, not str"}
+		return &PyError{Kind: "TypeError", Msg: "the live session policy is a list, expected a mapping"}
 	}
-	return &PyError{Kind: "TypeError", Msg: "argument of type '" + jsonValueTypeName(live) + "' is not iterable"}
+	return &PyError{Kind: "TypeError", Msg: "the live session policy is " + errchain.Kind(live) + ", expected a mapping"}
 }
 
 // Mapping a dict() call builds from a config value, an empty one for a falsy value
@@ -390,7 +391,7 @@ func prepareRefresh(ctx context.Context, a *SessionAuthority, sessionID string, 
 		return nil, err
 	}
 	if row == nil {
-		return nil, &PyError{Kind: "TypeError", Msg: "'NoneType' object is not subscriptable"}
+		return nil, &PyError{Kind: "TypeError", Msg: "the session policy to refresh is missing"}
 	}
 	if _, ok := row.Get("runtime_generation"); !ok {
 		return nil, &pyKeyError{"runtime_generation"}

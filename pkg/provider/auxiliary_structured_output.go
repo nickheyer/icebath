@@ -6,6 +6,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -53,7 +54,7 @@ func auxResponseFormatType(kwargs map[string]any) any {
 func auxHashable(v any) error {
 	switch v.(type) {
 	case map[string]any, []any, []string, map[string]string:
-		return fmt.Errorf("unhashable type: '%s'", pyrepr.TypeName(v))
+		return fmt.Errorf("a value to remember is %s, expected text or a number", errchain.Kind(v))
 	}
 	return nil
 }

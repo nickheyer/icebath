@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"path/filepath"
 
-	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 )
 
 const (
@@ -26,7 +26,7 @@ func LoadProviderPluginProfiles(ctx context.Context, pluginDir, moduleName strin
 	for _, p := range profiles {
 		if p.InProcess != "" {
 			pkgLog().Warn(fmt.Sprintf("Provider plugin %s: profile %s cannot hand its client across the plugin host (%s); "+
-				"the client stays in the plugin host behind a live object proxy", filepath.Base(pluginDir), config.PyRepr(p.Name), p.InProcess))
+				"the client stays in the plugin host behind a live object proxy", filepath.Base(pluginDir), errchain.Show(p.Name), p.InProcess))
 		}
 	}
 	hosted := []*HostedProfile{}

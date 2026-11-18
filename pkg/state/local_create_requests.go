@@ -3,6 +3,7 @@ package state
 import (
 	"fmt"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
@@ -14,7 +15,7 @@ func decodeCreateRequest(requestJSON string) (*pyjson.Object, error) {
 	}
 	request, ok := decoded.(*pyjson.Object)
 	if !ok {
-		return nil, &pyConvError{"AttributeError", fmt.Sprintf("'%s' object has no attribute 'pop'", pyTypeName(decoded))}
+		return nil, &pyConvError{"AttributeError", fmt.Sprintf("the stored create request is %s, expected a mapping", errchain.Kind(decoded))}
 	}
 	return request, nil
 }
@@ -29,7 +30,7 @@ func derivedKeys(derived any) ([]string, error) {
 			case string:
 				keys = append(keys, k)
 			case []any, *pyjson.Object:
-				return nil, &pyConvError{"TypeError", fmt.Sprintf("unhashable type: '%s'", pyTypeName(k))}
+				return nil, &pyConvError{"TypeError", fmt.Sprintf("a derived key of the create request is %s, expected text", errchain.Kind(k))}
 			}
 		}
 		return keys, nil
@@ -42,7 +43,7 @@ func derivedKeys(derived any) ([]string, error) {
 		}
 		return keys, nil
 	}
-	return nil, &pyConvError{"TypeError", fmt.Sprintf("'%s' object is not iterable", pyTypeName(derived))}
+	return nil, &pyConvError{"TypeError", fmt.Sprintf("the derived keys of the create request are %s, expected a list", errchain.Kind(derived))}
 }
 
 // The frozen create request as the client sent it, a nil derived meaning a receipt from before route_derived
@@ -105,11 +106,11 @@ func SameCreateRequest(savedJSON, retryJSON string) (bool, error) {
 func SameCreateRetry(savedPolicy *pyjson.Object, retryJSON string, clientRequest *pyjson.Object) (bool, error) {
 	raw, has := savedPolicy.Get("request_json")
 	if !has {
-		return false, &pyConvError{"KeyError", "'request_json'"}
+		return false, &pyConvError{"KeyError", "the create request row has no request_json"}
 	}
 	savedJSON, ok := raw.(string)
 	if !ok {
-		return false, &pyConvError{"TypeError", fmt.Sprintf("the JSON object must be str, bytes or bytearray, not %s", pyTypeName(raw))}
+		return false, &pyConvError{"TypeError", fmt.Sprintf("the stored create request is %s, expected JSON text", errchain.Kind(raw))}
 	}
 	same, err := SameCreateRequest(savedJSON, retryJSON)
 	if err != nil || !same {

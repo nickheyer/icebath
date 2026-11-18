@@ -52,7 +52,7 @@ func webhookRetainedDestination(ctx context.Context, adapter PlatformAdapter, ch
 	}
 	payload, ok := decoded.(*pyjson.Object)
 	if !ok {
-		return nil, &PyError{Kind: "TypeError", Msg: "list indices must be integers or slices, not str"}
+		return nil, &PyError{Kind: "TypeError", Msg: "the retained webhook payload is not a mapping"}
 	}
 	rawEnvelope, found := payload.Get("native_text_v1")
 	if !found {
@@ -60,11 +60,11 @@ func webhookRetainedDestination(ctx context.Context, adapter PlatformAdapter, ch
 	}
 	envelope, ok := rawEnvelope.(*pyjson.Object)
 	if !ok {
-		return nil, &PyError{Kind: "AttributeError", Msg: "object has no attribute 'get'"}
+		return nil, &PyError{Kind: "AttributeError", Msg: "the retained native text envelope is not a mapping"}
 	}
 	authorityRunner, ok := runner.(AuthorityRunner)
 	if !ok {
-		return nil, &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("'%T' object has no attribute '_adapter_for_source'", runner)}
+		return nil, &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("the gateway runner (%T) cannot find the adapter of a source", runner)}
 	}
 	event, err := restoreNative(ctx, payload, authorityRunner)
 	if err != nil {

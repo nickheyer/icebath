@@ -16,6 +16,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -326,10 +327,10 @@ func dumpSubagentTimeoutDiagnostic(ctx context.Context, child *AIAgent, taskInde
 	}
 	lines := []string{"# Subagent timeout diagnostic — issue #14726", "# Generated: " + now.Format("2006-01-02T15:04:05.000000"), "",
 		"## Timeout", fmt.Sprintf("  task_index:        %d", taskIndex), "  subagent_id:       " + subagentID,
-		fmt.Sprintf("  configured_timeout: %ss", pyrepr.Repr(timeoutSeconds)), fmt.Sprintf("  actual_duration:   %.2fs", durationSeconds), "", "## Goal",
+		fmt.Sprintf("  configured_timeout: %ss", errchain.Show(timeoutSeconds)), fmt.Sprintf("  actual_duration:   %.2fs", durationSeconds), "", "## Goal",
 		goalPreview, "", "## Child config"}
 	for _, attr := range delegateDiagChildAttrs {
-		lines = append(lines, fmt.Sprintf("  %s: %s", attr, pyrepr.Repr(diagAttr(child, attr))))
+		lines = append(lines, fmt.Sprintf("  %s: %s", attr, errchain.Show(diagAttr(child, attr))))
 	}
 	var enabled any
 	if child.enabledToolsets != nil {
@@ -339,7 +340,7 @@ func dumpSubagentTimeoutDiagnostic(ctx context.Context, child *AIAgent, taskInde
 		}
 		enabled = list
 	}
-	lines = append(lines, "", "## Toolsets", "  enabled_toolsets:  "+pyrepr.Repr(enabled))
+	lines = append(lines, "", "## Toolsets", "  enabled_toolsets:  "+errchain.Show(enabled))
 	if len(child.validToolNames) > 0 {
 		names := make([]string, 0, len(child.validToolNames))
 		for n := range child.validToolNames {
@@ -350,7 +351,7 @@ func dumpSubagentTimeoutDiagnostic(ctx context.Context, child *AIAgent, taskInde
 		for _, n := range names {
 			list = append(list, n)
 		}
-		lines = append(lines, fmt.Sprintf("  loaded tool count: %d", len(names)), "  loaded tools:      "+pyrepr.Repr(list))
+		lines = append(lines, fmt.Sprintf("  loaded tool count: %d", len(names)), "  loaded tools:      "+errchain.Show(list))
 	}
 	lines = append(append(lines, ""), diagSizes(child)...)
 	lines = append(lines, "", "## Activity summary")
@@ -363,7 +364,7 @@ func dumpSubagentTimeoutDiagnostic(ctx context.Context, child *AIAgent, taskInde
 		sort.Strings(keys)
 		var out []string
 		for _, k := range keys {
-			out = append(out, fmt.Sprintf("  %s: %s", k, pyrepr.Repr(summary[k])))
+			out = append(out, fmt.Sprintf("  %s: %s", k, errchain.Show(summary[k])))
 		}
 		return out, nil
 	})...)
@@ -1232,7 +1233,7 @@ func (r *childRun) awaitChild() (map[string]any, *pyjson.Object, bool) {
 		timeoutCause = childTimeout
 	}
 	duration := r.elapsed()
-	what := fmt.Sprintf("raised %s", pyrepr.TypeName(waitErr))
+	what := fmt.Sprintf("failed: %s", errchain.Show(waitErr))
 	if isTimeout {
 		what = "timed out"
 	}
@@ -1258,7 +1259,7 @@ func (r *childRun) awaitChild() (map[string]any, *pyjson.Object, bool) {
 	var errText string
 	timeoutText := "None"
 	if childTimeout != nil {
-		timeoutText = pyrepr.Repr(*childTimeout)
+		timeoutText = errchain.Show(*childTimeout)
 	}
 	switch {
 	case !isTimeout:
@@ -1308,7 +1309,7 @@ func (r *childRun) awaitChild() (map[string]any, *pyjson.Object, bool) {
 	e.Set("diagnostic_path", strOrNone(diagnosticPath))
 	preview := errText
 	if isTimeout {
-		preview = fmt.Sprintf("Timed out after %ss", pyrepr.Repr(duration))
+		preview = fmt.Sprintf("Timed out after %ss", errchain.Show(duration))
 	} else {
 		preview = waitErr.Error()
 	}

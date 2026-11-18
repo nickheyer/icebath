@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
@@ -360,20 +361,7 @@ func schemaVersionBelow(version any, n int) (bool, error) {
 	case float64:
 		return v < float64(n), nil
 	}
-	return false, &pyint.Error{Kind: "TypeError", Msg: fmt.Sprintf("'<' not supported between instances of '%s' and 'int'", sqliteValueTypeName(version))}
-}
-
-// Python type name of a value read from SQLite
-func sqliteValueTypeName(v any) string {
-	switch v.(type) {
-	case nil:
-		return "NoneType"
-	case string:
-		return "str"
-	case []byte:
-		return "bytes"
-	}
-	return pyrepr.TypeName(v)
+	return false, &pyint.Error{Kind: "TypeError", Msg: fmt.Sprintf("the schema version is %s, expected a whole number", errchain.Kind(version))}
 }
 
 // Version gated data migrations, advancing schema_version unless FTS5 is unavailable or an FTS step is unfinished
@@ -478,7 +466,7 @@ func (s *sessionSchema) advanceMessageUIDBackfill(ctx context.Context, conn SQLi
 	doneThrough := big.NewInt(0)
 	if cursorRow != nil {
 		if doneThrough, err = pyint.Of(cursorRow[0]); err != nil {
-			return err
+			return fmt.Errorf("the message uid backfill cursor %v is not a whole number", cursorRow[0])
 		}
 	}
 	highRow, err := fetchOne(ctx, conn, "SELECT MAX(rowid) FROM messages")
@@ -561,8 +549,7 @@ func pyCompareValues(a, b any) (int, error) {
 	if aStr && bStr {
 		return strings.Compare(as, bs), nil
 	}
-	return 0, &pyint.Error{Kind: "TypeError", Msg: fmt.Sprintf("'<' not supported between instances of '%s' and '%s'",
-		sqliteValueTypeName(b), sqliteValueTypeName(a))}
+	return 0, &pyint.Error{Kind: "TypeError", Msg: fmt.Sprintf("cannot order %s against %s", errchain.Kind(b), errchain.Kind(a))}
 }
 
 // Exact numeric value of an int or float read from SQLite

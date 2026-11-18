@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
@@ -105,7 +106,7 @@ func setdefaultMap(config map[string]any, key string) (map[string]any, error) {
 	if m, ok := value.(map[string]any); ok {
 		return m, nil
 	}
-	return nil, &PyError{Kind: "TypeError", Msg: "'" + pyrepr.TypeName(value) + "' object does not support item assignment"}
+	return nil, &PyError{Kind: "TypeError", Msg: "a session policy section is " + errchain.Kind(value) + ", expected a mapping"}
 }
 
 // Replaces the session pins mapping with a copy carrying field set to pinned
@@ -114,7 +115,7 @@ func mergeSessionPin(config map[string]any, field string, pinned bool) error {
 	if existing := config[SessionPins]; pyrepr.Truthy(existing) {
 		m, ok := existing.(map[string]any)
 		if !ok {
-			return &PyError{Kind: "TypeError", Msg: "'" + pyrepr.TypeName(existing) + "' object is not a mapping"}
+			return &PyError{Kind: "TypeError", Msg: "a session policy section is " + errchain.Kind(existing) + ", expected a mapping"}
 		}
 		for k, v := range m {
 			merged[k] = v
@@ -478,7 +479,7 @@ func restorePolicy(raw any) (*LocalSessionPolicy, error) {
 func restoredPolicy(raw any) (*LocalSessionPolicy, error) {
 	data, ok := raw.(map[string]any)
 	if !ok {
-		return nil, &PyError{Kind: "TypeError", Msg: "LocalSessionPolicy() argument after ** must be a mapping, not " + pyTypeName(raw)}
+		return nil, &PyError{Kind: "TypeError", Msg: "a local session policy is " + errchain.Kind(raw) + ", expected a mapping"}
 	}
 	known := map[string]bool{}
 	for name := range (&LocalSessionPolicy{}).asDict() {
@@ -486,12 +487,12 @@ func restoredPolicy(raw any) (*LocalSessionPolicy, error) {
 	}
 	for name := range data {
 		if !known[name] {
-			return nil, &PyError{Kind: "TypeError", Msg: "LocalSessionPolicy.__init__() got an unexpected keyword argument '" + name + "'"}
+			return nil, &PyError{Kind: "TypeError", Msg: "a local session policy has no field " + name}
 		}
 	}
 	for _, name := range []string{"source", "platform", "cwd", "model", "toolsets", "config_json", "request_json", "terminal_json"} {
 		if _, present := data[name]; !present {
-			return nil, &PyError{Kind: "TypeError", Msg: "LocalSessionPolicy.__init__() missing 1 required positional argument: '" + name + "'"}
+			return nil, &PyError{Kind: "TypeError", Msg: "a local session policy is missing its " + name + " field"}
 		}
 	}
 	p := &LocalSessionPolicy{EditApprovalPolicy: "ask"}
@@ -627,7 +628,7 @@ func unpinReasoning(config, profile map[string]any) error {
 	case nil:
 	default:
 		if pyrepr.Truthy(held) {
-			return &PyError{Kind: "TypeError", Msg: "'" + pyrepr.TypeName(held) + "' object is not a mapping"}
+			return &PyError{Kind: "TypeError", Msg: "a held session policy value is " + errchain.Kind(held) + ", expected a mapping"}
 		}
 	}
 	pins["reasoning"] = false
@@ -647,7 +648,7 @@ func setDefaultMapping(config map[string]any, key string) (map[string]any, error
 			return fresh, nil
 		}
 	}
-	return nil, &PyError{Kind: "AttributeError", Msg: "'" + pyrepr.TypeName(config[key]) + "' object has no attribute 'setdefault'"}
+	return nil, &PyError{Kind: "AttributeError", Msg: "the " + key + " section of the session config is " + errchain.Kind(config[key]) + ", expected a mapping"}
 }
 
 // One profile read a policy turn scope holds for its own policy
@@ -697,13 +698,13 @@ func setSecretAt(config map[string]any, path secretPath, value any) error {
 		case []any:
 			i, ok := pathIndex(key)
 			if !ok {
-				return &PyError{Kind: "TypeError", Msg: "list indices must be integers or slices, not " + pyrepr.TypeName(key)}
+				return &PyError{Kind: "TypeError", Msg: "a secret path step into a list is " + errchain.Kind(key) + ", expected a whole number"}
 			}
 			if i < 0 {
 				i += len(node)
 			}
 			if i < 0 || i >= len(node) {
-				return &PyError{Kind: "IndexError", Msg: "list index out of range"}
+				return &PyError{Kind: "IndexError", Msg: "a secret path step points past the end of a list"}
 			}
 			if last {
 				node[i] = value
@@ -711,7 +712,7 @@ func setSecretAt(config map[string]any, path secretPath, value any) error {
 			}
 			target = node[i]
 		default:
-			return &PyError{Kind: "TypeError", Msg: "'" + pyrepr.TypeName(target) + "' object is not subscriptable"}
+			return &PyError{Kind: "TypeError", Msg: "a secret path step reaches " + errchain.Kind(target) + ", expected a list or a mapping"}
 		}
 		return nil
 	}
@@ -753,7 +754,7 @@ func (p *LocalSessionPolicy) effective(ctx context.Context, owner launchSecretOw
 			frozen = block
 		default:
 			if pyrepr.Truthy(block) {
-				return nil, nil, &PyError{Kind: "AttributeError", Msg: "'" + pyrepr.TypeName(block) + "' object has no attribute 'get'"}
+				return nil, nil, &PyError{Kind: "AttributeError", Msg: "a session policy block is " + errchain.Kind(block) + ", expected a mapping"}
 			}
 			frozen = map[string]any{}
 		}

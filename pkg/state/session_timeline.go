@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pysqlite"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
@@ -17,22 +18,6 @@ var syntheticPromptRE = regexp.MustCompile(`(?i)^\s*(?:\[IMPORTANT: Background p
 	`\[ASYNC (?:DELEGATION )?(?:BATCH )?COMPLETE(?:$|[^\p{L}\p{N}_])|` +
 	`A background fan-out of \p{Nd}+ subagent\(s\) you dispatched earlier has finished\.|` +
 	`A background subagent you dispatched earlier has finished\.)`)
-
-// Python type name of a content part for the join TypeError
-func joinTypeName(v any) string {
-	switch v.(type) {
-	case string:
-		return "str"
-	case []any:
-		return "list"
-	case []byte:
-		return "bytes"
-	}
-	if isMapping(v) {
-		return "dict"
-	}
-	return pyTypeName(v)
-}
 
 // Whitespace collapsed human prompt text of a user row, empty for hidden, synthetic or non human rows
 func promptPreview(content, displayKind, summary any) (string, error) {
@@ -60,7 +45,7 @@ func promptPreview(content, displayKind, summary any) (string, error) {
 			}
 			s, isStr := text.(string)
 			if !isStr {
-				return "", &pyConvError{"TypeError", fmt.Sprintf("sequence item %d: expected str instance, %s found", len(texts), joinTypeName(text))}
+				return "", &pyConvError{"TypeError", fmt.Sprintf("text part %d is %s, expected text", len(texts), errchain.Kind(text))}
 			}
 			texts = append(texts, s)
 		}
@@ -281,7 +266,7 @@ func (d *SessionDB) GetSessionTimeline(ctx context.Context, sessionID string, li
 	var nextCursor any
 	if hasMore {
 		if len(page) == 0 {
-			return nil, &pyConvError{"IndexError", "list index out of range"}
+			return nil, &pyConvError{"IndexError", "the session timeline page is empty"}
 		}
 		nextCursor = rowValue(page[len(page)-1], "sort_id")
 	}

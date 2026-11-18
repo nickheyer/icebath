@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
@@ -218,17 +219,19 @@ func xaiConfiguredModel(env *tools.Env) string {
 	return s
 }
 
-// Unhashable caller model, the TypeError a dict membership test raises
-type xaiUnhashableError struct{ typeName string }
+// Caller model of a kind that cannot name a model, a TypeError
+type xaiUnhashableError struct{ kind string }
 
-func (e *xaiUnhashableError) Error() string      { return "unhashable type: '" + e.typeName + "'" }
+func (e *xaiUnhashableError) Error() string {
+	return "xAI image model is " + e.kind + " where text was expected"
+}
 func (e *xaiUnhashableError) PyTypeName() string { return "TypeError" }
 
 // String form, truthiness and hashability of a caller model kwarg
 func xaiCallerModel(v any) (string, bool, error) {
 	switch v.(type) {
 	case []any, []string, map[string]any, *pyjson.Object:
-		return "", true, &xaiUnhashableError{pyrepr.TypeName(v)}
+		return "", true, &xaiUnhashableError{errchain.Kind(v)}
 	}
 	s, _ := v.(string)
 	return s, pyTruthy(v), nil
@@ -487,7 +490,7 @@ func (p *xaiImageGenProvider) Generate(ctx context.Context, env *tools.Env, req 
 	}
 	obj, ok := pyjson.AsObject(result)
 	if !ok {
-		return nil, fmt.Errorf("'%s' object has no attribute 'get'", pyrepr.TypeName(result))
+		return nil, fmt.Errorf("xAI image reply is %s where a mapping was expected", errchain.Kind(result))
 	}
 	data, has := obj.Get("data")
 	if !has {
@@ -511,7 +514,7 @@ func (p *xaiImageGenProvider) Generate(ctx context.Context, env *tools.Env, req 
 	imageRef := publicURL
 	if publicURL == "" {
 		if !isObj {
-			return nil, fmt.Errorf("'%s' object has no attribute 'get'", pyrepr.TypeName(items[0]))
+			return nil, fmt.Errorf("xAI image item is %s where a mapping was expected", errchain.Kind(items[0]))
 		}
 		b64, _ := first.Vals["b64_json"].(string)
 		rawURL, _ := first.Vals["url"].(string)

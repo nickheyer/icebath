@@ -206,7 +206,7 @@ func TestNonObjectListEntriesDroppedAndScalarJobsFieldReplaced(t *testing.T) {
 	if err != nil || !reflect.DeepEqual(jobIDs(loaded), []string{"keep1"}) {
 		t.Fatalf("loaded %v %v", jobIDs(loaded), err)
 	}
-	if !strings.Contains(logs.String(), "Skipping 3 non-object entries in jobs.json (types: NoneType, int, str)") {
+	if !strings.Contains(logs.String(), "Skipping 3 non-object entries in jobs.json (types: a number, nothing, text)") {
 		t.Fatalf("log %s", logs)
 	}
 	if strings.Contains(logs.String(), "i am not a job") {
@@ -217,7 +217,7 @@ func TestNonObjectListEntriesDroppedAndScalarJobsFieldReplaced(t *testing.T) {
 	if err != nil || len(loaded) != 0 {
 		t.Fatalf("scalar jobs field: %v %v", jobIDs(loaded), err)
 	}
-	if !strings.Contains(logs.String(), "Replacing invalid jobs.json 'jobs' field (int) with an empty list") {
+	if !strings.Contains(logs.String(), "Replacing invalid jobs.json 'jobs' field (a number) with an empty list") {
 		t.Fatalf("log %s", logs)
 	}
 	if disk := diskJobIDs(t, s); len(disk) != 0 {
@@ -245,7 +245,7 @@ func TestLoadJobsRepairsControlCharactersAndBareList(t *testing.T) {
 		t.Fatalf("bare list %v %v", jobIDs(loaded), err)
 	}
 	os.WriteFile(s.jobsFile, []byte(`"nope"`), 0o600)
-	if _, err := s.LoadJobs(context.Background()); err == nil || err.Error() != "Cron database corrupted: expected {'jobs': [...]}, got str" {
+	if _, err := s.LoadJobs(context.Background()); err == nil || err.Error() != "Cron database corrupted: expected a mapping with a jobs list, got text" {
 		t.Fatalf("scalar store: %v", err)
 	}
 }

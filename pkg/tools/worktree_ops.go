@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
 
 	"modernc.org/sqlite"
@@ -179,12 +180,12 @@ func copyWorktreeIncludes(repoRoot, wtPath string) {
 	log := envLog(nil)
 	repoResolved, err := pypath.Realpath(repoRoot, pypath.Lax)
 	if err != nil {
-		log.Debug(fmt.Sprintf("Error copying .worktreeinclude entries: %s", pypath.OSErrorText(err)))
+		log.Debug(fmt.Sprintf("Error copying .worktreeinclude entries: %s", errchain.OSText(err)))
 		return
 	}
 	wtResolved, err := pypath.Realpath(wtPath, pypath.Lax)
 	if err != nil {
-		log.Debug(fmt.Sprintf("Error copying .worktreeinclude entries: %s", pypath.OSErrorText(err)))
+		log.Debug(fmt.Sprintf("Error copying .worktreeinclude entries: %s", errchain.OSText(err)))
 		return
 	}
 	for _, entry := range entries {
@@ -212,7 +213,7 @@ func copyWorktreeIncludes(repoRoot, wtPath string) {
 				err = pyshutil.Copy2(src, dst)
 			}
 			if err != nil {
-				log.Debug(fmt.Sprintf("Error copying .worktreeinclude entries: %s", pypath.OSErrorText(err)))
+				log.Debug(fmt.Sprintf("Error copying .worktreeinclude entries: %s", errchain.OSText(err)))
 				return
 			}
 			continue
@@ -221,15 +222,15 @@ func copyWorktreeIncludes(repoRoot, wtPath string) {
 			continue
 		}
 		if err := os.MkdirAll(filepath.Dir(dst), 0o777); err != nil {
-			log.Debug(fmt.Sprintf("Error copying .worktreeinclude entries: %s", pypath.OSErrorText(err)))
+			log.Debug(fmt.Sprintf("Error copying .worktreeinclude entries: %s", errchain.OSText(err)))
 			return
 		}
 		if err := os.Symlink(srcResolved, dst); err != nil {
 			if runtime.GOOS != "windows" {
-				log.Debug(fmt.Sprintf("Error copying .worktreeinclude entries: %s", pypath.OSErrorText(err)))
+				log.Debug(fmt.Sprintf("Error copying .worktreeinclude entries: %s", errchain.OSText(err)))
 				return
 			}
-			log.Info(fmt.Sprintf(".worktreeinclude: symlink failed (%s) \u2014 falling back to copytree on Windows.", pypath.OSErrorText(err)))
+			log.Info(fmt.Sprintf(".worktreeinclude: symlink failed (%s) \u2014 falling back to copytree on Windows.", errchain.OSText(err)))
 			if err := pyshutil.CopyTree(srcResolved, dst, true, false); err != nil {
 				log.Warn(fmt.Sprintf(".worktreeinclude: copy fallback also failed for %s -> %s: %s", src, dst, err))
 			}

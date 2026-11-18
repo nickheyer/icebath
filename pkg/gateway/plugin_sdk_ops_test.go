@@ -23,7 +23,7 @@ func sdkTypeErrorText(t *testing.T, err error) string {
 func TestServePluginSDKRejectsUnknownOp(t *testing.T) {
 	_, err := ServePluginSDK(context.Background(), t.TempDir(), "nope", nil, nil)
 	var builtin *plugins.HostBuiltinError
-	if !errors.As(err, &builtin) || builtin.Type != "ValueError" || builtin.Message != "unknown plugin SDK call 'nope'" {
+	if !errors.As(err, &builtin) || builtin.Type != "ValueError" || builtin.Message != "unknown plugin SDK call nope" {
 		t.Fatalf("%#v", err)
 	}
 }
@@ -35,11 +35,11 @@ func TestServePluginSDKBindsLikeAPythonSignature(t *testing.T) {
 		t.Fatal(got)
 	}
 	_, err = ServePluginSDK(ctx, h, "chat_catalog_ids", nil, nil)
-	if got := sdkTypeErrorText(t, err); got != "chat_catalog_ids() missing 1 required positional argument: 'items'" {
+	if got := sdkTypeErrorText(t, err); got != "chat_catalog_ids needs the argument items" {
 		t.Fatal(got)
 	}
 	_, err = ServePluginSDK(ctx, h, "get_version_info", nil, map[string]any{"x": 1})
-	if got := sdkTypeErrorText(t, err); got != "get_version_info() got an unexpected keyword argument 'x'" {
+	if got := sdkTypeErrorText(t, err); got != "get_version_info takes no argument named x" {
 		t.Fatal(got)
 	}
 	_, err = ServePluginSDK(ctx, h, "chat_catalog_ids", []any{1}, map[string]any{"items": 2})
@@ -115,7 +115,7 @@ func TestServePluginSDKOpensCredentialedURL(t *testing.T) {
 	}
 	_, err = ServePluginSDK(ctx, h, "open_credentialed_url", []any{srv.URL + "/missing"}, map[string]any{"timeout": 5.0})
 	var httpErr *sdkHTTPError
-	if !errors.As(err, &httpErr) || httpErr.Code != 404 || httpErr.Error() != "HTTP Error 404: Not Found" {
+	if !errors.As(err, &httpErr) || httpErr.Code != 404 || httpErr.Error() != "HTTP 404 Not Found" {
 		t.Fatalf("%#v", err)
 	}
 }

@@ -79,7 +79,7 @@ func TestRedactionRegistryRejectsAndDedupes(t *testing.T) {
 	if _, err := RegisterRedactionPatterns([]string{"ab{4294967295}"}, "test"); err == nil || err.Error() != "the repetition number is too large" {
 		t.Fatalf("overflow repeat must raise, got %v", err)
 	}
-	if _, err := RegisterRedactionPatterns(42, "test"); err == nil || err.Error() != "'int' object is not iterable" {
+	if _, err := RegisterRedactionPatterns(42, "test"); err == nil || err.Error() != "expected a list, got a number" {
 		t.Fatalf("non iterable patterns error %v", err)
 	}
 }

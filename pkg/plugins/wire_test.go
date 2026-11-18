@@ -167,11 +167,11 @@ func TestBindPyMatchesPythonTypeErrors(t *testing.T) {
 		args   []any
 		kwargs map[string]any
 	}{
-		"PluginContext.f() missing 1 required positional argument: 'handler'":       {[]any{"n"}, map[string]any{"title": "t"}},
-		"PluginContext.f() takes from 3 to 4 positional arguments but 5 were given": {[]any{1, 2, 3, 4}, nil},
-		"PluginContext.f() got an unexpected keyword argument 'zz'":                 {[]any{1, 2}, map[string]any{"zz": 1, "title": 1}},
-		"PluginContext.f() got multiple values for argument 'name'":                 {[]any{1, 2}, map[string]any{"name": 1}},
-		"PluginContext.f() missing 1 required keyword-only argument: 'title'":       {[]any{1, 2}, nil},
+		"PluginContext.f needs handler":                 {[]any{"n"}, map[string]any{"title": "t"}},
+		"PluginContext.f takes 2 to 3 arguments, got 4": {[]any{1, 2, 3, 4}, nil},
+		"PluginContext.f has no option zz":              {[]any{1, 2}, map[string]any{"zz": 1, "title": 1}},
+		"PluginContext.f got name twice":                {[]any{1, 2}, map[string]any{"name": 1}},
+		"PluginContext.f needs title":                   {[]any{1, 2}, nil},
 	}
 	for want, c := range cases {
 		if _, _, err := bindPy("f", params, c.args, c.kwargs); err == nil || err.Error() != want {

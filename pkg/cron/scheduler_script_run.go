@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pycodecs"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
@@ -123,11 +124,11 @@ func resolveCronInterpreter(interpreter string) (string, string, error) {
 		if errors.Is(err, fs.ErrNotExist) {
 			return "", "Interpreter not found: " + raw, nil
 		}
-		return unresolvable(pypath.OSErrorText(err))
+		return unresolvable(errchain.OSText(err))
 	}
 	target, err := pypath.Resolve(resolved)
 	if err != nil {
-		return unresolvable(pypath.OSErrorText(err))
+		return unresolvable(errchain.OSText(err))
 	}
 	names := []string{pystr.Lower(pypath.PathName(resolved)), pystr.Lower(pypath.PathName(target))}
 	if !info.Mode().IsRegular() {
@@ -345,7 +346,7 @@ func scriptText(b []byte) (string, error) {
 // Python str of an error the script run reports, OS failures in their errno form
 func scriptErrorText(err error) string {
 	if pypath.IsOSError(err) {
-		return pypath.OSErrorText(err)
+		return errchain.OSText(err)
 	}
 	return err.Error()
 }

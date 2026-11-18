@@ -114,11 +114,11 @@ func fetchMonitorURL(ctx context.Context, url string) (bool, string) {
 	req.Header.Set("User-Agent", "icebath-cron-monitor")
 	resp, err := monitorHTTPClient.Do(req)
 	if err != nil {
-		return false, "monitor_url fetch failed: <urlopen error " + err.Error() + ">"
+		return false, "monitor_url fetch failed: " + err.Error()
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 400 {
-		return false, fmt.Sprintf("monitor_url fetch failed: HTTP Error %d: %s", resp.StatusCode, http.StatusText(resp.StatusCode))
+		return false, fmt.Sprintf("monitor_url fetch failed: HTTP %d %s", resp.StatusCode, http.StatusText(resp.StatusCode))
 	}
 	body, err := io.ReadAll(io.LimitReader(resp.Body, monitorMaxURLBytes+1))
 	if err != nil {

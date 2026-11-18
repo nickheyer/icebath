@@ -137,11 +137,11 @@ func TestConfigSeedRejectsForbiddenKeys(t *testing.T) {
 		t.Fatalf("bool keys %q", msg)
 	}
 	_, err = ParsePack("name: p\nplugins:\n  - {repo: o/r, ref: "+packSHAA+"}\nconfig:\n  tts:\n    2001-12-14: x\n", "")
-	if msg := packErrText(t, err); msg != "Pack config for plugin 'tts' has an invalid key: datetime.date(2001, 12, 14)." {
+	if msg := packErrText(t, err); msg != "Pack config for plugin 'tts' has an invalid key: 2001-12-14." {
 		t.Fatalf("date key %q", msg)
 	}
 	_, err = ParsePack("name: p\nplugins:\n  - {repo: o/r, ref: "+packSHAA+"}\nconfig:\n  tts:\n    2001-12-14t21:59:43.10-05:00: x\n", "")
-	if msg := packErrText(t, err); msg != "Pack config for plugin 'tts' has an invalid key: datetime.datetime(2001, 12, 14, 21, 59, 43, 100000, tzinfo=datetime.timezone(datetime.timedelta(days=-1, seconds=68400), '-05:00'))." {
+	if msg := packErrText(t, err); msg != "Pack config for plugin 'tts' has an invalid key: 2001-12-14 21:59:43.100000-05:00." {
 		t.Fatalf("datetime key %q", msg)
 	}
 	_, err = ParsePack("name: p\nplugins:\n  - {repo: o/r, ref: "+packSHAA+"}\nconfig:\n  2002-12-14:\n    nested:\n      2001-12-14 21:59:43.10 -5: {api_key: x}\n", "")
@@ -363,7 +363,7 @@ func TestPackReviewSeedAndDispatch(t *testing.T) {
 	if err := PackCommand(ctx, PackArgs{Action: "show", Source: f}, &out, &out); err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"p v2 — by me", "unresolved: not found in", "aaaaaaaaaaaa", "tts.voice = 'nova'", "tts.speed = 2", "Pack lists skills (NOT auto-installed yet): s1",
+	for _, want := range []string{"p v2 — by me", "unresolved: not found in", "aaaaaaaaaaaa", "tts.voice = nova", "tts.speed = 2", "Pack lists skills (NOT auto-installed yet): s1",
 		"third-party code × 2 plugins", "1 entry could not be resolved", "Dry run only. Install with `icebath plugins pack install ...`."} {
 		if !strings.Contains(out.String(), want) {
 			t.Fatalf("%q missing from\n%s", want, out.String())

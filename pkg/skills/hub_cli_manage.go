@@ -620,7 +620,7 @@ func (x *HubCLI) DoPublish(ctx context.Context, skillPath, target, repo string, 
 		return err
 	}
 	if !utf8.Valid(raw) {
-		return errors.New("UnicodeDecodeError: 'utf-8' codec can't decode SKILL.md")
+		return errors.New("SKILL.md is not valid UTF-8")
 	}
 	skillMD := strings.TrimLeft(strings.TrimPrefix(string(raw), "\uFEFF"), "\uFEFF")
 	fm, err := readPublishFrontmatter(skillMD)
@@ -870,7 +870,7 @@ func (x *HubCLI) DoSnapshotImport(ctx context.Context, inputPath string, force b
 		return HubNoop, err
 	}
 	if !utf8.Valid(raw) {
-		return HubNoop, errors.New("UnicodeDecodeError: 'utf-8' codec can't decode the snapshot")
+		return HubNoop, errors.New("the snapshot is not valid UTF-8")
 	}
 	parsed, err := pyjson.Loads(strings.TrimPrefix(string(raw), "\uFEFF"))
 	if err != nil {

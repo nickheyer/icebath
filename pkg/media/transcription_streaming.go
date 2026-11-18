@@ -1,3 +1,5 @@
+//go:build !icebath_core && !icebath_noextras
+
 package media
 
 import (
@@ -14,20 +16,13 @@ import (
 
 	"github.com/gorilla/websocket"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/provider"
-)
-
-const (
-	streamingInputRate          = 16000
-	defaultOpenAIStreamingModel = "gpt-live-transcribe"
-	elevenLabsRealtimeModel     = "scribe_v2_realtime"
-	streamingFinalizeTimeout    = 20.0
-	streamingConnectTimeout     = 10 * time.Second
 )
 
 var (
@@ -51,41 +46,6 @@ func pcmInt16(pcm []byte) []int16 {
 		out[i] = int16(binary.LittleEndian.Uint16(pcm[2*i:]))
 	}
 	return out
-}
-
-// Resample converts one chunk, carrying the unconsumed tail into the next call
-func (r *Resampler) Resample(pcm []byte) []byte {
-	if r.src == r.dst || len(pcm) == 0 {
-		return pcm
-	}
-	data := append(append([]int16(nil), r.carry...), pcmInt16(pcm[:len(pcm)-len(pcm)%2])...)
-	if r.src%r.dst == 0 {
-		step := r.src / r.dst
-		usable := len(data) - len(data)%step
-		out := make([]int16, 0, usable/step)
-		for i := 0; i < usable; i += step {
-			sum := 0
-			for _, v := range data[i : i+step] {
-				sum += int(v)
-			}
-			out = append(out, int16(pyFloorDiv(sum, step)))
-		}
-		r.carry = data[usable:]
-		return int16Bytes(out)
-	}
-	ratio := float64(r.src) / float64(r.dst)
-	pos, last := r.pos, len(data)-1
-	var out []int16
-	for pos < float64(last) {
-		i := int(pos)
-		frac := pos - float64(i)
-		out = append(out, int16(float64(data[i])+float64(float64(int(data[i+1])-int(data[i]))*frac)))
-		pos += ratio
-	}
-	keep := int(pos)
-	r.carry = data[min(keep, len(data)):]
-	r.pos = pos - float64(keep)
-	return int16Bytes(out)
 }
 
 // Unbounded queue of PCM chunks where a nil entry is the end of audio sentinel
@@ -173,24 +133,6 @@ func (s *StreamingSession) SetInputRate(rate int) {
 		s.to16k = NewResampler(rate, streamingInputRate)
 		s.mu.Unlock()
 	}
-}
-
-// Next queued chunk resampled to 16 kHz, end set for the sentinel, an empty chunk when nothing is queued
-func (s *StreamingSession) takeAudio(block bool, timeout float64) ([]byte, bool) {
-	chunk, end, ok := s.audio.get(block, timeout)
-	if !ok {
-		return []byte{}, false
-	}
-	if end {
-		return nil, true
-	}
-	s.mu.Lock()
-	resampler := s.to16k
-	s.mu.Unlock()
-	if len(chunk) > 0 && resampler != nil {
-		chunk = resampler.Resample(chunk)
-	}
-	return chunk, false
 }
 
 // Start runs the provider worker
@@ -342,104 +284,6 @@ type wsDriver struct {
 	backlog [][]byte
 }
 
-// Ordered JSON object from alternating keys and values
-func jsonObject(pairs ...any) *pyjson.Object {
-	o := pyjson.NewObject()
-	for i := 0; i < len(pairs); i += 2 {
-		o.Set(pairs[i].(string), pairs[i+1])
-	}
-	return o
-}
-
-// Connects, runs the loop, then closes the socket in the background
-func (d *wsDriver) session(s *StreamingSession) (map[string]any, error) {
-	dialer := websocket.Dialer{HandshakeTimeout: streamingConnectTimeout, Proxy: http.ProxyFromEnvironment}
-	conn, resp, err := dialer.DialContext(s.ctx, d.url, d.headers)
-	if resp != nil && resp.Body != nil {
-		resp.Body.Close()
-	}
-	if err != nil {
-		return nil, err
-	}
-	ws := &wsConn{conn: conn, messages: make(chan wsMessage, 64)}
-	stopped := make(chan struct{})
-	go func() {
-		for {
-			kind, data, err := conn.ReadMessage()
-			select {
-			case ws.messages <- wsMessage{binary: kind == websocket.BinaryMessage, data: data, err: err}:
-			case <-stopped:
-				return
-			}
-			if err != nil {
-				return
-			}
-		}
-	}()
-	defer func() {
-		close(stopped)
-		go func() {
-			_ = conn.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""), time.Now().Add(time.Second))
-			conn.Close()
-		}()
-	}()
-	return d.loop(s, ws)
-}
-
-// Streams audio while reading events until one yields the envelope or the provider stalls past the deadline
-func (d *wsDriver) loop(s *StreamingSession, ws *wsConn) (map[string]any, error) {
-	d.backlog = nil
-	if err := d.wire.open(ws); err != nil {
-		return nil, err
-	}
-	endingSince, ending := 0.0, false
-	for {
-		if s.cancelled.IsSet() {
-			return s.errorEnvelope("cancelled"), nil
-		}
-		if !ending {
-			since, ended, err := d.drainAudio(s, ws)
-			if err != nil {
-				return nil, err
-			}
-			endingSince, ending = since, ended
-		} else if streamMonotonic()-endingSince > streamingFinalizeTimeout {
-			return s.errorEnvelope("provider never finalized the transcript"), nil
-		}
-		msg, ok := ws.recv(20 * time.Millisecond)
-		if !ok {
-			continue
-		}
-		if msg.err != nil {
-			return nil, msg.err
-		}
-		if msg.binary {
-			continue
-		}
-		decoded, err := pyjson.Loads(string(msg.data))
-		if err != nil {
-			return nil, err
-		}
-		event, isObject := decoded.(*pyjson.Object)
-		if !isObject {
-			return nil, fmt.Errorf("'%s' object has no attribute 'get'", pyrepr.TypeName(decoded))
-		}
-		result, err := d.wire.event(event)
-		if err != nil {
-			return nil, err
-		}
-		if result != nil {
-			s.finish(result)
-			return result, nil
-		}
-		if len(d.backlog) > 0 && d.wire.ready() {
-			if err := d.flushBacklog(ws); err != nil {
-				return nil, err
-			}
-		}
-	}
-}
-
 // Sends the audio held back until the provider was ready
 func (d *wsDriver) flushBacklog(ws *wsConn) error {
 	backlog := d.backlog
@@ -450,32 +294,6 @@ func (d *wsDriver) flushBacklog(ws *wsConn) error {
 		}
 	}
 	return nil
-}
-
-// Sends or holds every queued chunk, reporting the end of audio time once the sentinel is sent on
-func (d *wsDriver) drainAudio(s *StreamingSession, ws *wsConn) (float64, bool, error) {
-	for {
-		chunk, end := s.takeAudio(false, 0)
-		if end {
-			if err := d.wire.end(ws); err != nil {
-				return 0, false, err
-			}
-			return streamMonotonic(), true, nil
-		}
-		if len(chunk) == 0 {
-			if s.audio.empty() {
-				return 0, false, nil
-			}
-			continue
-		}
-		if d.wire.ready() {
-			if err := d.wire.sendAudio(ws, chunk); err != nil {
-				return 0, false, err
-			}
-		} else {
-			d.backlog = append(d.backlog, chunk)
-		}
-	}
 }
 
 // Websocket URL of a base URL with the path suffix and query, wss for https bases
@@ -532,15 +350,6 @@ func (w *openAIRealtimeWire) open(ws *wsConn) error {
 
 func (w *openAIRealtimeWire) ready() bool { return true }
 
-func (w *openAIRealtimeWire) sendAudio(ws *wsConn, chunk []byte) error {
-	pcm := w.resample.Resample(chunk)
-	if len(pcm) == 0 {
-		return nil
-	}
-	w.sentAudio = true
-	return ws.sendJSON(jsonObject("type", "input_audio_buffer.append", "audio", base64.StdEncoding.EncodeToString(pcm)))
-}
-
 // Commits the buffer, or finishes empty at once when no audio was sent
 func (w *openAIRealtimeWire) end(ws *wsConn) error {
 	if !w.sentAudio {
@@ -577,7 +386,7 @@ func (w *openAIRealtimeWire) event(event *pyjson.Object) (map[string]any, error)
 		if errObj, ok := event.Get("error"); ok && pyTruthy(errObj) {
 			o, isObj := errObj.(*pyjson.Object)
 			if !isObj {
-				return nil, fmt.Errorf("'%s' object has no attribute 'get'", pyrepr.TypeName(errObj))
+				return nil, fmt.Errorf("OpenAI realtime error is %s where a mapping was expected", errchain.Kind(errObj))
 			}
 			if m := eventText(o, "message"); m != "" {
 				message = m
@@ -752,37 +561,6 @@ func (w *elevenLabsRealtimeWire) event(event *pyjson.Object) (map[string]any, er
 
 type pluginStreamDriver struct {
 	inner TranscriptionStreamSession
-}
-
-// Pumps audio into a plugin stream session and polls its partial transcript
-func (d *pluginStreamDriver) session(s *StreamingSession) (map[string]any, error) {
-	for {
-		chunk, end := s.takeAudio(true, 0.25)
-		if s.cancelled.IsSet() {
-			return s.errorEnvelope("cancelled"), nil
-		}
-		if end {
-			result, err := d.inner.Finalize()
-			if err != nil {
-				return nil, err
-			}
-			out := make(map[string]any, len(result))
-			for k, v := range result {
-				out[k] = v
-			}
-			return out, nil
-		}
-		if len(chunk) > 0 {
-			if err := d.inner.PushAudio(chunk); err != nil {
-				return nil, err
-			}
-		}
-		partial, err := d.inner.PartialTranscript()
-		if err != nil {
-			return nil, err
-		}
-		s.setPartial(partial)
-	}
 }
 
 func streamingEnabled(sttConfig map[string]any) bool {

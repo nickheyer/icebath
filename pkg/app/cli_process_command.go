@@ -65,8 +65,7 @@ var slashDispatch = map[string]slashHandler{
 	"skin": withArg((*CLI).handleSkinCommand), "snapshot": withArg((*CLI).handleSnapshotCommand),
 	"subgoal": withArg((*CLI).handleSubgoalCommand), "suggestions": withArg((*CLI).handleSuggestionsCommand),
 	"timestamps": withArg((*CLI).handleTimestampsCommand), "tools": withArg((*CLI).handleToolsCommand),
-	"usage": withArg((*CLI).handleUsageCommand), "voice": withArg((*CLI).handleVoiceCommand),
-	"wake": withArg((*CLI).handleWakeCommand),
+	"usage": withArg((*CLI).handleUsageCommand),
 	"worktree": func(c *CLI, cmd string) bool {
 		if err := c.handleWorktreeCommand(cmd); err != nil {
 			panic(err)

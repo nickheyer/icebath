@@ -74,22 +74,22 @@ type SessionCompressResult struct {
 }
 
 type TranscriptMessage struct {
-	Role            string         `json:"role"`
-	Text            *string        `json:"text,omitzero"`
-	Content         any            `json:"content,omitzero"`
-	ToolCallID      *string        `json:"tool_call_id,omitzero"`
-	Timestamp       *float64       `json:"timestamp,omitzero"`
-	RowID           *int64         `json:"row_id,omitzero"`
-	DisplayKind     *string        `json:"display_kind,omitzero"`
-	DisplayMetadata any            `json:"display_metadata,omitzero"`
-	Name            *string        `json:"name,omitzero"`
-	Context         *string        `json:"context,omitzero"`
-	Args            map[string]any `json:"args,omitzero"`
-	Labels          []ToolLabel    `json:"labels,omitzero"`
-	Reasoning       *string        `json:"reasoning,omitzero"`
-	ToolName        *string        `json:"tool_name,omitzero"`
-	Archived        *bool          `json:"archived,omitzero"`
-	Extra           map[string]any `json:"-" wire:"extra"`
+	Role            string           `json:"role"`
+	Text            *string          `json:"text,omitzero"`
+	Content         any              `json:"content,omitzero"`
+	ToolCallID      *string          `json:"tool_call_id,omitzero"`
+	Timestamp       *float64         `json:"timestamp,omitzero"`
+	RowID           *int64           `json:"row_id,omitzero"`
+	DisplayKind     *string          `json:"display_kind,omitzero"`
+	DisplayMetadata *DisplayMetadata `json:"display_metadata,omitzero"`
+	Name            *string          `json:"name,omitzero"`
+	Context         *string          `json:"context,omitzero"`
+	Args            map[string]any   `json:"args,omitzero"`
+	Labels          []ToolLabel      `json:"labels,omitzero"`
+	Reasoning       *string          `json:"reasoning,omitzero"`
+	ToolName        *string          `json:"tool_name,omitzero"`
+	Archived        *bool            `json:"archived,omitzero"`
+	Extra           map[string]any   `json:"-" wire:"extra"`
 }
 
 type ToolLabelKind string
@@ -500,17 +500,17 @@ type QueuedPrompt struct {
 }
 
 type InflightTurn struct {
-	Assistant         string         `json:"assistant,omitzero"`
-	Streaming         bool           `json:"streaming,omitzero"`
-	User              string         `json:"user,omitzero"`
-	DisplayKind       *string        `json:"display_kind,omitzero"`
-	DisplayMetadata   map[string]any `json:"display_metadata,omitzero"`
-	Corrections       []string       `json:"corrections,omitzero"`
-	CorrectionOffsets []int64        `json:"correction_offsets,omitzero"`
-	Error             *string        `json:"error,omitzero"`
-	Status            *string        `json:"status,omitzero"`
-	Recoverable       *bool          `json:"recoverable,omitzero"`
-	ErrorSurface      map[string]any `json:"error_surface,omitzero"`
+	Assistant         string           `json:"assistant,omitzero"`
+	Streaming         bool             `json:"streaming,omitzero"`
+	User              string           `json:"user,omitzero"`
+	DisplayKind       *string          `json:"display_kind,omitzero"`
+	DisplayMetadata   *DisplayMetadata `json:"display_metadata,omitzero"`
+	Corrections       []string         `json:"corrections,omitzero"`
+	CorrectionOffsets []int64          `json:"correction_offsets,omitzero"`
+	Error             *string          `json:"error,omitzero"`
+	Status            *string          `json:"status,omitzero"`
+	Recoverable       *bool            `json:"recoverable,omitzero"`
+	ErrorSurface      map[string]any   `json:"error_surface,omitzero"`
 }
 
 type SessionActivateParams struct {
@@ -837,7 +837,7 @@ type CanonicalPendingAdmission struct {
 	InputID             string                              `json:"input_id"`
 	Text                string                              `json:"text"`
 	DisplayKind         *string                             `json:"display_kind,omitzero"`
-	DisplayMetadata     map[string]any                      `json:"display_metadata,omitzero"`
+	DisplayMetadata     *DisplayMetadata                    `json:"display_metadata,omitzero"`
 	Controls            []CanonicalPendingAdmissionControls `json:"controls,omitzero"`
 	Steering            *bool                               `json:"steering,omitzero"`
 }

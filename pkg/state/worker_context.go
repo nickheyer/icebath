@@ -73,7 +73,7 @@ func workerSessionRow(d *SessionDB, ctx context.Context, conn SQLiteConn, sessio
 		return nil, err
 	}
 	if row == nil {
-		return nil, &stateTypedError{"TypeError", "'NoneType' object is not iterable"}
+		return nil, &stateTypedError{"TypeError", "the worker session row is missing"}
 	}
 	return d.sessionRowDict(row), nil
 }

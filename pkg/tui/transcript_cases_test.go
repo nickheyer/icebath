@@ -5,12 +5,16 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/nickheyer/icebath/pkg/tuigateway"
 )
 
-func rowsOf(rows ...map[string]any) []any {
-	out := make([]any, len(rows))
+func rowsOf(rows ...map[string]any) []tuigateway.TranscriptMessage {
+	out := make([]tuigateway.TranscriptMessage, len(rows))
 	for i, r := range rows {
-		out[i] = r
+		if err := tuigateway.Strict(r, &out[i]); err != nil {
+			panic(err)
+		}
 	}
 	return out
 }

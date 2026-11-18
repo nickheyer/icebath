@@ -66,7 +66,7 @@ func pyJSONDecodeBytes(b []byte) ([]rune, error) {
 	switch enc {
 	case "utf-8":
 		if !utf8.Valid(b) {
-			return nil, errors.New("'utf-8' codec can't decode the response body")
+			return nil, errors.New("the response body is not valid UTF-8")
 		}
 		return []rune(string(b)), nil
 	case "utf-32", "utf-32-be", "utf-32-le":
@@ -78,13 +78,13 @@ func pyJSONDecodeBytes(b []byte) ([]rune, error) {
 			b = b[4:]
 		}
 		if len(b)%4 != 0 {
-			return nil, errors.New("'utf-32' codec can't decode the truncated response body")
+			return nil, errors.New("the UTF-32 response body ends inside a character")
 		}
 		out := make([]rune, 0, len(b)/4)
 		for i := 0; i < len(b); i += 4 {
 			r := order.Uint32(b[i:])
 			if r > unicode.MaxRune || (r >= 0xD800 && r <= 0xDFFF) {
-				return nil, errors.New("'utf-32' codec can't decode the response body")
+				return nil, errors.New("the UTF-32 response body is invalid")
 			}
 			out = append(out, rune(r))
 		}
@@ -98,7 +98,7 @@ func pyJSONDecodeBytes(b []byte) ([]rune, error) {
 		b = b[2:]
 	}
 	if len(b)%2 != 0 {
-		return nil, errors.New("'utf-16' codec can't decode the truncated response body")
+		return nil, errors.New("the UTF-16 response body ends inside a character")
 	}
 	units := make([]uint16, len(b)/2)
 	for i := range units {
@@ -106,7 +106,7 @@ func pyJSONDecodeBytes(b []byte) ([]rune, error) {
 	}
 	for i := 0; i < len(units); i++ {
 		if utf16.IsSurrogate(rune(units[i])) && (units[i] >= 0xDC00 || i+1 >= len(units) || units[i+1] < 0xDC00 || units[i+1] > 0xDFFF) {
-			return nil, errors.New("'utf-16' codec can't decode the response body")
+			return nil, errors.New("the UTF-16 response body is invalid")
 		}
 		if utf16.IsSurrogate(rune(units[i])) {
 			i++
@@ -127,7 +127,7 @@ func (p *pyJSONParser) skipSpace() {
 }
 
 func (p *pyJSONParser) errorf(msg string) error {
-	return fmt.Errorf("%s: char %d", msg, p.pos)
+	return fmt.Errorf("invalid JSON at character %d: %s", p.pos, msg)
 }
 
 func (p *pyJSONParser) hasPrefix(word string) bool {
@@ -146,7 +146,7 @@ func (p *pyJSONParser) hasPrefix(word string) bool {
 // One JSON value and its Python repr, objects keep insertion order and the last duplicate value
 func (p *pyJSONParser) value() (any, string, error) {
 	if p.pos >= len(p.src) {
-		return nil, "", p.errorf("Expecting value")
+		return nil, "", p.errorf("expected a value")
 	}
 	for _, lit := range []struct {
 		word string
@@ -173,7 +173,7 @@ func (p *pyJSONParser) value() (any, string, error) {
 	case c == '-' || (c >= '0' && c <= '9'):
 		return p.number()
 	}
-	return nil, "", p.errorf("Expecting value")
+	return nil, "", p.errorf("expected a value")
 }
 
 func (p *pyJSONParser) object() (any, string, error) {
@@ -189,7 +189,7 @@ func (p *pyJSONParser) object() (any, string, error) {
 	for {
 		p.skipSpace()
 		if p.pos >= len(p.src) || p.src[p.pos] != '"' {
-			return nil, "", p.errorf("Expecting property name enclosed in double quotes")
+			return nil, "", p.errorf("expected a key in double quotes")
 		}
 		runes, err := p.str()
 		if err != nil {
@@ -221,7 +221,7 @@ func (p *pyJSONParser) object() (any, string, error) {
 			p.pos++
 			break
 		}
-		return nil, "", p.errorf("Expecting ',' delimiter")
+		return nil, "", p.errorf("expected ',' between items")
 	}
 	parts := make([]string, len(keys))
 	for i, k := range keys {
@@ -256,7 +256,7 @@ func (p *pyJSONParser) array() (any, string, error) {
 			p.pos++
 			break
 		}
-		return nil, "", p.errorf("Expecting ',' delimiter")
+		return nil, "", p.errorf("expected ',' between items")
 	}
 	return out, "[" + strings.Join(parts, ", ") + "]", nil
 }
@@ -279,7 +279,7 @@ func (p *pyJSONParser) number() (any, string, error) {
 		p.pos++
 	} else if digits() == 0 {
 		p.pos = start
-		return nil, "", p.errorf("Expecting value")
+		return nil, "", p.errorf("expected a value")
 	}
 	isFloat := false
 	if p.pos+1 < len(p.src) && p.src[p.pos] == '.' && p.src[p.pos+1] >= '0' && p.src[p.pos+1] <= '9' {
@@ -308,7 +308,7 @@ func (p *pyJSONParser) number() (any, string, error) {
 	}
 	f, err := strconv.ParseFloat(text, 64)
 	if err != nil && !errors.Is(err, strconv.ErrRange) {
-		return nil, "", p.errorf("Expecting value")
+		return nil, "", p.errorf("expected a value")
 	}
 	return f, pyFloatRepr(f), nil
 }

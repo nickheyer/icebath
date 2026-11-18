@@ -172,7 +172,7 @@ func TestSchedulerRegistrationFailureKeepsSavedJob(t *testing.T) {
 	if !errors.As(err, &regErr) {
 		t.Fatal(err)
 	}
-	if !strings.Contains(err.Error(), "first scheduler registration failed (RuntimeError). Do not create a duplicate.") || strings.Contains(err.Error(), "private detail") {
+	if !strings.Contains(err.Error(), "first scheduler registration failed. Do not create a duplicate.") || strings.Contains(err.Error(), "private detail") {
 		t.Fatal(err)
 	}
 	if !strings.HasPrefix(regErr.UserMessage(), "Saved cron job 'Reg', but couldn't register") {

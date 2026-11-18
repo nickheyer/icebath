@@ -11,9 +11,9 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/tools"
 	"gopkg.in/yaml.v3"
 )
@@ -154,9 +154,9 @@ func checkRequiresIcebath(report *ValidationReport, manifest map[string]any) {
 	case spec == "":
 		report.add("requires_icebath", true, "not declared")
 	case requiresIcebathSpecValid(spec):
-		report.add("requires_icebath", true, fmt.Sprintf("spec %s parses", pyrepr.Repr(spec)))
+		report.add("requires_icebath", true, fmt.Sprintf("spec %s parses", errchain.Show(spec)))
 	default:
-		report.add("requires_icebath", false, fmt.Sprintf("requires_icebath spec %s does not parse (expected e.g. \">=0.19\" or \">=0.19, <1.0\")", pyrepr.Repr(spec)))
+		report.add("requires_icebath", false, fmt.Sprintf("requires_icebath spec %s does not parse (expected e.g. \">=0.19\" or \">=0.19, <1.0\")", errchain.Show(spec)))
 	}
 }
 
@@ -251,7 +251,7 @@ func checkRequiresEnv(report *ValidationReport, manifest map[string]any) {
 			continue
 		}
 		if !upperSnakeRe.MatchString(name) {
-			problems = append(problems, fmt.Sprintf("requires_env[%d]: %s is not UPPER_SNAKE_CASE", i, pyrepr.Repr(name)))
+			problems = append(problems, fmt.Sprintf("requires_env[%d]: %s is not UPPER_SNAKE_CASE", i, errchain.Show(name)))
 		}
 	}
 	if len(problems) > 0 {

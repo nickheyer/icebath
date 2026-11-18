@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -273,9 +274,9 @@ func hostedTransportRef(transport InternalSessionRPC) (SessionRef, error) {
 		if ref, known := producer.currentRef(); known {
 			return ref, nil
 		}
-		return SessionRef{}, &hostedAttributeError{"'HostedRoomOwnerRPC' object has no attribute 'ref'"}
+		return SessionRef{}, &hostedAttributeError{"the hosted room owner has no current session"}
 	}
-	return SessionRef{}, &hostedAttributeError{"'" + pyrepr.TypeName(transport) + "' object has no attribute 'ref'"}
+	return SessionRef{}, &hostedAttributeError{fmt.Sprintf("the session transport (%T) has no session reference", transport)}
 }
 
 // Member producer that discards an attempt fenced on its task and hosted generation
@@ -296,7 +297,7 @@ func hostedDiscard(ctx context.Context, transport InternalSessionRPC, profile, t
 	}
 	discarder, ok := transport.(hostedDiscarder)
 	if !ok {
-		return &hostedAttributeError{"'" + pyrepr.TypeName(transport) + "' object has no attribute 'discard'"}
+		return &hostedAttributeError{fmt.Sprintf("the session transport (%T) cannot discard a hosted turn", transport)}
 	}
 	_, err = discarder.Discard(ctx, profile, ref.SessionID, RoomSessionSource, taskID, generation)
 	return err

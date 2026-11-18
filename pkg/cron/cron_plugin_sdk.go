@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/plugins"
@@ -36,7 +37,7 @@ func bindSDKCall(fn string, positional string, args []any, kwargs map[string]any
 	}
 	for k := range kwargs {
 		if !allowed[k] && k != positional {
-			return nil, nil, &plugins.HostBuiltinError{Type: "TypeError", Message: fmt.Sprintf("%s() got an unexpected keyword argument %s", fn, pyrepr.StrRepr(k))}
+			return nil, nil, &plugins.HostBuiltinError{Type: "TypeError", Message: fmt.Sprintf("%s takes no argument named %s", fn, k)}
 		}
 	}
 	want := 0
@@ -44,21 +45,21 @@ func bindSDKCall(fn string, positional string, args []any, kwargs map[string]any
 		want = 1
 	}
 	if len(args) > want {
-		return nil, nil, &plugins.HostBuiltinError{Type: "TypeError", Message: fmt.Sprintf("%s() takes %d positional arguments but %d were given", fn, want, len(args))}
+		return nil, nil, &plugins.HostBuiltinError{Type: "TypeError", Message: fmt.Sprintf("%s takes at most %d unnamed arguments, got %d", fn, want, len(args))}
 	}
 	if positional == "" {
 		return nil, kwargs, nil
 	}
 	if len(args) == 1 {
 		if _, dup := kwargs[positional]; dup {
-			return nil, nil, &plugins.HostBuiltinError{Type: "TypeError", Message: fmt.Sprintf("%s() got multiple values for argument %s", fn, pyrepr.StrRepr(positional))}
+			return nil, nil, &plugins.HostBuiltinError{Type: "TypeError", Message: fmt.Sprintf("%s got the %s argument both by position and by name", fn, positional)}
 		}
 		return args[0], kwargs, nil
 	}
 	if v, ok := kwargs[positional]; ok {
 		return v, kwargs, nil
 	}
-	return nil, nil, &plugins.HostBuiltinError{Type: "TypeError", Message: fmt.Sprintf("%s() missing 1 required positional argument: %s", fn, pyrepr.StrRepr(positional))}
+	return nil, nil, &plugins.HostBuiltinError{Type: "TypeError", Message: fmt.Sprintf("%s needs the %s argument", fn, positional)}
 }
 
 // Profile local attempt recovery of the home, the count of attempts it closed
@@ -100,7 +101,7 @@ func sdkFireClaimed(ctx context.Context, home string, args []any, kwargs map[str
 	if ev := kw["cancel_event"]; ev != nil {
 		hostEvent, ok := ev.(*plugins.HostEvent)
 		if !ok {
-			return nil, &plugins.HostBuiltinError{Type: "AttributeError", Message: fmt.Sprintf("%s object has no attribute 'is_set'", pyrepr.StrRepr(pyrepr.TypeName(ev)))}
+			return nil, &plugins.HostBuiltinError{Type: "AttributeError", Message: fmt.Sprintf("cancel_event must be an event the host created, got %s", errchain.Kind(ev))}
 		}
 		watch, stopWatch := context.WithCancel(ctx)
 		defer stopWatch()
@@ -141,7 +142,7 @@ func claimedJobToWire(job *Job) (map[string]any, error) {
 func claimedJobFromWire(raw any) (*Job, error) {
 	m, ok := raw.(map[string]any)
 	if !ok {
-		return nil, &plugins.HostBuiltinError{Type: "TypeError", Message: fmt.Sprintf("claimed_job must be a dict, not %s", pyrepr.TypeName(raw))}
+		return nil, &plugins.HostBuiltinError{Type: "TypeError", Message: fmt.Sprintf("claimed_job must be a mapping, got %s", errchain.Kind(raw))}
 	}
 	rest := make(map[string]any, len(m))
 	for k, v := range m {

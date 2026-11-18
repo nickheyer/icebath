@@ -29,6 +29,7 @@ var blockedConfigTagRE = regexp.MustCompile(`\[blocked_config[^\]]*\]\s*`)
 type runMarks struct {
 	modelUnreachable                 bool
 	quotaHoldSeconds                 float64
+	failureReason                    string
 	failureIncidentID                *string
 	notificationAllTargetsSuppressed bool
 	botChatDeliveryReceipts          *pyjson.Object
@@ -573,7 +574,7 @@ func (s *Store) runOneJobBody(ctx context.Context, job *Job, o runOneJobOptions,
 		}
 		errText := cause.Error()
 		if errText == "" {
-			errText = cronExceptionName(cause)
+			errText = "the run failed with no error message"
 		}
 		s.log.Error(fmt.Sprintf("Error processing job %s: %s", job.ID, errText))
 		outcome := "suppressed"

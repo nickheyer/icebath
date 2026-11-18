@@ -24,7 +24,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -85,7 +85,7 @@ type peerHTTPError struct {
 	drained bool
 }
 
-func (e *peerHTTPError) Error() string { return fmt.Sprintf("HTTP Error %d: %s", e.code, e.msg) }
+func (e *peerHTTPError) Error() string { return fmt.Sprintf("HTTP %d %s", e.code, e.msg) }
 
 // Body bytes on the first read and nothing afterwards, a failed read reporting its exception
 func (e *peerHTTPError) read() ([]byte, error) {
@@ -96,10 +96,10 @@ func (e *peerHTTPError) read() ([]byte, error) {
 	return e.body, e.bodyErr
 }
 
-// Python urllib URLError, the reason printed inside the urlopen error brackets
+// Peer request failure before any HTTP reply, the transport reason
 type peerURLError struct{ reason error }
 
-func (e *peerURLError) Error() string { return "<urlopen error " + e.reason.Error() + ">" }
+func (e *peerURLError) Error() string { return "could not reach the peer: " + e.reason.Error() }
 
 // Python OSError or one of its subclasses with the str the exception prints
 type peerOSError struct {
@@ -222,7 +222,7 @@ var peerRequest = func(ctx context.Context, rawURL, key string, o peerRequestOpt
 	headers = append(headers, o.headers...)
 	for _, h := range headers {
 		if peerHeaderValueRe.MatchString(h[1]) {
-			return nil, fmt.Errorf("ValueError: Invalid header value %s", pyrepr.BytesRepr([]byte(h[1])))
+			return nil, fmt.Errorf("the %s header value holds a line break or a control character", h[0])
 		}
 	}
 	req, err := http.NewRequestWithContext(ctx, method, target, data)
@@ -266,7 +266,7 @@ func peerRequestURL(raw string) (string, error) {
 	}
 	m := peerURLTypeRe.FindStringSubmatch(full)
 	if m == nil {
-		return "", fmt.Errorf("ValueError: unknown url type: %s", pyrepr.Repr(full))
+		return "", fmt.Errorf("the peer URL %q has no http or https scheme", full)
 	}
 	scheme := pystr.Lower(m[1])
 	if scheme != "http" && scheme != "https" {
@@ -339,16 +339,16 @@ func peerTransportError(err error, wrote bool) error {
 		return err
 	}
 	if !wrote {
-		return &peerURLError{&peerOSError{class: pypath.OSErrorClass(inner), text: pyhttpx.OSErrorText(inner)}}
+		return &peerURLError{&peerOSError{class: pypath.OSErrorClass(inner), text: errchain.OSText(inner)}}
 	}
 	if errors.Is(inner, io.EOF) {
 		return &peerOSError{class: "RemoteDisconnected", text: peerRemoteDisconnectedMsg}
 	}
 	var errno syscall.Errno
 	if errors.As(inner, &errno) {
-		return &peerOSError{class: pypath.OSErrorClass(inner), text: pyhttpx.OSErrorText(inner)}
+		return &peerOSError{class: pypath.OSErrorClass(inner), text: errchain.OSText(inner)}
 	}
-	return fmt.Errorf("http.client.HTTPException: %w", inner)
+	return fmt.Errorf("the peer reply could not be read: %w", inner)
 }
 
 // Exception a response body read raises, IncompleteRead for a short body and the socket error otherwise
@@ -368,7 +368,7 @@ func peerReadError(err error, got int, want int64) error {
 	}
 	var errno syscall.Errno
 	if errors.As(err, &errno) {
-		return &peerOSError{class: pypath.OSErrorClass(err), text: pyhttpx.OSErrorText(err)}
+		return &peerOSError{class: pypath.OSErrorClass(err), text: errchain.OSText(err)}
 	}
 	return err
 }
@@ -462,7 +462,7 @@ func peerFindBotChat(ctx context.Context, base, key string) (string, error) {
 		case string, *pyjson.Object:
 			return "", nil
 		}
-		return "", fmt.Errorf("TypeError: '%s' object is not iterable", pyrepr.TypeName(data))
+		return "", fmt.Errorf("the peer bot chat list is %s, expected a list", errchain.Kind(data))
 	}
 	for _, row := range rows {
 		session, ok := row.(*pyjson.Object)
@@ -474,7 +474,7 @@ func peerFindBotChat(ctx context.Context, base, key string) (string, error) {
 		if pyrepr.Truthy(title) {
 			s, isText := title.(string)
 			if !isText {
-				return "", &peerAttributeError{fmt.Sprintf("'%s' object has no attribute 'strip'", pyrepr.TypeName(title))}
+				return "", &peerAttributeError{fmt.Sprintf("a peer bot chat title is %s, expected text", errchain.Kind(title))}
 			}
 			text = s
 		}
@@ -507,7 +507,7 @@ var peerEnsureBotChat = func(ctx context.Context, base, key string) (string, err
 			if he.code == 400 {
 				text, isText := detail.(string)
 				if !isText {
-					return "", &peerAttributeError{fmt.Sprintf("'%s' object has no attribute 'lower'", pyrepr.TypeName(detail))}
+					return "", &peerAttributeError{fmt.Sprintf("a peer bot chat detail is %s, expected text", errchain.Kind(detail))}
 				}
 				if strings.Contains(pystr.Lower(text), "title") {
 					return "", &peerRuntimeError{fmt.Sprintf("Peer already has a '%s' session but it is hidden and the "+
@@ -618,7 +618,7 @@ func peerText(v any) (string, error) {
 	}
 	s, ok := v.(string)
 	if !ok {
-		return "", &peerAttributeError{fmt.Sprintf("'%s' object has no attribute 'strip'", pyrepr.TypeName(v))}
+		return "", &peerAttributeError{fmt.Sprintf("a peer reply field is %s, expected text", errchain.Kind(v))}
 	}
 	return pystr.Strip(s), nil
 }
@@ -1026,7 +1026,7 @@ func cmdPeer(c *peerCLI, ns map[string]any) (int, error) {
 			c.eprintln(err.Error())
 			return 1, nil
 		case errors.Is(err, fs.ErrPermission):
-			c.eprintln(pypath.OSErrorText(err))
+			c.eprintln(errchain.OSText(err))
 			return 1, nil
 		}
 		return 1, err

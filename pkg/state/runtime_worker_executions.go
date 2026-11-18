@@ -202,7 +202,7 @@ func (d *SessionDB) AdoptWorkerExecution(ctx context.Context, epoch int64, execu
 		}
 		stored, ok := rowValue(row, "adoption_digest").(string)
 		if !ok {
-			return &pyConvError{"TypeError", "unsupported operand types(s) or combination of types: 'NoneType' and 'str'"}
+			return &pyConvError{"TypeError", "the worker execution has no stored adoption digest"}
 		}
 		if subtle.ConstantTimeCompare([]byte(stored), []byte(digest)) != 1 {
 			return runtimeRefusal("permission_denied")

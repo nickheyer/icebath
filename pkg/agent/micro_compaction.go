@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -118,7 +119,7 @@ func microResponseContent(response any) (string, error) {
 	m, _ := response.(map[string]any)
 	choices, _ := m["choices"].([]any)
 	if len(choices) == 0 {
-		return "", fmt.Errorf("micro-summarization response has no choices: %s", pyrepr.Repr(response))
+		return "", fmt.Errorf("micro-summarization response has no choices: %s", errchain.Show(response))
 	}
 	first, _ := choices[0].(map[string]any)
 	var content any = first["message"]
@@ -481,7 +482,7 @@ func (c *ContextCompressor) archiveMicroCompaction(compacted, held []map[string]
 	}
 	store, ok := c.sessionDB.(archiveCompactor)
 	if !ok {
-		return fmt.Errorf("%T object has no attribute 'archive_and_compact'", c.sessionDB)
+		return errors.New("the session store cannot archive compactions")
 	}
 	if _, err := store.ArchiveAndCompact(c.ctx, c.sessionID, compacted, o); err != nil {
 		return err

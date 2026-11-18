@@ -25,7 +25,7 @@ const (
 	DefaultControlClientTimeout = 2 * time.Second
 )
 
-var errSurrogateEncode = errors.New("'utf-8' codec can't encode characters: surrogates not allowed")
+var errSurrogateEncode = errors.New("the control socket path is not valid UTF-8")
 
 // Sixteen hex digits of the sha256 of the expanded, resolved and normcased home
 func controlHomeHash(home string) (string, error) {
@@ -114,7 +114,7 @@ func ResolveClientSocketPath(home string) (string, error) {
 		return "", nil
 	}
 	if !utf8.Valid(raw) {
-		return "", errors.New("'utf-8' codec can't decode the control socket pointer")
+		return "", errors.New("the control socket pointer is not valid UTF-8")
 	}
 	target := pystr.Strip(strings.TrimPrefix(string(raw), "\ufeff"))
 	if target == "" {

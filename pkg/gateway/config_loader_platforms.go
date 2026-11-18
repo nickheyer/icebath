@@ -8,6 +8,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/plugins"
 )
@@ -16,7 +17,7 @@ import (
 func pyMappingCopy(v any) (map[string]any, error) {
 	m, ok := v.(map[string]any)
 	if !ok {
-		return nil, &PyError{"TypeError", "'" + pyrepr.TypeName(v) + "' object is not a mapping"}
+		return nil, &PyError{"TypeError", "expected a mapping, got " + errchain.Kind(v)}
 	}
 	out := make(map[string]any, len(m))
 	for k, val := range m {
@@ -449,7 +450,7 @@ func ReadYAMLLayers(ctx context.Context, h string) (map[string]any, error) {
 	}
 	m, ok := config.Expand(doc, os.LookupEnv).(map[string]any)
 	if !ok {
-		return nil, &PyError{"AttributeError", "'" + pyrepr.TypeName(doc) + "' object has no attribute 'get'"}
+		return nil, &PyError{"AttributeError", "the config layer is " + errchain.Kind(doc) + ", expected a mapping"}
 	}
 	return config.ApplyManagedOverlay(m), nil
 }
@@ -463,7 +464,7 @@ func LoadYAMLLayerAny(ctx context.Context, h string, gwData any) error {
 	if err != nil || len(yamlCfg) == 0 {
 		return err
 	}
-	return &PyError{"AttributeError", "'" + pyrepr.TypeName(gwData) + "' object has no attribute 'get'"}
+	return &PyError{"AttributeError", "the gateway section of the config layer is " + errchain.Kind(gwData) + ", expected a mapping"}
 }
 
 // Overlays the YAML layers onto gwData in place, bridging shared keys and plugin hooks for configured platforms
@@ -522,7 +523,7 @@ func LoadGatewayConfigFile(ctx context.Context, path string) (*GatewayConfig, er
 		return nil, err
 	}
 	if !utf8.Valid(raw) {
-		return nil, &PyError{"UnicodeDecodeError", "'utf-8' codec can't decode " + path}
+		return nil, &PyError{"UnicodeDecodeError", path + " is not valid UTF-8"}
 	}
 	doc, err := config.FastSafeLoad(raw)
 	if err != nil {

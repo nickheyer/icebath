@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyctx"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -442,7 +443,7 @@ func relayIter(raw any) (*relayChunkIter, error) {
 			return rv.Index(i - 1).Interface(), false, nil
 		}}, nil
 	}
-	return nil, fmt.Errorf("'%s' object is not iterable", pyrepr.TypeName(raw))
+	return nil, fmt.Errorf("the relay reply is %s, expected a list", errchain.Kind(raw))
 }
 
 func relaySliceIter(items []any) *relayChunkIter {
@@ -741,7 +742,7 @@ func (s *ManagedLlmStream) relayFinalizer(a *relayManagedAttempt) func(ctx conte
 			var err error
 			response, err = a.runCallback(ctx, func(c context.Context) (any, error) {
 				if s.o.Finalizer == nil {
-					return nil, errors.New("'NoneType' object is not callable")
+					return nil, errors.New("the relay stream has no finalizer")
 				}
 				return s.o.Finalizer(c)
 			})
@@ -891,7 +892,7 @@ func (s *ManagedLlmStream) Next(ctx context.Context) (any, error) {
 	if it, ok := s.stream.(*tools.RelayAsyncIterator); ok && it != nil && it.Next != nil {
 		chunk, err = it.Next(tools.RelayWithRunningLoop(ctx))
 	} else {
-		err = fmt.Errorf("'%s' object is not an async iterator", pyrepr.TypeName(s.stream))
+		err = fmt.Errorf("the relay stream (%T) cannot be read as a stream", s.stream)
 	}
 	if errors.Is(err, io.EOF) {
 		if len(s.rawChunks) > 0 {
@@ -1179,7 +1180,7 @@ func (a *AnthropicStreamAccumulator) onContentBlockDelta(payload map[string]any)
 		}
 		list, ok := existing.([]any)
 		if !ok {
-			return fmt.Errorf("'%s' object has no attribute 'append'", pyrepr.TypeName(existing))
+			return fmt.Errorf("a streamed content block holds %s where a list was expected", errchain.Kind(existing))
 		}
 		block["citations"] = append(list, citation)
 	}

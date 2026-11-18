@@ -215,7 +215,7 @@ func TestSetTitleProvenancePrecedence(t *testing.T) {
 		t.Fatalf("missing session %v %v", got, err)
 	}
 	_, err := titles.SetAutoTitle(ctx, "s", "x", "user")
-	wantValueError(t, err, "invalid automatic title source: 'user'")
+	wantValueError(t, err, "invalid automatic title source: user")
 	addTitledSession(t, host.conn, "legacy", 2, map[string]any{"title": "Old manual"})
 	if got, err := titles.SetAutoTitle(ctx, "legacy", "Generated", "llm"); err != nil || got {
 		t.Fatalf("NULL provenance ranks as user: %v %v", got, err)
@@ -367,7 +367,7 @@ func TestTitleSourceAccessors(t *testing.T) {
 		t.Fatalf("missing title %v %v", ok, err)
 	}
 	_, err := titles.SetSessionTitleSource(ctx, "titled", "auto")
-	wantValueError(t, err, "invalid title source: 'auto'")
+	wantValueError(t, err, "invalid title source: auto")
 	if got, err := titles.SetSessionTitleSource(ctx, "untitled", "user"); got || err != nil {
 		t.Fatalf("untitled row untouched: %v %v", got, err)
 	}

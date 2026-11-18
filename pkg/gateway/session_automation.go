@@ -6,6 +6,7 @@ import (
 	"slices"
 	"sort"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
@@ -175,7 +176,7 @@ func foldQueuedGuard(admissionID, sessionID string, replaced *[]string, skip []s
 		}
 		payload, ok := decoded.(*pyjson.Object)
 		if !ok {
-			return fmt.Errorf("'%s' object does not support item assignment", pyrepr.TypeName(decoded))
+			return fmt.Errorf("the queued automation guard is %s, expected a mapping", errchain.Kind(decoded))
 		}
 		payload.Set("text", automationFoldedText)
 		automationDescriptor(payload).Delete("identities")
@@ -469,7 +470,7 @@ func localAutomationOwner(ctx context.Context, a *SessionAuthority, adapter Plat
 	if detachedRouteOf(event.Source) != nil {
 		ref, live, found := detachedLive(a, entry.SessionKey)
 		if found && live.Source == event.Source && !canAuthorize {
-			return SessionRef{}, nil, fmt.Errorf("'%s' object has no attribute 'authorize_source'", pyrepr.TypeName(adapter))
+			return SessionRef{}, nil, fmt.Errorf("the platform adapter (%T) cannot authorize a source", adapter)
 		}
 		if !found || live.Source != event.Source || !authorizer.authorizeSource(event.Source) {
 			return SessionRef{}, nil, runtimeRefusal("permission_denied")
@@ -487,7 +488,7 @@ func localAutomationOwner(ctx context.Context, a *SessionAuthority, adapter Plat
 	}
 	live, _ := a.live(ref.SessionID)
 	if live != nil && live.Source == event.Source && !canAuthorize {
-		return SessionRef{}, nil, fmt.Errorf("'%s' object has no attribute 'authorize_source'", pyrepr.TypeName(adapter))
+		return SessionRef{}, nil, fmt.Errorf("the platform adapter (%T) cannot authorize a source", adapter)
 	}
 	if live == nil || live.Source != event.Source || !authorizer.authorizeSource(event.Source) {
 		return SessionRef{}, nil, runtimeRefusal("permission_denied")
@@ -551,7 +552,7 @@ func checkLocalAutomation(ctx context.Context, a *SessionAuthority, ref SessionR
 	}
 	descriptor, _ := descriptorValue.(*pyjson.Object)
 	if descriptor == nil {
-		return fmt.Errorf("'%s' object has no attribute 'get'", pyrepr.TypeName(descriptorValue))
+		return fmt.Errorf("the automation descriptor is %s, expected a mapping", errchain.Kind(descriptorValue))
 	}
 	descriptorRoute, _ := descriptor.Get("route")
 	admitted := route

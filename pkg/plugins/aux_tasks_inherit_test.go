@@ -86,7 +86,7 @@ func TestAuxiliaryTaskRegistrarIgnoresNonStringInheritFromAndRefusesNonStringKey
 	if err := registerPlugAux(manager, "plug_aux", int64(5)); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(logs.String(), "auxiliary task 'plug_aux': ignoring inherit_from=5 ") {
+	if !strings.Contains(logs.String(), "auxiliary task plug_aux: ignoring inherit_from=5 ") {
 		t.Fatalf("warning %s", logs)
 	}
 	if entry := manager.AuxiliaryTasks()["plug_aux"]; entry["inherit_from"] != nil {
@@ -95,13 +95,13 @@ func TestAuxiliaryTaskRegistrarIgnoresNonStringInheritFromAndRefusesNonStringKey
 	if resolved, err := provider.AuxiliaryTaskConfig(ctx, "plug_aux"); err != nil || fmt.Sprint(resolved["timeout"]) != "60" {
 		t.Fatalf("resolved %v err %v", resolved, err)
 	}
-	for raw, want := range map[string]any{"5": int64(5), "None": nil, "True": true} {
+	for raw, want := range map[string]any{"5": int64(5), "nothing": nil, "true": true} {
 		err := registerPlugAux(manager, want, nil)
 		if err == nil || err.Error() != "Plugin 'plug' tried to register auxiliary task with invalid key "+raw {
 			t.Fatalf("key %s err %v", raw, err)
 		}
 	}
-	if err := registerPlugAux(manager, []any{"plug_aux"}, nil); err == nil || err.Error() != "unhashable type: 'list'" {
+	if err := registerPlugAux(manager, []any{"plug_aux"}, nil); err == nil || err.Error() != "auxiliary task key is a list where text was expected" {
 		t.Fatalf("list key err %v", err)
 	}
 	if err := registerPlugAux(manager, "plug_ok", "5"); err != nil {
@@ -145,11 +145,11 @@ func TestAuxiliaryTaskRegistrarKeepsPluginValuesAndRefusesNonMappingDefaults(t *
 		t.Fatalf("pairs %v", got)
 	}
 	for want, bad := range map[string]any{
-		"dictionary update sequence element #0 has length 1; 2 is required":  "x",
-		"'int' object is not iterable":                                       int64(3),
-		"dictionary update sequence element #1 has length 3; 2 is required":  []any{[]any{"a", int64(1)}, []any{"b", int64(2), int64(3)}},
-		"cannot convert dictionary update sequence element #0 to a sequence": []any{int64(1)},
-		"unhashable type: 'list'":                                            []any{[]any{[]any{}, int64(1)}},
+		"auxiliary task defaults are text where a mapping or a list of key and value pairs was expected":     "x",
+		"auxiliary task defaults are a number where a mapping or a list of key and value pairs was expected": int64(3),
+		"auxiliary task defaults item 1 has 3 parts where a key and a value were expected":                   []any{[]any{"a", int64(1)}, []any{"b", int64(2), int64(3)}},
+		"auxiliary task defaults item 0 is not a key and value pair":                                         []any{int64(1)},
+		"auxiliary task defaults item 0 has a list as its key":                                               []any{[]any{[]any{}, int64(1)}},
 	} {
 		if err := register("plug_bad", plugins.AuxTaskOptions{DisplayName: "n", Description: "d", Defaults: bad, InheritFrom: "plug_raw"}); err == nil || err.Error() != want {
 			t.Fatalf("defaults %v: %v", bad, err)

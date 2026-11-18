@@ -85,7 +85,7 @@ type nativeRecoveryRunner interface {
 func RecoverProfileNativeSessions(ctx context.Context, runner any, authority *SessionAuthority) (*pyjson.Object, error) {
 	r, ok := runner.(nativeRecoveryRunner)
 	if !ok {
-		return nil, fmt.Errorf("'%T' object has no attribute 'session_store'", runner)
+		return nil, fmt.Errorf("the gateway runner (%T) has no session store", runner)
 	}
 	scoped := ownerScope(ctx, authority, false)
 	rows, err := authority.DB.ReadAll(scoped, "SELECT DISTINCT target_session_id FROM session_admissions WHERE status IN ('queued','unknown')")

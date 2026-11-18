@@ -15,6 +15,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
 	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
@@ -318,7 +319,7 @@ func validateConfigSeed(pluginID string, seed any, keys packKeys) (map[string]an
 	for _, key := range order {
 		typed, isStr := keys.typed(m, key)
 		if !isStr || pystr.Strip(key) == "" {
-			return nil, packErrorf("Pack config for plugin '%s' has an invalid key: %s.", pluginID, pyrepr.Repr(typed))
+			return nil, packErrorf("Pack config for plugin '%s' has an invalid key: %s.", pluginID, errchain.Show(typed))
 		}
 	}
 	if key, reason, found := firstForbiddenKey(m, "", keys); found {
@@ -462,7 +463,7 @@ func parsePackEntry(item any, label string) (PackPluginEntry, error) {
 	}
 	ref, ok := refRaw.(string)
 	if !ok || !exactSHARe.MatchString(pystr.Strip(ref)) {
-		return PackPluginEntry{}, packErrorf("Pack plugin entry %s has ref %s: refs must be exact 40-character commit SHAs (tags and branch names are rejected — pin the commit for reproducible installs).", label, pyrepr.Repr(refRaw))
+		return PackPluginEntry{}, packErrorf("Pack plugin entry %s has ref %s: refs must be exact 40-character commit SHAs (tags and branch names are rejected — pin the commit for reproducible installs).", label, errchain.Show(refRaw))
 	}
 	subdir := ""
 	if subdirRaw, has := m["subdir"]; has && subdirRaw != nil {
@@ -601,7 +602,7 @@ func renderPackReview(console *Console, pack *PluginPack, resolved []ResolvedPac
 		console.Print("[bold]Config seeds[/bold] (plugins.entries.<id>, non-secret):")
 		for _, s := range pack.Config {
 			for _, key := range config.MappingKeys(s.Seed) {
-				console.Print(fmt.Sprintf("  %s.%s = %s", s.ID, key, pyrepr.Repr(s.Seed[key])))
+				console.Print(fmt.Sprintf("  %s.%s = %s", s.ID, key, errchain.Show(s.Seed[key])))
 			}
 		}
 	}
@@ -640,7 +641,7 @@ func seedPluginConfig(ctx context.Context, h, pluginID string, seed map[string]a
 		}
 		child, ok := parent[key].(map[string]any)
 		if !ok {
-			return fmt.Errorf("'%s' object has no attribute 'setdefault'", pyTypeName(parent[key]))
+			return fmt.Errorf("config %s is %s where a mapping was expected", key, errchain.Kind(parent[key]))
 		}
 		parent = child
 	}

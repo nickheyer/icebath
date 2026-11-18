@@ -3,6 +3,7 @@ package gateway
 import (
 	"context"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
@@ -29,7 +30,7 @@ func rowSource(ctx context.Context, row *pyjson.Object, platform Platform, profi
 		if parsed, err := pyjson.Loads(text); err == nil {
 			obj, isObject := parsed.(*pyjson.Object)
 			if !isObject {
-				panic(&PyError{Kind: "AttributeError", Msg: "'" + jsonValueTypeName(parsed) + "' object has no attribute 'get'"})
+				panic(&PyError{Kind: "AttributeError", Msg: "the stored session source is " + errchain.Kind(parsed) + ", expected a mapping"})
 			}
 			if source, err := SessionSourceFromDict(ctx, pyjson.Plain(obj).(map[string]any)); err == nil {
 				return source
@@ -63,21 +64,4 @@ func rowOptStr(row *pyjson.Object, key string) *string {
 		s = text
 	}
 	return &s
-}
-
-// Python type name of a decoded JSON value
-func jsonValueTypeName(v any) string {
-	switch v.(type) {
-	case nil:
-		return "NoneType"
-	case string:
-		return "str"
-	case bool:
-		return "bool"
-	case []any:
-		return "list"
-	case float64:
-		return "float"
-	}
-	return "int"
 }

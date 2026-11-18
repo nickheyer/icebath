@@ -11,9 +11,9 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/media"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
@@ -23,7 +23,6 @@ import (
 type pluginSDKOp func(ctx context.Context, h string, args []any, kwargs map[string]any) (any, error)
 
 var pluginSDKOps = map[string]pluginSDKOp{
-	"provider_media.save_url":     sdkProviderMediaSaveURL,
 	"read_credential_pool":        sdkReadCredentialPool,
 	"open_credentialed_url":       sdkOpenCredentialedURL,
 	"chat_catalog_ids":            sdkChatCatalogIDs,
@@ -52,11 +51,11 @@ func sdkTypeError(format string, a ...any) error {
 	return &plugins.HostBuiltinError{Type: "TypeError", Message: fmt.Sprintf(format, a...)}
 }
 
-// English list of quoted names the way CPython words missing arguments
+// English list of the argument names a call lacks
 func sdkNameList(names []string) string {
 	quoted := make([]string, len(names))
 	for i, n := range names {
-		quoted[i] = pyrepr.StrRepr(n)
+		quoted[i] = n
 	}
 	switch len(quoted) {
 	case 1:
@@ -80,18 +79,14 @@ func bindSDKSignature(fn string, params []sdkParam, args []any, kwargs map[strin
 		}
 	}
 	if len(args) > len(positional) {
-		takes := fmt.Sprintf("%d positional argument", len(positional))
+		takes := fmt.Sprintf("%d unnamed argument", len(positional))
 		if required != len(positional) {
-			takes = fmt.Sprintf("from %d to %d positional argument", required, len(positional))
+			takes = fmt.Sprintf("%d to %d unnamed argument", required, len(positional))
 		}
 		if len(positional) != 1 {
 			takes += "s"
 		}
-		verb := "were"
-		if len(args) == 1 {
-			verb = "was"
-		}
-		return nil, sdkTypeError("%s() takes %s but %d %s given", fn, takes, len(args), verb)
+		return nil, sdkTypeError("%s takes %s, got %d", fn, takes, len(args))
 	}
 	bound := map[string]any{}
 	for i, v := range args {
@@ -104,10 +99,10 @@ func bindSDKSignature(fn string, params []sdkParam, args []any, kwargs map[strin
 	slices.Sort(keys)
 	for _, k := range keys {
 		if !slices.ContainsFunc(params, func(p sdkParam) bool { return p.name == k }) {
-			return nil, sdkTypeError("%s() got an unexpected keyword argument %s", fn, pyrepr.StrRepr(k))
+			return nil, sdkTypeError("%s takes no argument named %s", fn, k)
 		}
 		if _, dup := bound[k]; dup {
-			return nil, sdkTypeError("%s() got multiple values for argument %s", fn, pyrepr.StrRepr(k))
+			return nil, sdkTypeError("%s got the %s argument both by position and by name", fn, k)
 		}
 		bound[k] = kwargs[k]
 	}
@@ -128,13 +123,13 @@ func bindSDKSignature(fn string, params []sdkParam, args []any, kwargs map[strin
 	for _, m := range []struct {
 		names []string
 		kind  string
-	}{{missingPositional, "positional"}, {missingKeyword, "keyword-only"}} {
+	}{{missingPositional, "the"}, {missingKeyword, "the named"}} {
 		if len(m.names) > 0 {
 			plural := ""
 			if len(m.names) > 1 {
 				plural = "s"
 			}
-			return nil, sdkTypeError("%s() missing %d required %s argument%s: %s", fn, len(m.names), m.kind, plural, sdkNameList(m.names))
+			return nil, sdkTypeError("%s needs %s argument%s %s", fn, m.kind, plural, sdkNameList(m.names))
 		}
 	}
 	return bound, nil
@@ -143,7 +138,7 @@ func bindSDKSignature(fn string, params []sdkParam, args []any, kwargs map[strin
 func sdkString(fn, name string, v any) (string, error) {
 	s, ok := v.(string)
 	if !ok {
-		return "", sdkTypeError("%s() argument %s must be str, not %s", fn, pyrepr.StrRepr(name), pyrepr.TypeName(v))
+		return "", sdkTypeError("the %s argument of %s must be text, got %s", name, fn, errchain.Kind(v))
 	}
 	return s, nil
 }
@@ -153,7 +148,7 @@ func sdkFloat(fn, name string, v any) (float64, error) {
 	case int, int64, float64, bool:
 		return pyint.Float(v)
 	}
-	return 0, sdkTypeError("%s() argument %s must be a number, not %s", fn, pyrepr.StrRepr(name), pyrepr.TypeName(v))
+	return 0, sdkTypeError("the %s argument of %s must be a number, got %s", name, fn, errchain.Kind(v))
 }
 
 func sdkInt(fn, name string, v any) (int64, error) {
@@ -168,13 +163,13 @@ func sdkInt(fn, name string, v any) (int64, error) {
 		}
 		return 0, nil
 	}
-	return 0, sdkTypeError("%s() argument %s must be int, not %s", fn, pyrepr.StrRepr(name), pyrepr.TypeName(v))
+	return 0, sdkTypeError("the %s argument of %s must be a whole number, got %s", name, fn, errchain.Kind(v))
 }
 
 func sdkStringMap(fn, name string, v any) (map[string]string, error) {
 	raw, ok := v.(map[string]any)
 	if !ok {
-		return nil, sdkTypeError("%s() argument %s must be dict, not %s", fn, pyrepr.StrRepr(name), pyrepr.TypeName(v))
+		return nil, sdkTypeError("the %s argument of %s must be a mapping, got %s", name, fn, errchain.Kind(v))
 	}
 	out := make(map[string]string, len(raw))
 	for k, item := range raw {
@@ -192,63 +187,6 @@ func sdkToolsEnv(ctx context.Context, h string) *tools.Env {
 	cfg, _ := config.LoadReadonly(ctx, h, nil)
 	cwd, _ := os.Getwd()
 	return &tools.Env{Home: h, Config: cfg, Cwd: cwd, Log: pkgLog()}
-}
-
-// Stream downloads a provider URL into the media cache of the home under the SSRF guard, the cached path
-func sdkProviderMediaSaveURL(ctx context.Context, h string, args []any, kwargs map[string]any) (any, error) {
-	const fn = "save_url"
-	a, err := bindSDKSignature(fn, []sdkParam{{name: "kind"}, {name: "url"}, {name: "prefix", kwOnly: true}, {name: "timeout", kwOnly: true},
-		{name: "max_bytes", kwOnly: true}, {name: "chunk_size", kwOnly: true}, {name: "content_types", kwOnly: true},
-		{name: "url_extensions", kwOnly: true}, {name: "default_extension", kwOnly: true}, {name: "label", kwOnly: true},
-		{name: "empty_error", kwOnly: true}, {name: "headers", kwOnly: true, optional: true},
-		{name: "require_known_content_type", kwOnly: true, optional: true, def: false},
-		{name: "trusted_origin", kwOnly: true, optional: true, def: false}}, args, kwargs)
-	if err != nil {
-		return nil, err
-	}
-	text := map[string]string{}
-	for _, name := range []string{"kind", "url", "prefix", "default_extension", "label", "empty_error"} {
-		if text[name], err = sdkString(fn, name, a[name]); err != nil {
-			return nil, err
-		}
-	}
-	timeout, err := sdkFloat(fn, "timeout", a["timeout"])
-	if err != nil {
-		return nil, err
-	}
-	maxBytes, err := sdkInt(fn, "max_bytes", a["max_bytes"])
-	if err != nil {
-		return nil, err
-	}
-	chunkSize, err := sdkInt(fn, "chunk_size", a["chunk_size"])
-	if err != nil {
-		return nil, err
-	}
-	contentTypes, err := sdkStringMap(fn, "content_types", a["content_types"])
-	if err != nil {
-		return nil, err
-	}
-	rawExtensions, ok := a["url_extensions"].([]any)
-	if !ok {
-		return nil, sdkTypeError("%s() argument 'url_extensions' must be a sequence, not %s", fn, pyrepr.TypeName(a["url_extensions"]))
-	}
-	extensions := make([]string, len(rawExtensions))
-	for i, item := range rawExtensions {
-		if extensions[i], err = sdkString(fn, "url_extensions", item); err != nil {
-			return nil, err
-		}
-	}
-	var headers map[string]string
-	if config.PyTruthy(a["headers"]) {
-		if headers, err = sdkStringMap(fn, "headers", a["headers"]); err != nil {
-			return nil, err
-		}
-	}
-	return media.SaveURL(ctx, sdkToolsEnv(ctx, h), text["kind"], text["url"], media.SaveURLOptions{
-		Prefix: text["prefix"], Timeout: secondsDuration(timeout), MaxBytes: maxBytes, ChunkSize: int(chunkSize),
-		ContentTypes: contentTypes, URLExtensions: extensions, DefaultExtension: text["default_extension"],
-		Label: text["label"], EmptyError: text["empty_error"], Headers: headers,
-		RequireKnownContentType: config.PyTruthy(a["require_known_content_type"]), TrustedOrigin: config.PyTruthy(a["trusted_origin"])})
 }
 
 func sdkPoolRows(rows []map[string]any) []any {
@@ -294,7 +232,7 @@ type sdkHTTPError struct {
 	Msg  string
 }
 
-func (e *sdkHTTPError) Error() string      { return fmt.Sprintf("HTTP Error %d: %s", e.Code, e.Msg) }
+func (e *sdkHTTPError) Error() string      { return fmt.Sprintf("HTTP %d %s", e.Code, e.Msg) }
 func (e *sdkHTTPError) PyTypeName() string { return "HTTPError" }
 
 // Sends one credentialed request under the redirect and TLS policy, the status, final URL, headers and body
@@ -318,7 +256,7 @@ func sdkOpenCredentialedURL(ctx context.Context, _ string, args []any, kwargs ma
 	if a["data"] != nil {
 		data, ok := a["data"].([]byte)
 		if !ok {
-			return nil, sdkTypeError("%s() argument 'data' must be bytes, not %s", fn, pyrepr.TypeName(a["data"]))
+			return nil, sdkTypeError("the data argument of %s must be bytes, got %s", fn, errchain.Kind(a["data"]))
 		}
 		body = bytes.NewReader(data)
 	}
@@ -329,12 +267,12 @@ func sdkOpenCredentialedURL(ctx context.Context, _ string, args []any, kwargs ma
 	if a["headers"] != nil {
 		pairs, ok := a["headers"].([]any)
 		if !ok {
-			return nil, sdkTypeError("%s() argument 'headers' must be a list of pairs, not %s", fn, pyrepr.TypeName(a["headers"]))
+			return nil, sdkTypeError("the headers argument of %s must be a list of pairs, got %s", fn, errchain.Kind(a["headers"]))
 		}
 		for _, raw := range pairs {
 			pair, ok := raw.([]any)
 			if !ok || len(pair) != 2 {
-				return nil, sdkTypeError("%s() argument 'headers' must be a list of pairs, not %s", fn, pyrepr.TypeName(raw))
+				return nil, sdkTypeError("the headers argument of %s must be a list of pairs, got %s", fn, errchain.Kind(raw))
 			}
 			req.Header.Set(pyrepr.Str(pair[0]), pyrepr.Str(pair[1]))
 		}

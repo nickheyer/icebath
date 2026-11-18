@@ -8,6 +8,7 @@ import (
 	"unsafe"
 	"weak"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/provider"
 )
@@ -39,17 +40,17 @@ func explicitCallerHome(ctx context.Context) string {
 	return provider.CurrentSecretScopeHome(ctx)
 }
 
-// Python repr of a home for refusal logs, None when absent
+// Home shown in refusal logs, none when absent
 func homeRepr(h string) string {
 	if h == "" {
-		return "None"
+		return "none"
 	}
-	return pyRepr(h)
+	return h
 }
 
 func refuse(label, reason, callerHome, boundHome string, multiplexed bool) {
 	pkgLog().Warn(fmt.Sprintf("Memory %s refused (%s): %s; caller profile home %s, provider bound to %s, multiplexed=%s",
-		label, CallerProfileRefusal, reason, homeRepr(callerHome), homeRepr(boundHome), pyStr(multiplexed)))
+		label, CallerProfileRefusal, reason, homeRepr(callerHome), homeRepr(boundHome), errchain.Show(multiplexed)))
 }
 
 // BoundScope is the profile a memory manager was initialized for, its home key resolved once
@@ -161,14 +162,14 @@ func ClaimInstance(ctx context.Context, p any, h string) bool {
 	if owned && owner != key && multiplexed {
 		pkgLog().Warn(fmt.Sprintf("Memory provider '%s' refused for profile home %s (%s): this same provider instance "+
 			"is already bound to %s; a provider must give every agent its own instance",
-			providerName(p), pyRepr(h), SharedInstanceRefusal, pyRepr(owner)))
+			providerName(p), h, SharedInstanceRefusal, owner))
 		return false
 	}
 	if !trackable {
 		if multiplexed {
 			pkgLog().Warn(fmt.Sprintf("Memory provider '%s' refused for profile home %s (%s): the instance can't be "+
 				"tracked (no weak reference support), so sharing it can't be ruled out",
-				providerName(p), pyRepr(h), SharedInstanceRefusal))
+				providerName(p), h, SharedInstanceRefusal))
 			return false
 		}
 		return true

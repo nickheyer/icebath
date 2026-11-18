@@ -79,19 +79,6 @@ func sessionStorePath(store SessionStore) string {
 	return ""
 }
 
-// Python class name of the store an AttributeError names
-func sessionStoreKind(store SessionStore) string {
-	switch s := store.(type) {
-	case *RuntimeSessionStore:
-		return s.kind
-	case *ChildSessionStore:
-		return s.kind
-	case nil:
-		return "NoneType"
-	}
-	return "SessionDB"
-}
-
 // Auxiliary usage recorder writing through the agent's store, nil without one
 func auxUsageRecorderFor(store SessionStore) provider.AuxUsageRecorder {
 	if store = sessionStoreOrNil(store); store == nil {

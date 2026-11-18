@@ -73,13 +73,13 @@ type billingDialog struct {
 }
 
 // Dialog of an out of credits or payment required block
-func billingDialogCopy(block map[string]any) billingDialog {
+func billingDialogCopy(block *tuigateway.BillingBlock) billingDialog {
 	label := tr("libText.billingDialog.yourProvider")
-	if truthyJS(block["provider_label"]) {
-		label = jsString(block["provider_label"])
+	if block.ProviderLabel != "" {
+		label = block.ProviderLabel
 	}
 	confirm := tr("libText.billingDialog.switchProvider")
-	if truthyJS(block["billing_url"]) {
+	if val(block.BillingURL) != "" {
 		confirm = tr("libText.billingDialog.openBillingPage")
 	}
 	return billingDialog{CancelLabel: tr("libText.billingDialog.dismiss"), ConfirmLabel: confirm, Detail: tr("libText.billingDialog.providerDetail", label), Title: tr("libText.billingDialog.providerTitle", label)}

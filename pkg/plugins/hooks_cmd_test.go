@@ -233,11 +233,11 @@ func TestHooksCommandUsageUnknownAndOutboundTargets(t *testing.T) {
 	config.ResetCache()
 	out := runHooks(t, ctx, HooksArgs{Action: "list"})
 	want := "No shell hooks configured in ~/.icebath/config.yaml.\nConfigured outbound webhooks (1 total):\n\n  - audit\n" +
-		"      url:     https://example.test/hook\n      events:  pre_tool_call, post_tool_call matcher='terminal' (timeout=10s, UNSIGNED)\n\n"
+		"      url:     https://example.test/hook\n      events:  pre_tool_call, post_tool_call matcher=terminal (timeout=10s, UNSIGNED)\n\n"
 	if out != want {
 		t.Fatalf("outbound list:\n%s\nwant:\n%s", out, want)
 	}
-	if out := runHooks(t, ctx, HooksArgs{Action: "test", Event: "nope"}); !strings.HasPrefix(out, "Unknown event: 'nope'\nValid events: ") {
+	if out := runHooks(t, ctx, HooksArgs{Action: "test", Event: "nope"}); !strings.HasPrefix(out, "Unknown event: nope\nValid events: ") {
 		t.Fatalf("unknown event output:\n%s", out)
 	}
 }

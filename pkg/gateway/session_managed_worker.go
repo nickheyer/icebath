@@ -8,6 +8,7 @@ import (
 	"slices"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -33,7 +34,7 @@ func managedBootstrap(ctx context.Context, a *SessionAuthority, ref SessionRef, 
 	}
 	terminal, isDict := decoded.(*pyjson.Object)
 	if !isDict {
-		return nil, &PyError{Kind: "TypeError", Msg: "'" + pyTypeName(decoded) + "' object does not support item assignment"}
+		return nil, &PyError{Kind: "TypeError", Msg: "the managed worker bootstrap is " + errchain.Kind(decoded) + ", expected a mapping"}
 	}
 	if policy.ConfigSecretRef != nil && *policy.ConfigSecretRef != "" {
 		recovered, err := recoverConfigSecrets(ctx, a, policy)
@@ -67,7 +68,7 @@ func managedBootstrap(ctx context.Context, a *SessionAuthority, ref SessionRef, 
 	}
 	request, isDict := requestValue.(*pyjson.Object)
 	if !isDict {
-		return nil, &PyError{Kind: "TypeError", Msg: "'" + pyTypeName(requestValue) + "' object is not iterable"}
+		return nil, &PyError{Kind: "TypeError", Msg: "the managed worker request is " + errchain.Kind(requestValue) + ", expected a mapping"}
 	}
 	request = request.Copy()
 	request.Set("turn_v1", turn)
@@ -159,7 +160,7 @@ func WorkerTurnScope(ctx context.Context, frame *pyjson.Object) (context.Context
 	}
 	request, isDict := decoded.(*pyjson.Object)
 	if !isDict {
-		return nil, &PyError{Kind: "AttributeError", Msg: "'" + pyTypeName(decoded) + "' object has no attribute 'get'"}
+		return nil, &PyError{Kind: "AttributeError", Msg: "the worker turn scope is " + errchain.Kind(decoded) + ", expected a mapping"}
 	}
 	rawTurn := request.GetOr("turn_v1", nil)
 	if rawTurn == nil {

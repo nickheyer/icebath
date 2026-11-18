@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/goals"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
@@ -330,7 +331,7 @@ var loopJudgeGoal = goals.JudgeGoal
 func loopJudgeUntil(ctx context.Context, until, lastResponse string) (verdict, reason string) {
 	defer func() {
 		if r := recover(); r != nil {
-			verdict, reason = "continue", "judge unavailable: "+pyrepr.TypeName(r)
+			verdict, reason = "continue", "judge unavailable: "+errchain.Show(r)
 		}
 	}()
 	result := loopJudgeGoal(ctx, until, lastResponse, goals.JudgeOptions{})

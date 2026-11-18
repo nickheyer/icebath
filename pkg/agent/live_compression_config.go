@@ -7,6 +7,7 @@ import (
 	"math/big"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
@@ -262,7 +263,7 @@ func (a *AIAgent) ApplyLiveCompressionConfig(ctx context.Context, cfg map[string
 		}
 	}
 	if nativeThreshold <= 0 {
-		pkgLog().Warn(fmt.Sprintf("Invalid compression.codex_responses_compact_threshold=%s; using 200000.", pyrepr.Repr(nativeRaw)))
+		pkgLog().Warn(fmt.Sprintf("Invalid compression.codex_responses_compact_threshold=%s; using 200000.", errchain.Show(nativeRaw)))
 		nativeThreshold = 200_000
 	}
 	a.codexResponsesCompactThreshold = float64(nativeThreshold)

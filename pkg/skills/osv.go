@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 )
 
@@ -216,7 +217,7 @@ func CheckPackageForMalware(command string, args []string) (string, error) {
 			}
 			s, isStr := summary.(string)
 			if !isStr {
-				return "", fmt.Errorf("'%s' object is not subscriptable", pyTypeName(summary))
+				return "", fmt.Errorf("OSV advisory summary is %s where text was expected", errchain.Kind(summary))
 			}
 			sums[i] = runeHead(s, 100)
 		}
@@ -228,23 +229,6 @@ func CheckPackageForMalware(command string, args []string) (string, error) {
 		return "", nil
 	}
 	return *result, nil
-}
-
-// Python type name of a decoded JSON value
-func pyTypeName(v any) string {
-	switch v.(type) {
-	case nil:
-		return "NoneType"
-	case bool:
-		return "bool"
-	case float64:
-		return "float"
-	case []any:
-		return "list"
-	case map[string]any:
-		return "dict"
-	}
-	return "str"
 }
 
 var ecosystemByCommand = map[string]string{
@@ -359,7 +343,7 @@ func queryOSV(pkg, ecosystem, version string) ([]map[string]any, error) {
 		return nil, err
 	}
 	if result == nil {
-		return nil, errors.New("'NoneType' object has no attribute 'get'")
+		return nil, errors.New("OSV sent an empty reply")
 	}
 	vulns, ok := result["vulns"]
 	if !ok {
@@ -367,13 +351,13 @@ func queryOSV(pkg, ecosystem, version string) ([]map[string]any, error) {
 	}
 	list, ok := vulns.([]any)
 	if !ok {
-		return nil, fmt.Errorf("'%s' object is not iterable", pyTypeName(vulns))
+		return nil, fmt.Errorf("OSV vulns are %s where a list was expected", errchain.Kind(vulns))
 	}
 	var out []map[string]any
 	for _, v := range list {
 		m, ok := v.(map[string]any)
 		if !ok {
-			return nil, fmt.Errorf("'%s' object has no attribute 'get'", pyTypeName(v))
+			return nil, fmt.Errorf("OSV vuln is %s where a mapping was expected", errchain.Kind(v))
 		}
 		idRaw, ok := m["id"]
 		if !ok {
@@ -381,7 +365,7 @@ func queryOSV(pkg, ecosystem, version string) ([]map[string]any, error) {
 		}
 		id, ok := idRaw.(string)
 		if !ok {
-			return nil, fmt.Errorf("'%s' object has no attribute 'startswith'", pyTypeName(idRaw))
+			return nil, fmt.Errorf("OSV vuln id is %s where text was expected", errchain.Kind(idRaw))
 		}
 		if strings.HasPrefix(id, "MAL-") {
 			out = append(out, m)

@@ -6,6 +6,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
+	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"github.com/nickheyer/icebath/pkg/ui/cards"
 )
 
@@ -138,17 +139,14 @@ func (a *app) argValues(kind string, then func([]cards.Offer, error) tea.Cmd) te
 		a.argCache[kind] = argCacheEntry{at: a.store.now(), offers: offers}
 		return then(offers, nil)
 	}
-	params := map[string]any{}
-	if sid := a.store.ui.Sid; sid != "" {
-		params["session_id"] = sid
-	}
 	switch kind {
 	case argModels, argProviders:
-		return gatewayCall(a.gw, "model.options", params, func(raw any, err error) tea.Cmd {
+		options := tuigateway.ModelOptionsParams{SessionID: a.store.ui.Sid}
+		return call(a.gw, tuigateway.ModelOptions, options, func(r *tuigateway.ModelOptionsResult, err error) tea.Cmd {
 			if err != nil {
 				return then(nil, err)
 			}
-			return keep(modelArgOffers(asRPCResult(raw), kind))
+			return keep(modelArgOffers(r, kind))
 		})
 	case argSessions:
 		return requestSessions(a.gw, a.gw.canonical(), "", func(sessions []listedSession, err error) tea.Cmd {
@@ -158,24 +156,21 @@ func (a *app) argValues(kind string, then func([]cards.Offer, error) tea.Cmd) te
 			return keep(sessionArgOffers(sessions))
 		})
 	case argProfiles:
-		return gatewayCall(a.gw, "profiles.list", map[string]any{}, func(raw any, err error) tea.Cmd {
+		return call(a.gw, tuigateway.ProfilesList, tuigateway.ProfilesListParams{}, func(r *tuigateway.ProfilesListResult, err error) tea.Cmd {
 			if err != nil {
 				return then(nil, err)
 			}
-			return keep(profileArgOffers(asRPCResult(raw)))
+			return keep(profileArgOffers(r))
 		})
 	}
 	return then(nil, nil)
 }
 
 // Models of the providers holding credentials, or every provider slug, as the gateway's model picker lists them
-func modelArgOffers(r map[string]any, kind string) []cards.Offer {
-	providers, _ := r["providers"].([]any)
+func modelArgOffers(r *tuigateway.ModelOptionsResult, kind string) []cards.Offer {
 	var out []cards.Offer
-	for _, raw := range providers {
-		p, _ := raw.(map[string]any)
-		slug, _ := p["slug"].(string)
-		name, _ := p["name"].(string)
+	for _, p := range r.Providers {
+		slug, name := p.Slug, p.Name
 		if name == "" {
 			name = slug
 		}
@@ -185,10 +180,10 @@ func modelArgOffers(r map[string]any, kind string) []cards.Offer {
 			}
 			continue
 		}
-		if p["authenticated"] == false {
+		if p.Unauthenticated() {
 			continue
 		}
-		for _, m := range stringList(p["models"]) {
+		for _, m := range p.Models {
 			out = append(out, cards.Offer{Text: m, Display: m, Meta: name})
 		}
 	}
@@ -207,17 +202,13 @@ func sessionArgOffers(sessions []listedSession) []cards.Offer {
 }
 
 // Profile names as profiles.list answers them
-func profileArgOffers(r map[string]any) []cards.Offer {
-	list, _ := r["profiles"].([]any)
+func profileArgOffers(r *tuigateway.ProfilesListResult) []cards.Offer {
 	var out []cards.Offer
-	for _, raw := range list {
-		p, _ := raw.(map[string]any)
-		name, _ := p["name"].(string)
-		if name == "" {
+	for _, p := range r.Profiles {
+		if p.Name == "" {
 			continue
 		}
-		model, _ := p["model"].(string)
-		out = append(out, cards.Offer{Text: name, Display: name, Meta: model})
+		out = append(out, cards.Offer{Text: p.Name, Display: p.Name, Meta: val(p.Model)})
 	}
 	return out
 }

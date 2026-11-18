@@ -5,6 +5,7 @@ import (
 	"os"
 	"sync"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
@@ -28,7 +29,7 @@ func WorkerKanbanContext(frame *pyjson.Object) (any, error) {
 	}
 	text, isText := raw.(string)
 	if !isText {
-		return nil, &PyError{Kind: "TypeError", Msg: "the JSON object must be str, bytes or bytearray, not " + pyTypeName(raw)}
+		return nil, &PyError{Kind: "TypeError", Msg: "the worker kanban context is " + errchain.Kind(raw) + ", expected JSON text"}
 	}
 	return pyjson.Loads(text)
 }
@@ -37,7 +38,7 @@ func WorkerKanbanContext(frame *pyjson.Object) (any, error) {
 func KanbanContextItem(kctx any, key string) (any, error) {
 	obj, isDict := kctx.(*pyjson.Object)
 	if !isDict {
-		return nil, &PyError{Kind: "TypeError", Msg: "'" + pyTypeName(kctx) + "' object is not subscriptable"}
+		return nil, &PyError{Kind: "TypeError", Msg: "the worker kanban context is " + errchain.Kind(kctx) + ", expected a mapping"}
 	}
 	return kanbanContextItem(obj, key)
 }
@@ -110,7 +111,7 @@ func boundWorkerMatches(ctx context.Context, conn state.SQLiteConn, kctx any) (b
 		}
 		obj, isDict := decoded.(*pyjson.Object)
 		if !isDict {
-			return false, &PyError{Kind: "AttributeError", Msg: "'" + pyTypeName(decoded) + "' object has no attribute 'get'"}
+			return false, &PyError{Kind: "AttributeError", Msg: "the bound worker record is " + errchain.Kind(decoded) + ", expected a mapping"}
 		}
 		bound = obj
 	}
@@ -179,7 +180,7 @@ func WorkerWorkspace(ctx context.Context, env *tools.Env, frame *pyjson.Object, 
 	rawScope := frame.GetOr("scope", nil)
 	scope, isDict := rawScope.(*pyjson.Object)
 	if pyrepr.Truthy(rawScope) && !isDict {
-		return &PyError{Kind: "AttributeError", Msg: "'" + pyTypeName(rawScope) + "' object has no attribute 'get'"}
+		return &PyError{Kind: "AttributeError", Msg: "the worker workspace scope is " + errchain.Kind(rawScope) + ", expected a mapping"}
 	}
 	sessionID := ""
 	if scope != nil && pyrepr.Truthy(scope.GetOr("session_id", nil)) {

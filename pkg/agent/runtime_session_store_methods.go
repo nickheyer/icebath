@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
@@ -26,13 +27,13 @@ func noneIfNil[T any](p *T) any {
 func receiptMessages(raw any) ([]map[string]any, error) {
 	list, ok := raw.([]any)
 	if !ok {
-		return nil, &workerStoreError{"TypeError", fmt.Sprintf("'%s' object is not a list of messages", pyrepr.TypeName(raw))}
+		return nil, &workerStoreError{"TypeError", fmt.Sprintf("receipt messages are %s where a list was expected", errchain.Kind(raw))}
 	}
 	out := make([]map[string]any, 0, len(list))
 	for _, item := range list {
 		m, ok := pyjson.Plain(item).(map[string]any)
 		if !ok {
-			return nil, &workerStoreError{"TypeError", fmt.Sprintf("'%s' object is not a message dict", pyrepr.TypeName(item))}
+			return nil, &workerStoreError{"TypeError", fmt.Sprintf("receipt message is %s where a mapping was expected", errchain.Kind(item))}
 		}
 		out = append(out, m)
 	}
@@ -59,7 +60,7 @@ func receiptInt(v any) (int64, error) {
 		}
 		return 0, nil
 	}
-	return 0, &workerStoreError{"TypeError", fmt.Sprintf("receipt value is a %s, not an int", pyrepr.TypeName(v))}
+	return 0, &workerStoreError{"TypeError", fmt.Sprintf("receipt value is %s where a whole number was expected", errchain.Kind(v))}
 }
 
 // Text of a receipt field, empty for None
@@ -69,7 +70,7 @@ func receiptText(v any) (string, error) {
 	}
 	s, ok := v.(string)
 	if !ok {
-		return "", &workerStoreError{"TypeError", fmt.Sprintf("receipt value is a %s, not a str", pyrepr.TypeName(v))}
+		return "", &workerStoreError{"TypeError", fmt.Sprintf("receipt value is %s where text was expected", errchain.Kind(v))}
 	}
 	return s, nil
 }
@@ -180,7 +181,7 @@ func (s *RuntimeSessionStore) sessionRow(ctx context.Context, sessionID string) 
 		return nil, err
 	}
 	if row == nil {
-		return nil, &workerStoreError{"AttributeError", "'NoneType' object has no attribute 'get'"}
+		return nil, &workerStoreError{"AttributeError", "session " + sessionID + " was not found in the store"}
 	}
 	return row, nil
 }
@@ -256,11 +257,11 @@ func pyFloatValue(v any) (float64, error) {
 	case string:
 		f, err := strconv.ParseFloat(strings.TrimSpace(n), 64)
 		if err != nil {
-			return 0, &workerStoreError{"ValueError", fmt.Sprintf("could not convert string to float: %s", pyrepr.Repr(n))}
+			return 0, &workerStoreError{"ValueError", fmt.Sprintf("expected a number, got %s", errchain.Show(n))}
 		}
 		return f, nil
 	}
-	return 0, &workerStoreError{"TypeError", fmt.Sprintf("float() argument must be a string or a real number, not '%s'", pyrepr.TypeName(v))}
+	return 0, &workerStoreError{"TypeError", fmt.Sprintf("expected a number, got %s", errchain.Kind(v))}
 }
 
 // Unexpired cooldown with its remaining seconds, nil when none is live

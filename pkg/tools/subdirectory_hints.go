@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyshlex"
@@ -357,7 +358,7 @@ func (t *SubdirectoryHintTracker) loadHintsForDirectory(directory string) (strin
 		}
 		text, _, err := ReadTextWithTimeout(t.env, target, nil)
 		if err != nil {
-			pkgLog().Debug(fmt.Sprintf("Could not read %s: %s", hintPath, pypath.OSErrorText(err)))
+			pkgLog().Debug(fmt.Sprintf("Could not read %s: %s", hintPath, errchain.OSText(err)))
 			continue
 		}
 		content := pystr.Strip(text)

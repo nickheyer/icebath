@@ -8,6 +8,7 @@ import (
 	"maps"
 	"strings"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -129,7 +130,7 @@ func botAdmissionOutcome(ctx context.Context, a *SessionAuthority, admissionID s
 			return "", nil, err
 		}
 		if row == nil {
-			return "", nil, &PyError{Kind: "TypeError", Msg: "'NoneType' object is not subscriptable"}
+			return "", nil, &PyError{Kind: "TypeError", Msg: "the bot admission row is missing"}
 		}
 	}
 	outcome, present := row.Get("outcome")
@@ -190,7 +191,7 @@ func botAdmissionOutcome(ctx context.Context, a *SessionAuthority, admissionID s
 func botSavedResult(saved any) (any, error) {
 	obj, ok := saved.(*pyjson.Object)
 	if !ok {
-		return nil, &PyError{Kind: "TypeError", Msg: "'" + jsonValueTypeName(saved) + "' object is not subscriptable"}
+		return nil, &PyError{Kind: "TypeError", Msg: "the saved bot result is " + errchain.Kind(saved) + ", expected a mapping"}
 	}
 	result, present := obj.Get("result")
 	if !present {
@@ -414,7 +415,7 @@ func botMaybeRetry(ctx context.Context, a *SessionAuthority, home string, record
 	if author := record["author"]; author != nil {
 		fields, ok := hostedMapping(author)
 		if !ok {
-			return &PyError{Kind: "TypeError", Msg: "'" + jsonValueTypeName(author) + "' object is not iterable"}
+			return &PyError{Kind: "TypeError", Msg: "the bot message author is " + errchain.Kind(author) + ", expected a list"}
 		}
 		event.Metadata["turn_author"] = maps.Clone(fields)
 	}
@@ -618,7 +619,7 @@ func botTarget(ctx context.Context, a *SessionAuthority, actor Principal) (Sessi
 	}
 	if ref == nil {
 		if row == nil {
-			return SessionRef{}, nil, nil, &PyError{Kind: "TypeError", Msg: "'NoneType' object is not subscriptable"}
+			return SessionRef{}, nil, nil, &PyError{Kind: "TypeError", Msg: "the bot target row is missing"}
 		}
 		tip, err := a.DB.GetCompressionTip(ctx, routeStr(rowField(row, "id")))
 		if err != nil {

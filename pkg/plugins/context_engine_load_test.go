@@ -269,6 +269,6 @@ try:
     Modern().claim_fire("j")
     raise SystemExit("claim ran without a channel")
 except PluginHostUnavailable as exc:
-    assert "plugin SDK call 'cron.claim_fire' needs the Icebath plugin host channel" in str(exc)
+    assert "plugin SDK call cron.claim_fire needs the Icebath plugin host channel" in str(exc)
 print("ok")
 `

@@ -9,6 +9,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/cliui"
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -147,7 +148,7 @@ func SaveDisabledSkills(ctx context.Context, h string, cfg map[string]any, disab
 		cfg["skills"] = skillsCfg
 	}
 	if !ok {
-		return fmt.Errorf("'%T' object does not support item assignment", cfg["skills"])
+		return fmt.Errorf("config skills section is %s where a mapping was expected", errchain.Kind(cfg["skills"]))
 	}
 	if platform == "" {
 		skillsCfg["disabled"] = sortedSet(kept)
@@ -158,7 +159,7 @@ func SaveDisabledSkills(ctx context.Context, h string, cfg map[string]any, disab
 			skillsCfg["platform_disabled"] = pd
 		}
 		if !ok {
-			return fmt.Errorf("'%T' object does not support item assignment", skillsCfg["platform_disabled"])
+			return fmt.Errorf("config skills.platform_disabled is %s where a mapping was expected", errchain.Kind(skillsCfg["platform_disabled"]))
 		}
 		pd[platform] = sortedSet(kept)
 	}

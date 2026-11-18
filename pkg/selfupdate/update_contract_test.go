@@ -1,3 +1,5 @@
+//go:build !icebath_core && !icebath_noextras
+
 package selfupdate
 
 import (

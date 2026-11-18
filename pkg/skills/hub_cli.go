@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/cliui"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -480,7 +481,7 @@ func (x *HubCLI) promptForSkillName(c *pyrich.Console, url, def string) (string,
 		answer = def
 	}
 	if !isValidInstalledSkillName(answer) {
-		c.Print(fmt.Sprintf("[bold red]Invalid name:[/] %s. Aborting install.\n", pyrepr.Repr(answer)))
+		c.Print(fmt.Sprintf("[bold red]Invalid name:[/] %s. Aborting install.\n", errchain.Show(answer)))
 		return "", false
 	}
 	return answer, true
@@ -497,7 +498,7 @@ func (x *HubCLI) promptForCategory(c *pyrich.Console, existing []string) string 
 	}
 	answer, _ := x.lineInput("Category: ")
 	if answer != "" && !validCategoryRe.MatchString(answer) {
-		c.Print(fmt.Sprintf("[dim]Invalid category %s — installing flat.[/]", pyrepr.Repr(answer)))
+		c.Print(fmt.Sprintf("[dim]Invalid category %s — installing flat.[/]", errchain.Show(answer)))
 		return ""
 	}
 	return answer

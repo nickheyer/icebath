@@ -16,6 +16,7 @@ import (
 
 	"github.com/dlclark/regexp2/v2"
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pydict"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
@@ -619,7 +620,7 @@ func CompileMentionPatterns(raw any, opts MentionPatternOptions) []*regexp2.Rege
 		}
 		list, ok := patterns.([]any)
 		if !ok {
-			log.Warn(fmt.Sprintf("[%s] %s mention_patterns must be a list or string; got %s", opts.LogPrefix, *opts.PlatformLabel, pyrepr.TypeName(patterns)))
+			log.Warn(fmt.Sprintf("[%s] %s mention_patterns must be a list or text; got %s", opts.LogPrefix, *opts.PlatformLabel, errchain.Kind(patterns)))
 			return nil
 		}
 		var texts []string

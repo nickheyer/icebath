@@ -104,7 +104,7 @@ func (s *ToolsSetup) runToolsMenuRow(cfg config.Tree, m *toolsMenu, idx int) err
 	}
 	j, ok := pyListIndex(len(m.platformKeys), idx)
 	if !ok {
-		return fmt.Errorf("IndexError: list index out of range")
+		return fmt.Errorf("platform choice %d is past the end of the list", idx)
 	}
 	if _, err := s.configurePlatforms(cfg, []string{m.platformKeys[j]}, false); err != nil {
 		return err

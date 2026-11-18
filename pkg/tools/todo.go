@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
 )
@@ -423,7 +424,7 @@ func todoTool(store *TodoStore, todos any, merge bool) string {
 	} else {
 		list, ok := todos.([]any)
 		if !ok {
-			return toolErrorJSON(fmt.Sprintf("todos must be a list, got %s", pyTypeName(todos)), nil)
+			return toolErrorJSON(fmt.Sprintf("todos must be a list, got %s", errchain.Kind(todos)), nil)
 		}
 		var err error
 		items, err = store.Write(list, merge)

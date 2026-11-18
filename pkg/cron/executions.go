@@ -16,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/proc"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -156,7 +157,7 @@ func (s *Store) staleAgeSeconds(claimedAt string, progressAt any) (float64, erro
 		}
 	default:
 		if pyrepr.Truthy(p) {
-			return 0, &pyTypeError{"fromisoformat: argument must be str"}
+			return 0, &pyTypeError{"the execution progress time is " + errchain.Kind(p) + ", expected ISO 8601 text"}
 		}
 	}
 	return s.claimAgeSeconds(claimedAt)

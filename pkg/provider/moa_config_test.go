@@ -315,7 +315,7 @@ func TestDecodeMoATurn(t *testing.T) {
 		}
 	}
 	list := base64.URLEncoding.EncodeToString([]byte(`[1]`))
-	if _, _, err := DecodeMoATurn(MoAMarkerPrefix + list); err == nil || err.Error() != "'list' object has no attribute 'get'" {
+	if _, _, err := DecodeMoATurn(MoAMarkerPrefix + list); err == nil || err.Error() != "the mixture of agents turn is a list, expected a mapping" {
 		t.Fatalf("non object payload %v", err)
 	}
 	if !strings.HasPrefix(MoAUsage(), "Usage: /moa <prompt>") {

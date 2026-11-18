@@ -34,11 +34,11 @@ type prepareStreak struct {
 	stalled  bool
 }
 
-// Bounded one line text of a preparation failure, its type name when the message is blank
+// Bounded one line text of a preparation failure, a fixed phrase when the message is blank
 func prepareStallDescribe(err error) string {
 	text := strings.TrimSpace(err.Error())
 	if text == "" {
-		text = pyrepr.TypeName(err)
+		text = "the preparation failed with no message"
 	}
 	runes := []rune(text)
 	if len(runes) <= prepareStallMaxErrorChars {

@@ -3,6 +3,7 @@ package gateway
 import (
 	"context"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
@@ -25,7 +26,7 @@ func RouteRuntime(ctx context.Context, policy *LocalSessionPolicy, frozen map[st
 	if block := frozen["model"]; pyrepr.Truthy(block) {
 		mapping, ok := block.(map[string]any)
 		if !ok {
-			return nil, nil, &PyError{Kind: "AttributeError", Msg: "'" + pyrepr.TypeName(block) + "' object has no attribute 'get'"}
+			return nil, nil, &PyError{Kind: "AttributeError", Msg: "the worker route block is " + errchain.Kind(block) + ", expected a mapping"}
 		}
 		modelBlock = mapping
 	}
@@ -33,7 +34,7 @@ func RouteRuntime(ctx context.Context, policy *LocalSessionPolicy, frozen map[st
 	if raw := modelBlock["provider"]; pyrepr.Truthy(raw) {
 		text, ok := raw.(string)
 		if !ok {
-			return nil, nil, &PyError{Kind: "AttributeError", Msg: "'" + pyrepr.TypeName(raw) + "' object has no attribute 'strip'"}
+			return nil, nil, &PyError{Kind: "AttributeError", Msg: "a worker route value is " + errchain.Kind(raw) + ", expected text"}
 		}
 		requested = text
 	}
@@ -43,7 +44,7 @@ func RouteRuntime(ctx context.Context, policy *LocalSessionPolicy, frozen map[st
 	}
 	requestMap, ok := pyjson.Plain(request).(map[string]any)
 	if !ok {
-		return nil, nil, &PyError{Kind: "AttributeError", Msg: "'" + pyrepr.TypeName(request) + "' object has no attribute 'get'"}
+		return nil, nil, &PyError{Kind: "AttributeError", Msg: "the worker route request is " + errchain.Kind(request) + ", expected a mapping"}
 	}
 	launchURL := routeText(requestMap["base_url"])
 	if launchURL != "" && provider.NormalizeRouteBaseURL(launchURL) != provider.NormalizeRouteBaseURL(routeText(modelBlock["base_url"])) {

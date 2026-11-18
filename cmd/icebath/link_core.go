@@ -15,8 +15,10 @@ import (
 var (
 	// Argv entries that own the whole process before anything else runs, true with the exit code when one ran
 	tierArgvEntries []func(args []string) (int, bool)
-	// Steps run on the raw argv before the process starts
-	tierBeforeStart []func(args []string)
+	// Startup steps a tier adds to a phase of main, run in link order with the argv main holds there
+	tierStartup = map[startupPhase][]func(argv []string){}
+	// Hidden child entries of the extras tier dispatched before every core entry
+	childEntriesFirst []func(ctx context.Context)
 	// Hidden child entries of the plugins tier dispatched right after the scratch prune entry
 	childEntriesAfterPrunePlugins []func(ctx context.Context)
 	// Hidden child entries of the extras tier dispatched after those of the plugins tier
@@ -44,6 +46,33 @@ var (
 )
 
 func init() { linktier.Link(linktier.Core) }
+
+// Places in main where a tier runs startup steps
+type startupPhase int
+
+const (
+	// Raw argv before the process wiring
+	phaseBeforeStart startupPhase = iota
+	// The launcher chose the runtime, os.Args still the launch argv
+	phaseAfterLauncher
+	// The launcher home is pinned, before the legacy agent argv
+	phaseAfterPinHome
+	// Before the CLI parser is registered with pm
+	phaseBeforeParser
+	// After the CLI parser is registered with pm
+	phaseAfterParser
+	// Before the .env file loads
+	phaseBeforeDotenv
+	// First steps of run, before the fast launches
+	phaseRun
+)
+
+// Runs the steps every linked tier added to one phase
+func runStartupPhase(phase startupPhase, argv []string) {
+	for _, step := range tierStartup[phase] {
+		step(argv)
+	}
+}
 
 // Runs the first tier argv entry that owns the process, true with its exit code
 func runTierArgvEntries(args []string) (int, bool) {

@@ -35,7 +35,7 @@ func (b *BasePlatformAdapter) ephemeralSystemTTLDefault(ctx context.Context) int
 			return 0, err
 		}
 		if !n.IsInt64() {
-			return 0, fmt.Errorf("OverflowError: int too large")
+			return 0, fmt.Errorf("the ephemeral system message lifetime is too large")
 		}
 		return int(n.Int64()), nil
 	}, 0)

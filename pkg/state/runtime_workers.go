@@ -5,6 +5,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
@@ -92,7 +93,7 @@ func receiptLineageHolds(raw any, owner, sessionID string) (bool, error) {
 			_, held := keyed.Get(sessionID)
 			return held, nil
 		}
-		return false, &stateTypedError{"TypeError", "argument of type is not iterable"}
+		return false, &stateTypedError{"TypeError", "the receipt lineage is " + errchain.Kind(lineage) + ", expected text, a list or a mapping"}
 	}
 	for _, item := range items {
 		if pyEquals(item, sessionID) {

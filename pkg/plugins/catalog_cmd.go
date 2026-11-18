@@ -14,6 +14,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/hostinfo"
 	"github.com/nickheyer/icebath/pkg/internal/pyfs"
@@ -866,7 +867,7 @@ func repinCatalogPlugin(ctx context.Context, target string, sidecar map[string]a
 	if len(matches) != 1 {
 		shown := "missing"
 		if len(matches) > 0 {
-			shown = pyrepr.Repr(stringsAny(matches))
+			shown = errchain.Show(stringsAny(matches))
 		}
 		return nil, &PluginOperationError{Msg: fmt.Sprintf("Catalog update published but its install record is ambiguous: %s.", shown)}
 	}

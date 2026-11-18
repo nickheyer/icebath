@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
@@ -85,7 +85,7 @@ func choiceGetter(choice any) (func(string) (any, bool), error) {
 	case interface{ Get(string) (any, bool) }:
 		return m.Get, nil
 	}
-	return nil, &HostBuiltinError{Type: "TypeError", Message: fmt.Sprintf("%s indices must be integers or slices, not str", pyrepr.TypeName(choice))}
+	return nil, &HostBuiltinError{Type: "TypeError", Message: fmt.Sprintf("model choice is %s where a mapping was expected", errchain.Kind(choice))}
 }
 
 // Picked choice value from the bound asker, false with no asker, on an event loop, on cancel or an unknown answer

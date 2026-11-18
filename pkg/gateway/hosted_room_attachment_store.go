@@ -21,6 +21,7 @@ import (
 
 	"golang.org/x/text/unicode/norm"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyfs"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -1470,7 +1471,7 @@ func attachmentRecipientListed(recipients any, memberID string) (bool, error) {
 	case string:
 		return strings.Contains(typed, memberID), nil
 	}
-	return false, fmt.Errorf("argument of type '%s' is not iterable", pyrepr.TypeName(recipients))
+	return false, fmt.Errorf("the attachment recipients are %s, expected a list", errchain.Kind(recipients))
 }
 
 // Owner event row of an attachment commitment, nil without a canonical room log

@@ -113,7 +113,7 @@ func reserveChildExecution(ctx context.Context, db *state.SessionDB, conn state.
 		return nil, err
 	}
 	if parent == nil {
-		return nil, &PyError{Kind: "TypeError", Msg: "'NoneType' object is not subscriptable"}
+		return nil, &PyError{Kind: "TypeError", Msg: "the child execution row is missing"}
 	}
 	childSID, childEID := state.NewSessionID(), prefix+tokenHex(8)
 	if err := db.InsertSessionRowInTransaction(ctx, conn, state.NewSession{ID: childSID, Source: "subagent",

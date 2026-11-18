@@ -21,8 +21,8 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -552,7 +552,7 @@ type lmHTTPStatusError struct {
 	Msg  string
 }
 
-func (e *lmHTTPStatusError) Error() string { return fmt.Sprintf("HTTP Error %d: %s", e.Code, e.Msg) }
+func (e *lmHTTPStatusError) Error() string { return fmt.Sprintf("HTTP %d %s", e.Code, e.Msg) }
 
 // Python exception class the error stands for
 func (e *lmHTTPStatusError) PyTypeName() string { return "HTTPError" }
@@ -565,7 +565,7 @@ func (e *lmHTTPStatusError) PyRepr() string {
 	return fmt.Sprintf("<HTTPError %d: %s>", e.Code, pyrepr.Repr(e.Msg))
 }
 
-const lmRedirectLoopMsg = "The HTTP server returned a redirect error that would lead to an infinite loop.\nThe last 30x error message was:\n"
+const lmRedirectLoopMsg = "the server redirects in a loop, the last redirect was "
 
 // Next URL urllib's redirect handler follows for a non 2xx response, the HTTPError it raises when it refuses
 func lmRedirect(resp *http.Response, method, current string, visited *map[string]int) (string, error) {
@@ -587,7 +587,7 @@ func lmRedirect(resp *http.Response, method, current string, visited *map[string
 		return "", err
 	}
 	if parts.Scheme != "http" && parts.Scheme != "https" && parts.Scheme != "ftp" && parts.Scheme != "" {
-		return "", &lmHTTPStatusError{code, newURL, fmt.Sprintf("%s - Redirection to url '%s' is not allowed", reason, newURL)}
+		return "", &lmHTTPStatusError{code, newURL, fmt.Sprintf("%s, the redirect to %s is not allowed", reason, newURL)}
 	}
 	if parts.Path == "" && parts.Netloc != "" {
 		parts.Path = "/"
@@ -618,7 +618,7 @@ func lmURLOpenError(err error) error {
 		if timedOut {
 			return &pyurl.URLError{Reason: "timed out"}
 		}
-		return &pyurl.URLError{Reason: pyhttpx.OSErrorText(de.err)}
+		return &pyurl.URLError{Reason: errchain.OSText(de.err)}
 	}
 	if timedOut {
 		return &lmTimeoutError{}
@@ -651,7 +651,7 @@ func lmRouterRequest(endpoint map[string]any, path string, timeout time.Duration
 	}
 	baseURL, ok := rawBase.(string)
 	if !ok {
-		return nil, fmt.Errorf("'%s' object has no attribute 'rsplit'", pyTypeName(rawBase))
+		return nil, fmt.Errorf("the local model router base is %s, expected text", errchain.Kind(rawBase))
 	}
 	if i := strings.LastIndex(baseURL, "/v1"); i >= 0 {
 		baseURL = baseURL[:i]
@@ -675,14 +675,14 @@ func lmJSONLoadsBytes(raw []byte) (any, error) {
 	if _, err := pyjson.Loads(text); err != nil {
 		return nil, err
 	}
-	return nil, errors.New("Expecting value: line 1 column 1 (char 0)")
+	return nil, errors.New("the reply is empty, expected JSON")
 }
 
 // Python dict .get of a decoded JSON value, an AttributeError for anything but a mapping
 func lmDictGet(v any, key string, def any) (any, error) {
 	m, ok := v.(map[string]any)
 	if !ok {
-		return nil, fmt.Errorf("'%s' object has no attribute 'get'", pyTypeName(v))
+		return nil, fmt.Errorf("expected a mapping, got %s", errchain.Kind(v))
 	}
 	return pyGetAny(m, key, def), nil
 }
@@ -705,7 +705,7 @@ func lmIterate(v any) ([]any, error) {
 		}
 		return out, nil
 	}
-	return nil, fmt.Errorf("'%s' object is not iterable", pyTypeName(v))
+	return nil, fmt.Errorf("expected a list, got %s", errchain.Kind(v))
 }
 
 // Read only config for status paths that render degraded, empty on any failure
@@ -749,9 +749,9 @@ func lmSetRuntimeEnabled(ctx context.Context, enabled bool) (map[string]any, err
 	}
 	m, ok := section.(map[string]any)
 	if _, isList := section.([]any); isList {
-		return nil, errors.New("list indices must be integers or slices, not str")
+		return nil, errors.New("the local_models section of config.yaml is a list, expected a mapping")
 	} else if !ok {
-		return nil, fmt.Errorf("'%s' object does not support item assignment", pyTypeName(section))
+		return nil, fmt.Errorf("the local_models section of config.yaml is %s, expected a mapping", errchain.Kind(section))
 	}
 	assignKey(m, "enabled", enabled)
 	if err := configSaveFn(ctx, cfg); err != nil {
@@ -786,7 +786,7 @@ func lmTagBuild(tag string) (int64, error) {
 	text := strings.TrimPrefix(tag, "b")
 	n, ok := pythonUnicodeIntText(text)
 	if !ok {
-		return 0, fmt.Errorf("invalid literal for int() with base 10: %s", pyrepr.Repr(text))
+		return 0, fmt.Errorf("model tag size %q is not a whole number", text)
 	}
 	return n, nil
 }
@@ -944,9 +944,9 @@ func lmKnownModels(endpoint map[string]any) (map[any]bool, error) {
 func lmHashable(v any) error {
 	switch v.(type) {
 	case []any:
-		return errors.New("unhashable type: 'list'")
+		return errors.New("a local model key is a list, expected text")
 	case map[string]any:
-		return errors.New("unhashable type: 'dict'")
+		return errors.New("a local model key is a mapping, expected text")
 	}
 	return nil
 }
@@ -1156,7 +1156,7 @@ func lmPyInt(v any) (int64, error) {
 	if s, ok := v.(string); ok {
 		n, ok := pythonUnicodeIntText(s)
 		if !ok {
-			return 0, fmt.Errorf("invalid literal for int() with base 10: %s", pyrepr.Repr(s))
+			return 0, fmt.Errorf("%q is not a whole number", s)
 		}
 		return n, nil
 	}
@@ -1171,7 +1171,7 @@ func lmPyInt(v any) (int64, error) {
 	}
 	n, ok := pythonInt(v)
 	if !ok {
-		return 0, fmt.Errorf("int() argument must be a string, a bytes-like object or a real number, not '%s'", pyTypeName(v))
+		return 0, fmt.Errorf("expected a whole number, got %s", errchain.Kind(v))
 	}
 	return int64(n), nil
 }

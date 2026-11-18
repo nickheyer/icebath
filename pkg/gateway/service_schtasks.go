@@ -1082,7 +1082,7 @@ func startOrReportRunning(ctx context.Context, pids []int, scanned bool) error {
 func installWindowsStartupFallback(ctx context.Context, scriptPath string, startNow bool, detail string) error {
 	lines := pystr.Splitlines(detail, false)
 	if len(lines) == 0 {
-		return errors.New("list index out of range")
+		return errors.New("the scheduled task refusal has no detail to report")
 	}
 	winPrintln("↻ Scheduled Task install blocked (" + lines[0] + ") — using Startup folder fallback")
 	registered, err := winIsTaskRegistered(ctx)
@@ -1230,7 +1230,7 @@ func WindowsInstall(ctx context.Context, o WindowsInstallOptions) error {
 		if !admin {
 			lines := pystr.Splitlines(detail, false)
 			if len(lines) == 0 {
-				return errors.New("list index out of range")
+				return errors.New("the scheduled task refusal has no detail to report")
 			}
 			handed, err := offerElevatedInstall(ctx, "↻ Scheduled Task install needs administrator approval ("+lines[0]+")", o.Force, startNow, startOnLogin)
 			if err != nil || handed {

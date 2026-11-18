@@ -358,10 +358,10 @@ func ContentPolicyCopy(label, summary string) string {
 func ShortDetail(exc any, limit int) string {
 	text := pyrepr.Str(exc)
 	if text == "" {
-		text = pyrepr.TypeName(exc)
+		text = "no details given"
 	}
 	lines := pystr.Splitlines(pystr.Strip(text), false)
-	first := pyrepr.TypeName(exc)
+	first := "no details given"
 	if len(lines) > 0 {
 		first = lines[0]
 	}

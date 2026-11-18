@@ -26,19 +26,19 @@ func TestPyLoadsRoundTripsThroughDumps(t *testing.T) {
 		}
 	}
 	for in, msg := range map[string]string{
-		"":               "Expecting value: line 1 column 1 (char 0)",
-		"[1,]":           "Illegal trailing comma before end of array: line 1 column 3 (char 2)",
-		"{\"a\" 1}":      "Expecting ':' delimiter: line 1 column 6 (char 5)",
-		"[1] x":          "Extra data: line 1 column 5 (char 4)",
-		"\ufeff[]":       "Unexpected UTF-8 BOM (decode using utf-8-sig): line 1 column 1 (char 0)",
-		"\"a\nb\"":       "Invalid control character at: line 1 column 3 (char 2)",
-		`"\x"`:           `Invalid \escape: line 1 column 2 (char 1)`,
-		`"\u12"`:         `Invalid \uXXXX escape: line 1 column 3 (char 2)`,
-		`"\u0041`:        `Invalid \uXXXX escape: line 1 column 3 (char 2)`,
-		`"\ud83d\uZZZZ"`: `Invalid \uXXXX escape: line 1 column 9 (char 8)`,
-		"[1,\n  ]":       "Illegal trailing comma before end of array: line 1 column 3 (char 2)",
-		`{"a": }`:        "Expecting value: line 1 column 7 (char 6)",
-		`"unterminated`:  "Unterminated string starting at: line 1 column 1 (char 0)",
+		"":               "invalid JSON at line 1 column 1: expected a value",
+		"[1,]":           "invalid JSON at line 1 column 3: a comma ends the list",
+		"{\"a\" 1}":      "invalid JSON at line 1 column 6: expected ':' after a key",
+		"[1] x":          "invalid JSON at line 1 column 5: more text follows the value",
+		"\ufeff[]":       "invalid JSON at line 1 column 1: the text starts with a UTF-8 byte order mark",
+		"\"a\nb\"":       "invalid JSON at line 1 column 3: a string holds a control character",
+		`"\x"`:           `invalid JSON at line 1 column 2: a string holds an invalid backslash escape`,
+		`"\u12"`:         `invalid JSON at line 1 column 3: a string holds an invalid \uXXXX escape`,
+		`"\u0041`:        `invalid JSON at line 1 column 3: a string holds an invalid \uXXXX escape`,
+		`"\ud83d\uZZZZ"`: `invalid JSON at line 1 column 9: a string holds an invalid \uXXXX escape`,
+		"[1,\n  ]":       "invalid JSON at line 1 column 3: a comma ends the list",
+		`{"a": }`:        "invalid JSON at line 1 column 7: expected a value",
+		`"unterminated`:  "invalid JSON at line 1 column 1: a string is never closed",
 	} {
 		if _, err := pyLoads(in); err == nil || err.Error() != msg {
 			t.Fatalf("%q: %v want %s", in, err, msg)

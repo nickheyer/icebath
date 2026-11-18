@@ -63,46 +63,25 @@ func (s *tuiStore) markBubbleShown(inputID string) {
 	s.bubblesShown[inputID] = true
 }
 
-// Rows of a pending submissions list, nil for anything that is no list
-func pendingRows(v any) []map[string]any {
-	list, isList := v.([]any)
-	if !isList {
-		return nil
-	}
-	rows := make([]map[string]any, 0, len(list))
-	for _, item := range list {
-		row, _ := item.(map[string]any)
-		rows = append(rows, row)
-	}
-	return rows
-}
-
 // Rows the owner just moved from queued to started whose bubble nobody painted
-func (s *tuiStore) newlyStartedRows(previous, incoming any) []map[string]any {
-	before, after := pendingRows(previous), pendingRows(incoming)
+func (s *tuiStore) newlyStartedRows(previous, incoming *tuigateway.SessionInfo) []pendingRow {
+	before, after := pendingRowsOf(previous), pendingRowsOf(incoming)
 	if before == nil || after == nil {
 		return nil
 	}
-	wasQueued := []any{}
+	wasQueued := map[string]bool{}
 	for _, row := range before {
-		if row["status"] == "queued" {
-			wasQueued = append(wasQueued, row["admission_id"])
+		if row.Status == "queued" {
+			wasQueued[row.AdmissionID] = true
 		}
 	}
-	out := []map[string]any{}
+	out := []pendingRow{}
 	for _, row := range after {
-		inputID, _ := row["input_id"].(string)
-		queued := slices.ContainsFunc(wasQueued, func(id any) bool { return jsStrictEqual(id, row["admission_id"]) })
-		if row["status"] == "started" && queued && !(inputID != "" && s.bubblesShown[inputID]) {
+		if row.Status == "started" && wasQueued[row.AdmissionID] && !(row.InputID != "" && s.bubblesShown[row.InputID]) {
 			out = append(out, row)
 		}
 	}
 	return out
-}
-
-// Whether a pending row still waits on the owner's queue
-func isServerQueued(row map[string]any) bool {
-	return row["status"] == "queued" || row["status"] == "unknown"
 }
 
 // Voice setters the capture events drive
@@ -183,9 +162,11 @@ func settledLines(target map[string]any) []string {
 
 // Snapshot fields of a connection payload
 func connectionTargets(v any) []map[string]any {
-	rows := pendingRows(v)
-	if rows == nil {
-		return []map[string]any{}
+	list, _ := v.([]any)
+	rows := make([]map[string]any, 0, len(list))
+	for _, item := range list {
+		row, _ := item.(map[string]any)
+		rows = append(rows, row)
 	}
 	return rows
 }

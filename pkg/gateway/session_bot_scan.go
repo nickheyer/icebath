@@ -8,7 +8,7 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
@@ -86,7 +86,7 @@ func isPreAdmissionPin(path string, record map[string]any) bool {
 func botScanErrorText(err error) string {
 	var pathErr *os.PathError
 	if errors.As(err, &pathErr) {
-		return pypath.OSErrorText(err)
+		return errchain.OSText(err)
 	}
 	return err.Error()
 }

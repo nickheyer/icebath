@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyfs"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -108,7 +109,7 @@ func opName(op map[string]any, defaultName string) (string, error) {
 	}
 	name, ok := v.(string)
 	if !ok {
-		return "", &manageTypeError{msg: fmt.Sprintf("expected str, bytes or os.PathLike object, not %s", pyTypeName(v))}
+		return "", &manageTypeError{msg: fmt.Sprintf("skill name is %s where text was expected", errchain.Kind(v))}
 	}
 	return name, nil
 }
@@ -168,7 +169,7 @@ func (s *Scope) validateBatchOps(operations []any, defaultName string) ([]map[st
 		if v := op["file_path"]; pyrepr.Truthy(v) {
 			str, ok := v.(string)
 			if !ok {
-				return nil, nil, nil, &manageTypeError{msg: fmt.Sprintf("'%s' object has no attribute 'strip'", pyTypeName(v))}
+				return nil, nil, nil, &manageTypeError{msg: fmt.Sprintf("operation field is %s where text was expected", errchain.Kind(v))}
 			}
 			fp = strings.TrimSpace(str)
 		}

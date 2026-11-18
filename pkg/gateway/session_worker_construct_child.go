@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
@@ -42,7 +43,7 @@ func ConstructKwargs(frame *pyjson.Object) (*pyjson.Object, error) {
 	}
 	request, isDict := decoded.(*pyjson.Object)
 	if !isDict {
-		return nil, &PyError{Kind: "AttributeError", Msg: "'" + pyTypeName(decoded) + "' object has no attribute 'get'"}
+		return nil, &PyError{Kind: "AttributeError", Msg: "the worker construction arguments are " + errchain.Kind(decoded) + ", expected a mapping"}
 	}
 	raw := request.GetOr("construct_v1", nil)
 	if raw == nil {

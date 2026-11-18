@@ -24,6 +24,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pybase64"
 	"github.com/nickheyer/icebath/pkg/internal/pydict"
@@ -230,7 +231,7 @@ func webhookRouteObject(route any) (*pyjson.Object, error) {
 	if obj, ok := route.(*pyjson.Object); ok && obj != nil {
 		return obj, nil
 	}
-	return nil, &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("'%s' object has no attribute 'get'", pyrepr.TypeName(route))}
+	return nil, &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("a webhook route is %s, expected a mapping", errchain.Kind(route))}
 }
 
 // One delivery info entry and the time it was recorded
@@ -326,7 +327,7 @@ func NewWebhookAdapter(config *PlatformConfig) (*WebhookAdapter, error) {
 func webhookRouteTable(routes any) (*pydict.Dict[string, any], error) {
 	obj, ok := webhookNormalize(routes).(*pyjson.Object)
 	if !ok || obj == nil {
-		return nil, &PyError{Kind: "TypeError", Msg: fmt.Sprintf("'%s' object is not iterable", pyrepr.TypeName(routes))}
+		return nil, &PyError{Kind: "TypeError", Msg: fmt.Sprintf("the webhook routes are %s, expected a mapping", errchain.Kind(routes))}
 	}
 	table := pydict.New[string, any]()
 	for _, name := range obj.Keys {
@@ -668,7 +669,7 @@ func (a *WebhookAdapter) ReloadDynamicRoutes(ctx context.Context) {
 	if utf8.Valid(raw) {
 		data, err = pyjson.Loads(strings.TrimPrefix(string(raw), "\ufeff"))
 	} else {
-		err = &PyError{Kind: "UnicodeDecodeError", Msg: "'utf-8' codec can't decode bytes: invalid start byte"}
+		err = &PyError{Kind: "UnicodeDecodeError", Msg: "the dynamic webhook routes file is not valid UTF-8"}
 	}
 	if err != nil {
 		a.dynamicRoutesStat = statKey
@@ -1281,14 +1282,14 @@ func (a *WebhookAdapter) admitAgentRun(ctx context.Context, payload any, prompt,
 func (a *WebhookAdapter) finalizeDelivery(ctx context.Context, event *MessageEvent, authority *SessionAuthority, receipt AdmissionReceipt) {
 	err := func() error {
 		if authority == nil {
-			return &PyError{Kind: "AttributeError", Msg: "'NoneType' object has no attribute 'db'"}
+			return &PyError{Kind: "AttributeError", Msg: "the session store is not open"}
 		}
 		row, err := authority.DB.GetSessionAdmission(ctx, receipt.AdmissionID)
 		if err != nil {
 			return err
 		}
 		if row == nil {
-			return &PyError{Kind: "TypeError", Msg: "'NoneType' object is not subscriptable"}
+			return &PyError{Kind: "TypeError", Msg: "the webhook delivery record is missing"}
 		}
 		if status := row.GetOr("status", nil); status == "queued" || status == "started" {
 			authority.mu.Lock()
@@ -1305,7 +1306,7 @@ func (a *WebhookAdapter) finalizeDelivery(ctx context.Context, event *MessageEve
 				return err
 			}
 			if row == nil {
-				return &PyError{Kind: "TypeError", Msg: "'NoneType' object is not subscriptable"}
+				return &PyError{Kind: "TypeError", Msg: "the webhook delivery record is missing"}
 			}
 		}
 		event.webhookReceipt = &webhookReceiptBinding{authority: authority, receipt: authority.receiptOf(row)}
@@ -1401,7 +1402,7 @@ func (a *WebhookAdapter) RenderPrompt(template any, payload any, eventType any, 
 	}
 	text, ok := template.(string)
 	if !ok {
-		return "", &PyError{Kind: "TypeError", Msg: fmt.Sprintf("expected string or bytes-like object, got '%s'", pyrepr.TypeName(template))}
+		return "", &PyError{Kind: "TypeError", Msg: fmt.Sprintf("the webhook prompt template is %s, expected text", errchain.Kind(template))}
 	}
 	var failure error
 	out := webhookTemplateKeyRE.ReplaceAllStringFunc(text, func(match string) string {
@@ -1421,7 +1422,7 @@ func (a *WebhookAdapter) RenderPrompt(template any, payload any, eventType any, 
 		case "event_type":
 			eventText, ok := eventType.(string)
 			if !ok {
-				failure = &PyError{Kind: "TypeError", Msg: fmt.Sprintf("expected str instance, %s found", pyrepr.TypeName(eventType))}
+				failure = &PyError{Kind: "TypeError", Msg: fmt.Sprintf("the webhook event type is %s, expected text", errchain.Kind(eventType))}
 				return match
 			}
 			return eventText
@@ -1452,7 +1453,7 @@ func (a *WebhookAdapter) RenderPrompt(template any, payload any, eventType any, 
 func (a *WebhookAdapter) renderDeliveryExtra(extra any, payload any) (*pyjson.Object, error) {
 	obj, ok := pyjson.AsObject(extra)
 	if !ok {
-		return nil, &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("'%s' object has no attribute 'items'", pyrepr.TypeName(extra))}
+		return nil, &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("the webhook delivery extra settings are %s, expected a mapping", errchain.Kind(extra))}
 	}
 	out := pyjson.NewObject()
 	for _, key := range obj.Keys {
@@ -1488,7 +1489,7 @@ func webhookDeliveryExtra(delivery *pyjson.Object) (*pyjson.Object, error) {
 	extra := delivery.GetOr("deliver_extra", pyjson.NewObject())
 	obj, ok := pyjson.AsObject(extra)
 	if !ok {
-		return nil, &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("'%s' object has no attribute 'get'", pyrepr.TypeName(extra))}
+		return nil, &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("the webhook delivery extra settings are %s, expected a mapping", errchain.Kind(extra))}
 	}
 	return obj, nil
 }
@@ -1519,7 +1520,7 @@ func (a *WebhookAdapter) deliverGitHubComment(ctx context.Context, content strin
 	}
 	repoText, ok := repo.(string)
 	if !ok {
-		return SendResult{}, &PyError{Kind: "TypeError", Msg: "expected string or bytes-like object, got '" + pyrepr.TypeName(repo) + "'"}
+		return SendResult{}, &PyError{Kind: "TypeError", Msg: "the GitHub repository is " + errchain.Kind(repo) + ", expected text"}
 	}
 	if !webhookRepoRE.MatchString(repoText) {
 		pkgLog().Error("[webhook] invalid repo format: " + pyrepr.Repr(repo))
@@ -1678,7 +1679,7 @@ func (a *WebhookAdapter) WebhookDeliveryConfig(ctx context.Context, profile *str
 	if profile == nil || *profile == "" {
 		holder, ok := a.GatewayRunner.(gatewayConfigRunner)
 		if !ok || holder == nil {
-			return nil, &PyError{Kind: "AttributeError", Msg: "'NoneType' object has no attribute 'config'"}
+			return nil, &PyError{Kind: "AttributeError", Msg: "the webhook adapter has no config"}
 		}
 		return holder.GatewayConfig(), nil
 	}

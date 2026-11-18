@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
@@ -68,7 +69,7 @@ func NormalizeTimezone(value any) (*string, error) {
 	}
 	text, ok := value.(string)
 	if !ok {
-		return nil, fmt.Errorf("timezone must be an IANA name such as 'Asia/Hong_Kong', not %s.", pyrepr.TypeName(value))
+		return nil, fmt.Errorf("timezone must be an IANA name such as 'Asia/Hong_Kong', got %s.", errchain.Kind(value))
 	}
 	name := pystr.Strip(text)
 	if name == "" {

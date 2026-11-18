@@ -14,6 +14,7 @@ import (
 
 	"github.com/gorilla/websocket"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyctx"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -38,18 +39,18 @@ func (e *workerStoreError) PyTypeName() string { return e.kind }
 func ApplyRowAnnotations(messages []map[string]any, annotations any) error {
 	list, ok := annotations.([]any)
 	if !ok {
-		return &workerStoreError{"TypeError", fmt.Sprintf("'%s' object is not iterable", pyrepr.TypeName(annotations))}
+		return &workerStoreError{"TypeError", fmt.Sprintf("row annotations are %s where a list was expected", errchain.Kind(annotations))}
 	}
 	for i := range max(len(messages), len(list)) {
 		if i >= len(messages) {
-			return &workerStoreError{"ValueError", "zip() argument 2 is longer than argument 1"}
+			return &workerStoreError{"ValueError", "there are more row annotations than messages"}
 		}
 		if i >= len(list) {
-			return &workerStoreError{"ValueError", "zip() argument 2 is shorter than argument 1"}
+			return &workerStoreError{"ValueError", "there are fewer row annotations than messages"}
 		}
 		annotation, ok := list[i].(*pyjson.Object)
 		if !ok {
-			return &workerStoreError{"AttributeError", fmt.Sprintf("'%s' object has no attribute 'items'", pyrepr.TypeName(list[i]))}
+			return &workerStoreError{"AttributeError", fmt.Sprintf("row annotation is %s where a mapping was expected", errchain.Kind(list[i]))}
 		}
 		for _, key := range annotation.Keys {
 			value := annotation.Vals[key]
@@ -322,7 +323,7 @@ func (r *WorkerRPC) Call(ctx context.Context, method string, params *pyjson.Obje
 	if raw, has := response.Get("error"); has {
 		failure, ok := raw.(*pyjson.Object)
 		if !ok {
-			return nil, &workerStoreError{"AttributeError", fmt.Sprintf("'%s' object has no attribute 'get'", pyrepr.TypeName(raw))}
+			return nil, &workerStoreError{"AttributeError", fmt.Sprintf("worker reply error is %s where a mapping was expected", errchain.Kind(raw))}
 		}
 		reason := failure.GetOr("message", "persistence_failed")
 		text, isText := reason.(string)

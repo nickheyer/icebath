@@ -6,7 +6,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
@@ -21,7 +20,7 @@ func validateEditor(source string, editor any) error {
 	}
 	fields, ok := editor.(map[string]any)
 	if !ok {
-		return invalidParams("editor", "must be a mapping, got "+pyrepr.TypeName(editor))
+		return invalidParams("editor", "must be a mapping, got "+errchain.Kind(editor))
 	}
 	var unknown []string
 	for key := range fields {

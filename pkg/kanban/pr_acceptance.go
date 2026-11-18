@@ -11,8 +11,10 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strings"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -46,12 +48,12 @@ type gateAuthError struct{ Msg string }
 
 func (e *gateAuthError) Error() string { return e.Msg }
 
-// Python exception raised while reading gh evidence, its class deciding whether the gate reports infra
+// Failure while reading gh evidence, its class deciding whether the gate reports infra
 type gatePyError struct{ Class, Msg string }
 
-func (e *gatePyError) Error() string { return e.Class + ": " + e.Msg }
+func (e *gatePyError) Error() string { return e.Msg }
 
-// Raises a Python exception class inside the acceptance reader
+// Raises a classed failure inside the acceptance reader
 func gateRaise(class, format string, args ...any) {
 	panic(&gatePyError{class, fmt.Sprintf(format, args...)})
 }
@@ -62,27 +64,27 @@ func jget(v any, key any) any {
 	case *pyjson.Object:
 		k, ok := key.(string)
 		if !ok {
-			gateRaise("KeyError", "%s", pyrepr.Repr(key))
+			gateRaise("KeyError", "GitHub evidence has no %v field", key)
 		}
 		val, found := c.Get(k)
 		if !found {
-			gateRaise("KeyError", "%s", pyrepr.Repr(key))
+			gateRaise("KeyError", "GitHub evidence has no %v field", key)
 		}
 		return val
 	case []any:
 		i, ok := key.(int)
 		if !ok {
-			gateRaise("TypeError", "list indices must be integers or slices, not %s", pyrepr.TypeName(key))
+			gateRaise("TypeError", "GitHub evidence is a list where a mapping holding %v was expected", key)
 		}
 		if i < 0 {
 			i += len(c)
 		}
 		if i < 0 || i >= len(c) {
-			gateRaise("IndexError", "list index out of range")
+			gateRaise("IndexError", "GitHub evidence list has no item %v", key)
 		}
 		return c[i]
 	}
-	gateRaise("TypeError", "'%s' object is not subscriptable", pyrepr.TypeName(v))
+	gateRaise("TypeError", "GitHub evidence is %s where a list or a mapping was expected", errchain.Kind(v))
 	return nil
 }
 
@@ -90,7 +92,7 @@ func jget(v any, key any) any {
 func jgetd(v any, key string, def any) any {
 	o, ok := v.(*pyjson.Object)
 	if !ok {
-		gateRaise("AttributeError", "'%s' object has no attribute 'get'", pyrepr.TypeName(v))
+		gateRaise("AttributeError", "GitHub evidence is %s where a mapping was expected", errchain.Kind(v))
 	}
 	if val, found := o.Get(key); found {
 		return val
@@ -116,7 +118,7 @@ func jiter(v any) []any {
 		}
 		return out
 	}
-	gateRaise("TypeError", "'%s' object is not iterable", pyrepr.TypeName(v))
+	gateRaise("TypeError", "GitHub evidence is %s where a list or a mapping was expected", errchain.Kind(v))
 	return nil
 }
 
@@ -124,7 +126,7 @@ func jiter(v any) []any {
 func jstr(v any) string {
 	s, ok := v.(string)
 	if !ok {
-		gateRaise("TypeError", "expected string or bytes-like object, got '%s'", pyrepr.TypeName(v))
+		gateRaise("TypeError", "GitHub evidence is %s where text was expected", errchain.Kind(v))
 	}
 	return s
 }
@@ -211,7 +213,7 @@ func jless(a, b any) bool {
 			return x < y
 		}
 	}
-	gateRaise("TypeError", "'<' not supported between instances of '%s' and '%s'", pyrepr.TypeName(b), pyrepr.TypeName(a))
+	gateRaise("TypeError", "GitHub evidence ids are %s and %s, which have no order", errchain.Kind(a), errchain.Kind(b))
 	return false
 }
 
@@ -219,7 +221,7 @@ func jless(a, b any) bool {
 func jhash(v any) string {
 	switch v.(type) {
 	case []any, *pyjson.Object:
-		gateRaise("TypeError", "unhashable type: '%s'", pyrepr.TypeName(v))
+		gateRaise("TypeError", "GitHub evidence holds %s where a single value was expected", errchain.Kind(v))
 	}
 	if n, ok := jnum(v); ok {
 		return "n:" + n.Text('g', 64)
@@ -254,7 +256,7 @@ func ghAPI(ctx context.Context, endpoint string, query *string, paginate bool, p
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 	err = cmd.Run()
 	if runCtx.Err() != nil {
-		gateRaise("TimeoutExpired", "Command %s timed out after 30 seconds", pyrepr.Repr(argv))
+		gateRaise("TimeoutExpired", "%s timed out after 30 seconds", strings.Join(argv, " "))
 	}
 	var exitErr *exec.ExitError
 	if errors.As(err, &exitErr) {
@@ -268,7 +270,7 @@ func ghAPI(ctx context.Context, endpoint string, query *string, paginate bool, p
 		if exitErr.ExitCode() == 4 {
 			panic(&gateAuthError{"gh has no login for " + short})
 		}
-		gateRaise("CalledProcessError", "Command %s returned non-zero exit status %d.", pyrepr.Repr(argv), exitErr.ExitCode())
+		gateRaise("CalledProcessError", "%s exited with status %d", strings.Join(argv, " "), exitErr.ExitCode())
 	}
 	if err != nil {
 		gateRaise("OSError", "%v", err)
@@ -453,7 +455,7 @@ func collectAcceptance(ctx context.Context, contract string, publishedPR any, as
 		for _, s := range jiter(page) {
 			src, ok := s.(*pyjson.Object)
 			if !ok {
-				gateRaise("TypeError", "'%s' object is not a mapping", pyrepr.TypeName(s))
+				gateRaise("TypeError", "a GitHub status context is %s, expected a mapping", errchain.Kind(s))
 			}
 			cp := pyjson.NewObject()
 			for _, k := range src.Keys {

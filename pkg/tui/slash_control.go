@@ -107,7 +107,7 @@ func (r *slashRun) canonicalControl(operation string) tea.Cmd {
 				return nil
 			}
 			a.setHistoryItems(func([]msg) []msg {
-				return append([]msg{introMsg(info)}, toTranscriptMessages(historyRows(attached.Messages))...)
+				return append([]msg{introMsg(info)}, toTranscriptMessages(attached.Messages)...)
 			})
 			usage := *usageOf(a.store.ui.Usage)
 			compressions, estimated, emptied, unused := val(usage.Compressions)+1, false, int64(0), int64(0)
@@ -154,7 +154,7 @@ func (a *app) controlCommands() []slashCommand {
 					a.store.ui.Info = info
 				}
 				if res.Messages != nil {
-					rows := toTranscriptMessages(historyRows(res.Messages))
+					rows := toTranscriptMessages(res.Messages)
 					if info != nil {
 						rows = append([]msg{introMsg(info)}, rows...)
 					}

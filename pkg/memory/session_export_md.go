@@ -351,7 +351,7 @@ func VerifyExportFile(path string, session *pyjson.Object) (bool, string, error)
 		return false, "", err
 	}
 	if !utf8.Valid(data) {
-		return false, "", &pyint.Error{Kind: "UnicodeDecodeError", Msg: "'utf-8' codec can't decode the export file " + path}
+		return false, "", &pyint.Error{Kind: "UnicodeDecodeError", Msg: "export file " + path + " is not valid UTF-8"}
 	}
 	text := strings.TrimPrefix(string(data), "\ufeff")
 	match := exportSHALineRE.FindStringSubmatch(text)

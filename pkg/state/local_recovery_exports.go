@@ -3,6 +3,7 @@ package state
 import (
 	"context"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
@@ -71,7 +72,7 @@ func localReceiptDecoded(raw any) (*pyjson.Object, error) {
 	if !ok {
 		b, isBytes := raw.([]byte)
 		if !isBytes {
-			return nil, &stateTypedError{"TypeError", "the JSON object must be str, bytes or bytearray, not " + pyTypeName(raw)}
+			return nil, &stateTypedError{"TypeError", "the stored local receipt is " + errchain.Kind(raw) + ", expected JSON text"}
 		}
 		decoded, err := pyJSONDecodeBytes(b)
 		if err != nil {

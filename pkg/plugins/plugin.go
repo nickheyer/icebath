@@ -137,7 +137,7 @@ func readInstallMetadata(h string) (map[string]any, error) {
 		return nil, &PluginOperationError{Msg: fmt.Sprintf("Could not read plugin install metadata: %v", err)}
 	}
 	if !utf8.Valid(stripBOM(raw)) {
-		return nil, fmt.Errorf("'utf-8' codec can't decode %s", path)
+		return nil, fmt.Errorf("plugin install metadata %s is not valid UTF-8", path)
 	}
 	value, err := pyjson.Loads(string(stripBOM(raw)))
 	if err != nil {

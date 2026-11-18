@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
@@ -180,7 +179,7 @@ func buildAPIRequest(ctx context.Context, a *AIAgent, s *LoopState) error {
 		if moaClientConsumesPreparedRequest(a.client) {
 			s.APIKwargs["_moa_prepared_request"] = s.MoaPreparedRequest
 		} else {
-			pkgLog().Warn(fmt.Sprintf("MoA client replaced mid-turn (client=%s); sending the prepared prompt without the MoA handshake", pyrepr.TypeName(a.client)))
+			pkgLog().Warn(fmt.Sprintf("MoA client replaced mid-turn (client=%T); sending the prepared prompt without the MoA handshake", a.client))
 		}
 	}
 	return nil

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
@@ -228,7 +229,7 @@ func isEntitlementRejected(ctx context.Context, a *AIAgent, providerName, model 
 func (a *AIAgent) shouldSkipFallbackCandidate(ctx context.Context, fb map[string]any, key [3]string, fbProvider, fbModel string) bool {
 	log := pkgLog()
 	if a.unavailableFallbackKeys[key] {
-		log.Debug(fmt.Sprintf("Fallback skip: %s previously marked unavailable", pyrepr.Repr(pyrepr.Tuple{key[0], key[1], key[2]})))
+		log.Debug(fmt.Sprintf("Fallback skip: %s previously marked unavailable", errchain.Show(pyrepr.Tuple{key[0], key[1], key[2]})))
 		return true
 	}
 	if fbProvider == "" || fbModel == "" {
@@ -282,7 +283,7 @@ func (a *AIAgent) reresolveFallbackReasoningConfig(ctx context.Context) {
 		return
 	}
 	a.reasoningConfig = config.ResolveReasoningConfig(map[string]any(cfg), a.model)
-	pkgLog().Info(fmt.Sprintf("Fallback %s: reasoning_config resolved: %s", a.model, pyrepr.Repr(dictOrNone(a.reasoningConfig))))
+	pkgLog().Info(fmt.Sprintf("Fallback %s: reasoning_config resolved: %s", a.model, errchain.Show(dictOrNone(a.reasoningConfig))))
 }
 
 // Drops the old provider's injected extra_body keys still at their injected values, then merges the new provider's
@@ -313,7 +314,7 @@ func (a *AIAgent) rescopeFallbackExtraBody(oldModel, oldProvider, oldBaseURL str
 		a.requestOverrides = overrides
 	}
 	a.mergeCustomProviderExtraBody(customProviders)
-	pkgLog().Info(fmt.Sprintf("Fallback %s: extra_body resolved: %s", a.model, pyrepr.Repr(a.requestOverrides["extra_body"])))
+	pkgLog().Info(fmt.Sprintf("Fallback %s: extra_body resolved: %s", a.model, errchain.Show(a.requestOverrides["extra_body"])))
 }
 
 // Buffers the switch notice for a terminal failure and keeps it as the pending one shot notice

@@ -33,11 +33,11 @@ func (a *app) sessionCommands() []slashCommand {
 				r.sys(tr("slashCmd.session.bg.usage"))
 				return nil
 			}
-			return r.rpc("prompt.background", map[string]any{"session_id": nilIfEmpty(r.sid), "text": r.arg}, func(res map[string]any) tea.Cmd {
-				task, _ := res["task_id"].(string)
-				if task == "" {
+			return ask(r.rpc, r.sys, tuigateway.PromptBackground, tuigateway.SideAgentParams{SessionID: r.sid, Text: r.arg}, func(res *tuigateway.TaskIDResult) tea.Cmd {
+				if res == nil || res.TaskID == "" {
 					return nil
 				}
+				task := res.TaskID
 				tasks := map[string]bool{task: true}
 				for k := range a.store.ui.BgTasks {
 					tasks[k] = true
@@ -52,9 +52,9 @@ func (a *app) sessionCommands() []slashCommand {
 				r.sys(tr("slashCmd.session.btw.usage"))
 				return nil
 			}
-			return r.rpc("prompt.btw", map[string]any{"session_id": nilIfEmpty(r.sid), "text": r.arg}, func(res map[string]any) tea.Cmd {
-				if task, _ := res["task_id"].(string); task != "" {
-					r.sys(tr("slashCmd.session.btw.answering", task))
+			return ask(r.rpc, r.sys, tuigateway.PromptBtw, tuigateway.SideAgentParams{SessionID: r.sid, Text: r.arg}, func(res *tuigateway.TaskIDResult) tea.Cmd {
+				if res != nil && res.TaskID != "" {
+					r.sys(tr("slashCmd.session.btw.answering", res.TaskID))
 				}
 				return nil
 			})

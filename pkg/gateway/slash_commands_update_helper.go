@@ -23,12 +23,12 @@ func DispatchUpdateHelperEntry(ctx context.Context) {
 // Runs the command with both outputs in the output file, then writes its exit code through a temp file and rename
 func UpdateHelperMain(ctx context.Context, args []string, stderr io.Writer) int {
 	if len(args) < 2 {
-		fmt.Fprintln(stderr, "IndexError: list index out of range")
+		fmt.Fprintln(stderr, "usage: update helper OUTPUT_FILE EXIT_CODE_FILE COMMAND...")
 		return 1
 	}
 	outputPath, exitCodePath, command := args[0], args[1], args[2:]
 	if len(command) == 0 {
-		fmt.Fprintln(stderr, "IndexError: list index out of range")
+		fmt.Fprintln(stderr, "usage: update helper OUTPUT_FILE EXIT_CODE_FILE COMMAND..., the command is missing")
 		return 1
 	}
 	out, err := os.Create(outputPath)

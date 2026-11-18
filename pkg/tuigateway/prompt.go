@@ -254,6 +254,13 @@ type PromptResolveUnknownParams struct {
 	ExecutionGeneration int64  `json:"execution_generation"`
 }
 
+// Display hints of a transcript row or a pending prompt, the card text and the count of agents a batch finished
+type DisplayMetadata struct {
+	DisplayText *string        `json:"display_text,omitzero"`
+	TaskCount   *int64         `json:"task_count,omitzero"`
+	Extra       map[string]any `json:"-" wire:"extra"`
+}
+
 // Failure of a session outside a turn, agent start, model switch, compression or resume
 type ErrorPayload struct {
 	Message string `json:"message"`
@@ -401,6 +408,16 @@ type MoaPhasePayload struct {
 	RefsDone   *int64  `json:"refs_done,omitzero"`
 	RefsTotal  *int64  `json:"refs_total,omitzero"`
 	Aggregator *string `json:"aggregator,omitzero"`
+}
+
+// Refusal the gateway gives params that lack a field the method requires
+func MissingParam(method, field string) error {
+	return &ParamsRefusal{Method: method, Fit: &FitError{Field: field, Problem: problemRequired}}
+}
+
+// Refusal the gateway gives params carrying a field the method does not declare
+func UnknownParam(method, field string) error {
+	return &ParamsRefusal{Method: method, Fit: &FitError{Field: field, Problem: problemUnknown}}
 }
 
 // Sends a prompt on the method table route, a busy session queueing, steering or redirecting it

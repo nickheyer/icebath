@@ -96,10 +96,10 @@ func TestParseProcLocksDecodesEveryRangeShape(t *testing.T) {
 func TestParseProcLocksRaisesTheMakedevOverflow(t *testing.T) {
 	inodes := map[DevIno]string{}
 	for ident, msg := range map[string]string{
-		"-2:0:1":                "can't convert negative int to unsigned",
-		"100000000:0:1":         "Python int too large to convert to C unsigned int",
-		"0:-5:1":                "can't convert negative int to unsigned",
-		"10000000000000000:0:1": "int too big to convert",
+		"-2:0:1":                "a device number cannot be negative",
+		"100000000:0:1":         "a device number does not fit in 32 bits",
+		"0:-5:1":                "a device number cannot be negative",
+		"10000000000000000:0:1": "a device number is too large",
 	} {
 		_, err := ParseProcLocks("1: POSIX ADVISORY WRITE 1 "+ident+" 0 0\n", inodes)
 		var conv *pyConvError
