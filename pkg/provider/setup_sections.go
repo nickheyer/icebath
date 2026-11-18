@@ -18,7 +18,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
-// SetupProviderHelp is the help command the provider setup screen points to
+// Help command the provider setup screen points to
 const SetupProviderHelp = "icebath model --help"
 
 var setupLog = logging.GetLogger("hermes_cli.setup")

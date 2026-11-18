@@ -31,7 +31,7 @@ var noThanks = len(OfferChoices) - 1
 const (
 	// OfferVersion is bumped only when every earlier answer must be asked again
 	OfferVersion = 2
-	// SharedMetricsGuide names the example config file and key that document shared metrics
+	// Example config file and key documenting shared metrics
 	SharedMetricsGuide = "cli-config.yaml.example, key telemetry.shared_metrics"
 	reaskNote          = "Asking once more: an earlier version could save \"No thanks\" before you saw this question."
 )
