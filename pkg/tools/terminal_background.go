@@ -18,16 +18,16 @@ const silentBackgroundHint = "background=true without notify_on_complete=true me
 
 // Hint for a homebrewed CI poller shape known to fail silently
 const homebrewCIPollerHint = "This looks like a homebrewed CI poller built from `gh pr view --json statusCheckRollup` " +
-	"and/or `gh pr checks | jq`. That shape has burned us repeatedly in hermes-agent dev work " +
-	"(PRs #31329, #31448, #31695, #31709, #31745, #32264, #33131) \u2014 stdout buffering kills " +
+	"and/or `gh pr checks | jq`. That shape fails silently again and again in real CI loops " +
+	"\u2014 stdout buffering kills " +
 	"output capture, jq null-key edge cases silently exit the loop, conclusion-vs-status field " +
 	"confusion exits early with bogus all-green verdicts, TTY-only summary banners never " +
-	"appear when piped. Use the canonical snippets in the green-ci-policy skill instead: the " +
+	"appear when piped. Use one of the two canonical shapes instead: the " +
 	"exit-code-driven `gh pr checks $PR >/dev/null` (rc 0 = green, 8 = pending, else fail) for " +
 	"exit-on-first-fail behavior, or the column-2 awk-on-tabs poller (`awk -F\"\\t\" " +
-	"\"$2==\\\"pending\\\"\"`) for sharded matrices. Load " +
-	"skill_view(name='github/hermes-agent-dev', file_path='references/green-ci-policy.md') for " +
-	"the verbatim snippets. If you must roll a custom loop with rich structured output, write " +
+	"\"$2==\\\"pending\\\"\"`) for sharded matrices. Or run " +
+	"`gh pr checks $PR --watch --fail-fast` to let gh itself wait and exit non-zero on the first failing check, " +
+	"its exit codes listed by `gh pr checks --help`. If you must roll a custom loop with rich structured output, write " +
 	"each tick to a known file (`tee -a $TMPDIR/ci.log`) and rely on `process(action='log')` to " +
 	"read THAT file \u2014 do not rely on background-process stdout capture for line-buffered shell " +
 	"loops."

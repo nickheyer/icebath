@@ -102,7 +102,7 @@ func admitMessage(ctx context.Context, a *SessionAuthority, event *MessageEvent)
 			if contentClauses[field] {
 				named = refusal.Reason + ": " + field
 			}
-			return "⚠️ Hermes refused this message (" + named + "), so it was not saved " +
+			return "⚠️ Icebath refused this message (" + named + "), so it was not saved " +
 				"or answered. Ask the operator to check gateway.log.", nil
 		}
 		if refusal.Reason != "queue_full" {
@@ -177,7 +177,7 @@ func admitMessage(ctx context.Context, a *SessionAuthority, event *MessageEvent)
 		return nil, err
 	}
 	if row != nil && rowString(row, "status") == AdmissionTerminal {
-		return "⚠️ Hermes did not answer this message (" + refusal.Reason + "): the conversation it was " +
+		return "⚠️ Icebath did not answer this message (" + refusal.Reason + "): the conversation it was " +
 			"queued for moved, so it was dropped. Send it again to continue.", nil
 	}
 	if row != nil {
@@ -360,15 +360,15 @@ func pauseNotice(a *SessionAuthority, ref SessionRef, reason string) (any, error
 	a.mu.Unlock()
 	switch reason {
 	case "runtime_draining":
-		return "⏳ Hermes is restarting — your message is saved and will be answered when it is back.", nil
+		return "⏳ Icebath is restarting — your message is saved and will be answered when it is back.", nil
 	case "session_busy":
 		return "⏳ Your message is saved and will be answered when the work running in this conversation finishes.", nil
 	case "unknown_execution":
 		discard := "/discard"
 		if source != nil && source.Platform == PlatformSlack {
-			discard = "/hermes discard"
+			discard = "/icebath discard"
 		}
-		return "⏸️ This conversation is paused: a previous turn did not finish when Hermes restarted, " +
+		return "⏸️ This conversation is paused: a previous turn did not finish when Icebath restarted, " +
 			"and only you know whether to send it again. Your message is saved. Send " + discard + " to drop " +
 			"the lost turn and continue (it is not re-run), or /reset to start a fresh conversation.", nil
 	}

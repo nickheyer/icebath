@@ -1513,7 +1513,7 @@ setupFlow.terminal.egressIntro: "يمكن حماية بيئات Docker المع�
 setupFlow.terminal.egressLabel: "جدار حماية صادر لبيئات Docker المعزولة"
 setupFlow.terminal.egressOff: "تم تخطي جدار الحماية الصادر · فعّله لاحقًا عبر icebath egress setup"
 setupFlow.terminal.egressOn: "تم تفعيل جدار الحماية الصادر في الإعدادات · شغّل icebath egress setup ثم icebath egress start لإصدار الرموز وتشغيل الوكيل"
-setupFlow.terminal.intro: "الواجهة الخلفية للطرفية · المكان الذي يشغّل فيه Icebath أوامر الصدفة والشيفرة، ويحدد تنفيذ الأدوات والوصول إلى الملفات والعزل"
+setupFlow.terminal.intro: "الواجهة الخلفية للطرفية · المكان الذي يشغّل فيه Icebath أوامر الصدفة والشيفرة، ويحدد تنفيذ الأدوات والوصول إلى الملفات والعزل · الدليل: cli-config.yaml.example (terminal.backend)"
 setupFlow.terminal.keep: "الإبقاء على الحالي ({0})"
 setupFlow.terminal.keepDetail: "ترك الواجهة الخلفية كما هي"
 setupFlow.terminal.kept: "الإبقاء على الواجهة الخلفية الحالية {0}"

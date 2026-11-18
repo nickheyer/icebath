@@ -108,7 +108,7 @@ func TestListCommandListWithEntries(t *testing.T) {
 			t.Fatalf("missing %q in %q", want, out)
 		}
 	}
-	recorded := "\n  Primary:   claude-sonnet-4-6  (via anthropic)\n\n  Fallback chain (2 entries):\n    1. anthropic/claude-sonnet-4.6  (via openrouter)\n    2. Hermes-4  (via nous)\n\n  Tried in order when the primary fails (rate-limit, 5xx, connection errors).\n\n"
+	recorded := "\n  Primary:   claude-sonnet-4-6  (via anthropic)\n\n  Fallback chain (2 entries):\n    1. anthropic/claude-sonnet-4.6  (via openrouter)\n    2. Hermes-4  (via nous)\n\n  Tried in order when the primary fails (rate-limit, 5xx, connection errors).\n  Help: icebath fallback --help\n\n"
 	if out != recorded || code != 0 {
 		t.Fatalf("code %d out %q", code, out)
 	}

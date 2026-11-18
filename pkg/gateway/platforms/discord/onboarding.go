@@ -425,6 +425,7 @@ func InteractiveSetup(ctx context.Context) error {
 		"1. Open https://discord.com/developers/applications → New Application",
 		"2. Open the Bot page → Reset Token → copy the token",
 		"Icebath checks the token, the intents and the invite link for you next.",
+		"Guide: .env.example, key DISCORD_BOT_TOKEN",
 	} {
 		cli.PrintInfo(line)
 	}

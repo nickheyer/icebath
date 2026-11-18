@@ -2176,7 +2176,7 @@ func (l *doLoop) nonretryableResult(apiErr *APIError, cl *Classified, errorConte
 		guidance = append(guidance,
 			"   💡 The endpoint's firewall/CDN blocked the request before it reached the model — your key",
 			"      and model access are probably fine. Relays often reject the SDK's default User-Agent:",
-			"      set `extra_headers: {User-Agent: HermesAgent/1.0}` on the custom_providers entry,",
+			"      set `extra_headers: {User-Agent: IcebathAgent/1.0}` on the custom_providers entry,",
 			"      or check the proxy/WAF rules and your network.")
 	}
 	if cl.Reason == ReasonContentPolicyBlocked {
@@ -2184,7 +2184,7 @@ func (l *doLoop) nonretryableResult(apiErr *APIError, cl *Classified, errorConte
 	}
 	if cl.Reason == ReasonSSLCertVerification {
 		guidance = append(guidance,
-			"   💡 Hermes couldn't verify the provider's security certificate. This fails the same",
+			"   💡 Icebath couldn't verify the provider's security certificate. This fails the same",
 			"      way on every retry — fix the environment, then try again:",
 			"      • Corporate TLS-inspecting proxy? Ask your administrator to install",
 			"        its root certificate in the operating system trust store.",

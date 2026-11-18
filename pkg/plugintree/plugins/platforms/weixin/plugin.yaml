@@ -3,7 +3,7 @@ label: Weixin / WeChat
 kind: platform
 version: 1.0.0
 description: >
-  Weixin (personal WeChat) gateway adapter for Hermes Agent over Tencent's
+  Weixin (personal WeChat) gateway adapter for Icebath Agent over Tencent's
   iLink Bot API. Long-polls getupdates for inbound messages, echoes each
   peer's context_token on replies, and moves media through the AES-128-ECB
   encrypted CDN. `icebath gateway setup` performs the iLink QR login.

@@ -25,7 +25,7 @@ const (
 // Static harness identity plus the Perplexity integration header, no per user identifier
 func perplexityHeaders() [][2]string {
 	return [][2]string{
-		{"HTTP-Referer", "https://hermes-agent.nousresearch.com"},
+		{"HTTP-Referer", "https://github.com/nickheyer/icebath"},
 		{"X-Title", "Icebath Agent"},
 		{"User-Agent", "IcebathAgent/" + icebathVersion()},
 		{"X-Pplx-Integration", "icebath-agent"},

@@ -76,7 +76,7 @@ func projectPluginsWarning(policy *LocalSessionPolicy) *string {
 	if err != nil || len(entries) == 0 {
 		return nil
 	}
-	text := "project plugins in " + folder + " are not loaded: the gateway that runs Hermes sessions does not " +
+	text := "project plugins in " + folder + " are not loaded: the gateway that runs Icebath sessions does not " +
 		"load ./.icebath/plugins, so ICEBATH_ENABLE_PROJECT_PLUGINS has no effect here."
 	return &text
 }

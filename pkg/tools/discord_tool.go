@@ -95,7 +95,7 @@ func DiscordRequest(ctx context.Context, method, path, token string, params [][2
 	}
 	req.Header.Set("Authorization", authorization)
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("User-Agent", "icebath-agent (https://github.com/NousResearch/hermes-agent)")
+	req.Header.Set("User-Agent", "icebath-agent (https://github.com/nickheyer/icebath)")
 	resp, err := discordHTTPDo(req, timeout)
 	if err != nil {
 		return nil, &DiscordOSError{Text: "<urlopen error " + discordTransportReason(err) + ">"}

@@ -1513,7 +1513,7 @@ setupFlow.terminal.egressIntro: "Пісочниці Docker можна захис
 setupFlow.terminal.egressLabel: "брандмауер вихідного трафіку для пісочниць Docker"
 setupFlow.terminal.egressOff: "Брандмауер вихідного трафіку пропущено · увімкніть пізніше через icebath egress setup"
 setupFlow.terminal.egressOn: "Брандмауер вихідного трафіку увімкнено в конфігурації · запустіть icebath egress setup, потім icebath egress start, щоб випустити токени й запустити проксі"
-setupFlow.terminal.intro: "Бекенд терміналу · де Icebath виконує команди оболонки та код, це визначає виконання інструментів, доступ до файлів та ізоляцію"
+setupFlow.terminal.intro: "Бекенд терміналу · де Icebath виконує команди оболонки та код, це визначає виконання інструментів, доступ до файлів та ізоляцію · Посібник: cli-config.yaml.example (terminal.backend)"
 setupFlow.terminal.keep: "Залишити поточний ({0})"
 setupFlow.terminal.keepDetail: "залишити бекенд без змін"
 setupFlow.terminal.kept: "Залишено поточний бекенд {0}"

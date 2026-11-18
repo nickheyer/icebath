@@ -94,7 +94,9 @@ func connectErrorDetail(err error) string {
 	text := err.Error()
 	if runtime.GOOS == "darwin" && gateway.IsSupervisedGatewayLaunch(nil) && errors.Is(err, syscall.EHOSTUNREACH) {
 		return text + " — macOS Local Network Privacy is blocking this launchd gateway from the LAN. " +
-			"Run `icebath gateway install` to regenerate the launchd job, then `icebath gateway restart`."
+			"Run `icebath gateway install` to regenerate the launchd job, then `icebath gateway restart`. " +
+			"The regenerated job starts the gateway through /usr/bin/osascript, an Apple platform binary whose " +
+			"child processes macOS lets reach the LAN."
 	}
 	return text
 }

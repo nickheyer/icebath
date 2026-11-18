@@ -1513,7 +1513,7 @@ setupFlow.terminal.egressIntro: "Docker サンドボックスは送信資格情�
 setupFlow.terminal.egressLabel: "Docker サンドボックスの送信ファイアウォール"
 setupFlow.terminal.egressOff: "送信ファイアウォールをスキップします · 後で icebath egress setup で有効にできます"
 setupFlow.terminal.egressOn: "設定で送信ファイアウォールを有効にしました · icebath egress setup に続けて icebath egress start を実行し、トークンを発行してプロキシを起動します"
-setupFlow.terminal.intro: "ターミナルバックエンド · Icebath がシェルコマンドとコードを実行する場所で、ツールの実行、ファイルアクセス、隔離を決めます"
+setupFlow.terminal.intro: "ターミナルバックエンド · Icebath がシェルコマンドとコードを実行する場所で、ツールの実行、ファイルアクセス、隔離を決めます · ガイド: cli-config.yaml.example (terminal.backend)"
 setupFlow.terminal.keep: "現在のまま（{0}）"
 setupFlow.terminal.keepDetail: "バックエンドをそのままにする"
 setupFlow.terminal.kept: "現在のバックエンド {0} を維持します"

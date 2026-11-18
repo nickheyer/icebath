@@ -63,7 +63,7 @@ optional_env:
     prompt: "Allow all users? (true/false)"
     password: false
   - name: PHOTON_READ_RECEIPTS
-    description: "Mark inbound iMessages read after forwarding to Hermes (true/false, default true)"
+    description: "Mark inbound iMessages read after forwarding to Icebath (true/false, default true)"
     prompt: "Send read receipts? (true/false)"
     password: false
   - name: PHOTON_REQUIRE_MENTION
@@ -71,7 +71,7 @@ optional_env:
     prompt: "Require a mention in group chats?"
     password: false
   - name: PHOTON_MENTION_PATTERNS
-    description: "Mention wake-word regexes for group chats (JSON list or comma/newline-separated; defaults to Hermes wake words)"
+    description: "Mention wake-word regexes for group chats (JSON list or comma/newline-separated; defaults to Icebath wake words)"
     prompt: "Group mention patterns"
     password: false
   - name: PHOTON_HOME_CHANNEL

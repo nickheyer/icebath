@@ -297,7 +297,7 @@ func (c *CLI) showHistory() {
 			cliVisiblePrint("    " + preview + suffix)
 			continue
 		}
-		cliVisiblePrint("\n  " + c.t("cli.session.history_assistant_header", map[string]any{"agent_name": "Hermes", "index": visibleIndex}) + tsSuffix(msg))
+		cliVisiblePrint("\n  " + c.t("cli.session.history_assistant_header", map[string]any{"agent_name": "Icebath", "index": visibleIndex}) + tsSuffix(msg))
 		nCalls := 0
 		if calls, ok := msg["tool_calls"].([]any); ok {
 			nCalls = len(calls)

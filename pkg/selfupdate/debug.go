@@ -938,7 +938,7 @@ func runDebugShareNous(ctx context.Context, ns map[string]any, w io.Writer, logL
 		"\nPick up the discussion in:\n"+
 		"  GitHub Issues        https://github.com/nickheyer/icebath/issues\n"+
 		"  Nous Portal Support  https://portal.nousresearch.com/help\n"+
-		"  Discord              https://discord.gg/NousResearch")
+		"  New issue            https://github.com/nickheyer/icebath/issues/new")
 	return 0, nil
 }
 

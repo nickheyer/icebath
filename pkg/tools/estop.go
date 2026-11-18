@@ -168,7 +168,7 @@ func PausedReply(ctx context.Context) string {
 	if state.Reason != "" {
 		tag = " (" + state.Reason + ")"
 	}
-	return "⏸️ Hermes is paused" + tag + ". New work is on hold; run `icebath resume` to pick things back up."
+	return "⏸️ Icebath is paused" + tag + ". New work is on hold; run `icebath resume` to pick things back up."
 }
 
 // True when engaged, logging once per engagement per component and rearming after a resume

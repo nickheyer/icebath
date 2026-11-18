@@ -316,7 +316,7 @@ func formatLiveHistoryOutput(ctx context.Context, sid string, session *tuigatewa
 		if !truthy(message["role"]) {
 			role = "unknown"
 		}
-		label := map[string]string{"user": "You", "assistant": "Hermes"}[role]
+		label := map[string]string{"user": "You", "assistant": "Icebath"}[role]
 		if label == "" {
 			label = pystr.Title(role)
 		}

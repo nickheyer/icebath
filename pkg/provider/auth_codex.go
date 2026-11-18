@@ -340,7 +340,10 @@ func codexSSLInteropHint(err error) string {
 	return " This looks like a TLS handshake failure rather than a Codex outage: some networks reject" +
 		" the larger TLS 1.3 ClientHello that Go sends by default (post-quantum hybrid" +
 		" groups). Workaround: run with GODEBUG=tlsmlkem=0 to restrict key exchange to classic curves" +
-		" (x25519:secp256r1:secp384r1:x448), or test with TLS 1.2."
+		" (x25519:secp256r1:secp384r1:x448), or test with TLS 1.2. Sign in already rides out a one-off dropped" +
+		" connection (the device code request and token exchange are retried twice and polling survives up to" +
+		" six transport errors in a row), so this error means the network keeps failing. Set the workaround," +
+		" then run `icebath auth add openai-codex` again"
 }
 
 // True when the error is transport level and safe to retry, decode errors and bugs surfacing at once

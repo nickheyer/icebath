@@ -583,6 +583,7 @@ func HeldStoreRefusal(ctx context.Context, dbPath, command, forceHint string) (s
 	if forceHint != "" {
 		lines = append(lines, fmt.Sprintf("Override with %s if you accept the risk.", forceHint))
 	}
+	lines = append(lines, "Recovery guide: `"+StorageRecoveryHelp+"`")
 	return strings.Join(lines, "\n"), true, nil
 }
 

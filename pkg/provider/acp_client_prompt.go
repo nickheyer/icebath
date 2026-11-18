@@ -13,7 +13,7 @@ var acpRoleLabels = map[string]string{"system": "System", "user": "User", "assis
 
 // Opening lines of every prompt sent to an ACP agent backend
 var acpPromptPreamble = []string{
-	"You are being used as the active ACP agent backend for Hermes.",
+	"You are being used as the active ACP agent backend for Icebath.",
 	"Use ACP capabilities to complete tasks.",
 	"IMPORTANT: If you take an action with a tool, you MUST output tool calls using <tool_call>{...}</tool_call> blocks with JSON exactly in OpenAI function-call shape.",
 	"If no tool is needed, answer normally.",

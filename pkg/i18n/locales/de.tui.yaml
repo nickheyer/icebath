@@ -1513,7 +1513,7 @@ setupFlow.terminal.egressIntro: "Docker-Sandboxes lassen sich mit der Egress-Cre
 setupFlow.terminal.egressLabel: "Egress-Firewall für Docker-Sandboxes"
 setupFlow.terminal.egressOff: "Egress-Firewall übersprungen · später mit icebath egress setup aktivieren"
 setupFlow.terminal.egressOn: "Egress-Firewall in der Konfiguration aktiviert · führe icebath egress setup und dann icebath egress start aus, um Tokens auszustellen und den Proxy zu starten"
-setupFlow.terminal.intro: "Terminal-Backend · wo Icebath Shell-Befehle und Code ausführt, das bestimmt Werkzeugausführung, Dateizugriff und Isolation"
+setupFlow.terminal.intro: "Terminal-Backend · wo Icebath Shell-Befehle und Code ausführt, das bestimmt Werkzeugausführung, Dateizugriff und Isolation · Anleitung: cli-config.yaml.example (terminal.backend)"
 setupFlow.terminal.keep: "Aktuell behalten ({0})"
 setupFlow.terminal.keepDetail: "Backend unverändert lassen"
 setupFlow.terminal.kept: "Aktuelles Backend {0} bleibt"

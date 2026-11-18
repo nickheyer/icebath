@@ -258,7 +258,7 @@ func handOver(ctx context.Context, record string, data, holder *pyjson.Object) e
 	if err := config.AtomicJSONWriteWith(ctx, record, out); err != nil {
 		return err
 	}
-	launcherLogger().Info(fmt.Sprintf("browser: Chromium pid %v is still used by Hermes pid %v; handed it over instead of stopping it",
+	launcherLogger().Info(fmt.Sprintf("browser: Chromium pid %v is still used by Icebath pid %v; handed it over instead of stopping it",
 		pyrepr.Str(objGet(data, "pid")), pyrepr.Str(objGet(holder, "holder_pid"))))
 	return nil
 }

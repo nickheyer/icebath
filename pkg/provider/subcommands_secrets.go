@@ -20,7 +20,8 @@ type secretsCommandParser struct {
 
 const secretsCommandDescription = "Pull API keys from an external secret manager at process startup " +
 	"instead of storing them in ~/.icebath/.env.  Supports Bitwarden " +
-	"Secrets Manager and 1Password."
+	"Secrets Manager and 1Password.  See: " +
+	"cli-config.yaml.example, key secrets"
 
 // Attaches the secrets subcommand tree with both integrations registered
 func buildSecretsParser() *secretsCommandParser {

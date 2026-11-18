@@ -555,7 +555,7 @@ func TestSideThreadExpansionGuardsTheServedProfileHome(t *testing.T) {
 	}
 	internal := false
 	for _, w := range result.Warnings {
-		if strings.Contains(w, "internal Hermes path") {
+		if strings.Contains(w, "internal Icebath path") {
 			internal = true
 		}
 	}

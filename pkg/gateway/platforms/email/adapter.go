@@ -153,7 +153,7 @@ func sendIMAPID(imap *pyimaplib.IMAP4) {
 		version = info.BaseVersion
 	}
 	if _, _, err := imap.Xatom("ID", fmt.Sprintf(`("name" "icebath-agent" "version" "%s" `+
-		`"vendor" "NousResearch" "support-email" "noreply@nousresearch.com")`, version)); err != nil {
+		`"vendor" "Icebath" "support-url" "https://github.com/nickheyer/icebath/issues")`, version)); err != nil {
 		slog.Debug(fmt.Sprintf("[Email] IMAP ID command not accepted: %s", err.Error()))
 	}
 }

@@ -85,14 +85,14 @@ func (c *CLI) addTreeA(root *cobra.Command) {
 	c.pos(moaDel, p("name"))
 
 	fb := c.newCmd(root, "fallback", "Manage fallback providers (tried when the primary model fails)",
-		"Manage the fallback provider chain.  Fallback providers are tried in order when the primary model fails with rate-limit, overload, or connection errors.")
+		"Manage the fallback provider chain.  Fallback providers are tried in order when the primary model fails with rate-limit, overload, or connection errors.  See: cli-config.yaml.example, key fallback_providers")
 	c.newCmd(fb, "list", "Show the current fallback chain (default when no subcommand)", "", "ls")
 	c.newCmd(fb, "add", "Pick a provider + model (same picker as `icebath model`) and append to the chain", "")
 	c.newCmd(fb, "remove", "Pick an entry to delete from the chain", "", "rm")
 	c.newCmd(fb, "clear", "Remove all fallback entries", "")
 
 	wt := c.newCmd(root, "worktree", "Audit and reclaim accumulated git worktrees and merged branches",
-		"Audit, reclaim and restore the .worktrees/ trees Icebath sessions accumulate. Idle trees with uncommitted changes or unpushed commits are archived to refs/icebath/archive/<tree> before removal (worktrees.archive_dirty); `restore` brings one back. In-use trees are never touched.")
+		"Audit, reclaim and restore the .worktrees/ trees Icebath sessions accumulate. Idle trees with uncommitted changes or unpushed commits are archived to refs/icebath/archive/<tree> before removal (worktrees.archive_dirty); `restore` brings one back. In-use trees are never touched. See: cli-config.yaml.example, key worktrees")
 	wtList := c.newCmd(wt, "list", "Classify every tree: age, size, verdict, reason (default action)", "", "ls", "audit")
 	sf(wtList, "repo", "", "", "Repo root (default: current repo)")
 	bf(wtList, "json", "", "Machine-readable audit output (trees, external trees, branches)")
@@ -115,7 +115,7 @@ func (c *CLI) addTreeA(root *cobra.Command) {
 	sf(bClose, "browser", "", "", "Override detected default browser (chrome/edge/brave/brave-origin/chromium)")
 
 	secrets := c.helpCmd(root, "secrets", "Manage external secret sources (Bitwarden, 1Password)",
-		"Pull API keys from an external secret manager at process startup instead of storing them in ~/.icebath/.env.  Supports Bitwarden Secrets Manager and 1Password.", 0)
+		"Pull API keys from an external secret manager at process startup instead of storing them in ~/.icebath/.env.  Supports Bitwarden Secrets Manager and 1Password.  See: cli-config.yaml.example, key secrets", 0)
 	bw := c.helpCmd(secrets, "bitwarden", "Bitwarden Secrets Manager integration", "", 0, "bw")
 	bwSetup := c.newCmd(bw, "setup", "Interactive wizard: install bws, store access token, pick project", "")
 	sf(bwSetup, "project-id", "", "", "Pre-select a project UUID instead of prompting")
@@ -149,7 +149,7 @@ func (c *CLI) addTreeA(root *cobra.Command) {
 	c.newCmd(op, "disable", "Turn off the 1Password integration", "")
 
 	egress := c.helpCmd(root, "egress", "Manage the iron-proxy egress credential-injection firewall",
-		"Manage iron-proxy, the optional TLS-intercepting egress firewall that swaps proxy tokens for real API credentials before outbound requests leave a sandbox.  Disabled by default.", 0)
+		"Manage iron-proxy, the optional TLS-intercepting egress firewall that swaps proxy tokens for real API credentials before outbound requests leave a sandbox.  Disabled by default.  See: `icebath egress setup --help`", 0)
 	egInstall := c.newCmd(egress, "install", "Install the PM-pinned iron-proxy binary", "")
 	bf(egInstall, "force", "", "Verify and repair the managed copy")
 	egSetup := c.newCmd(egress, "setup", "Interactive wizard: install + CA + mint tokens + write config", "")

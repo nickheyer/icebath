@@ -18,7 +18,7 @@ author: sprmn24
 # ``hermes_cli/config.py``.
 requires_env:
   - name: NTFY_TOPIC
-    description: "Topic name to subscribe to (e.g. hermes-in)"
+    description: "Topic name to subscribe to (e.g. icebath-in)"
     prompt: "ntfy subscribe topic"
     password: false
 optional_env:

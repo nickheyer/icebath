@@ -210,7 +210,8 @@ func downgradeRefusalFor(ctx context.Context, targetRef, h string, predates func
 				"it with `"+icebath+" import <backup.zip>`.")
 		}
 	}
-	lines = append(lines, "  Sessions created since the upgrade are not in that copy.")
+	lines = append(lines, "  Sessions created since the upgrade are not in that copy.",
+		"  Older releases: https://github.com/"+OfficialRepository+"/releases")
 	text := strings.Join(lines, "\n")
 	return &text
 }

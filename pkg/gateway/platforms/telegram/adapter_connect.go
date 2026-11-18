@@ -308,9 +308,12 @@ func (a *TelegramAdapter) startWebhookMode(ctx context.Context, webhookURL strin
 	}
 	if secret = pystr.Strip(secret); secret == "" {
 		return &runtimeError{msg: "TELEGRAM_WEBHOOK_SECRET is required when TELEGRAM_WEBHOOK_URL is set. Without it, the " +
-			"webhook endpoint accepts forged updates from anyone who can reach it.\n\n" +
+			"webhook endpoint accepts forged updates from anyone who can reach it — the secret Telegram echoes in the " +
+			"X-Telegram-Bot-Api-Secret-Token header of every update is the only proof it came from Telegram, so " +
+			"webhook mode does not start without one.\n\n" +
 			"Generate a secret and set it in your .env:\n  export TELEGRAM_WEBHOOK_SECRET=\"$(openssl rand -hex 32)\"\n\n" +
-			"Then register it with Telegram when setting the webhook via setWebhook's secret_token parameter."}
+			"Then register it with Telegram when setting the webhook via setWebhook's secret_token parameter, " +
+			"and run `icebath gateway restart`."}
 	}
 	path := "/telegram"
 	if parsed, perr := url.Parse(webhookURL); perr == nil && parsed.Path != "" {

@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/acp"
-	"github.com/nickheyer/icebath/pkg/activesessions"
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/app"
 	"github.com/nickheyer/icebath/pkg/browser"
@@ -355,11 +354,6 @@ func installProcessWiring() {
 	tools.ModelContextLength = provider.ToolModelContextLength
 	tools.ProjectBoardWorkdirBinder = bindProjectBoardWorkdir
 	observability.SkillSourceIDAliasesHook = skills.SourceIDAliases
-	app.SecurityAdvisoriesStartupBanner = func(ctx context.Context) string {
-		return plugins.AdvisoryStartupBanner(ctx, plugins.DetectCompromised(ctx, plugins.Advisories))
-	}
-	app.TryAcquireActiveSession = app.AcquireActiveSessionLease
-	app.FormatRefusalStderr = activesessions.FormatRefusalStderr
 	provider.InstallPluginManagerHooks(pluginManagerHooks())
 	plugins.InstallServices(pluginServices())
 	app.SetPrintVersionInfo(printVersionInfo)

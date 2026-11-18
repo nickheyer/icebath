@@ -988,7 +988,7 @@ func ensureReferencePathAllowed(ctx context.Context, path string) error {
 	}
 	for _, dir := range blockedDirs {
 		if isUnderPath(path, dir) {
-			return &plugins.HostBuiltinError{Type: "ValueError", Message: "path is a sensitive credential or internal Hermes path and cannot be attached"}
+			return &plugins.HostBuiltinError{Type: "ValueError", Message: "path is a sensitive credential or internal Icebath path and cannot be attached"}
 		}
 	}
 	blocked, err := canonicalReadBlock(ctx, path)
@@ -996,7 +996,7 @@ func ensureReferencePathAllowed(ctx context.Context, path string) error {
 		return err
 	}
 	if blocked {
-		return &plugins.HostBuiltinError{Type: "ValueError", Message: "path is a sensitive credential or internal Hermes path and cannot be attached"}
+		return &plugins.HostBuiltinError{Type: "ValueError", Message: "path is a sensitive credential or internal Icebath path and cannot be attached"}
 	}
 	return nil
 }

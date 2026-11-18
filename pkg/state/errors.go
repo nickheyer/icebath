@@ -374,12 +374,16 @@ const StateDBReplacedMsg = "FATAL: state.db was replaced underneath the gateway;
 	"writes to this file. Divert transcripts to sessions/<id>.jsonl (and the " +
 	"gateway pending_messages spool) and restore or reopen after operator intervention."
 
+// Help command of the offline session storage recovery
+const StorageRecoveryHelp = "icebath sessions recover --help"
+
 // The message of a write refused while a deleted wal generation is held
 const DeletedWalGenerationMsg = "FATAL: session storage stopped writing because another icebath process still holds a deleted " +
 	"state.db-wal or state.db-shm inode (an old copy of the write-ahead log). Nothing is lost: quit " +
 	"every icebath process on this profile (TUI, gateway, cron), run `icebath doctor` " +
 	"(it names the processes still holding the log), then start icebath again. Do not delete the WAL " +
 	"yourself and do not run `icebath doctor --fix` while they are running. " +
+	"Guide: `" + StorageRecoveryHelp + "` " +
 	"Detail: the path names a different (or missing) generation than the one this process holds " +
 	"open; opening or writing through it would mint a second WAL (split-brain). " +
 	"database.journal_mode: delete is operator containment, not a new default."

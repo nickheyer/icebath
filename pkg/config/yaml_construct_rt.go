@@ -90,12 +90,31 @@ func (t *rtTagged) repr() string {
 // Round trip dispatch of RoundTripConstructor, unknown tags kept as tagged objects
 func (c *safeConstructor) constructNonRecursiveRT(n *ry.Node) any {
 	tag := n.Tag()
+	cost := 2
+	switch tag {
+	case yamlTagPrefix + "bool":
+		cost = 3
+	case yamlTagPrefix + "null", yamlTagPrefix + "int", yamlTagPrefix + "float", yamlTagPrefix + "binary", yamlTagPrefix + "timestamp":
+	case yamlTagPrefix + "str":
+		if n.Handle != nil && *n.Handle != "" {
+			return c.constructUnknown(n)
+		}
+	default:
+		return c.constructCollectionRT(n, tag)
+	}
+	var v any
+	c.inFrames(cost, func() { v = c.constructScalarTagRT(n, tag) })
+	return v
+}
+
+// Scalar value of a round trip scalar tag
+func (c *safeConstructor) constructScalarTagRT(n *ry.Node, tag string) any {
 	switch tag {
 	case yamlTagPrefix + "null":
 		c.constructScalarRT(n)
 		return nil
 	case yamlTagPrefix + "bool":
-		value := c.constructScalar(n)
+		value := c.constructScalarRT(n)
 		low := pystr.Lower(value)
 		b, ok := boolValues[low]
 		if !ok {
@@ -113,28 +132,39 @@ func (c *safeConstructor) constructNonRecursiveRT(n *ry.Node) any {
 		return c.constructBinary(n)
 	case yamlTagPrefix + "timestamp":
 		return c.constructTimestampRT(n)
+	}
+	return c.constructScalarRT(n)
+}
+
+// AttributeError a ScalarNode raises for the flow_style read of omap and set construction
+func requireFlowStyle(n *ry.Node) {
+	if n.Kind == ry.ScalarNode {
+		panic(pyErr("AttributeError", "'ScalarNode' object has no attribute 'flow_style'"))
+	}
+}
+
+// Container of a round trip collection tag, any other tag going to construct_unknown
+func (c *safeConstructor) constructCollectionRT(n *ry.Node, tag string) any {
+	switch tag {
 	case yamlTagPrefix + "omap":
 		omap := newPyDict()
 		omap.kind = dictCommentedOrdered
-		return c.generator(omap, func() { c.fillOmapRT(n, omap) })
+		c.inFrames(1, func() { requireFlowStyle(n) })
+		return c.generator(omap, 1, func() { c.fillOmapRT(n, omap) })
 	case yamlTagPrefix + "pairs":
 		pairs := &pyList{}
-		return c.generator(pairs, func() { c.fillPairs(n, pairs) })
+		return c.generator(pairs, 1, func() { c.fillPairs(n, pairs) })
 	case yamlTagPrefix + "set":
 		set := &pySet{index: map[string]int{}, rt: true}
-		return c.generator(set, func() { c.constructSetting(n, set) })
-	case yamlTagPrefix + "str":
-		if n.Handle != nil && *n.Handle != "" {
-			return c.constructUnknown(n)
-		}
-		return c.constructScalarRT(n)
+		c.inFrames(1, func() { requireFlowStyle(n) })
+		return c.generator(set, 2, func() { c.constructSetting(n, set) })
 	case yamlTagPrefix + "seq":
-		list := &pyList{}
-		return c.generator(list, func() { list.items = append(list.items, c.constructRTSequence(n, false)...) })
+		list := &pyList{rt: true}
+		return c.generator(list, 2, func() { list.items = append(list.items, c.constructRTSequence(n, false)...) })
 	case yamlTagPrefix + "map":
 		m := newPyDict()
 		m.kind = dictCommented
-		return c.generator(m, func() { c.constructMappingRT(n, m, true) })
+		return c.generator(m, 2, func() { c.constructMappingRT(n, m, true) })
 	}
 	return c.constructUnknown(n)
 }
@@ -171,14 +201,14 @@ func (c *safeConstructor) constructUnknown(n *ry.Node) any {
 	case ry.MappingNode:
 		m := newPyDict()
 		m.kind = dictCommented
-		return c.generator(m, func() { guard(func() { c.constructMappingRT(n, m, false) }) })
+		return c.generator(m, 2, func() { guard(func() { c.constructMappingRT(n, m, false) }) })
 	case ry.ScalarNode:
 		var t *rtTagged
-		guard(func() { t = &rtTagged{value: c.constructScalarRT(n), style: n.Style, tag: n.Tag()} })
+		c.inFrames(2, func() { guard(func() { t = &rtTagged{value: c.constructScalarRT(n), style: n.Style, tag: n.Tag()} }) })
 		return t
 	case ry.SequenceNode:
-		list := &pyList{}
-		return c.generator(list, func() { guard(func() { list.items = append(list.items, c.constructSequence(n, false)...) }) })
+		list := &pyList{rt: true}
+		return c.generator(list, 2, func() { guard(func() { list.items = append(list.items, c.constructSequence(n, false)...) }) })
 	}
 	refuse()
 	return nil

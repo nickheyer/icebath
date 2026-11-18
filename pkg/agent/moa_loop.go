@@ -82,8 +82,8 @@ const (
 	moaAdvisoryInstruction            = "[The conversation above is the current state of the task. Give your " + "most intelligent judgement: what is going on, what should happen next, " + "what risks or mistakes you see, and how the acting agent should " + "proceed.]"
 	moaImageOnlyUserNote              = "[user sent non-text content (e.g. an image attachment)]"
 	moaAllFailedAggregateHeader       = "[Mixture of Agents context — all reference models failed. " + "Proceeding without aggregated guidance.]\n"
-	moaAggregateContextHeader         = "[Mixture of Agents context — use this as private guidance for the " + "normal Hermes agent loop. You may call tools, continue reasoning, or " + "finish normally.]\n"
-	moaAggregatorSynthesisInstruction = "You are the aggregator in a Mixture of Agents process. Synthesize the " + "reference responses into concise, actionable guidance for the main " + "Hermes agent. Focus on next steps, tool-use strategy, risks, and any " + "disagreements. Do not answer the user directly unless that is all that " + "is needed; produce context the main agent should use in its normal loop.\n\n"
+	moaAggregateContextHeader         = "[Mixture of Agents context — use this as private guidance for the " + "normal Icebath agent loop. You may call tools, continue reasoning, or " + "finish normally.]\n"
+	moaAggregatorSynthesisInstruction = "You are the aggregator in a Mixture of Agents process. Synthesize the " + "reference responses into concise, actionable guidance for the main " + "Icebath agent. Focus on next steps, tool-use strategy, risks, and any " + "disagreements. Do not answer the user directly unless that is all that " + "is needed; produce context the main agent should use in its normal loop.\n\n"
 )
 
 // Python str of a value behind an or default, the empty string for falsy values

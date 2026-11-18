@@ -904,5 +904,5 @@ func codexSilentHangHint(isCodexBackend bool, model string) string {
 	return fmt.Sprintf("Codex backend appears to be silently rejecting %s on chatgpt.com/backend-api/codex (no stream events, no error). "+
 		"This is a known backend-side pattern that has affected ChatGPT Plus accounts intermittently. "+
 		"Workaround: try `gpt-5.4` on the same OAuth profile, or switch to a different model/provider in your fallback chain. "+
-		"Some ChatGPT Codex accounts do not support `gpt-5.4-codex`.", pyRepr(model))
+		"Some ChatGPT Codex accounts do not support `gpt-5.4-codex`. On an affected account every turn waits out the full stale timeout with no events and no error, and the fallback chain takes over only after that abort, so switch with `/model gpt-5.4` or add a fallback with `icebath fallback add`.", pyRepr(model))
 }

@@ -22,7 +22,7 @@ import (
 // MaxSkillsForPrompt bounds the skill names a description prompt lists
 const MaxSkillsForPrompt = 60
 
-const describerSystemPrompt = `You are a profile-describer for the Hermes Agent kanban board.
+const describerSystemPrompt = `You are a profile-describer for the Icebath Agent kanban board.
 
 A user runs multiple "profiles" — distinct agent identities, each with their
 own skills, model, and configuration. The kanban board's orchestrator routes

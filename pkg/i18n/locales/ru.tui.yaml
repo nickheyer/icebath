@@ -1513,7 +1513,7 @@ setupFlow.terminal.egressIntro: "Песочницы Docker можно защит
 setupFlow.terminal.egressLabel: "брандмауэр исходящего трафика для песочниц Docker"
 setupFlow.terminal.egressOff: "Брандмауэр исходящего трафика пропущен · включите позже через icebath egress setup"
 setupFlow.terminal.egressOn: "Брандмауэр исходящего трафика включён в конфигурации · выполните icebath egress setup, затем icebath egress start, чтобы выпустить токены и запустить прокси"
-setupFlow.terminal.intro: "Бэкенд терминала · где Icebath выполняет команды оболочки и код; это определяет выполнение инструментов, доступ к файлам и изоляцию"
+setupFlow.terminal.intro: "Бэкенд терминала · где Icebath выполняет команды оболочки и код; это определяет выполнение инструментов, доступ к файлам и изоляцию · Руководство: cli-config.yaml.example (terminal.backend)"
 setupFlow.terminal.keep: "Оставить текущий ({0})"
 setupFlow.terminal.keepDetail: "оставить бэкенд как есть"
 setupFlow.terminal.kept: "Оставлен текущий бэкенд {0}"

@@ -54,7 +54,7 @@ func parseTruncationParams(rid any, sid string, params map[string]any, history [
 		sid, len(history), optionalIntStr(clientOrdinal), optionalIntStr(targetRowID), pyrepr.Str(params["truncate_before_message_id"])))
 	return nil, nil, rpcErr(rid, 4029, "truncation parameters require confirm_truncate=true; "+
 		"an ordinary prompt.submit must not drop session history "+
-		"(update your Hermes client if a rewind was intended)", nil)
+		"(update your Icebath client if a rewind was intended)", nil)
 }
 
 // str of an optional integer, None when absent

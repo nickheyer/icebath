@@ -21,9 +21,9 @@ import (
 const (
 	accountUsageDepletedLine        = "Status: access depleted — top up to restore"
 	accountUsageTopTierUsedUp       = "Monthly large-model usage is used up."
-	accountUsagePausedLine          = "Status: included usage paused. Your subscription payment failed. Update your card to restore it. Until then, Hermes uses your credits."
-	accountUsagePausedOtherLine     = "Status: included usage paused. See Billing in the Portal. Until then, Hermes uses your credits."
-	accountUsageKeepGoingOffLine    = "Keep going on credits: off. Hermes waits for the reset (turn on in /topup)."
+	accountUsagePausedLine          = "Status: included usage paused. Your subscription payment failed. Update your card to restore it. Until then, Icebath uses your credits."
+	accountUsagePausedOtherLine     = "Status: included usage paused. See Billing in the Portal. Until then, Icebath uses your credits."
+	accountUsageKeepGoingOffLine    = "Keep going on credits: off. Icebath waits for the reset (turn on in /topup)."
 	accountUsageKeepGoingOnLine     = "Keep going on credits: on. Uses your credits when included usage runs out."
 	accountUsageDevFixtureTail      = "(dev fixture — ICEBATH_DEV_CREDITS_FIXTURE)"
 	codexWindowExhaustedPercent     = 100.0

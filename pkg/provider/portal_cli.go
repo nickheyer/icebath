@@ -14,10 +14,11 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
-// Portal home, its subscription page and the Tool Gateway documentation
+// Portal home, its subscription page and the help command of the Tool Gateway
 const (
 	DefaultPortalURL      = "https://portal.nousresearch.com"
 	PortalSubscriptionURL = "https://portal.nousresearch.com/manage-subscription"
+	portalHelpCommand     = "icebath portal --help"
 )
 
 // Partners the Tool Gateway routes to today as key, label and partner
@@ -124,6 +125,10 @@ func portalCmdStatus(ctx context.Context, env PoolEnv, w io.Writer) (int, error)
 	for _, feat := range items {
 		fmt.Fprintf(w, "  %s   %s\n", pystr.Ljust(feat.Label, width), portalFeatureState(feat, "via Nous Portal"))
 	}
+	if !loggedIn {
+		fmt.Fprintln(w)
+		fmt.Fprintln(w, cliui.Color("  Help: "+portalHelpCommand, cliui.Dim))
+	}
 	return 0, nil
 }
 
@@ -191,6 +196,7 @@ func portalCmdTools(ctx context.Context, env PoolEnv, w, errw io.Writer) (int, e
 	}
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, cliui.Color("  Manage your subscription: "+PortalSubscriptionURL, cliui.Dim))
+	fmt.Fprintln(w, cliui.Color("  Help: "+portalHelpCommand, cliui.Dim))
 	return 0, nil
 }
 

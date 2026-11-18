@@ -231,7 +231,7 @@ var runReviewInThread = func(ctx context.Context, a *AIAgent, messagesSnapshot [
 		return
 	}
 	if !parentCanEmitToolCalls(a) && !resolveReviewRuntime(ctx, a, taskCfg).Routed {
-		backgroundReviewLog().Warn(fmt.Sprintf("Background review skipped: provider %s cannot emit Hermes tool calls, "+
+		backgroundReviewLog().Warn(fmt.Sprintf("Background review skipped: provider %s cannot emit Icebath tool calls, "+
 			"so the review fork could not write memories or skills. Set "+
 			"auxiliary.background_review.{provider,model} to route the review to a normal model.", pyStrRepr(a.provider)))
 		return

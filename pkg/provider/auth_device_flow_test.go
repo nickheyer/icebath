@@ -175,18 +175,18 @@ func TestLoopbackCallbackHandlerAndServer(t *testing.T) {
 func TestPrintLoopbackSSHHint(t *testing.T) {
 	scriptBrowserEnv(t, map[string]string{"SSH_CLIENT": "1.2.3.4 1 22", "USER": "nick"})
 	var out bytes.Buffer
-	printLoopbackSSHHint(&out, "http://127.0.0.1:1455/auth/callback")
+	printLoopbackSSHHint(&out, "http://127.0.0.1:1455/auth/callback", "icebath spotify --help")
 	text := out.String()
-	if !strings.Contains(text, "ssh -N -L 1455:127.0.0.1:1455 nick@") {
+	if !strings.Contains(text, "ssh -N -L 1455:127.0.0.1:1455 nick@") || !strings.Contains(text, "Provider help:      icebath spotify --help") {
 		t.Fatalf("hint %q", text)
 	}
 	out.Reset()
-	printLoopbackSSHHint(&out, "https://auth.example/callback")
+	printLoopbackSSHHint(&out, "https://auth.example/callback", "")
 	if out.Len() != 0 {
 		t.Fatal("a non loopback redirect must print nothing")
 	}
 	scriptBrowserEnv(t, map[string]string{})
-	printLoopbackSSHHint(&out, "http://127.0.0.1:1455/auth/callback")
+	printLoopbackSSHHint(&out, "http://127.0.0.1:1455/auth/callback", "")
 	if out.Len() != 0 {
 		t.Fatal("a local session must print nothing")
 	}

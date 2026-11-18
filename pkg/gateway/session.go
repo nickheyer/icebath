@@ -391,7 +391,7 @@ func BuildChannelContinuityNote(entry *SessionEntry, source *SessionSource) stri
 	if source.ThreadID != nil && *source.ThreadID != "" {
 		where = "thread"
 	}
-	return fmt.Sprintf("[System note: This %s had an earlier Hermes session (session_id: %s) that was "+
+	return fmt.Sprintf("[System note: This %s had an earlier Icebath session (session_id: %s) that was "+
 		"auto-reset. If the user refers to earlier work here, or the request depends on this "+
 		"%s's history, use the session_search tool to recall that prior session before "+
 		"acting — do not assume an unrelated recent session is the right context.]", where, *entry.PrevSessionID, where)

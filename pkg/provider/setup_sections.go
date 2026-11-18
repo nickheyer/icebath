@@ -18,6 +18,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
+// SetupProviderHelp is the help command the provider setup screen points to
+const SetupProviderHelp = "icebath model --help"
+
 var setupLog = logging.GetLogger("hermes_cli.setup")
 
 // Seam over the shared provider picker, the hermes_cli.main.select_provider_and_model the setup tests patch
@@ -101,7 +104,7 @@ func runSetupProviderPicker(ctx context.Context) (skipped bool, err error) {
 // SetupModelProvider runs the shared provider and model picker, then reloads and resaves the config it wrote
 func SetupModelProvider(ctx context.Context, cfg config.Tree) error {
 	PrintSetupHeader("Inference Provider", false)
-	SetupInfo("Choose how to connect to your main chat model.", nil)
+	SetupInfo("Choose how to connect to your main chat model.", "   Guide: "+SetupProviderHelp, nil)
 	skipped, err := runSetupProviderPicker(ctx)
 	switch {
 	case skipped:

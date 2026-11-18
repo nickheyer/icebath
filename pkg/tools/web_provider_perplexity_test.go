@@ -25,7 +25,7 @@ func assertIcebathIdentityHeaders(t *testing.T, h map[string][]string) {
 		}
 		return ""
 	}
-	if get("Http-Referer") != "https://hermes-agent.nousresearch.com" || get("X-Title") != "Icebath Agent" || get("X-Pplx-Integration") != "icebath-agent" || !strings.HasPrefix(get("User-Agent"), "IcebathAgent/") {
+	if get("Http-Referer") != "https://github.com/nickheyer/icebath" || get("X-Title") != "Icebath Agent" || get("X-Pplx-Integration") != "icebath-agent" || !strings.HasPrefix(get("User-Agent"), "IcebathAgent/") {
 		t.Fatalf("%v", h)
 	}
 }

@@ -1513,7 +1513,7 @@ setupFlow.terminal.egressIntro: "Sandboxes Docker podem ser protegidos pelo fire
 setupFlow.terminal.egressLabel: "firewall de saída para sandboxes Docker"
 setupFlow.terminal.egressOff: "Firewall de saída pulado · ative-o depois com icebath egress setup"
 setupFlow.terminal.egressOn: "Firewall de saída ativado na configuração · execute icebath egress setup e depois icebath egress start para emitir tokens e iniciar o proxy"
-setupFlow.terminal.intro: "Backend do terminal · onde o Icebath executa comandos de shell e código, o que define a execução de ferramentas, o acesso a arquivos e o isolamento"
+setupFlow.terminal.intro: "Backend do terminal · onde o Icebath executa comandos de shell e código, o que define a execução de ferramentas, o acesso a arquivos e o isolamento · Guia: cli-config.yaml.example (terminal.backend)"
 setupFlow.terminal.keep: "Manter atual ({0})"
 setupFlow.terminal.keepDetail: "deixar o backend como está"
 setupFlow.terminal.kept: "Mantendo o backend atual {0}"

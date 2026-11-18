@@ -3,7 +3,7 @@ label: Signal
 kind: platform
 version: 1.0.0
 description: >
-  Signal gateway adapter for Hermes Agent via a signal-cli daemon in HTTP
+  Signal gateway adapter for Icebath Agent via a signal-cli daemon in HTTP
   mode (SSE inbound, JSON-RPC 2.0 outbound). Supports DMs, allowlisted
   groups, attachments, reactions and home-channel cron delivery. Phone
   numbers are treated as PII in logs.

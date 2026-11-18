@@ -1513,7 +1513,7 @@ setupFlow.terminal.egressIntro: "Docker-sandputte kan met die uitgaande geloofsb
 setupFlow.terminal.egressLabel: "uitgaande brandmuur vir Docker-sandputte"
 setupFlow.terminal.egressOff: "Uitgaande brandmuur oorgeslaan · aktiveer dit later met icebath egress setup"
 setupFlow.terminal.egressOn: "Uitgaande brandmuur in die opstelling geaktiveer · voer icebath egress setup en dan icebath egress start uit om tokens uit te reik en die instaanbediener te begin"
-setupFlow.terminal.intro: "Terminaal-agterkant · waar Icebath dopopdragte en kode loop, wat gereedskapuitvoering, lêertoegang en isolasie bepaal"
+setupFlow.terminal.intro: "Terminaal-agterkant · waar Icebath dopopdragte en kode loop, wat gereedskapuitvoering, lêertoegang en isolasie bepaal · Gids: cli-config.yaml.example (terminal.backend)"
 setupFlow.terminal.keep: "Hou huidige ({0})"
 setupFlow.terminal.keepDetail: "laat die agterkant soos dit is"
 setupFlow.terminal.kept: "Huidige agterkant {0} word behou"

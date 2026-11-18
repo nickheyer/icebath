@@ -214,7 +214,7 @@ func modelFlowAzureFoundry(r *ModelFlowRun) error {
 	cur := azureCurrentSettings(r)
 	flowSay(r.Out, "", "Azure Foundry Configuration", strings.Repeat("=", 50), "",
 		"Azure Foundry can host models with either OpenAI-style or",
-		"Anthropic-style API endpoints.  Hermes will probe your",
+		"Anthropic-style API endpoints.  Icebath will probe your",
 		"endpoint to auto-detect the transport and the deployed",
 		"models when possible.", "")
 	if cur.baseURL != "" {

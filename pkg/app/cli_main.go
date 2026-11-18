@@ -10,9 +10,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/activesessions"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/skills"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -305,7 +307,7 @@ func (c *CLI) claimActiveSession(surface string, stderr bool) bool {
 	}
 	if message != nil && message.Message != "" {
 		if stderr {
-			fmt.Fprintln(stderrWriter(), FormatRefusalStderr(message))
+			fmt.Fprintln(stderrWriter(), activesessions.FormatRefusalStderr(message))
 		} else {
 			c.consolePrint(fmt.Sprintf("[bold red]%s[/]", message.Message))
 		}
@@ -338,7 +340,7 @@ func (c *CLI) installToolCallbacks() {
 
 // Prints the startup banner for unacked security advisories on stderr, never blocking startup
 func (c *CLI) showSecurityAdvisories() {
-	if banner := SecurityAdvisoriesStartupBanner(c.ctx); banner != "" {
+	if banner := plugins.AdvisoryStartupBanner(c.ctx, plugins.DetectCompromised(c.ctx, plugins.Advisories)); banner != "" {
 		fmt.Fprintln(stderrWriter(), banner)
 	}
 }

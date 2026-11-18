@@ -395,6 +395,7 @@ func setupWebhooks(ctx context.Context) error {
 	WizardSetup.PrintWarning("   internet. For security, run the gateway in a sandboxed environment")
 	WizardSetup.PrintWarning("   (Docker, VM, etc.) to limit blast radius from prompt injection.")
 	setupPrintln("")
+	WizardSetup.Info("   Full guide: icebath webhook --help", nil)
 	if err := PlatformSetup.SavePort(ctx, "WEBHOOK_PORT", WizardSetup.Prompt("Webhook port (default 8644)", "", false), "8644"); err != nil {
 		return err
 	}
@@ -411,6 +412,9 @@ func setupWebhooks(ctx context.Context) error {
 	WizardSetup.Info(fmt.Sprintf("   1. Define webhook routes in %s/config.yaml", home.Display(home.Dir(ctx))),
 		"   2. Point your service (GitHub, GitLab, etc.) at:",
 		"      http://your-server:8644/webhooks/<route-name>", nil,
+		"   Route configuration guide:",
+		"   icebath webhook subscribe --help",
+		nil,
 		"   Open config in your editor:  icebath config edit",
 		"   Open config in your editor:  icebath config edit")
 	return nil

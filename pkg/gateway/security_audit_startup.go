@@ -41,7 +41,7 @@ func runningAsRoot() string {
 		return ""
 	}
 	return "Running as ROOT. The agent's terminal/file tools execute with full root privileges \u2014 a single " +
-		"prompt-injection or exposed endpoint is a full host compromise. Run Hermes as an unprivileged user " +
+		"prompt-injection or exposed endpoint is a full host compromise. Run Icebath as an unprivileged user " +
 		"(or in a sandboxed terminal backend / container with a non-root user)."
 }
 

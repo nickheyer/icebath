@@ -367,7 +367,7 @@ func (p *openRouterVideoGenProvider) credentials(ctx context.Context) (string, s
 
 func openRouterVideoHeaders(apiKey string) map[string]string {
 	return map[string]string{"Authorization": "Bearer " + apiKey, "Content-Type": "application/json",
-		"HTTP-Referer": "https://github.com/NousResearch/hermes-agent", "X-Title": "Hermes Agent"}
+		"HTTP-Referer": "https://github.com/nickheyer/icebath", "X-Title": "Icebath Agent"}
 }
 
 func (p *openRouterVideoGenProvider) IsAvailable() bool {

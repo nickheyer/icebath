@@ -258,7 +258,7 @@ func FallbackList(ctx context.Context, w io.Writer, h string) error {
 	}
 	printChain(w, "Fallback chain", chain)
 	fmt.Fprintln(w, "  Tried in order when the primary fails (rate-limit, 5xx, connection errors).")
-	fmt.Fprintln(w)
+	fmt.Fprint(w, "  Help: icebath fallback --help\n\n")
 	return nil
 }
 

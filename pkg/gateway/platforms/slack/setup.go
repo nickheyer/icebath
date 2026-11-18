@@ -187,6 +187,8 @@ func InteractiveSetup(ctx context.Context) error {
 		cli.PrintInfo(line)
 	}
 	gateway.WizardPrintln("")
+	cli.PrintInfo("   Full guide: icebath slack --help")
+	gateway.WizardPrintln("")
 	writeSlackManifestAndInstruct(ctx)
 	gateway.WizardPrintln("")
 	botToken := cli.Prompt("Slack Bot Token (xoxb-...)", "", true)

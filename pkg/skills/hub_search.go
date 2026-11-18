@@ -50,16 +50,16 @@ func (h *Hub) loadHermesIndex(ctx context.Context) any {
 			if pass := hubPassThrough(err); pass != nil {
 				hubRaise(pass)
 			}
-			log.Debug(fmt.Sprintf("Hermes index fetch failed: %s", err))
+			log.Debug(fmt.Sprintf("Skills index fetch failed: %s", err))
 			return h.loadStaleIndexCache()
 		}
 		if resp.StatusCode != 200 {
-			log.Debug(fmt.Sprintf("Hermes index fetch returned %d", resp.StatusCode))
+			log.Debug(fmt.Sprintf("Skills index fetch returned %d", resp.StatusCode))
 			return h.loadStaleIndexCache()
 		}
 		body, derr := pyhttpx.DecodeContent(resp.Header, resp.Content)
 		if derr != nil {
-			log.Debug(fmt.Sprintf("Hermes index decode failed (Accept-Encoding=%s): %s", enc, derr))
+			log.Debug(fmt.Sprintf("Skills index decode failed (Accept-Encoding=%s): %s", enc, derr))
 			continue
 		}
 		decoded := *resp
@@ -69,7 +69,7 @@ func (h *Hub) loadHermesIndex(ctx context.Context) any {
 			if pass := hubPassThrough(jerr); pass != nil {
 				hubRaise(pass)
 			}
-			log.Debug(fmt.Sprintf("Hermes index fetch failed: %s", jerr))
+			log.Debug(fmt.Sprintf("Skills index fetch failed: %s", jerr))
 			return h.loadStaleIndexCache()
 		}
 		data = v

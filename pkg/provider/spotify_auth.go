@@ -37,6 +37,7 @@ const (
 	SpotifyDefaultAccountsBaseURL = "https://accounts.spotify.com"
 	SpotifyDefaultAPIBaseURL      = "https://api.spotify.com/v1"
 	SpotifyDefaultRedirectURI     = "http://127.0.0.1:43827/spotify/callback"
+	SpotifyHelpCommand            = "icebath spotify --help"
 	SpotifyDashboardURL           = "https://developer.spotify.com/dashboard"
 	// Seconds before expiry a runtime read refreshes the access token
 	SpotifyAccessTokenRefreshSkewSeconds = 120
@@ -574,6 +575,7 @@ func spotifyInteractiveSetup(ctx context.Context, h string, out io.Writer, redir
 		"Spotify requires every user to register their own lightweight\n"+
 		"developer app. This takes about two minutes and only has to be\n"+
 		"done once per machine.\n\n"+
+		"Login help: %s\n\n"+
 		"Steps:\n"+
 		"  1. Opening %s in your browser...\n"+
 		"  2. Click 'Create app' and fill in:\n"+
@@ -583,7 +585,7 @@ func spotifyInteractiveSetup(ctx context.Context, h string, out io.Writer, redir
 		"       API/SDK:      Web API\n"+
 		"  3. Agree to the terms, click Save.\n"+
 		"  4. Open the app's Settings page and copy the Client ID.\n"+
-		"  5. Paste it below.\n\n", rule, rule, SpotifyDashboardURL, redirectURIHint)
+		"  5. Paste it below.\n\n", rule, rule, SpotifyHelpCommand, SpotifyDashboardURL, redirectURIHint)
 	if !isRemoteSession() {
 		_ = spotifyOpenBrowser(SpotifyDashboardURL)
 	}
@@ -597,7 +599,7 @@ func spotifyInteractiveSetup(ctx context.Context, h string, out io.Writer, redir
 	}
 	raw := pystr.Strip(line)
 	if raw == "" {
-		fmt.Fprintln(out, "\nNo Client ID entered.")
+		fmt.Fprintf(out, "\nNo Client ID entered. See %s for the login options.\n", SpotifyHelpCommand)
 		return "", &AuthExitError{Code: 1, Message: "Spotify setup cancelled: empty Client ID."}
 	}
 	if err := config.SaveEnvValueContext(ctx, h, "ICEBATH_SPOTIFY_CLIENT_ID", raw); err != nil {
@@ -667,8 +669,8 @@ func SpotifyLogin(ctx context.Context, h string, opts SpotifyLoginOptions, out i
 	authorizeURL := spotifyBuildAuthorizeURL(clientID, redirectURI, scope, stateNonce, pkceCodeChallenge(codeVerifier), accountsBaseURL)
 	fmt.Fprintf(out, "Starting Spotify PKCE login...\nClient ID: %s\nRedirect URI: %s\n"+
 		"Make sure this redirect URI is allow-listed in your Spotify app settings.\n\n"+
-		"Open this URL to authorize Icebath:\n%s\n\n", clientID, redirectURI, authorizeURL)
-	printLoopbackSSHHint(out, redirectURI)
+		"Open this URL to authorize Icebath:\n%s\n\nLogin help: %s\n\n", clientID, redirectURI, authorizeURL, SpotifyHelpCommand)
+	printLoopbackSSHHint(out, redirectURI, SpotifyHelpCommand)
 	if !opts.NoBrowser && !isRemoteSession() && canOpenGraphicalBrowser() {
 		if spotifyOpenBrowser(authorizeURL) == nil {
 			fmt.Fprintln(out, "Browser opened for Spotify authorization.")
@@ -726,6 +728,6 @@ func SpotifyLogin(ctx context.Context, h string, opts SpotifyLoginOptions, out i
 	if err := store.Save(data); err != nil {
 		return err
 	}
-	fmt.Fprintf(out, "Spotify login successful!\n  Auth state: %s\n  Provider state saved under providers.spotify\n", store.Path())
+	fmt.Fprintf(out, "Spotify login successful!\n  Auth state: %s\n  Provider state saved under providers.spotify\n  Help: %s\n", store.Path(), SpotifyHelpCommand)
 	return nil
 }

@@ -9,9 +9,12 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
-// Refusal of a command the shared gateway does not serve yet
+// Command listing every command the shared gateway serves
+const gatewayCommandList = "/help"
+
+// Refusal naming the command list for a command the shared gateway does not serve yet
 func gatewayRefusal(name string) string {
-	return fmt.Sprintf("/%s is not available on the shared gateway yet.", name)
+	return fmt.Sprintf("/%s is not available on the shared gateway yet. Commands it serves: %s", name, gatewayCommandList)
 }
 
 // Whether a decoded JSON value is a Python int and not a bool

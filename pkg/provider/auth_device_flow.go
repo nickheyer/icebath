@@ -289,7 +289,7 @@ func serveLoopbackCallback(ctx context.Context, server *loopbackServer, result *
 var loopbackCallbackHosts = map[string]bool{"127.0.0.1": true, "::1": true, "localhost": true}
 
 // Prints the SSH tunnel hint when a loopback redirect flow runs on a remote host
-func printLoopbackSSHHint(out io.Writer, redirectURI string) {
+func printLoopbackSSHHint(out io.Writer, redirectURI, providerHelp string) {
 	if !isRemoteSession() {
 		return
 	}
@@ -308,7 +308,11 @@ func printLoopbackSSHHint(out io.Writer, redirectURI string) {
 		"in a NEW terminal on your local machine BEFORE opening the URL:\n\n"+
 		"  ssh -N -L %s:127.0.0.1:%s %s\n\n"+
 		"Then open the authorize URL above in your local browser.\n", divider, divider, redirectURI, port, port, sshUserAtHost())
-	fmt.Fprintf(out, "%s\n\n", divider)
+	if providerHelp != "" {
+		fmt.Fprintf(out, "Provider help:      %s\n", providerHelp)
+	}
+	fmt.Fprintf(out, "Through a jump box: ssh -N -L %s:127.0.0.1:%s -J <jump-user>@<jump-host> %s\n%s\n\n",
+		port, port, sshUserAtHost(), divider)
 }
 
 // oauthVerify is the TLS verification an interactive OAuth client runs with

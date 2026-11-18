@@ -1513,7 +1513,7 @@ setupFlow.terminal.egressIntro: "Les bacs à sable Docker peuvent être protég�
 setupFlow.terminal.egressLabel: "pare-feu sortant pour les bacs à sable Docker"
 setupFlow.terminal.egressOff: "Pare-feu sortant ignoré · activez-le plus tard avec icebath egress setup"
 setupFlow.terminal.egressOn: "Pare-feu sortant activé dans la configuration · lancez icebath egress setup puis icebath egress start pour émettre les jetons et démarrer le proxy"
-setupFlow.terminal.intro: "Backend du terminal · là où Icebath exécute les commandes shell et le code, ce qui décide de l'exécution des outils, de l'accès aux fichiers et de l'isolation"
+setupFlow.terminal.intro: "Backend du terminal · là où Icebath exécute les commandes shell et le code, ce qui décide de l'exécution des outils, de l'accès aux fichiers et de l'isolation · Guide : cli-config.yaml.example (terminal.backend)"
 setupFlow.terminal.keep: "Garder l'actuel ({0})"
 setupFlow.terminal.keepDetail: "laisser le backend tel quel"
 setupFlow.terminal.kept: "Backend actuel {0} conservé"

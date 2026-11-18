@@ -3,7 +3,7 @@ label: BlueBubbles (iMessage)
 kind: platform
 version: 1.0.0
 description: >
-  BlueBubbles (Apple iMessage) gateway adapter for Hermes Agent.
+  BlueBubbles (Apple iMessage) gateway adapter for Icebath Agent.
   Talks to a local BlueBubbles macOS server: outbound sends over its REST API,
   inbound messages via a registered webhook listener. Supports media
   attachments, typing indicators, read receipts and tapbacks (Private API
@@ -56,6 +56,6 @@ optional_env:
     prompt: "Require mention in groups? (true/false)"
     password: false
   - name: BLUEBUBBLES_MENTION_PATTERNS
-    description: "Group wake-word regexes (JSON list or comma/newline-separated); default Hermes wake words"
+    description: "Group wake-word regexes (JSON list or comma/newline-separated); default Icebath wake words"
     prompt: "Mention patterns"
     password: false

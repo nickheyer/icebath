@@ -3339,7 +3339,7 @@ cli:
     fix_lm_studio: "Correctif LM Studio : réglez la longueur de contexte dans les paramètres du modèle → rechargez le modèle"
     fix_local_server: "Correctif : démarrez votre serveur avec au moins {tokens_k}K de contexte (llama.cpp : -c {tokens}), ou réglez model.ollama_num_ctx dans config.yaml sur la fenêtre réellement servie"
     fix_config: "Correctif : réglez model.context_length dans config.yaml, ou augmentez le paramètre de contexte de votre serveur"
-    hermes_models_not_agentic: "⚠  Les modèles Nous Research Icebath 3 et 4 ne sont PAS agentiques et ne sont pas conçus pour Icebath Agent."
+    hermes_models_not_agentic: "⚠  Les modèles Nous Research Hermes 3 et 4 ne sont PAS agentiques et ne sont pas conçus pour Icebath Agent."
     hermes_models_lack_tools: "Ils ne disposent pas des capacités d'appel d'outils requises pour les workflows agentiques. Préférez un modèle agentique (Claude, GPT, Gemini, DeepSeek, etc.)."
     hermes_models_switch_hint: "Changez avec : /model sonnet  ou  /model gpt5"
     project_skills_loaded: "◆ {count} skill(s) de projet chargée(s) depuis ce dépôt"
@@ -3758,7 +3758,7 @@ explainer:
     session_row_missing: "cette session a été supprimée du stockage alors que la discussion était encore ouverte, et Icebath n'a pas pu la recréer ; ce message n'a donc pas été enregistré. Renvoyez votre message ; si l'échec persiste, lancez `icebath {profile_arg}doctor`."
     locked: "le tour a été arrêté car le stockage de session était occupé (un autre processus Icebath écrivait dans la base d'état). Votre message devrait déjà être enregistré — renvoyez-le dans un instant."
     replaced: "le fichier de base de données des sessions a été remplacé pendant que Icebath tournait, ce message n'a donc pas été enregistré (une copie est conservée dans {home}/sessions/). Arrêtez Icebath (`icebath {profile_arg}gateway stop`), lancez `icebath {profile_arg}doctor` — et non `icebath {profile_arg}doctor --fix`, qui réparerait le mauvais fichier sur place — puis redémarrez-le et renvoyez votre message. Les étapes de récupération avancées figurent dans le journal."
-    deleted_wal: "un autre processus Icebath détient encore une ancienne copie du journal d'écriture anticipée (WAL) de la base de données des sessions ; Icebath a donc cessé d'écrire pour préserver le fichier et ce message n'a pas été enregistré (une copie est conservée dans {home}/sessions/). Rien n'est perdu. Quittez tous les processus Icebath de ce profil (`icebath {profile_arg}gateway stop`, cron), lancez `icebath {profile_arg}doctor` — il indique tout processus qui détient encore le journal — puis redémarrez Icebath et renvoyez votre message. Ne lancez pas `doctor --fix` et ne supprimez aucun fichier state.db tant qu'ils tournent."
+    deleted_wal: "un autre processus Icebath détient encore une ancienne copie du journal d'écriture anticipée (WAL) de la base de données des sessions ; Icebath a donc cessé d'écrire pour préserver le fichier et ce message n'a pas été enregistré (une copie est conservée dans {home}/sessions/). Rien n'est perdu. Quittez tous les processus Icebath de ce profil (`icebath {profile_arg}gateway stop`, cron), lancez `icebath {profile_arg}doctor` — il indique tout processus qui détient encore le journal — puis redémarrez Icebath et renvoyez votre message. Ne lancez pas `doctor --fix` et ne supprimez aucun fichier state.db tant qu'ils tournent. Guide : {recovery_docs}"
     corrupt: |-
       le tour a été arrêté car la base d'état a signalé une corruption structurelle (la transcription aurait été perdue au redémarrage). Libérer de l'espace disque ne servira à rien. Options de récupération :
       1. Lancez `icebath {profile_arg}doctor --fix`
@@ -4063,7 +4063,7 @@ tips:
   t279: "ICEBATH_DEV=1 contourne la détection du mode conteneur pour le développement local."
   t280: "Chaque serveur MCP obtient son propre jeu d'outils (mcp-servername) activable indépendamment via icebath tools."
   t281: "Les marqueurs ${ENV_VAR} des MCP dans la configuration sont résolus au lancement du serveur — y compris les variables de ~/.icebath/.env."
-  t282: "Les skills provenant de dépôts de confiance (NousResearch) reçoivent le niveau de sécurité 'trusted' ; les skills communautaires subissent une analyse supplémentaire."
+  t282: "Les skills provenant de dépôts de confiance (openai, anthropics, huggingface, NVIDIA, wandb, qdrant, pinecone-io) reçoivent le niveau de sécurité 'trusted' ; les skills communautaires subissent une analyse supplémentaire."
   t283: "La quarantaine des skills dans ~/.icebath/skills/.hub/quarantine/ conserve les skills en attente de revue de sécurité."
   t284: "/steer <prompt> injecte une note après le prochain appel d'outil — réorientez la tâche en cours sans l'interrompre."
   t285: "/goal <text> fixe un objectif permanent en boucle Ralph — Icebath enchaîne les tours automatiquement jusqu'à ce qu'un juge déclare la tâche terminée."

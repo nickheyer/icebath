@@ -164,7 +164,7 @@ func (a *APIServerAdapter) handleCapabilities(ctx context.Context, request *gate
 		"object", "hermes.api_server.capabilities", "platform", "icebath-agent", "model", a.modelName,
 		"auth", pyjson.ObjectOf("type", "bearer", "required", a.apiKey != ""),
 		"runtime", pyjson.ObjectOf("mode", "server_agent", "tool_execution", "server", "split_runtime", false,
-			"description", "The API server creates a server-side Hermes AIAgent; "+
+			"description", "The API server creates a server-side Icebath AIAgent; "+
 				"tools execute on the API-server host unless a future "+
 				"explicit split-runtime mode is enabled."),
 		"features", features, "endpoints", endpoints), http.StatusOK, nil), nil

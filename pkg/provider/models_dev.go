@@ -320,7 +320,7 @@ func modelsDevID(h, provider string, cfg map[string]any) string {
 			modelsDevUnknownWarned[warnKey] = true
 			modelsDevWarnMu.Unlock()
 			if first {
-				modelsDevLog.Warn(fmt.Sprintf("providers.%s: catalog_provider %q is neither a Hermes provider id nor a models.dev id; ignoring", key, alias))
+				modelsDevLog.Warn(fmt.Sprintf("providers.%s: catalog_provider %q is neither an Icebath provider id nor a models.dev id; ignoring", key, alias))
 			}
 			return ""
 		}

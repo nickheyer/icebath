@@ -42,6 +42,9 @@ var SetupTerminalConsole SetupConsole
 // NousSubscriptionAuthPresent reports Nous auth in the subscription features of a config, installed by pkg/provider
 var NousSubscriptionAuthPresent func(env *Env, cfg map[string]any) bool
 
+// Example config file and key documenting every terminal backend
+const terminalBackendGuide = "cli-config.yaml.example, key terminal.backend"
+
 var (
 	errSetupConsoleUnwired = errors.New("setup wizard console is not installed")
 	errNousFeaturesUnwired = errors.New("nous subscription features are not installed")
@@ -520,7 +523,8 @@ func SetupTerminalBackend(ctx context.Context, env *Env, cfg map[string]any) err
 	s := &terminalSetup{ctx: ctx, env: env, ui: SetupTerminalConsole, h: envHome(env)}
 	s.ui.PrintHeader("Terminal Backend")
 	s.info("Choose where Icebath runs shell commands and code.",
-		"This affects tool execution, file access, and isolation.", nil)
+		"This affects tool execution, file access, and isolation.",
+		"   Guide: "+terminalBackendGuide, nil)
 	current, ok := config.CfgGet(cfg, "terminal", "backend")
 	if !ok {
 		current = "local"

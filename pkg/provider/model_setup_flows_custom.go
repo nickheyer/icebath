@@ -34,7 +34,7 @@ type customAPIMode struct {
 }
 
 var customAPIModes = []customAPIMode{
-	{"", "Auto-detect", "Use Hermes URL heuristics; best for standard OpenAI-compatible endpoints.", []string{"1", "auto", "detect", "auto-detect"}},
+	{"", "Auto-detect", "Use Icebath URL heuristics; best for standard OpenAI-compatible endpoints.", []string{"1", "auto", "detect", "auto-detect"}},
 	{"chat_completions", "Chat Completions", "Use /chat/completions for standard OpenAI-compatible servers.", []string{"2", "chat", "chat_completions", "completions"}},
 	{"codex_responses", "Responses / Codex", "Use /responses for Codex-compatible tool-calling backends.", []string{"3", "responses", "codex", "codex_responses"}},
 	{"anthropic_messages", "Anthropic Messages", "Use /v1/messages for Anthropic-compatible endpoints.", []string{"4", "anthropic", "anthropic_messages", "messages"}},
@@ -320,7 +320,7 @@ func probeCustomEndpoint(r *ModelFlowRun, effectiveKey, effectiveURL string) (Pr
 	case probe.Found:
 		fmt.Fprintf(r.Out, "Verified endpoint via %s (%d model(s) visible)\n", probe.ProbedURL, len(probe.Models))
 	default:
-		fmt.Fprintf(r.Out, "Warning: could not verify this endpoint via %s. Hermes will still save it.\n", probe.ProbedURL)
+		fmt.Fprintf(r.Out, "Warning: could not verify this endpoint via %s. Icebath will still save it.\n", probe.ProbedURL)
 		if suggested := probe.SuggestedBaseURL; suggested != "" {
 			if strings.HasSuffix(suggested, "/v1") {
 				fmt.Fprintf(r.Out, "  If this server expects /v1 in the path, try base URL: %s\n", suggested)

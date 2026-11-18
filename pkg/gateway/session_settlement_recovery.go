@@ -21,8 +21,8 @@ const (
 
 // Notices a viewer reads for a turn the owner's restart or shutdown interrupted
 const (
-	restartInterruptNotice  = "Gateway restarting: this turn was interrupted and will not be run again. Send your message again once Hermes reconnects."
-	shutdownInterruptNotice = "Gateway shutting down: this turn was interrupted and will not be run again. Send your message again once Hermes is back."
+	restartInterruptNotice  = "Gateway restarting: this turn was interrupted and will not be run again. Send your message again once Icebath reconnects."
+	shutdownInterruptNotice = "Gateway shutting down: this turn was interrupted and will not be run again. Send your message again once Icebath is back."
 )
 
 // Pauses in seconds between settlement attempts after a transient storage error

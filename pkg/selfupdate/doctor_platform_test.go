@@ -381,7 +381,7 @@ func TestRemediesAndLauncherRepairsRespectInstallOwner(t *testing.T) {
 		t.Skip("posix only")
 	}
 	for _, tc := range []struct{ method, remedy string }{
-		{"git", "icebath pm repair"}, {"nix", "Nix"}, {"docker", "docker pull"}, {"apt", "pkg upgrade"},
+		{"git", "icebath pm repair"}, {"nix", "Nix"}, {"docker", "docker pull"}, {"apt", "pkg install proot-distro"},
 		{"script", "icebath pm repair"}, {"setup-app", "icebath pm repair"}, {"chocolatey", "choco upgrade icebath"},
 		{"pip", "pipx upgrade icebath-cli"}, {"homebrew", "brew upgrade --cask icebath"}, {"scoop", "scoop update icebath"},
 		{"winget", "winget upgrade --id nickheyer.icebath"}, {"dpkg", "sudo apt install --only-upgrade icebath"},

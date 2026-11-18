@@ -1513,7 +1513,7 @@ setupFlow.terminal.egressIntro: "Docker 沙箱可受出口憑證防火牆保護 
 setupFlow.terminal.egressLabel: "Docker 沙箱的出口防火牆"
 setupFlow.terminal.egressOff: "略過出口防火牆 · 之後可用 icebath egress setup 啟用"
 setupFlow.terminal.egressOn: "已在設定中啟用出口防火牆 · 執行 icebath egress setup，再執行 icebath egress start 以簽發權杖並啟動代理"
-setupFlow.terminal.intro: "終端後端 · Icebath 執行 shell 指令和程式碼的位置，決定工具執行、檔案存取和隔離"
+setupFlow.terminal.intro: "終端後端 · Icebath 執行 shell 指令和程式碼的位置，決定工具執行、檔案存取和隔離 · 指南：cli-config.yaml.example (terminal.backend)"
 setupFlow.terminal.keep: "保持目前（{0}）"
 setupFlow.terminal.keepDetail: "保持後端不變"
 setupFlow.terminal.kept: "保持目前後端 {0}"

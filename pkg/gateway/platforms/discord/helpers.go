@@ -400,7 +400,7 @@ func isDigitString(s string) bool {
 func formatPrivilegedIntentsGuidance(needsMembers bool) string {
 	lines := []string{
 		"Discord rejected the connection because privileged Gateway Intents are not enabled for this bot in the Developer Portal.",
-		"Hermes is requesting:",
+		"Icebath is requesting:",
 		"  - Message Content Intent (required to read message text)",
 	}
 	if needsMembers {
@@ -408,6 +408,7 @@ func formatPrivilegedIntentsGuidance(needsMembers bool) string {
 	}
 	lines = append(lines,
 		"Fix: https://discord.com/developers/applications → your application → Bot → Privileged Gateway Intents → enable the intent(s) listed above → Save Changes, then restart the gateway.",
+		"Docs: .env.example, key DISCORD_BOT_TOKEN",
 	)
 	return strings.Join(lines, "\n")
 }

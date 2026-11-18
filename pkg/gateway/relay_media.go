@@ -33,7 +33,7 @@ var relayUploadRetryDelays = []float64{2.0, 5.0}
 
 var relayUploadRetryStatuses = map[int]bool{403: true, 408: true, 429: true, 500: true, 502: true, 503: true, 504: true}
 
-const relayMediaUserAgent = "IcebathAgent-Relay/1.0 (+https://github.com/NousResearch/hermes-agent)"
+const relayMediaUserAgent = "IcebathAgent-Relay/1.0 (+https://github.com/nickheyer/icebath)"
 
 // HTTP connector base of a ws or wss relay dial URL
 func RelayMediaBaseURL(relayDialURL string) string {

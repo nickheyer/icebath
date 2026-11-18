@@ -517,7 +517,7 @@ func reserving(ctx context.Context, home string) (func(), error) {
 			return nil, err
 		}
 		if isOSError(err) {
-			return nil, &DeclarativeDriftError{Detail: fmt.Sprintf("Session store is behind this Hermes version, but its "+
+			return nil, &DeclarativeDriftError{Detail: fmt.Sprintf("Session store is behind this Icebath version, but its "+
 				"gateway.lock cannot be used (%s); nothing was changed.", pyOSErrorStr(err))}
 		}
 		return nil, err
@@ -642,7 +642,7 @@ func ReconcileDriftForBrowse(ctx context.Context, path string) (bool, error) {
 		if holder != "" {
 			who = " (" + holder + ")"
 		}
-		return &DeclarativeDriftError{Detail: fmt.Sprintf("Session store for profile '%s' is behind this Hermes version (%s), and a "+
+		return &DeclarativeDriftError{Detail: fmt.Sprintf("Session store for profile '%s' is behind this Icebath version (%s), and a "+
 			"running gateway owns it%s, so browsing will not write to it. Restart that gateway "+
 			"(`%s`) to bring the store up to date.", label, drift, who, restart), Owned: true}
 	}
@@ -652,7 +652,7 @@ func ReconcileDriftForBrowse(ctx context.Context, path string) (bool, error) {
 		} else if live {
 			return owned(reason, "")
 		}
-		return &DeclarativeDriftError{Detail: fmt.Sprintf("Session store for profile '%s' is behind this Hermes version (%s) and is too "+
+		return &DeclarativeDriftError{Detail: fmt.Sprintf("Session store for profile '%s' is behind this Icebath version (%s) and is too "+
 			"large to verify and update within %ss while browsing. Your "+
 			"history is untouched: nothing was changed and the list was not cleared. Run "+
 			"`%s` to bring it up to date (it has no time limit), then reload.", label, reason, pyFixed0(BrowseReconcileBudgetS), repairCommand(home))}
@@ -711,7 +711,7 @@ func ReconcileDriftForBrowse(ctx context.Context, path string) (bool, error) {
 					"(%s); nothing was changed. Retry in a moment; the list was not cleared.", label, reason)}
 			}
 			notWritable := func(why string) error {
-				return &DeclarativeDriftError{Detail: fmt.Sprintf("Session store for profile '%s' is behind this Hermes version (%s), "+
+				return &DeclarativeDriftError{Detail: fmt.Sprintf("Session store for profile '%s' is behind this Icebath version (%s), "+
 					"but %s is not writable by this user, so browsing cannot add the missing "+
 					"tables/columns; nothing was changed. Fix the permissions, then reload.", label, reason, why)}
 			}
@@ -726,7 +726,7 @@ func ReconcileDriftForBrowse(ctx context.Context, path string) (bool, error) {
 					return notWritable(path)
 				}
 				if errors.As(err, &driftErr) {
-					return &DeclarativeDriftError{Detail: fmt.Sprintf("Session store for profile '%s' is behind this Hermes version and could not "+
+					return &DeclarativeDriftError{Detail: fmt.Sprintf("Session store for profile '%s' is behind this Icebath version and could not "+
 						"be caught up (%s); nothing was changed. Run `icebath sessions repair` for that "+
 						"profile.", label, driftErr.Detail)}
 				}
@@ -743,7 +743,7 @@ func ReconcileDriftForBrowse(ctx context.Context, path string) (bool, error) {
 			return false, tooSlow()
 		}
 		if errors.As(err, &sibling) {
-			return false, &DeclarativeDriftError{Detail: fmt.Sprintf("Session store for profile '%s' is being brought up to date by another Hermes "+
+			return false, &DeclarativeDriftError{Detail: fmt.Sprintf("Session store for profile '%s' is being brought up to date by another Icebath "+
 				"process (%s). Retry in a moment; the list was not cleared.", label, sibling.Drift)}
 		}
 		if err != nil {
@@ -757,7 +757,7 @@ func ReconcileDriftForBrowse(ctx context.Context, path string) (bool, error) {
 	if after, drift, err := SchemaDriftReason(ctx, path); err != nil {
 		return false, err
 	} else if drift {
-		return false, &DeclarativeDriftError{Detail: fmt.Sprintf("Session store for profile '%s' is behind this Hermes version and could not be "+
+		return false, &DeclarativeDriftError{Detail: fmt.Sprintf("Session store for profile '%s' is behind this Icebath version and could not be "+
 			"caught up (%s). Run `icebath sessions repair` for that profile.", label, after)}
 	}
 	slog.Warn(fmt.Sprintf("state.db at %s lagged SCHEMA_SQL (%s); added the missing tables/columns for browsing", path, reason))

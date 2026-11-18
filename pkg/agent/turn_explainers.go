@@ -14,6 +14,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -351,7 +352,7 @@ func formatTurnCompletionExplanation(ctx context.Context, turnExitReason any, pe
 		h := home.Dir(ctx)
 		fill := map[string]any{
 			"home": home.Display(h), "profile_arg": provider.ProfileCLISelector(h),
-			"db_path": "", "backups_dir": "",
+			"recovery_docs": "`" + state.StorageRecoveryHelp + "`", "db_path": "", "backups_dir": "",
 		}
 		if persistenceCause == "corrupt" || persistenceCause == "fts_index" {
 			if dbPath == "" {

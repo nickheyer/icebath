@@ -364,7 +364,7 @@ func (c *PeerRunsHTTPClient) request(path, method string, body any, headers map[
 		req.Header.Set("Authorization", "Bearer "+c.APIKey)
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("User-Agent", "Hermes-RoomLink/1.0")
+	req.Header.Set("User-Agent", "Icebath-RoomLink/1.0")
 	for k, v := range headers {
 		req.Header.Set(k, v)
 	}

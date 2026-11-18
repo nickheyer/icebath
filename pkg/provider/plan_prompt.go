@@ -12,7 +12,7 @@ const planModeRules = "For this turn, you are in PLAN MODE — planning only.\n"
 	"  when needed.\n" +
 	"- Your deliverable is a markdown plan saved inside the active workspace under\n" +
 	"  `.icebath/plans/YYYY-MM-DD_HHMMSS-<slug>.md` (create the directory if\n" +
-	"  needed; Hermes file tools are backend-aware, so this relative path keeps\n" +
+	"  needed; Icebath file tools are backend-aware, so this relative path keeps\n" +
 	"  the plan with the workspace on local, docker, ssh, modal, and daytona\n" +
 	"  backends). If the runtime provides a specific target path, use that exact\n" +
 	"  path instead.\n"

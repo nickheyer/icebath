@@ -1513,7 +1513,7 @@ setupFlow.terminal.egressIntro: "Is féidir boscaí gainimh Docker a chosaint le
 setupFlow.terminal.egressLabel: "balla dóiteáin amach do bhoscaí gainimh Docker"
 setupFlow.terminal.egressOff: "Balla dóiteáin amach scipeáilte · cumasaigh níos déanaí é le icebath egress setup"
 setupFlow.terminal.egressOn: "Balla dóiteáin amach cumasaithe sa chumraíocht · rith icebath egress setup agus ansin icebath egress start chun comharthaí a eisiúint agus an seachfhreastalaí a thosú"
-setupFlow.terminal.intro: "Inneall cúil an teirminéil · an áit a ritheann Icebath orduithe blaoisce agus cód, a shocraíonn rith uirlisí, rochtain ar chomhaid agus scoitheadh"
+setupFlow.terminal.intro: "Inneall cúil an teirminéil · an áit a ritheann Icebath orduithe blaoisce agus cód, a shocraíonn rith uirlisí, rochtain ar chomhaid agus scoitheadh · Treoir: cli-config.yaml.example (terminal.backend)"
 setupFlow.terminal.keep: "Coinnigh an ceann reatha ({0})"
 setupFlow.terminal.keepDetail: "fág an t-inneall cúil mar atá sé"
 setupFlow.terminal.kept: "Ag coinneáil an inneall cúil reatha {0}"

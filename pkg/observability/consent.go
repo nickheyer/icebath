@@ -31,7 +31,9 @@ var noThanks = len(OfferChoices) - 1
 const (
 	// OfferVersion is bumped only when every earlier answer must be asked again
 	OfferVersion = 2
-	reaskNote    = "Asking once more: an earlier version could save \"No thanks\" before you saw this question."
+	// SharedMetricsGuide names the example config file and key that document shared metrics
+	SharedMetricsGuide = "cli-config.yaml.example, key telemetry.shared_metrics"
+	reaskNote          = "Asking once more: an earlier version could save \"No thanks\" before you saw this question."
 )
 
 var offerDescription = strings.Join([]string{
@@ -41,6 +43,7 @@ var offerDescription = strings.Join([]string{
 		"files, paths, setting values or error text. Sharing sends them to Nous once a " +
 		"day. Apart from a one-time install note, data from before you opt in is never " +
 		"sent.",
+	"Details: " + SharedMetricsGuide,
 	"Change it any time: start icebath and type /setup telemetry",
 }, "\n")
 

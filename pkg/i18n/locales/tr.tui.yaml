@@ -1513,7 +1513,7 @@ setupFlow.terminal.egressIntro: "Docker sanal alanları çıkış kimlik bilgisi
 setupFlow.terminal.egressLabel: "Docker sanal alanları için çıkış güvenlik duvarı"
 setupFlow.terminal.egressOff: "Çıkış güvenlik duvarı atlandı · daha sonra icebath egress setup ile etkinleştirin"
 setupFlow.terminal.egressOn: "Çıkış güvenlik duvarı yapılandırmada etkin · belirteç üretmek ve proxy'yi başlatmak için icebath egress setup ardından icebath egress start çalıştırın"
-setupFlow.terminal.intro: "Terminal arka ucu · Icebath'in kabuk komutlarını ve kodu çalıştırdığı yer; araç yürütmeyi, dosya erişimini ve yalıtımı belirler"
+setupFlow.terminal.intro: "Terminal arka ucu · Icebath'in kabuk komutlarını ve kodu çalıştırdığı yer; araç yürütmeyi, dosya erişimini ve yalıtımı belirler · Kılavuz: cli-config.yaml.example (terminal.backend)"
 setupFlow.terminal.keep: "Mevcut olanı koru ({0})"
 setupFlow.terminal.keepDetail: "arka ucu olduğu gibi bırak"
 setupFlow.terminal.kept: "Mevcut arka uç {0} korunuyor"

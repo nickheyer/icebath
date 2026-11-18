@@ -363,14 +363,21 @@ func joinObjRepr(items []any, active map[any]bool) string {
 	return strings.Join(parts, ", ")
 }
 
+// Deferred generator body and the Python frames it runs in
+type pendingFill struct {
+	cost int
+	fill func()
+}
+
 // ruamel SafeConstructor state for one document, deferred container fills standing in for its generators
 type safeConstructor struct {
 	rt          bool
 	doc         *ry.Document
 	constructed map[*ry.Node]any
 	recursive   map[*ry.Node]bool
-	pending     []func()
+	pending     []pendingFill
 	deep        bool
+	frames      int
 	flattening  int
 	warnings    []ry.Warning
 }
@@ -409,7 +416,7 @@ func constructDocumentMode(doc *ry.Document, rt bool) (value any, warnings []ry.
 		gens := c.pending
 		c.pending = nil
 		for _, g := range gens {
-			g()
+			c.inFrames(g.cost, g.fill)
 		}
 	}
 	return toGoValue(data, map[any]any{}), c.warnings, nil
@@ -428,7 +435,8 @@ func (c *safeConstructor) constructObject(n *ry.Node, deep bool) any {
 		return nil
 	}
 	c.recursive[n] = true
-	data := c.constructNonRecursive(n)
+	var data any
+	c.inFrames(2, func() { data = c.constructNonRecursive(n) })
 	c.constructed[n] = data
 	delete(c.recursive, n)
 	if deep {
@@ -440,13 +448,31 @@ func (c *safeConstructor) constructObject(n *ry.Node, deep bool) any {
 const yamlTagPrefix = "tag:yaml.org,2002:"
 
 // Container of a generator constructor, its fill run now under deep construction or deferred
-func (c *safeConstructor) generator(data any, fill func()) any {
+func (c *safeConstructor) generator(data any, cost int, fill func()) any {
 	if c.deep {
-		fill()
+		c.inFrames(cost, fill)
 	} else {
-		c.pending = append(c.pending, fill)
+		c.pending = append(c.pending, pendingFill{cost, fill})
 	}
 	return data
+}
+
+// Python frames construct_document may stack, the C or pure safe_load sitting two frames deeper than a round trip load
+func (c *safeConstructor) frameLimit() int {
+	if c.rt {
+		return 995
+	}
+	return 993
+}
+
+// Runs f with cost more Python frames on the stack, the RecursionError CPython raises past its limit
+func (c *safeConstructor) inFrames(cost int, f func()) {
+	c.frames += cost
+	defer func() { c.frames -= cost }()
+	if c.frames > c.frameLimit() {
+		panic(pyErr("RecursionError", "maximum recursion depth exceeded"))
+	}
+	f()
 }
 
 func (c *safeConstructor) constructNonRecursive(n *ry.Node) any {
@@ -454,6 +480,21 @@ func (c *safeConstructor) constructNonRecursive(n *ry.Node) any {
 		return c.constructNonRecursiveRT(n)
 	}
 	tag := n.Tag()
+	switch tag {
+	case yamlTagPrefix + "null", yamlTagPrefix + "bool", yamlTagPrefix + "int", yamlTagPrefix + "float", yamlTagPrefix + "binary", yamlTagPrefix + "str":
+		var v any
+		c.inFrames(3, func() { v = c.constructSafeScalar(n, tag) })
+		return v
+	case yamlTagPrefix + "timestamp":
+		var v any
+		c.inFrames(2, func() { v = c.constructTimestamp(n) })
+		return v
+	}
+	return c.constructSafeCollection(n, tag)
+}
+
+// Scalar value of one of the safe scalar tags
+func (c *safeConstructor) constructSafeScalar(n *ry.Node, tag string) any {
 	switch tag {
 	case yamlTagPrefix + "null":
 		c.constructScalar(n)
@@ -472,18 +513,23 @@ func (c *safeConstructor) constructNonRecursive(n *ry.Node) any {
 		return c.constructFloat(n)
 	case yamlTagPrefix + "binary":
 		return c.constructBinary(n)
-	case yamlTagPrefix + "timestamp":
-		return c.constructTimestamp(n)
+	}
+	return c.constructScalar(n)
+}
+
+// Container of a safe collection tag or the undetermined constructor error
+func (c *safeConstructor) constructSafeCollection(n *ry.Node, tag string) any {
+	switch tag {
 	case yamlTagPrefix + "omap":
 		omap := newPyDict()
 		omap.kind = dictOrdered
-		return c.generator(omap, func() { c.fillOmap(n, omap) })
+		return c.generator(omap, 1, func() { c.fillOmap(n, omap) })
 	case yamlTagPrefix + "pairs":
 		pairs := &pyList{}
-		return c.generator(pairs, func() { c.fillPairs(n, pairs) })
+		return c.generator(pairs, 1, func() { c.fillPairs(n, pairs) })
 	case yamlTagPrefix + "set":
 		set := &pySet{index: map[string]int{}}
-		return c.generator(set, func() {
+		return c.generator(set, 3, func() {
 			value := c.constructMapping(n, false)
 			for _, k := range value.keys {
 				hk := pyHashKey(k)
@@ -493,20 +539,21 @@ func (c *safeConstructor) constructNonRecursive(n *ry.Node) any {
 				}
 			}
 		})
-	case yamlTagPrefix + "str":
-		return c.constructScalar(n)
 	case yamlTagPrefix + "seq":
 		list := &pyList{}
-		return c.generator(list, func() { list.items = append(list.items, c.constructSequence(n, false)...) })
+		return c.generator(list, 2, func() { list.items = append(list.items, c.constructSequence(n, false)...) })
 	case yamlTagPrefix + "map":
 		m := newPyDict()
-		return c.generator(m, func() { m.update(c.constructMapping(n, false)) })
+		return c.generator(m, 3, func() { m.update(c.constructMapping(n, false)) })
 	}
 	panic(constructorError("", nil, "could not determine a constructor for the tag "+pyrepr.StrRepr(tag), n.Start))
 }
 
 // Scalar text of a node, a mapping answering with its value key entry as SafeConstructor.construct_scalar does
 func (c *safeConstructor) constructScalar(n *ry.Node) string {
+	if c.rt {
+		return c.constructScalarRT(n)
+	}
 	if n.Kind == ry.MappingNode {
 		for _, p := range n.Pairs {
 			if p.Key.Tag() == yamlTagPrefix+"value" {

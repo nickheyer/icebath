@@ -1513,7 +1513,7 @@ setupFlow.terminal.egressIntro: "A Docker-homokozók a kimenő hitelesítőadat-
 setupFlow.terminal.egressLabel: "kimenő tűzfal a Docker-homokozókhoz"
 setupFlow.terminal.egressOff: "Kimenő tűzfal kihagyva · később az icebath egress setup paranccsal kapcsolható be"
 setupFlow.terminal.egressOn: "Kimenő tűzfal bekapcsolva a beállításokban · futtassa az icebath egress setup, majd az icebath egress start parancsot a tokenek kiadásához és a proxy indításához"
-setupFlow.terminal.intro: "Terminál-háttérrendszer · ahol az Icebath a parancsokat és a kódot futtatja, ez határozza meg az eszközfuttatást, a fájlhozzáférést és az elszigetelést"
+setupFlow.terminal.intro: "Terminál-háttérrendszer · ahol az Icebath a parancsokat és a kódot futtatja, ez határozza meg az eszközfuttatást, a fájlhozzáférést és az elszigetelést · Útmutató: cli-config.yaml.example (terminal.backend)"
 setupFlow.terminal.keep: "Jelenlegi megtartása ({0})"
 setupFlow.terminal.keepDetail: "a háttérrendszer marad, ahogy van"
 setupFlow.terminal.kept: "A jelenlegi háttérrendszer ({0}) marad"

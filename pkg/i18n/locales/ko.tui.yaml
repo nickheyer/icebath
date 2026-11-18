@@ -1513,7 +1513,7 @@ setupFlow.terminal.egressIntro: "Docker 샌드박스는 송신 자격 증명 방
 setupFlow.terminal.egressLabel: "Docker 샌드박스 송신 방화벽"
 setupFlow.terminal.egressOff: "송신 방화벽 건너뜀 · 나중에 icebath egress setup으로 켤 수 있습니다"
 setupFlow.terminal.egressOn: "설정에서 송신 방화벽을 켰습니다 · icebath egress setup 후 icebath egress start를 실행해 토큰을 발급하고 프록시를 시작하세요"
-setupFlow.terminal.intro: "터미널 백엔드 · Icebath가 셸 명령과 코드를 실행하는 곳으로, 도구 실행·파일 접근·격리를 결정합니다"
+setupFlow.terminal.intro: "터미널 백엔드 · Icebath가 셸 명령과 코드를 실행하는 곳으로, 도구 실행·파일 접근·격리를 결정합니다 · 가이드: cli-config.yaml.example (terminal.backend)"
 setupFlow.terminal.keep: "현재 유지 ({0})"
 setupFlow.terminal.keepDetail: "백엔드를 그대로 둡니다"
 setupFlow.terminal.kept: "현재 백엔드 {0} 유지"
